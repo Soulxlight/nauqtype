@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from compiler.ast import nodes as ast
+
+
+@dataclass(frozen=True, slots=True)
+class Type:
+    kind: str
+    name: str | None = None
+    args: tuple["Type", ...] = ()
+    mutable: bool = False
+
+    def display(self) -> str:
+        if self.kind in {"bool", "i32", "str", "unit"}:
+            return self.kind
+        if self.kind == "named":
+            return self.name or "<named>"
+        if self.kind == "option":
+            return f"option<{self.args[0].display()}>"
+        if self.kind == "result":
+            return f"result<{self.args[0].display()}, {self.args[1].display()}>"
+        if self.kind == "ref":
+            prefix = "mutref" if self.mutable else "ref"
+            return f"{prefix} {self.args[0].display()}"
+        return self.kind
+
+    def is_copy(self) -> bool:
+        if self.kind in {"bool", "i32", "str", "unit", "ref"}:
+            return True
+        if self.kind == "option":
+            return self.args[0].is_copy()
+        if self.kind == "result":
+            return self.args[0].is_copy() and self.args[1].is_copy()
+        return False
+
+    def inner(self) -> "Type":
+        return self.args[0]
+
+
+BOOL = Type("bool")
+I32 = Type("i32")
+STR = Type("str")
+UNIT = Type("unit")
+
+
+@dataclass(slots=True)
+class StructDef:
+    name: str
+    decl: ast.TypeDecl
+    fields: dict[str, Type] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class VariantDef:
+    name: str
+    enum_name: str
+    payloads: list[Type]
+    builtin_kind: str | None = None
+
+
+@dataclass(slots=True)
+class EnumDef:
+    name: str
+    decl: ast.EnumDecl | None
+    variants: dict[str, VariantDef] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class FunctionSig:
+    name: str
+    param_types: list[Type]
+    return_type: Type
+    decl: ast.FunctionDecl | None
+    builtin: bool = False
+
+
+@dataclass(slots=True)
+class BindingInfo:
+    symbol_id: int
+    name: str
+    typ: Type
+    mutable: bool
+    is_param: bool
+    is_ref_param: bool = False
+    ref_mutable: bool = False
+    written: bool = False
+
