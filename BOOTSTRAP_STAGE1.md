@@ -12,6 +12,16 @@ Define the minimum post-alpha language expansion needed to begin a realistic sel
 
 No other feature family should jump ahead of those three unless a concrete bootstrap blocker proves this order wrong.
 
+## Current Status
+
+The current stage0 compiler implements all three locked Stage1 unlocks:
+
+- flat-root acyclic imports
+- file input as `result<str, io_err>`
+- builtin `list<T>`
+
+The first selfhost workspace now lives in `selfhost/` and can load, lex, parse, and diagnose its own module tree.
+
 ## Acyclic Imports
 
 Stage1 import scope:
@@ -20,6 +30,7 @@ Stage1 import scope:
 - one workspace/package root only
 - single source file still defines one module
 - imported `pub fn`, `pub type`, and `pub enum` become visible across files
+- imported public enum variants become visible as constructors/pattern names
 - import cycles are rejected
 - no package manager
 - no re-export system
@@ -39,7 +50,9 @@ This is enough for a compiler to read source files without committing to a large
 Minimum collection goal:
 
 - one builtin growable sequence type
-- construction, push, indexing/iteration strategy to be defined in the corresponding design pass
+- `list()` requires expected `list<T>` context
+- `list_push`, `list_len`, and `list_get` are builtin helper functions
+- `list_get` is restricted to copy element types in stage1
 - no `map`, `set`, or `dict` before `list<T>` proves necessary and stable
 
 ## Relationship To AI Contracts
@@ -47,3 +60,11 @@ Minimum collection goal:
 - `review` output should consume imported function audits once imports land.
 - AI Contracts should remain small while Stage1 focuses on expressiveness needed for a self-hosted compiler.
 - Do not let the AI-first differentiator stall bootstrap-critical work.
+
+## Immediate Remaining Gap
+
+Stage1 is not self-hosting yet. The next work is semantic parity inside `selfhost/`:
+
+- resolver parity
+- type-checker parity
+- stronger diagnostic fidelity

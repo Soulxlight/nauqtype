@@ -5,7 +5,7 @@
 The v0.1 compiler should deliver a real vertical slice:
 
 - lex source
-- parse a source file
+- parse one source file or a flat-root module graph
 - resolve names
 - type-check a meaningful subset
 - enforce minimal move/borrow rules
@@ -70,19 +70,21 @@ Responsibilities:
 - preserve source spans
 - reject malformed strings and unknown characters
 
-### 2. Parsing
+### 2. Project Loading And Parsing
 
 Input:
 
-- token stream
+- entry source file path plus transitive `use` graph
 
 Output:
 
-- AST for one source file
+- per-module ASTs
 - parse diagnostics
 
 Responsibilities:
 
+- load `<workspace-root>/<module>.nq` for flat-root imports
+- detect missing modules and import cycles
 - build a concrete AST with explicit nodes for items, statements, expressions, patterns, and types
 - recover enough after errors to continue collecting diagnostics
 
@@ -110,9 +112,10 @@ Responsibilities:
 - distinguish functions, types, enum variants, and fields where applicable
 - mark built-ins such as `print_line`, `option`, and `result`
 
-v0.1 simplification:
+Stage1 simplification:
 
-- one-file scope only
+- one workspace root only
+- no re-exports or nested modules
 
 ### 4. Type Checking
 
@@ -131,6 +134,7 @@ Responsibilities:
 - validate function calls
 - validate return statements
 - validate `while` conditions
+- validate imported type and function usage across the flat-root graph
 - infer AI Contract mutation/effect facts
 - validate match exhaustiveness for supported patterns
 - distinguish copy vs move types
@@ -140,6 +144,7 @@ v0.1 simplifications:
 - no user generics
 - exact type matching only
 - built-in generic utility types only
+- builtin `list<T>` only; no user-defined generics
 
 ### 5. Borrow And Move Checking
 
@@ -209,6 +214,7 @@ Codegen choices:
 - tagged unions for enums
 - direct C structs for `type`
 - helper runtime functions in `stdlib/`
+- typed list helpers and bootstrap file/string helpers in `stdlib/`
 
 ## AST Strategy
 
@@ -334,9 +340,11 @@ Categories:
 ### Integration Tests
 
 - compile example `.nq` files
+- compile multi-file example graphs
 - emit C
 - invoke a system C compiler
 - run executables and assert outputs
+- run `selfhost/main.nq`
 
 Determinism matters:
 
@@ -364,10 +372,12 @@ To preserve that option:
 
 The runtime in `stdlib/` should remain tiny.
 
-v0.1 runtime responsibilities:
+Current bootstrap runtime responsibilities:
 
 - `str` representation
 - printing support
+- bootstrap file input helpers
+- typed list allocation helpers
 - helper constructors or tag definitions if needed
 
 Everything else stays out unless it is required by the vertical slice.

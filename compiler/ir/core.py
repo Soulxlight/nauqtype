@@ -23,6 +23,7 @@ class IRProgram:
     enums: dict[str, EnumDef]
     functions: list["IRFunction"]
     signatures: dict[str, FunctionSig]
+    entry_function: str | None
 
 
 @dataclass(slots=True)
@@ -156,6 +157,7 @@ class IRBinaryExpr:
 class IRCallExpr:
     function_name: str
     args: list["IRExpr"]
+    param_types: list[Type]
     typ: Type
     span: Span
 
@@ -234,13 +236,16 @@ class IRLowerer:
 
     def lower(self) -> IRProgram | None:
         functions: list[IRFunction] = []
-        for item in self.semantic.program.items:
-            if not isinstance(item, ast.FunctionDecl):
-                continue
-            semantic_function = self.semantic.function_bodies[item.name]
-            lowered = self._lower_function(item, semantic_function)
-            if lowered is not None:
-                functions.append(lowered)
+        for module_name in self.semantic.module.project.order:
+            program = self.semantic.module.project.modules[module_name].program
+            for item in program.items:
+                if not isinstance(item, ast.FunctionDecl):
+                    continue
+                internal_name = f"{item.module_name}::{item.name}"
+                semantic_function = self.semantic.function_bodies[internal_name]
+                lowered = self._lower_function(item, semantic_function)
+                if lowered is not None:
+                    functions.append(lowered)
 
         if self.diagnostics.has_errors():
             return None
@@ -250,6 +255,7 @@ class IRLowerer:
             enums=self.semantic.enums,
             functions=functions,
             signatures=self.semantic.functions,
+            entry_function=self.semantic.entry_main,
         )
 
     def _lower_function(self, decl: ast.FunctionDecl, semantic_function: SemanticFunction) -> IRFunction | None:
@@ -272,7 +278,7 @@ class IRLowerer:
             return None
 
         return IRFunction(
-            name=decl.name,
+            name=semantic_function.internal_name,
             params=params,
             return_type=semantic_function.signature.return_type,
             body=body,
@@ -439,7 +445,13 @@ class IRLowerer:
                     return None
                 args.append(lowered_arg)
             if expr.call_kind == "function" and expr.target_name is not None:
-                return IRCallExpr(function_name=expr.target_name, args=args, typ=expr.inferred_type, span=expr.span)
+                return IRCallExpr(
+                    function_name=expr.target_name,
+                    args=args,
+                    param_types=list(expr.param_types or []),
+                    typ=expr.inferred_type,
+                    span=expr.span,
+                )
             if expr.call_kind == "variant" and expr.target_name is not None:
                 return IRVariantExpr(typ=expr.inferred_type, variant_name=expr.target_name, args=args, span=expr.span)
             self.diagnostics.add(
@@ -462,7 +474,12 @@ class IRLowerer:
                 if lowered_value is None:
                     return None
                 fields.append(IRFieldValue(name=field.name, expr=lowered_value, span=field.span))
-            return IRStructLiteralExpr(type_name=expr.type_name, fields=fields, typ=expr.inferred_type, span=expr.span)
+            return IRStructLiteralExpr(
+                type_name=expr.resolved_name or expr.type_name,
+                fields=fields,
+                typ=expr.inferred_type,
+                span=expr.span,
+            )
 
         self.diagnostics.add(
             "NQ-IR-009",

@@ -12,7 +12,10 @@ typedef struct NQ_Result__bool__str {
     } data;
 } NQ_Result__bool__str;
 
-NQ_Result__bool__str nq_fn_parse_flag(NQStr nqv_1_text) {
+NQ_Result__bool__str nq_fn_result_handling__parse_flag(NQStr nqv_1_text);
+int32_t nq_fn_result_handling__main(void);
+
+NQ_Result__bool__str nq_fn_result_handling__parse_flag(NQStr nqv_1_text) {
     if (nq_str_eq(nqv_1_text, nq_str("yes"))) {
         return (NQ_Result__bool__str){ .tag = NQ_Result__bool__str_Tag_Ok, .data.Ok = { ._0 = true } };
     } else {
@@ -20,8 +23,8 @@ NQ_Result__bool__str nq_fn_parse_flag(NQStr nqv_1_text) {
     }
 }
 
-int32_t nq_fn_main() {
-    NQ_Result__bool__str nqv_2_parsed = nq_fn_parse_flag(nq_str("yes"));
+int32_t nq_fn_result_handling__main(void) {
+    NQ_Result__bool__str nqv_2_parsed = nq_fn_result_handling__parse_flag(nq_str("yes"));
     NQ_Result__bool__str nq_tmp_1 = nqv_2_parsed;
     switch (nq_tmp_1.tag) {
         case NQ_Result__bool__str_Tag_Ok: {
@@ -41,5 +44,5 @@ int32_t nq_fn_main() {
 }
 
 int main(void) {
-    return nq_fn_main();
+    return nq_fn_result_handling__main();
 }

@@ -94,6 +94,13 @@
 
 ## Bootstrap Next
 
-- [ ] Implement acyclic imports
-- [ ] Add file input as `result<str, io_err>`
-- [ ] Add builtin `list<T>`
+- [x] Implement acyclic imports
+- [x] Add file input as `result<str, io_err>`
+- [x] Add builtin `list<T>`
+- [x] Add the first `selfhost/` stage1 front end
+
+## Near-Self-Hosting Next
+
+- [ ] Extend `selfhost/` from shallow parsing to resolver parity
+- [ ] Add `selfhost/` type-checker parity
+- [ ] Decide the first trustworthy self-hosting milestone and comparison strategy

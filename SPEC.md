@@ -24,9 +24,14 @@ Its source language priorities are:
 ## Source Files And Modules
 
 - File extension: `.nq`
-- One source file is one compile unit in v0.1.
+- One source file is one module.
 - The module name is derived from the file name.
-- `pub` is part of the language and is preserved in the AST, but v0.1 does not implement cross-file imports yet.
+- `use foo;` resolves to `<workspace-root>/foo.nq`.
+- All `use` declarations must appear before non-`use` items in a file.
+- Imported `pub fn`, `pub type`, and `pub enum` enter the importing module scope unqualified.
+- Imported public enum variants are also visible as constructor/pattern names.
+- Import cycles are rejected.
+- There is no package manager, nested module system, or re-export system in stage1.
 
 ## Naming And Style
 
@@ -87,6 +92,8 @@ Deferred numeric types:
 
 - `option<T>`
 - `result<T, E>`
+- `list<T>`
+- `io_err`
 
 Built-in constructors:
 
@@ -95,7 +102,7 @@ Built-in constructors:
 - `Ok(value)`
 - `Err(value)`
 
-These are part of the core language surface in v0.1.
+These are part of the core language surface in the current bootstrap compiler.
 
 ## Declarations
 
@@ -374,11 +381,12 @@ Copy types in v0.1:
 - `i32`
 - `str`
 - `unit`
+- `io_err`
+- any user-defined `type` or `enum` whose fields/payloads are all copy
 
 Move types in v0.1:
 
-- user-defined `type`
-- user-defined `enum`
+- `list<T>`
 - `option<T>` when `T` is non-copy
 - `result<T, E>` when either side is non-copy
 
@@ -435,16 +443,30 @@ fn parse_flag(text: str) -> result<bool, str> {
 - `str`
 - `option<T>`
 - `result<T, E>`
+- `list<T>`
+- `io_err`
 - minimal printing intrinsic:
 
 ```nauq
 fn print_line(text: str) -> unit;
 ```
 
+- bootstrap file/string helpers:
+
+```nauq
+fn read_file(path: str) -> result<str, io_err>;
+fn io_err_text(err: io_err) -> str;
+fn str_len(text: str) -> i32;
+fn str_get(text: str, index: i32) -> option<i32>;
+fn str_slice(text: str, start: i32, end: i32) -> option<str>;
+fn list() -> list<T>;            // requires expected context
+fn list_push(items: mutref list<T>, value: T) -> unit;
+fn list_len(items: ref list<T>) -> i32;
+fn list_get(items: ref list<T>, index: i32) -> option<T>;
+```
+
 ### Out Of Scope For v0.1
 
-- file I/O
-- collections
 - formatting machinery
 - mutable strings
 - environment/process APIs
@@ -501,7 +523,6 @@ These are warnings, not hard errors.
 - `continue`
 - field assignment
 - user-defined generics
-- imports
 - exceptions
 - async
 - macros

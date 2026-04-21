@@ -10,6 +10,7 @@ from compiler.diagnostics import Span
 class Program:
     items: list[Any]
     span: Span
+    module_name: str = ""
 
 
 @dataclass(slots=True)
@@ -23,6 +24,7 @@ class NamedTypeExpr:
     name: str
     args: list[Any]
     span: Span
+    resolved_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -90,6 +92,7 @@ class FunctionDecl:
     body: Block
     public: bool
     span: Span
+    module_name: str = ""
 
 
 @dataclass(slots=True)
@@ -98,6 +101,7 @@ class TypeDecl:
     fields: list[FieldDecl]
     public: bool
     span: Span
+    module_name: str = ""
 
 
 @dataclass(slots=True)
@@ -106,6 +110,7 @@ class EnumDecl:
     variants: list[VariantDecl]
     public: bool
     span: Span
+    module_name: str = ""
 
 
 Item = FunctionDecl | TypeDecl | EnumDecl | UseDecl
@@ -239,6 +244,7 @@ class CallExpr:
     inferred_type: Any = None
     call_kind: str | None = None
     target_name: str | None = None
+    param_types: list[Any] | None = None
 
 
 @dataclass(slots=True)
@@ -262,6 +268,7 @@ class StructLiteralExpr:
     fields: list[FieldInit]
     span: Span
     inferred_type: Any = None
+    resolved_name: str | None = None
 
 
 Expr = (

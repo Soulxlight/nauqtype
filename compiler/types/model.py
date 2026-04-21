@@ -13,10 +13,14 @@ class Type:
     mutable: bool = False
 
     def display(self) -> str:
-        if self.kind in {"bool", "i32", "str", "unit"}:
+        if self.kind in {"bool", "i32", "str", "unit", "io_err"}:
             return self.kind
         if self.kind == "named":
-            return self.name or "<named>"
+            if self.name is None:
+                return "<named>"
+            return self.name.split("::")[-1]
+        if self.kind == "list":
+            return f"list<{self.args[0].display()}>"
         if self.kind == "option":
             return f"option<{self.args[0].display()}>"
         if self.kind == "result":
@@ -27,8 +31,10 @@ class Type:
         return self.kind
 
     def is_copy(self) -> bool:
-        if self.kind in {"bool", "i32", "str", "unit", "ref"}:
+        if self.kind in {"bool", "i32", "str", "unit", "ref", "io_err"}:
             return True
+        if self.kind == "list":
+            return False
         if self.kind == "option":
             return self.args[0].is_copy()
         if self.kind == "result":
@@ -43,6 +49,7 @@ BOOL = Type("bool")
 I32 = Type("i32")
 STR = Type("str")
 UNIT = Type("unit")
+IO_ERR = Type("io_err")
 
 
 @dataclass(slots=True)
@@ -86,4 +93,3 @@ class BindingInfo:
     is_ref_param: bool = False
     ref_mutable: bool = False
     written: bool = False
-

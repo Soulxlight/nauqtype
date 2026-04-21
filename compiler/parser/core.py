@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from compiler.ast import nodes as ast
-from compiler.diagnostics import DiagnosticBag, Span
+from compiler.diagnostics import DiagnosticBag, SourceFile, Span
 from compiler.lexer import Token
 
 
@@ -9,17 +9,30 @@ AUDIT_CLAUSES = {"intent", "mutates", "effects"}
 
 
 class Parser:
-    def __init__(self, tokens: list[Token], diagnostics: DiagnosticBag) -> None:
+    def __init__(self, tokens: list[Token], diagnostics: DiagnosticBag, source: SourceFile | None = None) -> None:
         self.tokens = tokens
         self.diagnostics = diagnostics
+        self.source = source
         self.index = 0
 
     def parse(self) -> ast.Program:
         items: list[ast.Item] = []
         start = self._current().span.start
+        seen_non_use = False
         while not self._at("EOF"):
             item = self._parse_item()
             if item is not None:
+                if isinstance(item, ast.UseDecl):
+                    if seen_non_use:
+                        self.diagnostics.add(
+                            "NQ-PARSE-004",
+                            "PARSE",
+                            "`use` declarations must appear before non-`use` items",
+                            item.span,
+                            source=self.source,
+                        )
+                else:
+                    seen_non_use = True
                 items.append(item)
             else:
                 self._synchronize_item()
@@ -28,6 +41,16 @@ class Parser:
 
     def _parse_item(self) -> ast.Item | None:
         public = self._match("PUB")
+        if public and self._at("USE"):
+            token = self._current()
+            self.diagnostics.add(
+                "NQ-PARSE-001",
+                "PARSE",
+                "`use` declarations cannot be marked `pub`",
+                token.span,
+                source=self.source,
+            )
+            public = False
         if self._at("FN"):
             return self._parse_function(public)
         if self._at("TYPE"):
@@ -43,6 +66,7 @@ class Parser:
             "PARSE",
             f"expected item declaration, found `{token.lexeme or token.kind}`",
             token.span,
+            source=self.source,
         )
         return None
 
@@ -139,6 +163,7 @@ class Parser:
                 "CONTRACT",
                 f"expected `{expected}(...)` clause, found `{token.lexeme}(...)`",
                 token.span,
+                source=self.source,
                 help="Audit clause order is fixed: `intent`, then `mutates`, then `effects`.",
             )
             self._skip_audit_clause()
@@ -151,6 +176,7 @@ class Parser:
             "CONTRACT",
             f"expected `{expected}(...)` clause in audit block",
             token.span,
+            source=self.source,
             help="Audit blocks must contain `intent`, `mutates`, and `effects` in that order.",
         )
         return False, token.span
@@ -478,6 +504,7 @@ class Parser:
             "PARSE",
             f"expected expression, found `{token.lexeme or token.kind}`",
             token.span,
+            source=self.source,
         )
         self._advance()
         return ast.IntLiteral(0, token.span)
@@ -509,7 +536,7 @@ class Parser:
         if self._at(kind):
             return self._advance()
         token = self._current()
-        self.diagnostics.add("NQ-PARSE-003", "PARSE", message, token.span)
+        self.diagnostics.add("NQ-PARSE-003", "PARSE", message, token.span, source=self.source)
         return token
 
     def _current(self) -> Token:

@@ -56,7 +56,7 @@ class GoldenTests(unittest.TestCase):
     def test_diagnostic_snapshot_borrow(self) -> None:
         source = SourceFile(
             Path("diag_borrow.nq"),
-            "type User {\n    age: i32,\n}\n\nfn take(user: User) -> i32 {\n    return user.age;\n}\n\nfn main() -> i32 {\n    let user = User { age: 1 };\n    take(user);\n    take(user);\n    return 0;\n}\n",
+            "type Bucket {\n    items: list<i32>,\n}\n\nfn take(bucket: Bucket) -> i32 {\n    return 0;\n}\n\nfn main() -> i32 {\n    let mut items: list<i32> = list();\n    list_push(mutref items, 1);\n    let bucket = Bucket { items: items };\n    take(bucket);\n    take(bucket);\n    return 0;\n}\n",
         )
         diagnostics, _ = compile_source(source)
         self.assertGolden(render_diagnostics(source, diagnostics.items), ROOT / "tests" / "golden" / "diagnostics" / "borrow.txt")

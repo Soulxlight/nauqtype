@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from compiler.ir.core import (
+    IRAssignStmt,
     IRBinaryExpr,
     IRBindPattern,
     IRBlock,
@@ -10,7 +11,6 @@ from compiler.ir.core import (
     IRExpr,
     IRExprStmt,
     IRFieldExpr,
-    IRFieldValue,
     IRFunction,
     IRIfStmt,
     IRIntLiteral,
@@ -27,7 +27,6 @@ from compiler.ir.core import (
     IRVariantPattern,
     IRWildcardPattern,
     IRWhileStmt,
-    IRAssignStmt,
     IRLetStmt,
 )
 from compiler.types.model import EnumDef, StructDef, Type
@@ -44,21 +43,22 @@ class CEmitter:
         self.lines = ['#include "runtime.h"', ""]
         self._emit_user_types()
         self._emit_builtin_generics()
+        self._emit_function_prototypes()
         self._emit_functions()
         return "\n".join(self.lines).rstrip() + "\n"
 
     def _emit_user_types(self) -> None:
+        for enum_name, enum_def in self.program.enums.items():
+            if enum_name in {"option", "result"}:
+                continue
+            self._emit_enum_definition(enum_name, enum_def)
+
         for struct in self.program.structs.values():
             self.lines.append(f"typedef struct {self._named_type_name(struct.name)} {{")
             for field_name, field_type in struct.fields.items():
                 self.lines.append(f"    {self._c_type(field_type)} {field_name};")
             self.lines.append(f"}} {self._named_type_name(struct.name)};")
             self.lines.append("")
-
-        for enum_name, enum_def in self.program.enums.items():
-            if enum_name in {"option", "result"}:
-                continue
-            self._emit_enum_definition(enum_name, enum_def)
 
     def _emit_builtin_generics(self) -> None:
         seen: set[Type] = set()
@@ -67,7 +67,7 @@ class CEmitter:
             if typ in seen:
                 return
             seen.add(typ)
-            if typ.kind in {"option", "result"}:
+            if typ.kind in {"option", "result", "list"} and not self._is_runtime_generic_type(typ):
                 self.generated_generic_types.add(typ)
             for child in typ.args:
                 collect_type(child)
@@ -90,11 +90,15 @@ class CEmitter:
                 collect_type(param.typ)
             self._collect_block_types(function.body, collect_type)
 
-        for typ in sorted(self.generated_generic_types, key=self._type_key):
+        ordered = sorted(self.generated_generic_types, key=self._type_key)
+        for typ in ordered:
             if typ.kind == "option":
                 self._emit_option_definition(typ)
             elif typ.kind == "result":
                 self._emit_result_definition(typ)
+        for typ in ordered:
+            if typ.kind == "list":
+                self._emit_list_definition(typ)
 
     def _collect_block_types(self, block: IRBlock, collect_type) -> None:
         for stmt in block.statements:
@@ -131,6 +135,8 @@ class CEmitter:
             self._collect_expr_types(expr.left, collect_type)
             self._collect_expr_types(expr.right, collect_type)
         elif isinstance(expr, IRCallExpr):
+            for param_type in expr.param_types:
+                collect_type(param_type)
             for arg in expr.args:
                 self._collect_expr_types(arg, collect_type)
         elif isinstance(expr, IRVariantExpr):
@@ -183,6 +189,40 @@ class CEmitter:
         self.lines.append(f"}} {type_name};")
         self.lines.append("")
 
+    def _emit_list_definition(self, typ: Type) -> None:
+        type_name = self._c_type(typ)
+        elem_type = typ.args[0]
+        option_type = Type("option", args=(elem_type,))
+        helper = self._list_helper_prefix(typ)
+        self.lines.append(f"typedef struct {type_name} {{")
+        self.lines.append(f"    {self._c_type(elem_type)}* data;")
+        self.lines.append("    int32_t len;")
+        self.lines.append("    int32_t cap;")
+        self.lines.append(f"}} {type_name};")
+        self.lines.append(f"static inline {type_name} {helper}_make(void) {{")
+        self.lines.append(f"    return ({type_name}){{ .data = NULL, .len = 0, .cap = 0 }};")
+        self.lines.append("}")
+        self.lines.append(f"static inline NQUnit {helper}_push({type_name}* items, {self._c_type(elem_type)} value) {{")
+        self.lines.append("    if (items->len == items->cap) {")
+        self.lines.append("        int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;")
+        self.lines.append(f"        items->data = ({self._c_type(elem_type)}*)nq_realloc(items->data, sizeof({self._c_type(elem_type)}) * (size_t)next_cap);")
+        self.lines.append("        items->cap = next_cap;")
+        self.lines.append("    }")
+        self.lines.append("    items->data[items->len] = value;")
+        self.lines.append("    items->len += 1;")
+        self.lines.append("    return NQ_UNIT;")
+        self.lines.append("}")
+        self.lines.append(f"static inline int32_t {helper}_len(const {type_name}* items) {{")
+        self.lines.append("    return items->len;")
+        self.lines.append("}")
+        self.lines.append(f"static inline {self._c_type(option_type)} {helper}_get(const {type_name}* items, int32_t index) {{")
+        self.lines.append("    if (index < 0 || index >= items->len) {")
+        self.lines.append(f"        return ({self._c_type(option_type)}){{ .tag = {self._tag_name(option_type, 'None')}, .data.None = NQ_UNIT }};")
+        self.lines.append("    }")
+        self.lines.append(f"    return ({self._c_type(option_type)}){{ .tag = {self._tag_name(option_type, 'Some')}, .data.Some = {{ ._0 = items->data[index] }} }};")
+        self.lines.append("}")
+        self.lines.append("")
+
     def _emit_enum_definition(self, enum_name: str, enum_def: EnumDef) -> None:
         type_name = self._named_type_name(enum_name)
         tag_name = f"{type_name}_Tag"
@@ -203,30 +243,39 @@ class CEmitter:
         self.lines.append(f"}} {type_name};")
         self.lines.append("")
 
+    def _emit_function_prototypes(self) -> None:
+        for function in self.program.functions:
+            self.lines.append(f"{self._function_signature(function)};")
+        if self.program.functions:
+            self.lines.append("")
+
     def _emit_functions(self) -> None:
         for function in self.program.functions:
-            params = []
-            for param in function.params:
-                if param.is_ref_param:
-                    pointee = self._c_type(param.typ)
-                    rendered = f"{pointee}* {self._binding_name(param)}"
-                    if not param.ref_mutable:
-                        rendered = f"const {pointee}* {self._binding_name(param)}"
-                else:
-                    rendered = f"{self._c_type(param.typ)} {self._binding_name(param)}"
-                params.append(rendered)
-            params_rendered = ", ".join(params)
-            self.lines.append(f"{self._c_type(function.return_type)} {self._function_name(function.name)}({params_rendered}) {{")
+            self.lines.append(f"{self._function_signature(function)} {{")
             self._emit_block(function.body, indent=1)
             if function.return_type == Type("unit") and not self._block_ends_with_return(function.body):
                 self.lines.append("    return NQ_UNIT;")
             self.lines.append("}")
             self.lines.append("")
-        if any(function.name == "main" for function in self.program.functions):
+        if self.program.entry_function is not None:
             self.lines.append("int main(void) {")
-            self.lines.append(f"    return {self._function_name('main')}();")
+            self.lines.append(f"    return {self._function_name(self.program.entry_function)}();")
             self.lines.append("}")
             self.lines.append("")
+
+    def _function_signature(self, function: IRFunction) -> str:
+        params = []
+        for param in function.params:
+            if param.is_ref_param:
+                pointee = self._c_type(param.typ)
+                rendered = f"{pointee}* {self._binding_name(param)}"
+                if not param.ref_mutable:
+                    rendered = f"const {pointee}* {self._binding_name(param)}"
+            else:
+                rendered = f"{self._c_type(param.typ)} {self._binding_name(param)}"
+            params.append(rendered)
+        params_rendered = ", ".join(params) if params else "void"
+        return f"{self._c_type(function.return_type)} {self._function_name(function.name)}({params_rendered})"
 
     def _emit_block(self, block: IRBlock, *, indent: int) -> None:
         for statement in block.statements:
@@ -314,7 +363,7 @@ class CEmitter:
         if isinstance(pattern, IRVariantPattern):
             payload_types = self._pattern_payload_types(scrutinee_type, pattern.name)
             for index, nested in enumerate(pattern.args):
-                payload_expr = f"{value_expr}.data.{pattern.name}._{index}"
+                payload_expr = f"{value_expr}.data.{pattern.name.split('::')[-1]}._{index}"
                 if isinstance(nested, IRWildcardPattern):
                     continue
                 if isinstance(nested, IRBindPattern):
@@ -363,6 +412,23 @@ class CEmitter:
             args = ", ".join(self._emit_expr(arg) for arg in expr.args)
             if expr.function_name == "print_line":
                 return f"nq_print_line({args})"
+            if expr.function_name == "read_file":
+                return f"nq_read_file({args})"
+            if expr.function_name == "io_err_text":
+                return f"nq_io_err_text({args})"
+            if expr.function_name == "str_len":
+                return f"nq_str_len({args})"
+            if expr.function_name == "str_get":
+                return f"nq_str_get({args})"
+            if expr.function_name == "str_slice":
+                return f"nq_str_slice({args})"
+            if expr.function_name == "list":
+                return f"{self._list_helper_prefix(expr.typ)}_make()"
+            if expr.function_name in {"list_push", "list_len", "list_get"}:
+                list_type = expr.param_types[0].inner() if expr.param_types and expr.param_types[0].kind == "ref" else expr.typ
+                helper = self._list_helper_prefix(list_type)
+                suffix = expr.function_name.split("_", 1)[1]
+                return f"{helper}_{suffix}({args})"
             return f"{self._function_name(expr.function_name)}({args})"
         if isinstance(expr, IRVariantExpr):
             payloads = [self._emit_expr(arg) for arg in expr.args]
@@ -375,25 +441,26 @@ class CEmitter:
         raise RuntimeError(f"unreachable expression in C emission: {type(expr).__name__}")
 
     def _emit_variant_constructor(self, typ: Type, variant_name: str, payloads: list[str]) -> str:
+        short_variant = variant_name.split("::")[-1]
         if typ.kind == "option":
             type_name = self._c_type(typ)
-            tag = self._tag_name(typ, variant_name)
-            if variant_name == "None":
+            tag = self._tag_name(typ, short_variant)
+            if short_variant == "None":
                 return f"({type_name}){{ .tag = {tag}, .data.None = NQ_UNIT }}"
             return f"({type_name}){{ .tag = {tag}, .data.Some = {{ ._0 = {payloads[0]} }} }}"
         if typ.kind == "result":
             type_name = self._c_type(typ)
-            tag = self._tag_name(typ, variant_name)
-            if variant_name == "Ok":
+            tag = self._tag_name(typ, short_variant)
+            if short_variant == "Ok":
                 return f"({type_name}){{ .tag = {tag}, .data.Ok = {{ ._0 = {payloads[0]} }} }}"
             return f"({type_name}){{ .tag = {tag}, .data.Err = {{ ._0 = {payloads[0]} }} }}"
         if typ.kind == "named":
             type_name = self._named_type_name(typ.name)
-            tag = self._tag_name(typ, variant_name)
+            tag = self._tag_name(typ, short_variant)
             if not payloads:
                 return f"({type_name}){{ .tag = {tag} }}"
             fields = ", ".join(f"._{index} = {payload}" for index, payload in enumerate(payloads))
-            return f"({type_name}){{ .tag = {tag}, .data.{variant_name} = {{ {fields} }} }}"
+            return f"({type_name}){{ .tag = {tag}, .data.{short_variant} = {{ {fields} }} }}"
         raise RuntimeError(f"unreachable variant constructor type `{typ.display()}`")
 
     def _pattern_variant_name(self, pattern: IRPattern) -> str | None:
@@ -402,20 +469,21 @@ class CEmitter:
         return None
 
     def _pattern_payload_types(self, scrutinee_type: Type, variant_name: str) -> list[Type]:
+        short_variant = variant_name.split("::")[-1]
         if scrutinee_type.kind == "option":
-            return [scrutinee_type.args[0]] if variant_name == "Some" else []
+            return [scrutinee_type.args[0]] if short_variant == "Some" else []
         if scrutinee_type.kind == "result":
-            return [scrutinee_type.args[0]] if variant_name == "Ok" else [scrutinee_type.args[1]]
+            return [scrutinee_type.args[0]] if short_variant == "Ok" else [scrutinee_type.args[1]]
         if scrutinee_type.kind == "named":
             enum_def = self.program.enums[scrutinee_type.name]
-            return enum_def.variants[variant_name].payloads
+            return enum_def.variants[short_variant].payloads
         raise RuntimeError(f"type `{scrutinee_type.display()}` does not have variants")
 
     def _binding_name(self, binding: IRLocal) -> str:
         return f"nqv_{binding.symbol_id}_{binding.name}"
 
     def _function_name(self, name: str) -> str:
-        return f"nq_fn_{name}"
+        return f"nq_fn_{self._sanitize_name(name)}"
 
     def _c_type(self, typ: Type) -> str:
         if typ.kind == "bool":
@@ -426,44 +494,63 @@ class CEmitter:
             return "NQStr"
         if typ.kind == "unit":
             return "NQUnit"
+        if typ.kind == "io_err":
+            return "NQIoErr"
         if typ.kind == "named":
             return self._named_type_name(typ.name)
         if typ.kind == "option":
             return f"NQ_Option__{self._type_mangle(typ.args[0])}"
         if typ.kind == "result":
             return f"NQ_Result__{self._type_mangle(typ.args[0])}__{self._type_mangle(typ.args[1])}"
+        if typ.kind == "list":
+            return f"NQ_List__{self._type_mangle(typ.args[0])}"
         if typ.kind == "ref":
             return self._c_type(typ.args[0])
         raise RuntimeError(f"unreachable C type for `{typ.display()}`")
 
-    def _named_type_name(self, name: str) -> str:
-        return f"NQ_{name}"
+    def _named_type_name(self, name: str | None) -> str:
+        return f"NQ_{self._sanitize_name(name or 'named')}"
 
     def _type_mangle(self, typ: Type) -> str:
-        if typ.kind in {"bool", "i32", "str", "unit"}:
+        if typ.kind in {"bool", "i32", "str", "unit", "io_err"}:
             return typ.kind
         if typ.kind == "named":
-            return typ.name or "named"
+            return self._sanitize_name(typ.name or "named")
         if typ.kind == "option":
             return f"option__{self._type_mangle(typ.args[0])}"
         if typ.kind == "result":
             return f"result__{self._type_mangle(typ.args[0])}__{self._type_mangle(typ.args[1])}"
+        if typ.kind == "list":
+            return f"list__{self._type_mangle(typ.args[0])}"
         if typ.kind == "ref":
             prefix = "mutref" if typ.mutable else "ref"
             return f"{prefix}__{self._type_mangle(typ.args[0])}"
         return typ.kind
 
     def _tag_name(self, typ: Type, variant_name: str) -> str:
-        if typ.kind == "option":
-            return f"{self._c_type(typ)}_Tag_{variant_name}"
-        if typ.kind == "result":
-            return f"{self._c_type(typ)}_Tag_{variant_name}"
+        short_variant = variant_name.split("::")[-1]
+        if typ.kind in {"option", "result"}:
+            return f"{self._c_type(typ)}_Tag_{short_variant}"
         if typ.kind == "named":
-            return f"{self._named_type_name(typ.name)}_Tag_{variant_name}"
+            return f"{self._named_type_name(typ.name)}_Tag_{short_variant}"
         raise RuntimeError(f"type `{typ.display()}` does not have variants")
 
     def _type_key(self, typ: Type) -> str:
-        return self._type_mangle(typ)
+        order = {"option": "0", "result": "1", "list": "2"}
+        return f"{order.get(typ.kind, '9')}::{self._type_mangle(typ)}"
+
+    def _list_helper_prefix(self, typ: Type) -> str:
+        return f"nq_list__{self._type_mangle(typ.args[0])}"
+
+    def _sanitize_name(self, name: str) -> str:
+        return name.replace("::", "__")
+
+    def _is_runtime_generic_type(self, typ: Type) -> bool:
+        return (
+            (typ.kind == "option" and typ.args == (Type("i32"),))
+            or (typ.kind == "option" and typ.args == (Type("str"),))
+            or (typ.kind == "result" and typ.args == (Type("str"), Type("io_err")))
+        )
 
     def _fresh_temp(self) -> str:
         self.temp_index += 1

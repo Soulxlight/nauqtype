@@ -1,0 +1,403 @@
+use token;
+
+fn is_space(ch: i32) -> bool {
+    return ch == 32 or ch == 9 or ch == 10 or ch == 13;
+}
+
+fn is_digit(ch: i32) -> bool {
+    return ch >= 48 and ch <= 57;
+}
+
+fn is_alpha(ch: i32) -> bool {
+    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95;
+}
+
+fn is_ident_continue(ch: i32) -> bool {
+    return is_alpha(ch) or is_digit(ch);
+}
+
+fn slice_text(text: str, start: i32, end: i32) -> str {
+    let part = str_slice(text, start, end);
+    match part {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn keyword_kind(text: str) -> token_kind {
+    if text == "and" {
+        return tk_kw_and;
+    }
+    if text == "audit" {
+        return tk_kw_audit;
+    }
+    if text == "else" {
+        return tk_kw_else;
+    }
+    if text == "enum" {
+        return tk_kw_enum;
+    }
+    if text == "false" {
+        return tk_kw_false;
+    }
+    if text == "fn" {
+        return tk_kw_fn;
+    }
+    if text == "if" {
+        return tk_kw_if;
+    }
+    if text == "let" {
+        return tk_kw_let;
+    }
+    if text == "match" {
+        return tk_kw_match;
+    }
+    if text == "mut" {
+        return tk_kw_mut;
+    }
+    if text == "mutref" {
+        return tk_kw_mutref;
+    }
+    if text == "not" {
+        return tk_kw_not;
+    }
+    if text == "or" {
+        return tk_kw_or;
+    }
+    if text == "pub" {
+        return tk_kw_pub;
+    }
+    if text == "ref" {
+        return tk_kw_ref;
+    }
+    if text == "return" {
+        return tk_kw_return;
+    }
+    if text == "true" {
+        return tk_kw_true;
+    }
+    if text == "type" {
+        return tk_kw_type;
+    }
+    if text == "use" {
+        return tk_kw_use;
+    }
+    if text == "while" {
+        return tk_kw_while;
+    }
+    return tk_ident;
+}
+
+fn scan_comment_end(text: str, start: i32, length: i32) -> i32 {
+    let mut index = start;
+    while index < length {
+        let value = str_get(text, index);
+        match value {
+            Some(ch) => {
+                if ch == 10 {
+                    return index + 1;
+                }
+                index = index + 1;
+            },
+            None => {
+                return length;
+            },
+        }
+    }
+    return length;
+}
+
+fn scan_string_end(text: str, start: i32, length: i32) -> i32 {
+    let mut index = start + 1;
+    while index < length {
+        let value = str_get(text, index);
+        match value {
+            Some(ch) => {
+                if ch == 34 {
+                    return index + 1;
+                }
+                index = index + 1;
+            },
+            None => {
+                return length;
+            },
+        }
+    }
+    return length;
+}
+
+fn scan_digit_end(text: str, start: i32, length: i32) -> i32 {
+    let mut index = start + 1;
+    while index < length {
+        let value = str_get(text, index);
+        match value {
+            Some(ch) => {
+                if is_digit(ch) {
+                    index = index + 1;
+                } else {
+                    return index;
+                }
+            },
+            None => {
+                return length;
+            },
+        }
+    }
+    return length;
+}
+
+fn scan_ident_end(text: str, start: i32, length: i32) -> i32 {
+    let mut index = start + 1;
+    while index < length {
+        let value = str_get(text, index);
+        match value {
+            Some(ch) => {
+                if is_ident_continue(ch) {
+                    index = index + 1;
+                } else {
+                    return index;
+                }
+            },
+            None => {
+                return length;
+            },
+        }
+    }
+    return length;
+}
+
+fn push_token(tokens: mutref list<token>, kind: token_kind, text: str, start: i32, end: i32) -> unit {
+    list_push(mutref tokens, make_token(kind, text, start, end));
+    return;
+}
+
+fn try_comment_or_slash(text: str, tokens: mutref list<token>, index: i32, length: i32, ch: i32) -> i32 {
+    if ch != 47 {
+        return -1;
+    }
+    let next = str_get(text, index + 1);
+    match next {
+        Some(other) => {
+            if other == 47 {
+                return scan_comment_end(text, index + 2, length);
+            }
+            push_token(mutref tokens, tk_slash, "/", index, index + 1);
+            return index + 1;
+        },
+        None => {
+            push_token(mutref tokens, tk_slash, "/", index, index + 1);
+            return index + 1;
+        },
+    }
+}
+
+fn try_single_char(tokens: mutref list<token>, index: i32, ch: i32) -> i32 {
+    if ch == 40 {
+        push_token(mutref tokens, tk_lparen, "(", index, index + 1);
+        return index + 1;
+    }
+    if ch == 41 {
+        push_token(mutref tokens, tk_rparen, ")", index, index + 1);
+        return index + 1;
+    }
+    if ch == 123 {
+        push_token(mutref tokens, tk_lbrace, "{", index, index + 1);
+        return index + 1;
+    }
+    if ch == 125 {
+        push_token(mutref tokens, tk_rbrace, "}", index, index + 1);
+        return index + 1;
+    }
+    if ch == 44 {
+        push_token(mutref tokens, tk_comma, ",", index, index + 1);
+        return index + 1;
+    }
+    if ch == 59 {
+        push_token(mutref tokens, tk_semi, ";", index, index + 1);
+        return index + 1;
+    }
+    if ch == 58 {
+        push_token(mutref tokens, tk_colon, ":", index, index + 1);
+        return index + 1;
+    }
+    if ch == 46 {
+        push_token(mutref tokens, tk_dot, ".", index, index + 1);
+        return index + 1;
+    }
+    if ch == 43 {
+        push_token(mutref tokens, tk_plus, "+", index, index + 1);
+        return index + 1;
+    }
+    if ch == 42 {
+        push_token(mutref tokens, tk_star, "*", index, index + 1);
+        return index + 1;
+    }
+    return -1;
+}
+
+fn try_operator(text: str, tokens: mutref list<token>, index: i32, ch: i32) -> i32 {
+    if ch == 45 {
+        let next = str_get(text, index + 1);
+        match next {
+            Some(other) => {
+                if other == 62 {
+                    push_token(mutref tokens, tk_arrow, "->", index, index + 2);
+                    return index + 2;
+                }
+                push_token(mutref tokens, tk_minus, "-", index, index + 1);
+                return index + 1;
+            },
+            None => {
+                push_token(mutref tokens, tk_minus, "-", index, index + 1);
+                return index + 1;
+            },
+        }
+    }
+    if ch == 61 {
+        let next = str_get(text, index + 1);
+        match next {
+            Some(other) => {
+                if other == 61 {
+                    push_token(mutref tokens, tk_eqeq, "==", index, index + 2);
+                    return index + 2;
+                }
+                if other == 62 {
+                    push_token(mutref tokens, tk_fat_arrow, "=>", index, index + 2);
+                    return index + 2;
+                }
+                push_token(mutref tokens, tk_eq, "=", index, index + 1);
+                return index + 1;
+            },
+            None => {
+                push_token(mutref tokens, tk_eq, "=", index, index + 1);
+                return index + 1;
+            },
+        }
+    }
+    if ch == 33 {
+        let next = str_get(text, index + 1);
+        match next {
+            Some(other) => {
+                if other == 61 {
+                    push_token(mutref tokens, tk_noteq, "!=", index, index + 2);
+                    return index + 2;
+                }
+                push_token(mutref tokens, tk_unknown, "!", index, index + 1);
+                return index + 1;
+            },
+            None => {
+                push_token(mutref tokens, tk_unknown, "!", index, index + 1);
+                return index + 1;
+            },
+        }
+    }
+    if ch == 60 {
+        let next = str_get(text, index + 1);
+        match next {
+            Some(other) => {
+                if other == 61 {
+                    push_token(mutref tokens, tk_lte, "<=", index, index + 2);
+                    return index + 2;
+                }
+                push_token(mutref tokens, tk_lt, "<", index, index + 1);
+                return index + 1;
+            },
+            None => {
+                push_token(mutref tokens, tk_lt, "<", index, index + 1);
+                return index + 1;
+            },
+        }
+    }
+    if ch == 62 {
+        let next = str_get(text, index + 1);
+        match next {
+            Some(other) => {
+                if other == 61 {
+                    push_token(mutref tokens, tk_gte, ">=", index, index + 2);
+                    return index + 2;
+                }
+                push_token(mutref tokens, tk_gt, ">", index, index + 1);
+                return index + 1;
+            },
+            None => {
+                push_token(mutref tokens, tk_gt, ">", index, index + 1);
+                return index + 1;
+            },
+        }
+    }
+    return -1;
+}
+
+pub fn lex(text: str) -> list<token>
+audit {
+    intent("Tokenize a Nauqtype source file into a regular token stream");
+    mutates();
+    effects();
+}
+{
+    let mut tokens: list<token> = list();
+    let mut index = 0;
+    let length = str_len(text);
+
+    while index < length {
+        let current = str_get(text, index);
+        match current {
+            Some(ch) => {
+                if is_space(ch) {
+                    index = index + 1;
+                } else {
+                    let after_comment = try_comment_or_slash(text, mutref tokens, index, length, ch);
+                    if after_comment >= 0 {
+                        index = after_comment;
+                    } else {
+                        let after_single = try_single_char(mutref tokens, index, ch);
+                        if after_single >= 0 {
+                            index = after_single;
+                        } else {
+                            let after_operator = try_operator(text, mutref tokens, index, ch);
+                            if after_operator >= 0 {
+                                index = after_operator;
+                            } else {
+                                if ch == 34 {
+                                    let end = scan_string_end(text, index, length);
+                                    let value = slice_text(text, index, end);
+                                    push_token(mutref tokens, tk_string_lit, value, index, end);
+                                    index = end;
+                                } else {
+                                    if is_digit(ch) {
+                                        let end = scan_digit_end(text, index, length);
+                                        let value = slice_text(text, index, end);
+                                        push_token(mutref tokens, tk_int_lit, value, index, end);
+                                        index = end;
+                                    } else {
+                                        if is_alpha(ch) {
+                                            let end = scan_ident_end(text, index, length);
+                                            let value = slice_text(text, index, end);
+                                            let kind = keyword_kind(value);
+                                            push_token(mutref tokens, kind, value, index, end);
+                                            index = end;
+                                        } else {
+                                            let value = slice_text(text, index, index + 1);
+                                            push_token(mutref tokens, tk_unknown, value, index, index + 1);
+                                            index = index + 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            None => {
+                index = length;
+            },
+        }
+    }
+
+    list_push(mutref tokens, eof_token(length));
+    return tokens;
+}

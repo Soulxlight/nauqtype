@@ -13,6 +13,12 @@ Nauqtype "compiles and runs code" when all of the following are true:
 - the produced executable runs successfully
 - example programs and tests cover the path
 
+## Bootstrap Terms
+
+- `stage0`: the current Python bootstrap compiler
+- `stage1`: a compiler front end written in Nauqtype and built by stage0
+- `near-self-hosting`: stage1 can analyze its own source tree, and the remaining gap is backend/completeness work rather than missing core language features
+
 ## Working Vertical Slice
 
 The first real success target is:
@@ -94,6 +100,18 @@ The first real success target is:
 - then add file input as `result<str, io_err>`
 - then add builtin `list<T>`
 
+Status:
+
+- done in the current bootstrap compiler
+- `selfhost/` now exercises the stage1 surface by loading, lexing, parsing, and diagnosing its own module graph
+
+### M10: Self-Hosting Parity
+
+- extend the Nauqtype stage1 front end beyond shallow parsing
+- add stage1 resolver parity
+- add stage1 type-checker parity
+- keep the language core frozen unless a concrete bootstrap blocker requires otherwise
+
 ## Feature Ordering
 
 Features required before first success:
@@ -110,16 +128,12 @@ Features required before first success:
 
 Features explicitly not required before first success:
 
-- imports
 - user-defined generics
 - methods
 - loop families beyond bootstrap `while`
-- file I/O
-- collection types
 
 ## v0.2+ Candidates
 
-- cross-file modules
 - user-defined generics
 - methods / `impl`
 - `for`
@@ -129,6 +143,7 @@ Features explicitly not required before first success:
 - richer standard library
 - stronger borrow analysis
 - direct native backend exploration
+- richer module/package tooling beyond flat-root imports
 
 ## Testing Milestones
 

@@ -1,0 +1,673 @@
+use ast;
+use diag;
+use token;
+
+fn token_at(tokens: ref list<token>, index: i32) -> token {
+    let found = list_get(ref tokens, index);
+    match found {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return eof_token(index);
+        },
+    }
+}
+
+fn push_diag(diags: mutref list<diag>, file: str, tok: token, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, tok.start, message));
+    return;
+}
+
+fn advance(cursor: mutref i32) -> unit {
+    cursor = cursor + 1;
+    return;
+}
+
+fn consume_ident(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> token {
+    let current = token_at(ref tokens, cursor);
+    match current.kind {
+        tk_ident => {
+            advance(mutref cursor);
+            return current;
+        },
+        _ => {
+            push_diag(mutref diags, file, current, "expected identifier");
+            return current;
+        },
+    }
+}
+
+fn consume_type(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    let current = token_at(ref tokens, cursor);
+    match current.kind {
+        tk_kw_ref => {
+            advance(mutref cursor);
+            consume_type(ref tokens, mutref cursor, mutref diags, file);
+            return;
+        },
+        tk_kw_mutref => {
+            advance(mutref cursor);
+            consume_type(ref tokens, mutref cursor, mutref diags, file);
+            return;
+        },
+        tk_ident => {
+            advance(mutref cursor);
+            let next = token_at(ref tokens, cursor);
+            match next.kind {
+                tk_lt => {
+                    advance(mutref cursor);
+                    consume_type(ref tokens, mutref cursor, mutref diags, file);
+                    let maybe_comma = token_at(ref tokens, cursor);
+                    match maybe_comma.kind {
+                        tk_comma => {
+                            advance(mutref cursor);
+                            consume_type(ref tokens, mutref cursor, mutref diags, file);
+                        },
+                        _ => {
+                        },
+                    }
+                    let end = token_at(ref tokens, cursor);
+                    match end.kind {
+                        tk_gt => {
+                            advance(mutref cursor);
+                        },
+                        _ => {
+                            push_diag(mutref diags, file, end, "expected `>` after type arguments");
+                        },
+                    }
+                },
+                _ => {
+                },
+            }
+            return;
+        },
+        _ => {
+            push_diag(mutref diags, file, current, "expected type");
+            return;
+        },
+    }
+}
+
+fn skip_until_semi(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    let mut brace_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_semi => {
+                if paren_depth == 0 and brace_depth == 0 {
+                    advance(mutref cursor);
+                    return;
+                }
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_lbrace => {
+                if paren_depth == 0 {
+                    return;
+                }
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn skip_pattern_until_arrow(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_fat_arrow => {
+                if paren_depth == 0 {
+                    return;
+                }
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn parse_match(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    advance(mutref cursor);
+    skip_until_block(ref tokens, mutref cursor);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `{` after match expression");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated match block");
+                return;
+            },
+            _ => {
+                skip_pattern_until_arrow(ref tokens, mutref cursor);
+                let arrow = token_at(ref tokens, cursor);
+                match arrow.kind {
+                    tk_fat_arrow => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, arrow, "expected `=>` in match arm");
+                        return;
+                    },
+                }
+                parse_block(ref tokens, mutref cursor, mutref diags, file);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+}
+
+fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    let current = token_at(ref tokens, cursor);
+    match current.kind {
+        tk_kw_let => {
+            advance(mutref cursor);
+            let maybe_mut = token_at(ref tokens, cursor);
+            match maybe_mut.kind {
+                tk_kw_mut => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                },
+            }
+            consume_ident(ref tokens, mutref cursor, mutref diags, file);
+            let maybe_colon = token_at(ref tokens, cursor);
+            match maybe_colon.kind {
+                tk_colon => {
+                    advance(mutref cursor);
+                    consume_type(ref tokens, mutref cursor, mutref diags, file);
+                },
+                _ => {
+                },
+            }
+            skip_until_semi(ref tokens, mutref cursor);
+        },
+        tk_kw_if => {
+            advance(mutref cursor);
+            skip_until_block(ref tokens, mutref cursor);
+            parse_block(ref tokens, mutref cursor, mutref diags, file);
+            let maybe_else = token_at(ref tokens, cursor);
+            match maybe_else.kind {
+                tk_kw_else => {
+                    advance(mutref cursor);
+                    parse_block(ref tokens, mutref cursor, mutref diags, file);
+                },
+                _ => {
+                },
+            }
+        },
+        tk_kw_while => {
+            advance(mutref cursor);
+            skip_until_block(ref tokens, mutref cursor);
+            parse_block(ref tokens, mutref cursor, mutref diags, file);
+        },
+        tk_kw_match => {
+            parse_match(ref tokens, mutref cursor, mutref diags, file);
+        },
+        tk_kw_return => {
+            advance(mutref cursor);
+            skip_until_semi(ref tokens, mutref cursor);
+        },
+        _ => {
+            skip_until_semi(ref tokens, mutref cursor);
+        },
+    }
+}
+
+fn parse_block(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected block");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated block");
+                return;
+            },
+            _ => {
+                parse_stmt(ref tokens, mutref cursor, mutref diags, file);
+            },
+        }
+    }
+}
+
+fn parse_audit(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    let audit_tok = token_at(ref tokens, cursor);
+    match audit_tok.kind {
+        tk_kw_audit => {
+            advance(mutref cursor);
+        },
+        _ => {
+            return;
+        },
+    }
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `{` after audit");
+            return;
+        },
+    }
+    skip_until_semi(ref tokens, mutref cursor);
+    skip_until_semi(ref tokens, mutref cursor);
+    skip_until_semi(ref tokens, mutref cursor);
+    let close = token_at(ref tokens, cursor);
+    match close.kind {
+        tk_rbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, close, "expected `}` after audit block");
+        },
+    }
+}
+
+fn parse_type_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    advance(mutref cursor);
+    consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `{` after type name");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated type declaration");
+                return;
+            },
+            _ => {
+                consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                let colon = token_at(ref tokens, cursor);
+                match colon.kind {
+                    tk_colon => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, colon, "expected `:` after field name");
+                    },
+                }
+                consume_type(ref tokens, mutref cursor, mutref diags, file);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+}
+
+fn parse_enum_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    advance(mutref cursor);
+    consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `{` after enum name");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated enum declaration");
+                return;
+            },
+            _ => {
+                consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                let maybe_lparen = token_at(ref tokens, cursor);
+                match maybe_lparen.kind {
+                    tk_lparen => {
+                        advance(mutref cursor);
+                        consume_type(ref tokens, mutref cursor, mutref diags, file);
+                        let maybe_comma = token_at(ref tokens, cursor);
+                        match maybe_comma.kind {
+                            tk_comma => {
+                                advance(mutref cursor);
+                                consume_type(ref tokens, mutref cursor, mutref diags, file);
+                            },
+                            _ => {
+                            },
+                        }
+                        let end = token_at(ref tokens, cursor);
+                        match end.kind {
+                            tk_rparen => {
+                                advance(mutref cursor);
+                            },
+                            _ => {
+                                push_diag(mutref diags, file, end, "expected `)` after enum payloads");
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+}
+
+fn parse_fn_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    advance(mutref cursor);
+    consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lparen => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `(` after function name");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rparen => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated parameter list");
+                return;
+            },
+            tk_ident => {
+                consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                let colon = token_at(ref tokens, cursor);
+                match colon.kind {
+                    tk_colon => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, colon, "expected `:` after parameter name");
+                    },
+                }
+                consume_type(ref tokens, mutref cursor, mutref diags, file);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+            _ => {
+                push_diag(mutref diags, file, current, "expected parameter or `)`");
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn parse_function(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    parse_fn_decl(ref tokens, mutref cursor, mutref diags, file);
+    let arrow = token_at(ref tokens, cursor);
+    match arrow.kind {
+        tk_arrow => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, arrow, "expected `->` after parameter list");
+        },
+    }
+    consume_type(ref tokens, mutref cursor, mutref diags, file);
+    parse_audit(ref tokens, mutref cursor, mutref diags, file);
+    parse_block(ref tokens, mutref cursor, mutref diags, file);
+}
+
+pub fn extract_uses(tokens: ref list<token>) -> list<str>
+audit {
+    intent("Extract leading flat-root use declarations from a token stream");
+    mutates();
+    effects();
+}
+{
+    let mut result: list<str> = list();
+    let mut cursor = 0;
+    let mut scanning = true;
+    while scanning {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_kw_use => {
+                advance(mutref cursor);
+                let name = token_at(ref tokens, cursor);
+                match name.kind {
+                    tk_ident => {
+                        list_push(mutref result, name.text);
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        scanning = false;
+                    },
+                }
+                let end = token_at(ref tokens, cursor);
+                match end.kind {
+                    tk_semi => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        scanning = false;
+                    },
+                }
+            },
+            _ => {
+                scanning = false;
+            },
+        }
+    }
+    return result;
+}
+
+pub fn parse_file(file: str, tokens: ref list<token>, diags: mutref list<diag>) -> parse_summary
+audit {
+    intent("Parse a shallow current-syntax Nauqtype module and record diagnostics");
+    mutates(diags);
+    effects();
+}
+{
+    let mut cursor = 0;
+    let mut item_count = 0;
+    let mut scanning_uses = true;
+
+    while scanning_uses {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_kw_use => {
+                advance(mutref cursor);
+                consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                let semi = token_at(ref tokens, cursor);
+                match semi.kind {
+                    tk_semi => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, semi, "expected `;` after use declaration");
+                    },
+                }
+            },
+            _ => {
+                scanning_uses = false;
+            },
+        }
+    }
+
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return make_parse_summary(item_count, list_len(ref diags));
+            },
+            tk_kw_pub => {
+                advance(mutref cursor);
+                let next = token_at(ref tokens, cursor);
+                match next.kind {
+                    tk_kw_fn => {
+                        parse_function(ref tokens, mutref cursor, mutref diags, file);
+                        item_count = item_count + 1;
+                    },
+                    tk_kw_type => {
+                        parse_type_decl(ref tokens, mutref cursor, mutref diags, file);
+                        item_count = item_count + 1;
+                    },
+                    tk_kw_enum => {
+                        parse_enum_decl(ref tokens, mutref cursor, mutref diags, file);
+                        item_count = item_count + 1;
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, next, "expected fn, type, or enum after pub");
+                        advance(mutref cursor);
+                    },
+                }
+            },
+            tk_kw_fn => {
+                parse_function(ref tokens, mutref cursor, mutref diags, file);
+                item_count = item_count + 1;
+            },
+            tk_kw_type => {
+                parse_type_decl(ref tokens, mutref cursor, mutref diags, file);
+                item_count = item_count + 1;
+            },
+            tk_kw_enum => {
+                parse_enum_decl(ref tokens, mutref cursor, mutref diags, file);
+                item_count = item_count + 1;
+            },
+            _ => {
+                push_diag(mutref diags, file, current, "expected top-level item");
+                advance(mutref cursor);
+            },
+        }
+    }
+}

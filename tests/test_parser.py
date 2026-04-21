@@ -110,7 +110,7 @@ fn main() -> i32 {
 """
         diagnostics, emitted = compile_text(source)
         self.assertFalse(diagnostics.has_errors(), [d.message for d in diagnostics.items])
-        self.assertIn("nq_fn_main", emitted)
+        self.assertIn("int main(void)", emitted)
 
 
 if __name__ == "__main__":

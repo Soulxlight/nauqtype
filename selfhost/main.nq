@@ -1,0 +1,108 @@
+use files;
+use diag;
+use lexer;
+use parser;
+
+fn list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn queue_if_missing(pending: mutref list<str>, seen: ref list<str>, name: str) -> unit {
+    if list_contains(ref seen, name) {
+        return;
+    }
+    if list_contains(ref pending, name) {
+        return;
+    }
+    list_push(mutref pending, name);
+    return;
+}
+
+fn emit_all(diags: ref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref diags) {
+        let entry = list_get(ref diags, index);
+        match entry {
+            Some(value) => {
+                emit_diag(value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, diags: mutref list<diag>) -> unit {
+    let loaded = read_named_module(name);
+    match loaded {
+        Ok(file) => {
+            let tokens = lex(file.text);
+            let imports = extract_uses(ref tokens);
+            let mut import_index = 0;
+            while import_index < list_len(ref imports) {
+                let entry = list_get(ref imports, import_index);
+                match entry {
+                    Some(import_name) => {
+                        queue_if_missing(mutref pending, ref seen, import_name);
+                    },
+                    None => {
+                    },
+                }
+                import_index = import_index + 1;
+            }
+            parse_file(file.name, ref tokens, mutref diags);
+        },
+        Err(err) => {
+            list_push(mutref diags, make_diag(name, 0, io_err_text(err)));
+        },
+    }
+    return;
+}
+
+fn main() -> i32 {
+    let mut pending: list<str> = list();
+    let mut seen: list<str> = list();
+    let mut diags: list<diag> = list();
+    let mut cursor = 0;
+
+    list_push(mutref pending, "main");
+
+    while cursor < list_len(ref pending) {
+        let current = list_get(ref pending, cursor);
+        match current {
+            Some(name) => {
+                if not list_contains(ref seen, name) {
+                    list_push(mutref seen, name);
+                    analyze_module(name, mutref pending, ref seen, mutref diags);
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+
+    if list_len(ref diags) > 0 {
+        emit_all(ref diags);
+        return 1;
+    }
+
+    print_line("stage1 front-end ok");
+    return 0;
+}

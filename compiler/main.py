@@ -11,8 +11,7 @@ from compiler.borrow import BorrowChecker
 from compiler.codegen_c import CEmitter
 from compiler.diagnostics import DiagnosticBag, SourceFile, render_diagnostics
 from compiler.ir import lower_program
-from compiler.lexer import Lexer
-from compiler.parser import Parser
+from compiler.project import ProjectLoader
 from compiler.resolve import Resolver
 from compiler.types import TypeChecker
 
@@ -20,10 +19,11 @@ from compiler.types import TypeChecker
 def analyze_source(source: SourceFile, *, require_main: bool) -> tuple[DiagnosticBag, object | None]:
     diagnostics = DiagnosticBag()
     try:
-        tokens = Lexer(source, diagnostics).tokenize()
-        program = Parser(tokens, diagnostics).parse()
-        module = Resolver(diagnostics).resolve(program)
-        semantic = TypeChecker(diagnostics).check(program, module, require_main=require_main)
+        project = ProjectLoader(diagnostics).load(source)
+        if project is None:
+            return diagnostics, None
+        module = Resolver(diagnostics).resolve(project)
+        semantic = TypeChecker(diagnostics).check(module, require_main=require_main)
         BorrowChecker(diagnostics).check(semantic)
         return diagnostics, semantic
     except Exception as exc:  # pragma: no cover - defensive final safety net
@@ -31,6 +31,7 @@ def analyze_source(source: SourceFile, *, require_main: bool) -> tuple[Diagnosti
             "NQ-INTERNAL-001",
             "INTERNAL",
             "internal compiler error",
+            source=source,
             notes=[f"{type(exc).__name__}: {exc}"],
             help="This is a compiler bug; please report it with the source file that triggered it.",
         )
@@ -50,10 +51,13 @@ def compile_source(source: SourceFile) -> tuple[DiagnosticBag, str | None]:
 
 def build_review_payload(source: SourceFile, semantic) -> dict[str, object]:
     functions: list[dict[str, object]] = []
-    for item in semantic.program.items:
+    module_name = source.path.stem
+    program = semantic.module.project.modules[module_name].program
+    for item in program.items:
         if not isinstance(item, ast.FunctionDecl):
             continue
-        semantic_function = semantic.function_bodies[item.name]
+        internal_name = f"{module_name}::{item.name}"
+        semantic_function = semantic.function_bodies[internal_name]
         audit = None
         if item.audit is not None:
             audit = {
@@ -165,7 +169,7 @@ def run_cli(argv: list[str]) -> int:
     if args.command == "build":
         return 0
 
-    result = subprocess.run([str(exe_path)], capture_output=True, text=True)
+    result = subprocess.run([str(exe_path)], capture_output=True, text=True, cwd=source_path.parent)
     if result.stdout:
         print(result.stdout, end="")
     if result.stderr:

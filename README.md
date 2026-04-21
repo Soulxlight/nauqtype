@@ -4,14 +4,18 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 
 Current bootstrap status:
 
-- single-file compile units
+- `stage0`: Python bootstrap compiler in the current workspace
+- flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
 - nominal `type` and `enum`
 - `option<T>` and `result<T, E>`
+- builtin `io_err` and `list<T>`
 - explicit `match`
+- bootstrap file input and string helpers
 - minimal move / borrow checking
+- structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- Python bootstrap compiler in the current workspace
+- `selfhost/`: first Nauqtype-written front-end skeleton that can load, lex, parse, and diagnose its own module tree
 
 ## Quick Start
 
@@ -45,6 +49,12 @@ Emit a machine-readable review summary:
 python -m compiler.main review examples\review_contracts.nq
 ```
 
+Run the current stage1 selfhost front end:
+
+```powershell
+python -m compiler.main run selfhost\main.nq
+```
+
 ## Key Docs
 
 - [RESEARCH_MEMO.md](RESEARCH_MEMO.md)
@@ -63,4 +73,4 @@ python -m compiler.main review examples\review_contracts.nq
 
 - The current compiler is a Python bootstrap because this workspace did not provide a Rust toolchain.
 - The long-term implementation preference remains Rust.
-- The v0.1 language surface is intentionally small and frozen during the current hardening phase.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, and builtin `list<T>`.

@@ -101,6 +101,7 @@ class Lexer:
                     "LEX",
                     "unexpected `!`; use `not` or `!=`",
                     Span(start, self.index),
+                    source=self.source,
                 )
                 continue
 
@@ -121,6 +122,7 @@ class Lexer:
                 "LEX",
                 f"unexpected character `{char}`",
                 Span(start, self.index),
+                source=self.source,
             )
 
         eof_span = Span(self.length, self.length)
@@ -146,6 +148,7 @@ class Lexer:
                         "LEX",
                         f"unsupported escape `\\{escape}`",
                         Span(self.index - 2, self.index),
+                        source=self.source,
                     )
                     value.append(escape)
                 else:
@@ -157,6 +160,7 @@ class Lexer:
                     "LEX",
                     "unterminated string literal",
                     Span(start, self.index),
+                    source=self.source,
                 )
                 return
             value.append(char)
@@ -166,6 +170,7 @@ class Lexer:
             "LEX",
             "unterminated string literal",
             Span(start, self.index),
+            source=self.source,
         )
 
     def _lex_number(self, start: int) -> None:

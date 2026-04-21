@@ -157,7 +157,7 @@ class BorrowChecker:
                 )
             if scrutinee_symbol is not None:
                 binding = semantic_function.bindings.get(scrutinee_symbol)
-                if binding is not None and not binding.typ.is_copy():
+                if binding is not None and not program.is_copy_type(binding.typ):
                     current.moved[scrutinee_symbol] = True
             merged = current
             for arm_state in arm_states:
@@ -211,9 +211,10 @@ class BorrowChecker:
                             "BORROW",
                             f"use of moved value `{binding.name}`",
                             expr.span,
+                            source=semantic_function.source,
                         )
                     return
-                if consume and not binding.typ.is_copy() and not binding.is_ref_param:
+                if consume and not program.is_copy_type(binding.typ) and not binding.is_ref_param:
                     state.moved[expr.symbol_id] = True
             return
         if isinstance(expr, ast.BorrowExpr):
@@ -223,6 +224,7 @@ class BorrowChecker:
                     "BORROW",
                     "borrow expressions are only valid as direct call arguments in v0.1",
                     expr.span,
+                    source=semantic_function.source,
                 )
             if expr.symbol_id is not None and state.moved.get(expr.symbol_id, False) and emit_diagnostics:
                 binding = semantic_function.bindings.get(expr.symbol_id)
@@ -232,6 +234,7 @@ class BorrowChecker:
                     "BORROW",
                     f"cannot borrow moved value `{name}`",
                     expr.span,
+                    source=semantic_function.source,
                 )
             return
         if isinstance(expr, ast.UnaryExpr):
@@ -275,12 +278,13 @@ class BorrowChecker:
                 in_call_arg=False,
                 emit_diagnostics=emit_diagnostics,
             )
-            if consume and expr.inferred_type is not None and not expr.inferred_type.is_copy() and emit_diagnostics:
+            if consume and expr.inferred_type is not None and not program.is_copy_type(expr.inferred_type) and emit_diagnostics:
                 self.diagnostics.add(
                     "NQ-BORROW-004",
                     "BORROW",
                     "moving out of fields is not supported in v0.1",
                     expr.span,
+                    source=semantic_function.source,
                 )
             return
         if isinstance(expr, ast.StructLiteralExpr):
@@ -298,13 +302,17 @@ class BorrowChecker:
         if isinstance(expr, ast.CallExpr):
             if not isinstance(expr.callee, ast.NameExpr):
                 if emit_diagnostics:
-                    self.diagnostics.add("NQ-BORROW-005", "BORROW", "unsupported callee shape", expr.span)
+                    self.diagnostics.add("NQ-BORROW-005", "BORROW", "unsupported callee shape", expr.span, source=semantic_function.source)
                 return
-            if expr.call_kind == "function" and expr.target_name in program.functions:
-                signature = program.functions[expr.target_name]
+            if expr.call_kind == "function" and expr.target_name is not None:
+                param_types = expr.param_types
+                if param_types is None and expr.target_name in program.functions:
+                    param_types = list(program.functions[expr.target_name].param_types)
+                if param_types is None:
+                    param_types = []
                 borrowed: dict[int, str] = {}
                 consumed_symbols: set[int] = set()
-                for arg, param_type in zip(expr.args, signature.param_types):
+                for arg, param_type in zip(expr.args, param_types):
                     if param_type.kind == "ref":
                         if not isinstance(arg, ast.BorrowExpr) or arg.symbol_id is None:
                             continue
@@ -318,6 +326,7 @@ class BorrowChecker:
                                 "BORROW",
                                 f"conflicting borrows of `{name}` in one call",
                                 arg.span,
+                                source=semantic_function.source,
                             )
                         borrowed[arg.symbol_id] = kind
                         if arg.symbol_id in consumed_symbols and emit_diagnostics:
@@ -328,6 +337,7 @@ class BorrowChecker:
                                 "BORROW",
                                 f"cannot both move and borrow `{name}` in one call",
                                 arg.span,
+                                source=semantic_function.source,
                             )
                         self._walk_expr(
                             program,
@@ -349,6 +359,7 @@ class BorrowChecker:
                                 "BORROW",
                                 f"cannot both move and borrow `{name}` in one call",
                                 arg.span,
+                                source=semantic_function.source,
                             )
                         consumed_symbols.add(symbol_id)
                     self._walk_expr(

@@ -183,3 +183,35 @@
 - Reason chosen: imports are the first real blocker for a self-hosted compiler split across files; file input and one growable sequence type follow naturally after that.
 - Consequences: methods, traits, user-defined generics, richer control flow, and broad stdlib growth stay behind bootstrap-critical work.
 - Reversible later: yes, but reordering now would likely slow bootstrap progress.
+
+## D024: Stage1 imports stay flat-root and unqualified
+
+- Decision: `use foo;` resolves only to `<workspace-root>/foo.nq`, and imported public names enter scope unqualified.
+- Alternatives considered: relative imports, nested modules, qualified imports.
+- Reason chosen: this is the smallest real module graph that supports a self-hosted compiler without dragging in a package system.
+- Consequences: module graphs stay simple, but namespace collisions are rejected eagerly.
+- Reversible later: yes.
+
+## D025: Structural copy replaces blanket move-only user types
+
+- Decision: a user-defined `type` or `enum` is copy iff all of its fields or payloads are copy.
+- Alternatives considered: keep all user types move-only, add a user-facing `copy` marker.
+- Reason chosen: stage1 needs lists of tokens, spans, and small AST records without forcing a much larger borrow/container model.
+- Consequences: some older move tests change because simple structs become copy.
+- Reversible later: partially; explicit copy traits or annotations could refine this later.
+
+## D026: Stage1 file/string/list support is builtin, not a broader stdlib family
+
+- Decision: add only `read_file`, `io_err_text`, `str_len`, `str_get`, `str_slice`, and builtin `list<T>` helpers.
+- Alternatives considered: broader filesystem APIs, list literals, maps/sets, methods.
+- Reason chosen: this is the minimum runtime surface needed to write a compiler front end in Nauqtype.
+- Consequences: the runtime grows slightly, but the language avoids a broad library design commitment.
+- Reversible later: yes.
+
+## D027: Stage1 starts with a shallow selfhost front end, not a full second compiler immediately
+
+- Decision: `selfhost/` first proves load + lex + parse + diagnose over its own tree before resolver/type-checker parity.
+- Alternatives considered: wait to start selfhost until full semantic parity, or attempt a complete self-hosted compiler in one jump.
+- Reason chosen: an early Nauqtype-written front end creates real bootstrap pressure and validates the stage1 surface sooner.
+- Consequences: stage1 is near-self-hosting, not fully self-hosting yet.
+- Reversible later: yes, by extending the selfhost compiler rather than replacing it.

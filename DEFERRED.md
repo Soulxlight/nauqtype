@@ -4,7 +4,6 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 
 ## Language Features
 
-- Cross-file imports and package resolution
 - User-defined generics
 - Methods and `impl` blocks
 - Traits or interfaces
@@ -31,8 +30,7 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 
 ## Standard Library
 
-- File I/O
-- Collections like `list`, `map`, and `set`
+- Collections beyond builtin `list<T>`, such as `map` and `set`
 - Formatting machinery
 - Mutable strings
 - Networking
@@ -55,3 +53,4 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - They are not required for a real v0.1 vertical slice.
 - Several would materially increase parser, type checker, or ownership complexity.
 - The project should first prove the core pipeline: source -> checked IR -> C -> executable.
+- Stage1 already activates the minimum bootstrap-critical additions: flat-root imports, `read_file`, and builtin `list<T>`.

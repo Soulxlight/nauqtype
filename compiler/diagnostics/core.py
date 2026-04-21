@@ -17,6 +17,7 @@ class Diagnostic:
     category: str
     message: str
     span: Span | None = None
+    source: "SourceFile | None" = None
     severity: str = "error"
     notes: list[str] = field(default_factory=list)
     help: str | None = None
@@ -64,6 +65,7 @@ class DiagnosticBag:
         message: str,
         span: Span | None = None,
         *,
+        source: SourceFile | None = None,
         severity: str = "error",
         notes: list[str] | None = None,
         help: str | None = None,
@@ -74,6 +76,7 @@ class DiagnosticBag:
                 category=category,
                 message=message,
                 span=span,
+                source=source,
                 severity=severity,
                 notes=notes or [],
                 help=help,
@@ -92,16 +95,18 @@ def render_diagnostics(source: SourceFile, diagnostics: list[Diagnostic]) -> str
     for diagnostic in diagnostics:
         header = f"{diagnostic.severity}[{diagnostic.code}]: {diagnostic.message}"
         rendered.append(header)
-        if diagnostic.span is not None:
-            line, column = source.line_col(diagnostic.span.start)
-            rendered.append(f"  --> {source.path}:{line}:{column}")
-            line_text = source.line_text(line)
+        active_source = diagnostic.source or source
+        if diagnostic.span is not None and active_source is not None:
+            line, column = active_source.line_col(diagnostic.span.start)
+            rendered.append(f"  --> {active_source.path}:{line}:{column}")
+            line_text = active_source.line_text(line)
             rendered.append(f"   | {line_text}")
             marker_len = max(1, diagnostic.span.end - diagnostic.span.start)
             rendered.append(f"   | {' ' * (column - 1)}{'^' * marker_len}")
+        elif active_source is not None:
+            rendered.append(f"  --> {active_source.path}")
         for note in diagnostic.notes:
             rendered.append(f"  note: {note}")
         if diagnostic.help:
             rendered.append(f"  help: {diagnostic.help}")
     return "\n".join(rendered)
-

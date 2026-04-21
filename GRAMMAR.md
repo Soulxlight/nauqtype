@@ -53,19 +53,18 @@ Punctuation and operators:
 ## High-Level Grammar
 
 ```ebnf
-source_file   = { item } EOF ;
+source_file   = { use_decl } { item_without_use } EOF ;
 
-item          = visibility? function_decl
-              | visibility? type_decl
-              | visibility? enum_decl
-              | use_decl ;
+item_without_use = visibility? function_decl
+                 | visibility? type_decl
+                 | visibility? enum_decl ;
 
 visibility    = "pub" ;
 
 use_decl      = "use" IDENT ";" ;
 ```
 
-`use` is reserved in v0.1 but semantic import resolution is deferred.
+`use` is active in stage1 and resolves against a single flat workspace root.
 
 ## Declarations
 
@@ -119,7 +118,7 @@ named_type    = IDENT [ generic_args ]
 generic_args  = "<" type_expr { "," type_expr } [ "," ] ">" ;
 ```
 
-In v0.1, generic arguments are semantically valid only for built-in `option<T>` and `result<T, E>`.
+In the current bootstrap compiler, generic arguments are semantically valid only for built-in `option<T>`, `result<T, E>`, and `list<T>`.
 
 ## Block And Statement Grammar
 
