@@ -4,6 +4,8 @@
 
 This document defines the locked Nauqtype v0.1 surface. It is intentionally smaller than the tentative design. Anything not described here is out of scope unless listed as a future extension.
 
+One controlled bootstrap-track extension is implemented in the current stage0 compiler: statement-form `while` loops. This does not widen v0.1 to broader loop families.
+
 ## Language Philosophy
 
 Nauqtype is designed for AI-authored code under human supervision.
@@ -41,6 +43,7 @@ This style is recommended because it improves human scanability and reduces type
 Reserved keywords in v0.1:
 
 - `and`
+- `audit`
 - `else`
 - `enum`
 - `false`
@@ -58,6 +61,7 @@ Reserved keywords in v0.1:
 - `true`
 - `type`
 - `use`
+- `while`
 
 ## Primitive Types
 
@@ -126,6 +130,21 @@ pub fn add(a: i32, b: i32) -> i32 {
 }
 ```
 
+Functions may also carry an optional AI Contracts block before the body:
+
+```nauq
+pub fn bump(value: mutref i32) -> unit
+audit {
+    intent("Increment a counter in place");
+    mutates(value);
+    effects();
+}
+{
+    value = value + 1;
+    return;
+}
+```
+
 Rules:
 
 - parameter types are required
@@ -133,6 +152,23 @@ Rules:
 - `return` is the only return form
 - there is no implicit last-expression return
 - `return;` is allowed only in functions returning `unit`
+- `audit` blocks are optional in the AI Contracts alpha
+- `pub fn` without `audit` emits a warning in the current compiler
+
+### AI Contracts
+
+An `audit` block is a fixed-shape, compiler-checked review surface for a function.
+
+Rules:
+
+- clause order is fixed: `intent`, then `mutates`, then `effects`
+- `intent("...")` is required and must be non-empty
+- `mutates(...)` may list only `mutref` parameters
+- `effects(...)` currently supports only `print`
+- `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
+- `effects(print)` is checked against direct or transitive use of `print_line` in the same source file
+- duplicate clause entries are rejected
+- richer effect atoms, typed repair obligations, and stronger contract inference are deferred
 
 ### Product Types
 
@@ -217,6 +253,7 @@ Supported statements:
 - local binding
 - assignment to a mutable local
 - `if`
+- `while`
 - `match`
 - `return`
 - expression statement
@@ -248,6 +285,22 @@ Rules:
 
 - condition type must be `bool`
 - there is no truthy/falsy coercion
+
+### While
+
+```nauq
+while count < limit {
+    count = count + 1;
+}
+```
+
+Rules:
+
+- `while` is a statement, not an expression
+- condition type must be `bool`
+- loop bodies are explicit blocks
+- `break` and `continue` are not part of the bootstrap surface
+- loop move checking is conservative across iterations; if a non-copy value may be moved on one iteration and reused on a later one, the compiler rejects the loop
 
 ### Match
 
@@ -310,6 +363,7 @@ From lowest to highest:
 - function calls must match parameter types exactly
 - return expressions must match the declared return type
 - `if` conditions must be `bool`
+- `while` conditions must be `bool`
 - there are no implicit conversions
 
 ### Copy vs Move
@@ -346,6 +400,7 @@ Rules:
 - mutable borrows use `mutref`
 - mutable borrows require the source binding to be mutable
 - `mutref` cannot coexist with any other borrow of the same place in the same call
+- bootstrap `while` analysis tracks possible moves across iterations conservatively
 - no stored references
 - no field borrows
 
@@ -417,12 +472,23 @@ Every diagnostic should contain:
 
 Diagnostics should be stable enough for snapshot testing and future editor integration.
 
+The compiler also supports:
+
+```text
+nauqc review <file>
+```
+
+`review` emits deterministic JSON summarizing each function's declared `audit` data and compiler-inferred mutation/effect facts.
+
 ## Initial Lints
 
 Planned v0.1 lints:
 
 - `unused_mut`
 - discarded `result` value
+- public function missing `audit`
+- overdeclared `mutates(...)`
+- overdeclared `effects(print)`
 
 These are warnings, not hard errors.
 
@@ -430,7 +496,9 @@ These are warnings, not hard errors.
 
 - methods
 - traits
-- loops
+- loop families beyond bootstrap `while`
+- `break`
+- `continue`
 - field assignment
 - user-defined generics
 - imports

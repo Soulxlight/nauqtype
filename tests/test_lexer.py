@@ -19,7 +19,22 @@ class LexerTests(unittest.TestCase):
         )
         self.assertFalse(diagnostics.has_errors())
 
+    def test_lexes_while_keyword(self) -> None:
+        source = SourceFile(Path("lexer_while.nq"), "while true { }")
+        diagnostics = DiagnosticBag()
+        tokens = Lexer(source, diagnostics).tokenize()
+        kinds = [token.kind for token in tokens[:4]]
+        self.assertEqual(kinds, ["WHILE", "TRUE", "LBRACE", "RBRACE"])
+        self.assertFalse(diagnostics.has_errors())
+
+    def test_lexes_audit_keyword(self) -> None:
+        source = SourceFile(Path("lexer_audit.nq"), "audit { intent(\"x\"); }")
+        diagnostics = DiagnosticBag()
+        tokens = Lexer(source, diagnostics).tokenize()
+        kinds = [token.kind for token in tokens[:8]]
+        self.assertEqual(kinds, ["AUDIT", "LBRACE", "IDENT", "LPAREN", "STRING", "RPAREN", "SEMI", "RBRACE"])
+        self.assertFalse(diagnostics.has_errors())
+
 
 if __name__ == "__main__":
     unittest.main()
-

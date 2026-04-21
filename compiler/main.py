@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
 
+from compiler.ast import nodes as ast
 from compiler.borrow import BorrowChecker
 from compiler.codegen_c import CEmitter
 from compiler.diagnostics import DiagnosticBag, SourceFile, render_diagnostics
@@ -15,21 +17,15 @@ from compiler.resolve import Resolver
 from compiler.types import TypeChecker
 
 
-def compile_source(source: SourceFile) -> tuple[DiagnosticBag, str | None]:
+def analyze_source(source: SourceFile, *, require_main: bool) -> tuple[DiagnosticBag, object | None]:
     diagnostics = DiagnosticBag()
     try:
         tokens = Lexer(source, diagnostics).tokenize()
         program = Parser(tokens, diagnostics).parse()
         module = Resolver(diagnostics).resolve(program)
-        semantic = TypeChecker(diagnostics).check(program, module)
+        semantic = TypeChecker(diagnostics).check(program, module, require_main=require_main)
         BorrowChecker(diagnostics).check(semantic)
-        if diagnostics.has_errors():
-            return diagnostics, None
-        lowered = lower_program(semantic, diagnostics)
-        if diagnostics.has_errors() or lowered is None:
-            return diagnostics, None
-        emitted = CEmitter(lowered).emit()
-        return diagnostics, emitted
+        return diagnostics, semantic
     except Exception as exc:  # pragma: no cover - defensive final safety net
         diagnostics.add(
             "NQ-INTERNAL-001",
@@ -39,6 +35,47 @@ def compile_source(source: SourceFile) -> tuple[DiagnosticBag, str | None]:
             help="This is a compiler bug; please report it with the source file that triggered it.",
         )
         return diagnostics, None
+
+
+def compile_source(source: SourceFile) -> tuple[DiagnosticBag, str | None]:
+    diagnostics, semantic = analyze_source(source, require_main=True)
+    if diagnostics.has_errors() or semantic is None:
+        return diagnostics, None
+    lowered = lower_program(semantic, diagnostics)
+    if diagnostics.has_errors() or lowered is None:
+        return diagnostics, None
+    emitted = CEmitter(lowered).emit()
+    return diagnostics, emitted
+
+
+def build_review_payload(source: SourceFile, semantic) -> dict[str, object]:
+    functions: list[dict[str, object]] = []
+    for item in semantic.program.items:
+        if not isinstance(item, ast.FunctionDecl):
+            continue
+        semantic_function = semantic.function_bodies[item.name]
+        audit = None
+        if item.audit is not None:
+            audit = {
+                "intent": item.audit.intent,
+                "mutates": [entry.name for entry in item.audit.mutates],
+                "effects": [entry.name for entry in item.audit.effects],
+            }
+        functions.append(
+            {
+                "name": item.name,
+                "public": item.public,
+                "audit": audit,
+                "inferred": {
+                    "mutates": semantic_function.inferred_mutates,
+                    "effects": semantic_function.inferred_effects,
+                },
+            }
+        )
+    return {
+        "module": source.path.stem,
+        "functions": functions,
+    }
 
 
 def detect_zig(project_root: Path) -> Path | None:
@@ -77,11 +114,23 @@ def run_cli(argv: list[str]) -> int:
         sub = subparsers.add_parser(command)
         sub.add_argument("source")
         sub.add_argument("-o", "--output")
+    review = subparsers.add_parser("review")
+    review.add_argument("source")
 
     args = parser.parse_args(argv)
     source_path = Path(args.source).resolve()
     project_root = Path(__file__).resolve().parents[1]
     source = SourceFile.from_path(source_path)
+
+    if args.command == "review":
+        diagnostics, semantic = analyze_source(source, require_main=False)
+        if diagnostics.items:
+            print(render_diagnostics(source, diagnostics.items), file=sys.stderr)
+        if diagnostics.has_errors() or semantic is None:
+            return 1
+        print(json.dumps(build_review_payload(source, semantic), indent=2))
+        return 0
+
     diagnostics, emitted = compile_source(source)
     if diagnostics.items:
         print(render_diagnostics(source, diagnostics.items), file=sys.stderr)

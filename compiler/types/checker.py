@@ -13,6 +13,10 @@ class SemanticFunction:
     decl: ast.FunctionDecl
     signature: FunctionSig
     bindings: dict[int, BindingInfo] = field(default_factory=dict)
+    direct_calls: set[str] = field(default_factory=set)
+    direct_print: bool = False
+    inferred_mutates: list[str] = field(default_factory=list)
+    inferred_effects: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -29,7 +33,7 @@ class TypeChecker:
     def __init__(self, diagnostics: DiagnosticBag) -> None:
         self.diagnostics = diagnostics
 
-    def check(self, program: ast.Program, module: ModuleInfo) -> SemanticProgram:
+    def check(self, program: ast.Program, module: ModuleInfo, *, require_main: bool = True) -> SemanticProgram:
         structs = {name: StructDef(name, info.decl) for name, info in module.structs.items()}
         enums = {
             "option": EnumDef("option", None),
@@ -106,18 +110,22 @@ class TypeChecker:
                     )
             function_bodies[item.name] = semantic_function
 
-        main = functions.get("main")
-        if main is None:
-            self.diagnostics.add("NQ-TYPE-001", "TYPE", "missing `main` entry point")
-        elif main.return_type != I32:
-            self.diagnostics.add(
-                "NQ-TYPE-002",
-                "TYPE",
-                "`main` must return `i32` in v0.1",
-                main.decl.span if main.decl else None,
-            )
+        semantic_program = SemanticProgram(program, module, structs, enums, functions, function_bodies)
+        self._finalize_contracts(semantic_program)
 
-        return SemanticProgram(program, module, structs, enums, functions, function_bodies)
+        if require_main:
+            main = functions.get("main")
+            if main is None:
+                self.diagnostics.add("NQ-TYPE-001", "TYPE", "missing `main` entry point")
+            elif main.return_type != I32:
+                self.diagnostics.add(
+                    "NQ-TYPE-002",
+                    "TYPE",
+                    "`main` must return `i32` in v0.1",
+                    main.decl.span if main.decl else None,
+                )
+
+        return semantic_program
 
     def _resolve_type_expr(
         self,
@@ -229,6 +237,12 @@ class TypeChecker:
             self._check_block(stmt.then_block, signature, env, semantic_function, module, structs, enums, functions)
             if stmt.else_block is not None:
                 self._check_block(stmt.else_block, signature, env, semantic_function, module, structs, enums, functions)
+            return
+        if isinstance(stmt, ast.WhileStmt):
+            condition_type = self._check_expr(stmt.condition, env, semantic_function, module, structs, enums, functions)
+            if condition_type != BOOL:
+                self._type_mismatch(stmt.condition.span, BOOL, condition_type)
+            self._check_block(stmt.body, signature, env, semantic_function, module, structs, enums, functions)
             return
         if isinstance(stmt, ast.MatchStmt):
             scrutinee_type = self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions)
@@ -388,6 +402,10 @@ class TypeChecker:
                     signature = functions[callee_name]
                     expr.call_kind = "function"
                     expr.target_name = callee_name
+                    if callee_name == "print_line":
+                        semantic_function.direct_print = True
+                    elif not signature.builtin:
+                        semantic_function.direct_calls.add(callee_name)
                     if len(expr.args) != len(signature.param_types):
                         self.diagnostics.add(
                             "NQ-TYPE-017",
@@ -603,3 +621,140 @@ class TypeChecker:
             f"type mismatch: expected `{expected.display()}`, found `{actual.display()}`",
             span,
         )
+
+    def _finalize_contracts(self, semantic_program: SemanticProgram) -> None:
+        print_effects = {name: semantic_function.direct_print for name, semantic_function in semantic_program.function_bodies.items()}
+        changed = True
+        while changed:
+            changed = False
+            for name, semantic_function in semantic_program.function_bodies.items():
+                if print_effects[name]:
+                    continue
+                if any(print_effects.get(callee, False) for callee in semantic_function.direct_calls):
+                    print_effects[name] = True
+                    changed = True
+
+        for item in semantic_program.program.items:
+            if not isinstance(item, ast.FunctionDecl):
+                continue
+            semantic_function = semantic_program.function_bodies[item.name]
+            semantic_function.inferred_mutates = [
+                param.name
+                for param in item.params
+                if param.symbol_id is not None
+                and param.symbol_id in semantic_function.bindings
+                and semantic_function.bindings[param.symbol_id].is_ref_param
+                and semantic_function.bindings[param.symbol_id].ref_mutable
+                and semantic_function.bindings[param.symbol_id].written
+            ]
+            semantic_function.inferred_effects = ["print"] if print_effects.get(item.name, False) else []
+            self._check_contract_for_function(item, semantic_function)
+
+    def _check_contract_for_function(self, function: ast.FunctionDecl, semantic_function: SemanticFunction) -> None:
+        if function.public and function.audit is None:
+            self.diagnostics.add(
+                "NQ-CONTRACT-001",
+                "CONTRACT",
+                f"public function `{function.name}` is missing an `audit` block",
+                function.span,
+                severity="warning",
+                help="Add `audit { intent(...); mutates(...); effects(...); }` before the function body.",
+            )
+            return
+        if function.audit is None:
+            return
+
+        declared_mutates = [entry.name for entry in function.audit.mutates]
+        declared_effects = [entry.name for entry in function.audit.effects]
+
+        if not function.audit.intent.strip():
+            self.diagnostics.add(
+                "NQ-CONTRACT-003",
+                "CONTRACT",
+                "`intent(...)` text must be non-empty",
+                function.audit.intent_span,
+            )
+
+        param_types = {param.name: param.semantic_type for param in function.params}
+        seen_mutates: set[str] = set()
+        valid_declared_mutates: set[str] = set()
+        for entry in function.audit.mutates:
+            if entry.name in seen_mutates:
+                self.diagnostics.add(
+                    "NQ-CONTRACT-010",
+                    "CONTRACT",
+                    f"duplicate `mutates(...)` entry `{entry.name}`",
+                    entry.span,
+                )
+                continue
+            seen_mutates.add(entry.name)
+            param_type = param_types.get(entry.name)
+            if param_type is None or param_type.kind != "ref" or not param_type.mutable:
+                self.diagnostics.add(
+                    "NQ-CONTRACT-004",
+                    "CONTRACT",
+                    f"`mutates(...)` entry `{entry.name}` must name a `mutref` parameter",
+                    entry.span,
+                )
+                continue
+            valid_declared_mutates.add(entry.name)
+
+        seen_effects: set[str] = set()
+        valid_declared_effects: set[str] = set()
+        for entry in function.audit.effects:
+            if entry.name in seen_effects:
+                self.diagnostics.add(
+                    "NQ-CONTRACT-010",
+                    "CONTRACT",
+                    f"duplicate `effects(...)` entry `{entry.name}`",
+                    entry.span,
+                )
+                continue
+            seen_effects.add(entry.name)
+            if entry.name != "print":
+                self.diagnostics.add(
+                    "NQ-CONTRACT-007",
+                    "CONTRACT",
+                    f"unknown audit effect `{entry.name}`",
+                    entry.span,
+                    help="The current AI Contracts alpha supports only `print` in `effects(...)`.",
+                )
+                continue
+            valid_declared_effects.add(entry.name)
+
+        inferred_mutates = set(semantic_function.inferred_mutates)
+        inferred_effects = set(semantic_function.inferred_effects)
+
+        for name in semantic_function.inferred_mutates:
+            if name not in valid_declared_mutates:
+                self.diagnostics.add(
+                    "NQ-CONTRACT-005",
+                    "CONTRACT",
+                    f"`audit` omits mutated `mutref` parameter `{name}`",
+                    function.audit.mutates_span,
+                )
+        for name in declared_mutates:
+            if name in valid_declared_mutates and name not in inferred_mutates:
+                self.diagnostics.add(
+                    "NQ-CONTRACT-006",
+                    "CONTRACT",
+                    f"`audit` declares mutation of `{name}` but no write-through was inferred",
+                    function.audit.mutates_span,
+                    severity="warning",
+                )
+
+        if "print" in inferred_effects and "print" not in valid_declared_effects:
+            self.diagnostics.add(
+                "NQ-CONTRACT-008",
+                "CONTRACT",
+                "`audit` omits `print` from `effects(...)`",
+                function.audit.effects_span,
+            )
+        if "print" in valid_declared_effects and "print" not in inferred_effects:
+            self.diagnostics.add(
+                "NQ-CONTRACT-009",
+                "CONTRACT",
+                "`audit` declares `print` in `effects(...)` but no print effect was inferred",
+                function.audit.effects_span,
+                severity="warning",
+            )

@@ -32,6 +32,15 @@ class IntegrationTests(unittest.TestCase):
         result = self.run_example("mutate_counter.nq")
         self.assertEqual(result.returncode, 42, result.stderr)
 
+    def test_while_program_runs(self) -> None:
+        result = self.run_example("while_counter.nq")
+        self.assertEqual(result.returncode, 5, result.stderr)
+
+    def test_review_contracts_program_runs(self) -> None:
+        result = self.run_example("review_contracts.nq")
+        self.assertEqual(result.returncode, 42, result.stderr)
+        self.assertEqual(result.stdout, "Hello, contracts!\n")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,12 @@ Run the AI-friendliness audit:
 python scripts/run_ai_audit.py
 ```
 
+Emit a machine-readable review summary:
+
+```powershell
+python -m compiler.main review examples\review_contracts.nq
+```
+
 ## Key Docs
 
 - [RESEARCH_MEMO.md](RESEARCH_MEMO.md)
@@ -50,10 +56,11 @@ python scripts/run_ai_audit.py
 - [RISKS.md](RISKS.md)
 - [DEFERRED.md](DEFERRED.md)
 - [AI_AUDIT.md](AI_AUDIT.md)
+- [AI_CONTRACTS.md](AI_CONTRACTS.md)
+- [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
 
 ## Repository Notes
 
 - The current compiler is a Python bootstrap because this workspace did not provide a Rust toolchain.
 - The long-term implementation preference remains Rust.
 - The v0.1 language surface is intentionally small and frozen during the current hardening phase.
-

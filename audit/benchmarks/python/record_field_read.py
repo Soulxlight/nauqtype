@@ -7,6 +7,6 @@ class User:
     age: int
 
 
-def age_of(user):
+def age_of(user: User) -> int:
+    """Read the age field from a user."""
     return user.age
-

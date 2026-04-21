@@ -5,6 +5,7 @@
 - The grammar is intentionally small and suitable for a hand-written lexer plus recursive-descent / Pratt parser.
 - Whitespace is insignificant except as a token separator.
 - Newlines are not syntactic separators.
+- The current stage0 compiler includes one controlled bootstrap-track extension to the original v0.1 freeze: statement-form `while` loops only.
 
 ## Lexical Grammar
 
@@ -36,7 +37,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 ### Keywords
 
-`and`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`
+`and`, `audit`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
 
 ## Tokens
 
@@ -69,7 +70,7 @@ use_decl      = "use" IDENT ";" ;
 ## Declarations
 
 ```ebnf
-function_decl = "fn" IDENT "(" param_list? ")" "->" type_expr block ;
+function_decl = "fn" IDENT "(" param_list? ")" "->" type_expr [ audit_block ] block ;
 
 param_list    = param { "," param } [ "," ] ;
 param         = IDENT ":" type_expr ;
@@ -83,6 +84,21 @@ variant_decl_list = variant_decl { "," variant_decl } [ "," ] ;
 variant_decl  = IDENT [ "(" type_list? ")" ] ;
 
 type_list     = type_expr { "," type_expr } [ "," ] ;
+```
+
+## Audit Grammar
+
+The keyword `audit` is reserved. Clause names inside the block are contextual and only meaningful there.
+
+```ebnf
+audit_block   = "audit" "{" intent_clause mutates_clause effects_clause "}" ;
+intent_clause = "intent" "(" STRING_LIT ")" ";" ;
+mutates_clause = "mutates" "(" ident_list? ")" ";" ;
+effects_clause = "effects" "(" effect_list? ")" ";" ;
+
+ident_list    = IDENT { "," IDENT } [ "," ] ;
+effect_list   = effect_name { "," effect_name } [ "," ] ;
+effect_name   = "print" ;
 ```
 
 ## Type Grammar
@@ -113,6 +129,7 @@ block         = "{" { stmt } "}" ;
 stmt          = let_stmt
               | assign_stmt
               | if_stmt
+              | while_stmt
               | match_stmt
               | return_stmt
               | expr_stmt ;
@@ -123,6 +140,7 @@ return_stmt   = "return" [ expr ] ";" ;
 expr_stmt     = expr ";" ;
 
 if_stmt       = "if" expr block [ "else" block ] ;
+while_stmt    = "while" expr block ;
 
 match_stmt    = "match" expr "{" match_arm { "," match_arm } [ "," ] "}" ;
 match_arm     = pattern "=>" block ;
@@ -202,6 +220,7 @@ Pattern meaning is resolved semantically:
 - No newline significance
 - No implicit last-expression returns
 - No expression-bodied match arms
-- No loop grammar in v0.1
+- No loop grammar beyond bootstrap `while` in v0.1
+- AI Contracts use a fixed clause order instead of free-form annotations
 - No literal patterns in v0.1
 - No generic parameter declarations in v0.1

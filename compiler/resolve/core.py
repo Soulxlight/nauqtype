@@ -150,6 +150,10 @@ class Resolver:
             if stmt.else_block is not None:
                 self._resolve_block(stmt.else_block, module, scopes)
             return
+        if isinstance(stmt, ast.WhileStmt):
+            self._resolve_expr(stmt.condition, module, scopes)
+            self._resolve_block(stmt.body, module, scopes)
+            return
         if isinstance(stmt, ast.MatchStmt):
             self._resolve_expr(stmt.expr, module, scopes)
             for arm in stmt.arms:
@@ -271,4 +275,3 @@ class Resolver:
             if name in scope:
                 return scope[name]
         return None
-

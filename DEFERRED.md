@@ -8,7 +8,9 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - User-defined generics
 - Methods and `impl` blocks
 - Traits or interfaces
-- Loops
+- Loop families beyond bootstrap `while`
+- `break`
+- `continue`
 - Field assignment
 - Stored references
 - Reference returns
@@ -16,6 +18,9 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Nested constructor patterns
 - Struct-like enum variants
 - Propagation sugar such as `?`
+- Richer `effects(...)` atoms beyond `print`
+- Typed holes / repair obligations
+- Error or result contracts beyond `effects(...)`
 - Macros
 - Async / await
 - Operator overloading

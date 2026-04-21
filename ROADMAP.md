@@ -25,6 +25,7 @@ The first real success target is:
 - enums
 - `result` / `option`
 - `if`
+- bootstrap-track `while`
 - `match`
 - explicit `return`
 - `print_line`
@@ -80,6 +81,19 @@ The first real success target is:
 - discarded `result`
 - stabilize diagnostic wording
 
+### M8: AI Contracts Alpha
+
+- add fixed-shape `audit` blocks on functions
+- infer `mutates(...)` from direct write-through `mutref` parameters
+- infer `effects(print)` through the single-file call graph
+- add deterministic `review` JSON output
+
+### M9: Bootstrap Stage1
+
+- activate acyclic imports for one workspace root
+- then add file input as `result<str, io_err>`
+- then add builtin `list<T>`
+
 ## Feature Ordering
 
 Features required before first success:
@@ -99,7 +113,7 @@ Features explicitly not required before first success:
 - imports
 - user-defined generics
 - methods
-- loops
+- loop families beyond bootstrap `while`
 - file I/O
 - collection types
 
@@ -108,8 +122,10 @@ Features explicitly not required before first success:
 - cross-file modules
 - user-defined generics
 - methods / `impl`
-- loops
+- `for`
+- `break` / `continue`
 - propagation sugar
+- typed holes / repair obligations
 - richer standard library
 - stronger borrow analysis
 - direct native backend exploration

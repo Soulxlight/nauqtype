@@ -39,10 +39,16 @@ class AIAuditTests(unittest.TestCase):
                 "visible_mutation",
             },
         )
+        sample = payload["benchmarks"][0]
+        self.assertIn("nauqtype_plain", sample)
+        self.assertIn("nauqtype_contracts", sample)
+        self.assertIn("python_typed_docstring", sample)
+        self.assertIn("ratios", sample)
+        self.assertIn("contracts_over_plain_ratio", payload["totals"])
+        self.assertIn("nauqtype_contracts", payload["rubric_averages"])
         self.assertIn("Nauqtype", report_path.read_text(encoding="utf-8"))
         self.assertIn("Python", report_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
     unittest.main()
-

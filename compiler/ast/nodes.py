@@ -65,10 +65,28 @@ class VariantDecl:
 
 
 @dataclass(slots=True)
+class AuditName:
+    name: str
+    span: Span
+
+
+@dataclass(slots=True)
+class AuditDecl:
+    intent: str
+    intent_span: Span
+    mutates: list[AuditName]
+    mutates_span: Span
+    effects: list[AuditName]
+    effects_span: Span
+    span: Span
+
+
+@dataclass(slots=True)
 class FunctionDecl:
     name: str
     params: list[Param]
     return_type: TypeExpr
+    audit: AuditDecl | None
     body: Block
     public: bool
     span: Span
@@ -121,6 +139,13 @@ class IfStmt:
 
 
 @dataclass(slots=True)
+class WhileStmt:
+    condition: Any
+    body: Block
+    span: Span
+
+
+@dataclass(slots=True)
 class MatchArm:
     pattern: Any
     block: Block
@@ -146,7 +171,7 @@ class ExprStmt:
     span: Span
 
 
-Stmt = LetStmt | AssignStmt | IfStmt | MatchStmt | ReturnStmt | ExprStmt
+Stmt = LetStmt | AssignStmt | IfStmt | WhileStmt | MatchStmt | ReturnStmt | ExprStmt
 
 
 @dataclass(slots=True)
@@ -278,4 +303,3 @@ class VariantPattern:
 
 
 Pattern = WildcardPattern | NamePattern | VariantPattern
-

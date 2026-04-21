@@ -7,6 +7,7 @@ from compiler.diagnostics import DiagnosticBag, SourceFile, Span
 
 KEYWORDS = {
     "and": "AND",
+    "audit": "AUDIT",
     "else": "ELSE",
     "enum": "ENUM",
     "false": "FALSE",
@@ -24,6 +25,7 @@ KEYWORDS = {
     "true": "TRUE",
     "type": "TYPE",
     "use": "USE",
+    "while": "WHILE",
 }
 
 SINGLE_TOKENS = {
@@ -197,4 +199,3 @@ class Lexer:
             return False
         self.index += 1
         return True
-

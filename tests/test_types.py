@@ -19,7 +19,20 @@ fn main() -> i32 {
         codes = [item.code for item in diagnostics.items]
         self.assertIn("NQ-TYPE-029", codes)
 
+    def test_while_condition_must_be_bool(self) -> None:
+        source = """
+fn main() -> i32 {
+    while 1 {
+        return 0;
+    }
+    return 1;
+}
+"""
+        diagnostics, emitted = compile_text(source)
+        self.assertIsNone(emitted)
+        codes = [item.code for item in diagnostics.items]
+        self.assertIn("NQ-TYPE-029", codes)
+
 
 if __name__ == "__main__":
     unittest.main()
-

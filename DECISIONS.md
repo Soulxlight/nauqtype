@@ -159,3 +159,27 @@
 - Reason chosen: Python is a common AI generation target and gives a strong baseline for token cost and structural clarity tradeoffs.
 - Consequences: the audit emphasizes general-programming comparison, not systems-language parity.
 - Reversible later: yes.
+
+## D021: Stage0 may implement statement-form `while` as a bootstrap-track exception
+
+- Decision: allow `while condition { ... }` in the current Python bootstrap compiler while keeping broader loop work deferred from the locked v0.1 language plan.
+- Alternatives considered: keep all loops deferred until a later milestone, add a broader control-flow set (`for`, `break`, `continue`) now.
+- Reason chosen: simple counter-style loops are useful for bootstrap practicality, and `while` fits the existing parser, checker, IR, and C emitter without forcing a larger control-flow design commitment.
+- Consequences: docs must call out `while` explicitly as a controlled bootstrap extension; move checking across loop iterations stays conservative and may reject some loops a richer future analysis could accept.
+- Reversible later: yes, either by folding `while` into a wider stabilized loop design or by tightening the bootstrap boundary again.
+
+## D022: AI Contracts are Nauqtype's primary AI-first differentiator
+
+- Decision: add a fixed-shape `audit` block on functions with compiler-checked `intent`, `mutates`, and `effects` clauses.
+- Alternatives considered: typed holes first, free-form annotations/comments, generated review summaries only.
+- Reason chosen: AI Contracts make the most review-critical API facts explicit in source and machine-readable in a stable form, without requiring speculative language complexity.
+- Consequences: public APIs become slightly more verbose, but reviewability and toolability improve materially.
+- Reversible later: partially; the exact syntax is reversible, but the principle of compiler-checked review metadata should remain.
+
+## D023: Bootstrap Stage1 proceeds imports first, then file input, then builtin `list<T>`
+
+- Decision: after AI Contracts alpha, the next language expansion sequence is acyclic imports, then file input, then builtin `list<T>`.
+- Alternatives considered: add file I/O first, add collections first, widen surface more broadly.
+- Reason chosen: imports are the first real blocker for a self-hosted compiler split across files; file input and one growable sequence type follow naturally after that.
+- Consequences: methods, traits, user-defined generics, richer control flow, and broad stdlib growth stay behind bootstrap-critical work.
+- Reversible later: yes, but reordering now would likely slow bootstrap progress.

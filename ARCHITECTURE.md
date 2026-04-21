@@ -130,6 +130,8 @@ Responsibilities:
 - validate local declarations and assignments
 - validate function calls
 - validate return statements
+- validate `while` conditions
+- infer AI Contract mutation/effect facts
 - validate match exhaustiveness for supported patterns
 - distinguish copy vs move types
 
@@ -257,6 +259,7 @@ Rules enforced in v0.1:
 - `mutref` requires a mutable local binding
 - a call may not borrow the same local both mutably and immutably
 - a call may not take two mutable borrows of the same local
+- bootstrap `while` loops are checked with a conservative loop-head move analysis over bindings visible outside the loop body
 
 Rules deferred:
 
@@ -264,6 +267,8 @@ Rules deferred:
 - references in structs
 - reference returns
 - non-lexical lifetime-like refinements
+- loop control beyond statement-form `while`
+- transitive mutation contracts and richer effect atoms
 
 ## Diagnostics Strategy
 
@@ -294,6 +299,7 @@ Categories:
 - `RESOLVE`
 - `TYPE`
 - `BORROW`
+- `CONTRACT`
 - `IR`
 - `INTERNAL`
 - `LINT`
@@ -306,6 +312,7 @@ Categories:
 - Resolve errors: unknown name, duplicate definition, unknown field or variant
 - Pattern errors: non-exhaustive match, invalid constructor pattern
 - Fallibility misuse: discarded `result` warning
+- Contract errors: missing audit clauses, invalid `mutates(...)`, missing `effects(print)`, public API missing `audit`
 
 ## Testing Strategy
 
@@ -322,6 +329,7 @@ Categories:
 
 - diagnostics
 - emitted C for representative examples
+- `review` JSON for representative examples
 
 ### Integration Tests
 
@@ -335,6 +343,7 @@ Determinism matters:
 - stable symbol naming
 - stable diagnostic ordering
 - stable generated C formatting
+- stable `review` JSON ordering
 
 ## Future Extensibility Boundaries
 

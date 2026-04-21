@@ -63,6 +63,13 @@ class IRIfStmt:
 
 
 @dataclass(slots=True)
+class IRWhileStmt:
+    condition: "IRExpr"
+    body: IRBlock
+    span: Span
+
+
+@dataclass(slots=True)
 class IRMatchArm:
     pattern: "IRPattern"
     block: IRBlock
@@ -89,7 +96,7 @@ class IRExprStmt:
     span: Span
 
 
-IRStmt = IRLetStmt | IRAssignStmt | IRIfStmt | IRMatchStmt | IRReturnStmt | IRExprStmt
+IRStmt = IRLetStmt | IRAssignStmt | IRIfStmt | IRWhileStmt | IRMatchStmt | IRReturnStmt | IRExprStmt
 
 
 @dataclass(slots=True)
@@ -329,6 +336,12 @@ class IRLowerer:
             if condition is None or then_block is None or (stmt.else_block is not None and else_block is None):
                 return None
             return IRIfStmt(condition=condition, then_block=then_block, else_block=else_block, span=stmt.span)
+        if isinstance(stmt, ast.WhileStmt):
+            condition = self._lower_expr(stmt.condition, locals_by_id)
+            body = self._lower_block(stmt.body, locals_by_id)
+            if condition is None or body is None:
+                return None
+            return IRWhileStmt(condition=condition, body=body, span=stmt.span)
         if isinstance(stmt, ast.MatchStmt):
             expr = self._lower_expr(stmt.expr, locals_by_id)
             if expr is None or stmt.expr.inferred_type is None:

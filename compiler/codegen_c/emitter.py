@@ -26,6 +26,7 @@ from compiler.ir.core import (
     IRVariantExpr,
     IRVariantPattern,
     IRWildcardPattern,
+    IRWhileStmt,
     IRAssignStmt,
     IRLetStmt,
 )
@@ -108,6 +109,9 @@ class CEmitter:
                 self._collect_block_types(stmt.then_block, collect_type)
                 if stmt.else_block is not None:
                     self._collect_block_types(stmt.else_block, collect_type)
+            elif isinstance(stmt, IRWhileStmt):
+                self._collect_expr_types(stmt.condition, collect_type)
+                self._collect_block_types(stmt.body, collect_type)
             elif isinstance(stmt, IRMatchStmt):
                 collect_type(stmt.scrutinee_type)
                 self._collect_expr_types(stmt.expr, collect_type)
@@ -251,6 +255,12 @@ class CEmitter:
             if stmt.else_block is not None:
                 self.lines.append(f"{prefix}}} else {{")
                 self._emit_block(stmt.else_block, indent=indent + 1)
+            self.lines.append(f"{prefix}}}")
+            return
+        if isinstance(stmt, IRWhileStmt):
+            condition = self._emit_expr(stmt.condition)
+            self.lines.append(f"{prefix}while ({condition}) {{")
+            self._emit_block(stmt.body, indent=indent + 1)
             self.lines.append(f"{prefix}}}")
             return
         if isinstance(stmt, IRMatchStmt):

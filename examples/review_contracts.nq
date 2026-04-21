@@ -1,0 +1,38 @@
+pub fn add(a: i32, b: i32) -> i32
+audit {
+    intent("Add two i32 values");
+    mutates();
+    effects();
+}
+{
+    return a + b;
+}
+
+pub fn bump(counter: mutref i32) -> unit
+audit {
+    intent("Increment a counter in place");
+    mutates(counter);
+    effects();
+}
+{
+    counter = counter + 1;
+    return;
+}
+
+pub fn greet() -> unit
+audit {
+    intent("Print a greeting line");
+    mutates();
+    effects(print);
+}
+{
+    print_line("Hello, contracts!");
+    return;
+}
+
+fn main() -> i32 {
+    let mut count = 0;
+    bump(mutref count);
+    greet();
+    return add(count, 41);
+}

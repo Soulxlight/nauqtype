@@ -5,6 +5,9 @@ from compiler.diagnostics import DiagnosticBag, Span
 from compiler.lexer import Token
 
 
+AUDIT_CLAUSES = {"intent", "mutates", "effects"}
+
+
 class Parser:
     def __init__(self, tokens: list[Token], diagnostics: DiagnosticBag) -> None:
         self.tokens = tokens
@@ -70,15 +73,108 @@ class Parser:
         self._expect("RPAREN", "expected `)` after parameters")
         self._expect("ARROW", "expected `->` after parameter list")
         return_type = self._parse_type_expr()
+        audit = self._parse_audit_decl() if self._at("AUDIT") else None
         body = self._parse_block()
         return ast.FunctionDecl(
             name=name.lexeme,
             params=params,
             return_type=return_type,
+            audit=audit,
             body=body,
             public=public,
             span=Span(start, body.span.end),
         )
+
+    def _parse_audit_decl(self) -> ast.AuditDecl:
+        start = self._expect("AUDIT", "expected `audit`").span.start
+        self._expect("LBRACE", "expected `{` after `audit`")
+        intent, intent_span = self._parse_intent_clause()
+        mutates, mutates_span = self._parse_audit_name_list_clause("mutates")
+        effects, effects_span = self._parse_audit_name_list_clause("effects")
+        end = self._expect("RBRACE", "expected `}` after audit block").span.end
+        return ast.AuditDecl(
+            intent=intent,
+            intent_span=intent_span,
+            mutates=mutates,
+            mutates_span=mutates_span,
+            effects=effects,
+            effects_span=effects_span,
+            span=Span(start, end),
+        )
+
+    def _parse_intent_clause(self) -> tuple[str, Span]:
+        matched, clause_span = self._expect_audit_clause_name("intent")
+        if not matched:
+            return "", clause_span
+        self._expect("LPAREN", "expected `(` after `intent`")
+        token = self._expect("STRING", "expected string literal in `intent(...)`")
+        self._expect("RPAREN", "expected `)` after `intent` text")
+        semi = self._expect("SEMI", "expected `;` after `intent(...)`")
+        return token.lexeme if token.kind == "STRING" else "", Span(clause_span.start, semi.span.end)
+
+    def _parse_audit_name_list_clause(self, clause_name: str) -> tuple[list[ast.AuditName], Span]:
+        matched, clause_span = self._expect_audit_clause_name(clause_name)
+        if not matched:
+            return [], clause_span
+        self._expect("LPAREN", f"expected `(` after `{clause_name}`")
+        names: list[ast.AuditName] = []
+        if not self._at("RPAREN"):
+            while True:
+                token = self._expect("IDENT", f"expected name in `{clause_name}(...)`")
+                if token.kind == "IDENT":
+                    names.append(ast.AuditName(name=token.lexeme, span=token.span))
+                if not self._match("COMMA"):
+                    break
+                if self._at("RPAREN"):
+                    break
+        self._expect("RPAREN", f"expected `)` after `{clause_name}` list")
+        semi = self._expect("SEMI", f"expected `;` after `{clause_name}(...)`")
+        return names, Span(clause_span.start, semi.span.end)
+
+    def _expect_audit_clause_name(self, expected: str) -> tuple[bool, Span]:
+        token = self._current()
+        while token.kind == "IDENT" and token.lexeme in AUDIT_CLAUSES and token.lexeme != expected:
+            self.diagnostics.add(
+                "NQ-CONTRACT-002",
+                "CONTRACT",
+                f"expected `{expected}(...)` clause, found `{token.lexeme}(...)`",
+                token.span,
+                help="Audit clause order is fixed: `intent`, then `mutates`, then `effects`.",
+            )
+            self._skip_audit_clause()
+            token = self._current()
+        if token.kind == "IDENT" and token.lexeme == expected:
+            self._advance()
+            return True, token.span
+        self.diagnostics.add(
+            "NQ-CONTRACT-002",
+            "CONTRACT",
+            f"expected `{expected}(...)` clause in audit block",
+            token.span,
+            help="Audit blocks must contain `intent`, `mutates`, and `effects` in that order.",
+        )
+        return False, token.span
+
+    def _skip_audit_clause(self) -> None:
+        depth = 0
+        if not self._at("EOF") and not self._at("RBRACE"):
+            self._advance()
+        while not self._at("EOF"):
+            token = self._current()
+            if token.kind == "LPAREN":
+                depth += 1
+                self._advance()
+                continue
+            if token.kind == "RPAREN":
+                depth = max(0, depth - 1)
+                self._advance()
+                continue
+            if token.kind == "SEMI" and depth == 0:
+                self._advance()
+                return
+            if token.kind == "RBRACE" and depth == 0:
+                return
+            self._advance()
 
     def _parse_type_decl(self, public: bool) -> ast.TypeDecl:
         start = self._expect("TYPE", "expected `type`").span.start
@@ -168,6 +264,8 @@ class Parser:
             return self._parse_let_stmt()
         if self._at("IF"):
             return self._parse_if_stmt()
+        if self._at("WHILE"):
+            return self._parse_while_stmt()
         if self._at("MATCH"):
             return self._parse_match_stmt()
         if self._at("RETURN"):
@@ -207,6 +305,12 @@ class Parser:
             else_block = self._parse_block()
             end = else_block.span.end
         return ast.IfStmt(condition, then_block, else_block, Span(start, end))
+
+    def _parse_while_stmt(self) -> ast.WhileStmt:
+        start = self._expect("WHILE", "expected `while`").span.start
+        condition = self._parse_expr()
+        body = self._parse_block()
+        return ast.WhileStmt(condition=condition, body=body, span=Span(start, body.span.end))
 
     def _parse_match_stmt(self) -> ast.MatchStmt:
         start = self._expect("MATCH", "expected `match`").span.start
@@ -388,7 +492,7 @@ class Parser:
         while not self._at("EOF") and not self._at("RBRACE"):
             if self._match("SEMI"):
                 return
-            if self._current().kind in {"LET", "IF", "MATCH", "RETURN"}:
+            if self._current().kind in {"LET", "IF", "WHILE", "MATCH", "RETURN"}:
                 return
             self._advance()
 

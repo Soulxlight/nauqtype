@@ -13,6 +13,8 @@
 - [x] Keep docs aligned with implementation as the compiler lands
 - [x] Add `README.md`
 - [x] Add `LICENSE`
+- [x] Write `AI_CONTRACTS.md`
+- [x] Write `BOOTSTRAP_STAGE1.md`
 
 ## Compiler Scaffold
 
@@ -72,9 +74,26 @@
 - [x] Borrow error formatting
 - [x] `unused_mut`
 - [x] discarded `result` warning
+- [x] `audit` contract diagnostics
+- [x] public API missing `audit` warning
+
+## AI Contracts
+
+- [x] Add `audit` blocks to the grammar and parser
+- [x] Infer direct `mutates(...)` facts for `mutref` parameters
+- [x] Infer transitive `effects(print)` across the single-file call graph
+- [x] Add `review` JSON output
+- [x] Add contract examples and tests
 
 ## AI Audit
 
 - [x] Add paired Nauqtype/Python benchmark corpus
 - [x] Add audit runner script
 - [x] Generate and commit AI audit report outputs
+- [x] Expand the corpus to compare plain Nauqtype, contract-enabled Nauqtype, and Python hints+docstrings
+
+## Bootstrap Next
+
+- [ ] Implement acyclic imports
+- [ ] Add file input as `result<str, io_err>`
+- [ ] Add builtin `list<T>`

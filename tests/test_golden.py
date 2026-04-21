@@ -31,6 +31,12 @@ class GoldenTests(unittest.TestCase):
         self.assertFalse(diagnostics.has_errors(), render_diagnostics(source, diagnostics.items))
         self.assertGolden(emitted, ROOT / "tests" / "golden" / "c" / "mutate_counter.c")
 
+    def test_c_output_while_counter(self) -> None:
+        source = SourceFile.from_path(ROOT / "examples" / "while_counter.nq")
+        diagnostics, emitted = compile_source(source)
+        self.assertFalse(diagnostics.has_errors(), render_diagnostics(source, diagnostics.items))
+        self.assertGolden(emitted, ROOT / "tests" / "golden" / "c" / "while_counter.c")
+
     def test_diagnostic_snapshot_parse(self) -> None:
         source = SourceFile(
             Path("diag_parse.nq"),
