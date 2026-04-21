@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: first Nauqtype-written front-end skeleton that can load, lex, shallow-parse, run top-level/import resolution, run a first body-level resolver slice, and diagnose its own module tree
+- `selfhost/`: first Nauqtype-written front-end skeleton that can load, lex, shallow-parse, resolve top-level/import facts, resolve flat type references, run body-level resolver slices, and run the first selfhost type-checker/value-flow checks over its own module tree
 
 ## Quick Start
 
@@ -66,15 +66,24 @@ Current selfhost semantic coverage:
 
 - top-level item collection
 - flat-root import collection and top-level visibility checks
+- flat type-reference collection for returns, params, local annotations, fields, and enum payloads
+- visible vs hidden-imported vs unknown type diagnostics
 - function-scope collection
 - parameter and local binding collection
 - first body-level unknown-name / duplicate-local diagnostics
+- first expression-aware name resolution for call targets, plain values, and struct-literal type heads
+- callable-vs-value diagnostics for local call targets and bare function names
+- first pattern-aware constructor resolution inside `match`
+- body-level imported visibility diagnostics for hidden names, constructors, and struct-literal type heads
+- first selfhost type-checker slice for entry `main` shape plus function/constructor/pattern arity
+- first selfhost value-flow slice for annotated local initializers, return expressions, and bool-only `if` / `while` conditions when the expression shape is inferable from flat facts
 
 Current selfhost semantic gaps:
 
-- full expression-aware resolver parity
-- body-level pattern and constructor resolution parity
-- selfhost type-checker parity
+- full expression-aware resolver parity beyond the current call/value/struct-head split
+- fuller body-level resolver parity after the new type-resolution slice
+- fuller selfhost value inference beyond the current flat literal/name/call/struct classifier
+- selfhost type-checker parity beyond the current signature/arity/value-flow slices
 
 ## Key Docs
 

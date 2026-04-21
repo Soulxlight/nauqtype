@@ -80,6 +80,82 @@ class IntegrationTests(unittest.TestCase):
         result = self.run_program(self.root / "selfhost" / "body_resolve_error_probe.nq")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_selfhost_pattern_resolve_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "pattern_resolve_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_pattern_resolve_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "pattern_resolve_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_hidden_import_body_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "hidden_import_body_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_hidden_import_pattern_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "hidden_import_pattern_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_expression_resolve_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "expression_resolve_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_call_value_class_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "call_value_class_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_hidden_import_struct_literal_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "hidden_import_struct_literal_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_type_resolve_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "type_resolve_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_unknown_type_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "unknown_type_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_hidden_import_type_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "hidden_import_type_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_typecheck_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "typecheck_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_call_arity_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "call_arity_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_pattern_arity_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "pattern_arity_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_main_signature_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "main_signature_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_value_flow_typecheck_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "value_flow_typecheck_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_annotated_local_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "annotated_local_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_return_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "return_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_if_condition_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "if_condition_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_while_condition_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "while_condition_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

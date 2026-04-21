@@ -102,5 +102,7 @@
 ## Near-Self-Hosting Next
 
 - [ ] Extend `selfhost/` from the first body-level resolver slice to fuller resolver parity
-- [ ] Add `selfhost/` type-checker parity
+- [x] Add the first `selfhost/` type-checker slice
+- [x] Add the first `selfhost/` value-flow type-checker slice for annotated locals, returns, and conditions
+- [ ] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to fuller parity
 - [ ] Decide the first trustworthy self-hosting milestone and comparison strategy

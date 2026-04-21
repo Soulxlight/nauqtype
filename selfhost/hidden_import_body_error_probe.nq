@@ -14,21 +14,20 @@ fn main() -> i32 {
     let mut type_refs: list<type_ref> = list();
     let mut diags: list<diag> = list();
 
-    let a_tokens = lex("pub fn helper() -> i32 { return 1; }");
-    let main_tokens = lex("use a; fn main() -> i32 { return 0; }");
+    let helper_tokens = lex("fn secret() -> i32 { return 1; }");
+    let main_tokens = lex("use helper; fn main() -> i32 { return secret(); }");
 
-    list_push(mutref modules, "a");
+    list_push(mutref modules, "helper");
     list_push(mutref modules, "main");
 
-    parse_file("a", ref a_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    parse_file("helper", ref helper_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
     parse_file("main", ref main_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
 
-    let summary = resolve_modules(ref modules, ref uses, ref items, mutref diags);
-    if summary.diag_count != 0 {
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+
+    if list_len(ref diags) == 0 {
         return 1;
-    }
-    if summary.item_count != 2 {
-        return 2;
     }
     return 0;
 }

@@ -1,0 +1,38 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+use typecheck;
+
+fn main() -> i32 {
+    let mut modules: list<str> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut diags: list<diag> = list();
+
+    let tokens = lex("type pair { left: i32, right: i32, } enum parse_err { bad_digit(i32), } fn add(a: i32, b: i32) -> i32 { return a + b; } fn classify(err: parse_err) -> i32 { match err { bad_digit(code) => { return code; }, } } fn main() -> i32 { let value = add(2, 3); let pair_value = pair { left: value, right: classify(bad_digit(4)), }; match bad_digit(1) { bad_digit(code) => { return pair_value.left + pair_value.right + code; }, } }");
+
+    list_push(mutref modules, "main");
+
+    parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref variant_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
+
+    if list_len(ref diags) != 0 {
+        return 1;
+    }
+    return 0;
+}

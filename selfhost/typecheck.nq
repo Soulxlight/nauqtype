@@ -1,0 +1,670 @@
+use ast;
+use diag;
+
+fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, at, message));
+    return;
+}
+
+fn is_function_item(item: top_item) -> bool {
+    match item.kind {
+        item_fn => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_variant_item(item: top_item) -> bool {
+    match item.kind {
+        item_variant => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn module_has_local_function_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and is_function_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_function_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.is_public and is_function_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_has_local_variant_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and is_variant_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_variant_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.is_public and is_variant_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn builtin_function_arity(name: str) -> i32 {
+    if name == "print_line" or name == "read_file" or name == "io_err_text" {
+        return 1;
+    }
+    if name == "str_len" {
+        return 1;
+    }
+    if name == "str_get" or name == "str_slice" {
+        if name == "str_get" {
+            return 2;
+        }
+        return 3;
+    }
+    if name == "list" {
+        return 0;
+    }
+    if name == "list_push" or name == "list_get" {
+        return 2;
+    }
+    if name == "list_len" {
+        return 1;
+    }
+    return -1;
+}
+
+fn builtin_variant_arity(name: str) -> i32 {
+    if name == "Some" or name == "Ok" or name == "Err" {
+        return 1;
+    }
+    if name == "None" {
+        return 0;
+    }
+    return -1;
+}
+
+fn lookup_function_fact_arity(functions: ref list<function_fact>, module: str, name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.param_count;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_variant_fact_arity(variants: ref list<variant_fact>, module: str, name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.payload_count;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn visible_function_arity(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> i32 {
+    let builtin = builtin_function_arity(name);
+    if builtin >= 0 {
+        return builtin;
+    }
+    if module_has_local_function_name(ref items, module, name) {
+        return lookup_function_fact_arity(ref functions, module, name);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, name) {
+                    return lookup_function_fact_arity(ref functions, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return -1;
+}
+
+fn visible_variant_arity(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> i32 {
+    let builtin = builtin_variant_arity(name);
+    if builtin >= 0 {
+        return builtin;
+    }
+    if module_has_local_variant_name(ref items, module, name) {
+        return lookup_variant_fact_arity(ref variants, module, name);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant_name(ref items, value.name, name) {
+                    return lookup_variant_fact_arity(ref variants, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return -1;
+}
+
+fn find_entry_main(functions: ref list<function_fact>) -> option<function_fact> {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == "main" and value.name == "main" {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+pub fn typecheck_modules(functions: ref list<function_fact>, variants: ref list<variant_fact>, calls: ref list<call_fact>, patterns: ref list<pattern_ctor_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> typecheck_summary
+audit {
+    intent("Run the first selfhost type-checker slice over function signatures, calls, and constructor arity");
+    mutates(diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+
+    let entry = find_entry_main(ref functions);
+    match entry {
+        Some(main_fn) => {
+            if main_fn.param_count != 0 or main_fn.return_name != "i32" or main_fn.return_is_borrow {
+                push_diag(mutref diags, main_fn.module, main_fn.at, "`main` must take no parameters and return plain `i32`");
+            }
+        },
+        None => {
+            push_diag(mutref diags, "main", 0, "missing `main` entry point");
+        },
+    }
+
+    let mut call_index = 0;
+    while call_index < list_len(ref calls) {
+        let entry = list_get(ref calls, call_index);
+        match entry {
+            Some(current) => {
+                let fn_arity = visible_function_arity(ref functions, ref uses, ref items, current.module, current.name);
+                if fn_arity >= 0 {
+                    if fn_arity != current.arg_count {
+                        push_diag(mutref diags, current.module, current.at, "call argument count does not match target signature");
+                    }
+                } else {
+                    let variant_arity = visible_variant_arity(ref variants, ref uses, ref items, current.module, current.name);
+                    if variant_arity >= 0 and variant_arity != current.arg_count {
+                        push_diag(mutref diags, current.module, current.at, "constructor call argument count does not match payload count");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        call_index = call_index + 1;
+    }
+
+    let mut pattern_index = 0;
+    while pattern_index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, pattern_index);
+        match entry {
+            Some(current) => {
+                let variant_arity = visible_variant_arity(ref variants, ref uses, ref items, current.module, current.name);
+                if variant_arity >= 0 and variant_arity != current.arg_count {
+                    push_diag(mutref diags, current.module, current.at, "pattern constructor argument count does not match payload count");
+                }
+            },
+            None => {
+            },
+        }
+        pattern_index = pattern_index + 1;
+    }
+
+    return make_typecheck_summary(
+        list_len(ref functions),
+        list_len(ref calls),
+        list_len(ref patterns),
+        list_len(ref diags) - start_diag_count
+    );
+}
+
+fn builtin_function_return_name(name: str) -> str {
+    if name == "print_line" {
+        return "unit";
+    }
+    if name == "read_file" {
+        return "result";
+    }
+    if name == "io_err_text" {
+        return "str";
+    }
+    if name == "str_len" {
+        return "i32";
+    }
+    if name == "str_get" or name == "str_slice" {
+        return "option";
+    }
+    if name == "list" {
+        return "list";
+    }
+    if name == "list_push" {
+        return "unit";
+    }
+    if name == "list_len" {
+        return "i32";
+    }
+    if name == "list_get" {
+        return "option";
+    }
+    return "";
+}
+
+fn builtin_variant_enum_name(name: str) -> str {
+    if name == "Some" or name == "None" {
+        return "option";
+    }
+    if name == "Ok" or name == "Err" {
+        return "result";
+    }
+    return "";
+}
+
+fn lookup_function_fact_return_name(functions: ref list<function_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.return_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn lookup_function_fact_return_is_borrow(functions: ref list<function_fact>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.return_is_borrow;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn lookup_variant_fact_enum_name(variants: ref list<variant_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.enum_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn visible_function_return_name(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+    let builtin = builtin_function_return_name(name);
+    if builtin != "" {
+        return builtin;
+    }
+    if module_has_local_function_name(ref items, module, name) {
+        return lookup_function_fact_return_name(ref functions, module, name);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, name) {
+                    return lookup_function_fact_return_name(ref functions, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn visible_function_return_is_borrow(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> bool {
+    let builtin = builtin_function_return_name(name);
+    if builtin != "" {
+        return false;
+    }
+    if module_has_local_function_name(ref items, module, name) {
+        return lookup_function_fact_return_is_borrow(ref functions, module, name);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, name) {
+                    return lookup_function_fact_return_is_borrow(ref functions, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn visible_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+    let builtin = builtin_variant_enum_name(name);
+    if builtin != "" {
+        return builtin;
+    }
+    if module_has_local_variant_name(ref items, module, name) {
+        return lookup_variant_fact_enum_name(ref variants, module, name);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant_name(ref items, value.name, name) {
+                    return lookup_variant_fact_enum_name(ref variants, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn visible_zero_arg_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+    let builtin = builtin_variant_enum_name(name);
+    if builtin != "" and builtin_variant_arity(name) == 0 {
+        return builtin;
+    }
+    let variant_arity = visible_variant_arity(ref variants, ref uses, ref items, module, name);
+    if variant_arity == 0 {
+        return visible_variant_enum_name(ref variants, ref uses, ref items, module, name);
+    }
+    return "";
+}
+
+fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id {
+                    return value.parent_scope_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn typed_binding_type_in_scope(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> str {
+    let mut best_at = -1;
+    let mut best_type_name = "";
+    let mut index = 0;
+    while index < list_len(ref typed_bindings) {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at < at and value.at > best_at {
+                    best_at = value.at;
+                    best_type_name = value.type_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return best_type_name;
+}
+
+fn visible_typed_binding_type(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> str {
+    let mut current_scope_id = scope_id;
+    while current_scope_id >= 0 {
+        let type_name = typed_binding_type_in_scope(ref typed_bindings, module, function_name, current_scope_id, name, at);
+        if type_name != "" {
+            return type_name;
+        }
+        current_scope_id = parent_scope_id(ref scopes, module, function_name, current_scope_id);
+    }
+    return "";
+}
+
+fn type_names_match(expected: str, actual: str) -> bool {
+    if expected == actual {
+        return true;
+    }
+    if expected == "int" and actual == "i32" {
+        return true;
+    }
+    if expected == "i32" and actual == "int" {
+        return true;
+    }
+    return false;
+}
+
+fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str) -> str {
+    match expr_kind {
+        expr_unit => {
+            return "unit";
+        },
+        expr_bool => {
+            return "bool";
+        },
+        expr_i32 => {
+            return "i32";
+        },
+        expr_str => {
+            return "str";
+        },
+        expr_struct => {
+            return expr_name;
+        },
+        expr_name => {
+            let binding_type_name = visible_typed_binding_type(ref typed_bindings, ref scopes, module, function_name, scope_id, expr_name, at);
+            if binding_type_name != "" {
+                return binding_type_name;
+            }
+            return visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
+        },
+        expr_call => {
+            let function_return_name = visible_function_return_name(ref functions, ref uses, ref items, module, expr_name);
+            if function_return_name != "" {
+                return function_return_name;
+            }
+            return visible_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
+        },
+        _ => {
+            return "";
+        },
+    }
+}
+
+pub fn typecheck_value_facts(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> value_typecheck_summary
+audit {
+    intent("Run the next selfhost type-checker slice over annotated locals, return expressions, and condition types");
+    mutates(diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+
+    let mut local_index = 0;
+    while local_index < list_len(ref locals) {
+        let entry = list_get(ref locals, local_index);
+        match entry {
+            Some(current) => {
+                if not current.expected_is_borrow {
+                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref typed_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
+                    if actual_type_name != "" and not type_names_match(current.expected_type_name, actual_type_name) {
+                        push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        local_index = local_index + 1;
+    }
+
+    let mut return_index = 0;
+    while return_index < list_len(ref returns) {
+        let entry = list_get(ref returns, return_index);
+        match entry {
+            Some(current) => {
+                let expected_return_name = visible_function_return_name(ref functions, ref uses, ref items, current.module, current.function_name);
+                let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
+                if expected_return_name != "" and not expected_is_borrow {
+                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref typed_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
+                    if actual_type_name != "" and not type_names_match(expected_return_name, actual_type_name) {
+                        push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        return_index = return_index + 1;
+    }
+
+    let mut condition_index = 0;
+    while condition_index < list_len(ref conditions) {
+        let entry = list_get(ref conditions, condition_index);
+        match entry {
+            Some(current) => {
+                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref typed_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
+                if actual_type_name != "" and actual_type_name != "bool" {
+                    match current.kind {
+                        condition_if => {
+                            push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");
+                        },
+                        condition_while => {
+                            push_diag(mutref diags, current.module, current.at, "`while` condition must have type `bool`");
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        condition_index = condition_index + 1;
+    }
+
+    return make_value_typecheck_summary(
+        list_len(ref typed_bindings),
+        list_len(ref locals),
+        list_len(ref returns),
+        list_len(ref conditions),
+        list_len(ref diags) - start_diag_count
+    );
+}

@@ -5,6 +5,7 @@ use parser;
 use resolve;
 
 fn main() -> i32 {
+    let mut modules: list<str> = list();
     let mut items: list<top_item> = list();
     let mut uses: list<module_use> = list();
     let mut scopes: list<body_scope> = list();
@@ -13,15 +14,18 @@ fn main() -> i32 {
     let mut type_refs: list<type_ref> = list();
     let mut diags: list<diag> = list();
 
-    let tokens = lex("fn main() -> i32 { let value = 1; if value == 1 { let inner = value; return inner; } return value; }");
+    let tokens = lex("type pair { left: i32, } fn main() -> i32 { let first = pair; pair(); return 0; }");
+
+    list_push(mutref modules, "main");
+
     parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
 
-    let summary = resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
-    if summary.diag_count != 0 {
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+
+    if list_len(ref diags) < 2 {
         return 1;
-    }
-    if summary.function_count != 1 {
-        return 2;
     }
     return 0;
 }
