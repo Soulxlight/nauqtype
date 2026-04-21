@@ -482,6 +482,34 @@ audit {
     };
 }
 
+pub type assignment_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    target_name: str,
+    at: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+}
+
+pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_kind: expr_fact_kind, expr_name: str) -> assignment_fact
+audit {
+    intent("Build a flat assignment-expression fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return assignment_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        target_name: target_name,
+        at: at,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+    };
+}
+
 pub type typecheck_summary {
     function_count: i32,
     call_count: i32,
@@ -509,10 +537,11 @@ pub type value_typecheck_summary {
     local_count: i32,
     return_count: i32,
     condition_count: i32,
+    assignment_count: i32,
     diag_count: i32,
 }
 
-pub fn make_value_typecheck_summary(typed_binding_count: i32, local_count: i32, return_count: i32, condition_count: i32, diag_count: i32) -> value_typecheck_summary
+pub fn make_value_typecheck_summary(typed_binding_count: i32, local_count: i32, return_count: i32, condition_count: i32, assignment_count: i32, diag_count: i32) -> value_typecheck_summary
 audit {
     intent("Build a value-flow type-check summary record");
     mutates();
@@ -524,6 +553,7 @@ audit {
         local_count: local_count,
         return_count: return_count,
         condition_count: condition_count,
+        assignment_count: assignment_count,
         diag_count: diag_count,
     };
 }

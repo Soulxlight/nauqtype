@@ -77,12 +77,15 @@ Current selfhost semantic coverage:
 - body-level imported visibility diagnostics for hidden names, constructors, and struct-literal type heads
 - first selfhost type-checker slice for entry `main` shape plus function/constructor/pattern arity
 - first selfhost value-flow slice for annotated local initializers, return expressions, and bool-only `if` / `while` conditions when the expression shape is inferable from flat facts
+- simple unannotated-local inference for inferable literal/call/arithmetic/logic shapes
+- assignment compatibility checks when the target type and rhs type are both inferable from flat facts
 
 Current selfhost semantic gaps:
 
 - full expression-aware resolver parity beyond the current call/value/struct-head split
-- fuller body-level resolver parity after the new type-resolution slice
-- fuller selfhost value inference beyond the current flat literal/name/call/struct classifier
+- fuller body-level resolver parity after the current expression-class slices
+- fuller selfhost value inference beyond the current flat literal/name/call/struct/arithmetic/logic classifier
+- field-access-aware inference and richer match-result typing
 - selfhost type-checker parity beyond the current signature/arity/value-flow slices
 
 ## Key Docs
