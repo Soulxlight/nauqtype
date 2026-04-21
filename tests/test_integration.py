@@ -38,6 +38,10 @@ class IntegrationTests(unittest.TestCase):
         result = self.run_example("while_counter.nq")
         self.assertEqual(result.returncode, 5, result.stderr)
 
+    def test_fibonacci_program_runs(self) -> None:
+        result = self.run_example("fibonacci.nq")
+        self.assertEqual(result.returncode, 55, result.stderr)
+
     def test_review_contracts_program_runs(self) -> None:
         result = self.run_example("review_contracts.nq")
         self.assertEqual(result.returncode, 42, result.stderr)

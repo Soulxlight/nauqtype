@@ -55,6 +55,13 @@ Run the current stage1 selfhost front end:
 python -m compiler.main run selfhost\main.nq
 ```
 
+Example programs worth checking first:
+
+- `examples\hello.nq`: minimal print path
+- `examples\while_counter.nq`: bootstrap-track `while` loop semantics
+- `examples\fibonacci.nq`: functions plus mutable locals and `while`
+- `examples\review_contracts.nq`: AI Contracts and `review` workflow
+
 Current selfhost semantic coverage:
 
 - top-level item collection
