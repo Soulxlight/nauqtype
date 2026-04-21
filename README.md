@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: first Nauqtype-written front-end skeleton that can load, lex, parse, and diagnose its own module tree
+- `selfhost/`: first Nauqtype-written front-end skeleton that can load, lex, shallow-parse, run top-level/import resolution, run a first body-level resolver slice, and diagnose its own module tree
 
 ## Quick Start
 
@@ -54,6 +54,20 @@ Run the current stage1 selfhost front end:
 ```powershell
 python -m compiler.main run selfhost\main.nq
 ```
+
+Current selfhost semantic coverage:
+
+- top-level item collection
+- flat-root import collection and top-level visibility checks
+- function-scope collection
+- parameter and local binding collection
+- first body-level unknown-name / duplicate-local diagnostics
+
+Current selfhost semantic gaps:
+
+- full expression-aware resolver parity
+- body-level pattern and constructor resolution parity
+- selfhost type-checker parity
 
 ## Key Docs
 

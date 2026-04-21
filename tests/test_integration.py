@@ -10,14 +10,16 @@ class IntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[1]
 
-    def run_example(self, name: str) -> subprocess.CompletedProcess[str]:
-        example = self.root / "examples" / name
+    def run_program(self, path: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, "-m", "compiler.main", "run", str(example)],
+            [sys.executable, "-m", "compiler.main", "run", str(path)],
             cwd=self.root,
             capture_output=True,
             text=True,
         )
+
+    def run_example(self, name: str) -> subprocess.CompletedProcess[str]:
+        return self.run_program(self.root / "examples" / name)
 
     def test_hello_runs(self) -> None:
         result = self.run_example("hello.nq")
@@ -54,14 +56,25 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stderr)
 
     def test_selfhost_stage1_runs(self) -> None:
-        result = subprocess.run(
-            [sys.executable, "-m", "compiler.main", "run", str(self.root / "selfhost" / "main.nq")],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-        )
+        result = self.run_program(self.root / "selfhost" / "main.nq")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "stage1 front-end ok\n")
+
+    def test_selfhost_resolve_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "resolve_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_resolve_collision_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "resolve_collision_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_body_resolve_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "body_resolve_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_body_resolve_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "body_resolve_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

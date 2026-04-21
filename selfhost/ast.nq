@@ -1,9 +1,61 @@
+pub enum top_item_kind {
+    item_fn,
+    item_type,
+    item_enum,
+    item_variant,
+}
+
+pub type top_item {
+    module: str,
+    name: str,
+    kind: top_item_kind,
+    is_public: bool,
+    at: i32,
+}
+
+pub fn make_top_item(module: str, name: str, kind: top_item_kind, is_public: bool, at: i32) -> top_item
+audit {
+    intent("Build a flat top-level item summary record");
+    mutates();
+    effects();
+}
+{
+    return top_item {
+        module: module,
+        name: name,
+        kind: kind,
+        is_public: is_public,
+        at: at,
+    };
+}
+
+pub type module_use {
+    module: str,
+    name: str,
+    at: i32,
+}
+
+pub fn make_module_use(module: str, name: str, at: i32) -> module_use
+audit {
+    intent("Build a flat module-use summary record");
+    mutates();
+    effects();
+}
+{
+    return module_use {
+        module: module,
+        name: name,
+        at: at,
+    };
+}
+
 pub type parse_summary {
     item_count: i32,
+    use_count: i32,
     diag_count: i32,
 }
 
-pub fn make_parse_summary(item_count: i32, diag_count: i32) -> parse_summary
+pub fn make_parse_summary(item_count: i32, use_count: i32, diag_count: i32) -> parse_summary
 audit {
     intent("Build a shallow parse summary record");
     mutates();
@@ -12,6 +64,130 @@ audit {
 {
     return parse_summary {
         item_count: item_count,
+        use_count: use_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type resolve_summary {
+    module_count: i32,
+    item_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_resolve_summary(module_count: i32, item_count: i32, diag_count: i32) -> resolve_summary
+audit {
+    intent("Build a top-level resolution summary record");
+    mutates();
+    effects();
+}
+{
+    return resolve_summary {
+        module_count: module_count,
+        item_count: item_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type body_scope {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    parent_scope_id: i32,
+    depth: i32,
+}
+
+pub fn make_body_scope(module: str, function_name: str, scope_id: i32, parent_scope_id: i32, depth: i32) -> body_scope
+audit {
+    intent("Build a flat body-scope record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return body_scope {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        parent_scope_id: parent_scope_id,
+        depth: depth,
+    };
+}
+
+pub type body_binding {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    is_param: bool,
+}
+
+pub fn make_body_binding(module: str, function_name: str, scope_id: i32, name: str, at: i32, is_param: bool) -> body_binding
+audit {
+    intent("Build a flat local-binding record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return body_binding {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        is_param: is_param,
+    };
+}
+
+pub enum name_ref_kind {
+    ref_value,
+    ref_call,
+    ref_assign_target,
+    ref_borrow_target,
+}
+
+pub type name_ref {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    kind: name_ref_kind,
+}
+
+pub fn make_name_ref(module: str, function_name: str, scope_id: i32, name: str, at: i32, kind: name_ref_kind) -> name_ref
+audit {
+    intent("Build a flat name-reference record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return name_ref {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        kind: kind,
+    };
+}
+
+pub type body_resolve_summary {
+    function_count: i32,
+    ref_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_body_resolve_summary(function_count: i32, ref_count: i32, diag_count: i32) -> body_resolve_summary
+audit {
+    intent("Build a body-level resolution summary record");
+    mutates();
+    effects();
+}
+{
+    return body_resolve_summary {
+        function_count: function_count,
+        ref_count: ref_count,
         diag_count: diag_count,
     };
 }

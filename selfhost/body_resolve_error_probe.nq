@@ -1,0 +1,23 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+
+fn main() -> i32 {
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut diags: list<diag> = list();
+
+    let tokens = lex("fn main() -> i32 { let value = 1; return missing; }");
+    parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref diags);
+
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    if list_len(ref diags) == 0 {
+        return 1;
+    }
+    return 0;
+}

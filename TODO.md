@@ -101,6 +101,6 @@
 
 ## Near-Self-Hosting Next
 
-- [ ] Extend `selfhost/` from shallow parsing to resolver parity
+- [ ] Extend `selfhost/` from the first body-level resolver slice to fuller resolver parity
 - [ ] Add `selfhost/` type-checker parity
 - [ ] Decide the first trustworthy self-hosting milestone and comparison strategy

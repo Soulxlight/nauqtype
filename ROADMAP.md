@@ -103,12 +103,12 @@ The first real success target is:
 Status:
 
 - done in the current bootstrap compiler
-- `selfhost/` now exercises the stage1 surface by loading, lexing, parsing, and diagnosing its own module graph
+- `selfhost/` now exercises the stage1 surface by loading, lexing, shallow-parsing, resolving top-level/import facts, resolving a first body-level slice, and diagnosing its own module graph
 
 ### M10: Self-Hosting Parity
 
-- extend the Nauqtype stage1 front end beyond shallow parsing
-- add stage1 resolver parity
+- extend the Nauqtype stage1 front end beyond shallow parsing, top-level/import resolution, and the first body-level slice
+- add stage1 body-level resolver parity
 - add stage1 type-checker parity
 - keep the language core frozen unless a concrete bootstrap blocker requires otherwise
 

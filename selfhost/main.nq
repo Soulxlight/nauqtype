@@ -1,7 +1,9 @@
+use ast;
 use files;
 use diag;
 use lexer;
 use parser;
+use resolve;
 
 fn list_contains(items: ref list<str>, target: str) -> bool {
     let mut index = 0;
@@ -48,10 +50,11 @@ fn emit_all(diags: ref list<diag>) -> unit {
     return;
 }
 
-fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, diags: mutref list<diag>) -> unit {
-    let loaded = read_named_module(name);
-    match loaded {
+fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loaded_modules: mutref list<str>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, diags: mutref list<diag>) -> unit {
+    let loaded_file = read_named_module(name);
+    match loaded_file {
         Ok(file) => {
+            list_push(mutref loaded_modules, name);
             let tokens = lex(file.text);
             let imports = extract_uses(ref tokens);
             let mut import_index = 0;
@@ -66,7 +69,7 @@ fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, dia
                 }
                 import_index = import_index + 1;
             }
-            parse_file(file.name, ref tokens, mutref diags);
+            parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref diags);
         },
         Err(err) => {
             list_push(mutref diags, make_diag(name, 0, io_err_text(err)));
@@ -78,6 +81,12 @@ fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, dia
 fn main() -> i32 {
     let mut pending: list<str> = list();
     let mut seen: list<str> = list();
+    let mut loaded: list<str> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
     let mut diags: list<diag> = list();
     let mut cursor = 0;
 
@@ -89,7 +98,7 @@ fn main() -> i32 {
             Some(name) => {
                 if not list_contains(ref seen, name) {
                     list_push(mutref seen, name);
-                    analyze_module(name, mutref pending, ref seen, mutref diags);
+                    analyze_module(name, mutref pending, ref seen, mutref loaded, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref diags);
                 }
             },
             None => {
@@ -97,6 +106,9 @@ fn main() -> i32 {
         }
         cursor = cursor + 1;
     }
+
+    resolve_modules(ref loaded, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
 
     if list_len(ref diags) > 0 {
         emit_all(ref diags);

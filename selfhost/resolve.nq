@@ -1,0 +1,332 @@
+use ast;
+use diag;
+
+fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, at, message));
+    return;
+}
+
+fn list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_has_local_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.is_public and value.name == name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn imported_name_visible_before(uses: ref list<module_use>, items: ref list<top_item>, module: str, before_index: i32, imported_module: str, name: str) -> bool {
+    let mut use_index = 0;
+    while use_index < before_index {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name != imported_module and module_exports_name(ref items, value.name, name) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn is_builtin_name(name: str) -> bool {
+    if name == "print_line" or name == "read_file" or name == "io_err_text" {
+        return true;
+    }
+    if name == "str_len" or name == "str_get" or name == "str_slice" {
+        return true;
+    }
+    if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
+        return true;
+    }
+    if name == "Some" or name == "None" or name == "Ok" or name == "Err" {
+        return true;
+    }
+    return false;
+}
+
+fn module_has_visible_top_name(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> bool {
+    if is_builtin_name(name) {
+        return true;
+    }
+    if module_has_local_name(ref items, module, name) {
+        return true;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_name(ref items, value.name, name) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id {
+                    return value.parent_scope_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn binding_visible_in_scope(bindings: ref list<body_binding>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at < at {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn has_visible_binding(bindings: ref list<body_binding>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut current_scope_id = scope_id;
+    while current_scope_id >= 0 {
+        if binding_visible_in_scope(ref bindings, module, function_name, current_scope_id, name, at) {
+            return true;
+        }
+        current_scope_id = parent_scope_id(ref scopes, module, function_name, current_scope_id);
+    }
+    return false;
+}
+
+fn count_root_function_scopes(scopes: ref list<body_scope>) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.parent_scope_id < 0 {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+pub fn resolve_modules(modules: ref list<str>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> resolve_summary
+audit {
+    intent("Resolve flat top-level item and import visibility facts for the current selfhost module graph");
+    mutates(diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(current) => {
+                let mut prev_index = 0;
+                while prev_index < item_index {
+                    let previous = list_get(ref items, prev_index);
+                    match previous {
+                        Some(value) => {
+                            if value.module == current.module and value.name == current.name {
+                                push_diag(mutref diags, current.module, current.at, "duplicate top-level item name in one module");
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    prev_index = prev_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(current_use) => {
+                if not list_contains(ref modules, current_use.name) {
+                    push_diag(mutref diags, current_use.module, current_use.at, "imported module could not be loaded");
+                } else {
+                    let mut item_cursor = 0;
+                    while item_cursor < list_len(ref items) {
+                        let imported = list_get(ref items, item_cursor);
+                        match imported {
+                            Some(value) => {
+                                if value.module == current_use.name and value.is_public {
+                                    if module_has_local_name(ref items, current_use.module, value.name) {
+                                        push_diag(mutref diags, current_use.module, current_use.at, "import collides with an existing local top-level name");
+                                    } else {
+                                        if imported_name_visible_before(ref uses, ref items, current_use.module, use_index, current_use.name, value.name) {
+                                            push_diag(mutref diags, current_use.module, current_use.at, "duplicate imported public name");
+                                        }
+                                    }
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        item_cursor = item_cursor + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+
+    return make_resolve_summary(list_len(ref modules), list_len(ref items), list_len(ref diags) - start_diag_count);
+}
+
+pub fn resolve_bodies(scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> body_resolve_summary
+audit {
+    intent("Resolve flat function-body bindings and name references for the current selfhost graph");
+    mutates(diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(current) => {
+                let mut prev_index = 0;
+                while prev_index < binding_index {
+                    let previous = list_get(ref bindings, prev_index);
+                    match previous {
+                        Some(value) => {
+                            if value.module == current.module and value.function_name == current.function_name and value.scope_id == current.scope_id and value.name == current.name {
+                                push_diag(mutref diags, current.module, current.at, "duplicate local binding in one scope");
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    prev_index = prev_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+
+    let mut ref_index = 0;
+    while ref_index < list_len(ref refs) {
+        let entry = list_get(ref refs, ref_index);
+        match entry {
+            Some(current) => {
+                let has_local = has_visible_binding(ref bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                match current.kind {
+                    ref_assign_target => {
+                        if not has_local {
+                            push_diag(mutref diags, current.module, current.at, "unknown assignment target in function body");
+                        }
+                    },
+                    ref_borrow_target => {
+                        if not has_local {
+                            push_diag(mutref diags, current.module, current.at, "cannot borrow unknown local name");
+                        }
+                    },
+                    ref_call => {
+                        if not has_local and not module_has_visible_top_name(ref items, ref uses, current.module, current.name) {
+                            push_diag(mutref diags, current.module, current.at, "unknown call target in function body");
+                        }
+                    },
+                    ref_value => {
+                        if not has_local and not module_has_visible_top_name(ref items, ref uses, current.module, current.name) {
+                            push_diag(mutref diags, current.module, current.at, "unknown name in function body");
+                        }
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        ref_index = ref_index + 1;
+    }
+
+    return make_body_resolve_summary(count_root_function_scopes(ref scopes), list_len(ref refs), list_len(ref diags) - start_diag_count);
+}

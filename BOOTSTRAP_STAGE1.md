@@ -20,7 +20,7 @@ The current stage0 compiler implements all three locked Stage1 unlocks:
 - file input as `result<str, io_err>`
 - builtin `list<T>`
 
-The first selfhost workspace now lives in `selfhost/` and can load, lex, parse, and diagnose its own module tree.
+The first selfhost workspace now lives in `selfhost/` and can load, lex, shallow-parse, run top-level/import resolution, run a first body-level resolver slice, and diagnose its own module tree.
 
 ## Acyclic Imports
 
@@ -65,6 +65,6 @@ Minimum collection goal:
 
 Stage1 is not self-hosting yet. The next work is semantic parity inside `selfhost/`:
 
-- resolver parity
+- fuller body-level resolver parity beyond the current top-level/import slice
 - type-checker parity
 - stronger diagnostic fidelity

@@ -69,6 +69,10 @@ class CEmitter:
             seen.add(typ)
             if typ.kind in {"option", "result", "list"} and not self._is_runtime_generic_type(typ):
                 self.generated_generic_types.add(typ)
+            if typ.kind == "list":
+                # `list_get` returns `option<T>`, so the matching option carrier
+                # must be emitted before the list helper definitions.
+                collect_type(Type("option", args=(typ.args[0],)))
             for child in typ.args:
                 collect_type(child)
 
