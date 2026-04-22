@@ -28,6 +28,17 @@ fn is_variant_item(item: top_item) -> bool {
     }
 }
 
+fn is_type_item(item: top_item) -> bool {
+    match item.kind {
+        item_type => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn module_has_local_function_name(items: ref list<top_item>, module: str, name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref items) {
@@ -89,6 +100,42 @@ fn module_exports_variant_name(items: ref list<top_item>, module: str, name: str
         match entry {
             Some(value) => {
                 if value.module == module and value.name == name and value.is_public and is_variant_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_has_local_type_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and is_type_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_type_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.is_public and is_type_item(value) {
                     return true;
                 }
             },
@@ -489,9 +536,48 @@ fn visible_zero_arg_variant_enum_name(variants: ref list<variant_fact>, uses: re
     return "";
 }
 
-fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
+fn visible_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+    if module_has_local_type_name(ref items, module, name) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_type_name(ref items, value.name, name) {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn lookup_field_type_name(field_facts: ref list<field_fact>, module: str, type_name: str, field_name: str) -> str {
     let mut index = 0;
-    while index < list_len(ref scopes) {
+    while index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.type_name == type_name and value.name == field_name {
+                    return value.field_type_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = list_len(ref scopes) - 1;
+    while index >= 0 {
         let entry = list_get(ref scopes, index);
         match entry {
             Some(value) => {
@@ -502,52 +588,70 @@ fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str
             None => {
             },
         }
-        index = index + 1;
+        index = index - 1;
     }
     return -1;
 }
 
 fn typed_binding_type_in_scope(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> str {
-    let mut best_at = -1;
-    let mut best_type_name = "";
-    let mut index = 0;
-    while index < list_len(ref typed_bindings) {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
         let entry = list_get(ref typed_bindings, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at < at and value.at > best_at {
-                    best_at = value.at;
-                    best_type_name = value.type_name;
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at < at {
+                    return value.type_name;
                 }
             },
             None => {
             },
         }
-        index = index + 1;
-    }
-    return best_type_name;
-}
-
-fn visible_typed_binding_type(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> str {
-    let mut current_scope_id = scope_id;
-    while current_scope_id >= 0 {
-        let type_name = typed_binding_type_in_scope(ref typed_bindings, module, function_name, current_scope_id, name, at);
-        if type_name != "" {
-            return type_name;
-        }
-        current_scope_id = parent_scope_id(ref scopes, module, function_name, current_scope_id);
+        index = index - 1;
     }
     return "";
 }
 
-fn clone_typed_bindings(source: ref list<typed_binding_fact>) -> list<typed_binding_fact> {
+fn scope_is_visible(scopes: ref list<body_scope>, module: str, function_name: str, current_scope_id: i32, candidate_scope_id: i32) -> bool {
+    let mut scope_cursor = current_scope_id;
+    while scope_cursor >= 0 {
+        if scope_cursor == candidate_scope_id {
+            return true;
+        }
+        scope_cursor = parent_scope_id(ref scopes, module, function_name, scope_cursor);
+    }
+    return false;
+}
+
+fn visible_typed_binding_type(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> str {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return value.type_name;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return "";
+}
+
+fn clone_typed_bindings_for_function(source: ref list<typed_binding_fact>, module: str, function_name: str) -> list<typed_binding_fact> {
     let mut copied: list<typed_binding_fact> = list();
     let mut index = 0;
     while index < list_len(ref source) {
         let entry = list_get(ref source, index);
         match entry {
             Some(value) => {
-                list_push(mutref copied, value);
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
             },
             None => {
             },
@@ -570,7 +674,7 @@ fn type_names_match(expected: str, actual: str) -> bool {
     return false;
 }
 
-fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str) -> str {
+fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> str {
     match expr_kind {
         expr_unit => {
             return "unit";
@@ -594,6 +698,36 @@ fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<v
             }
             return visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
         },
+        expr_field => {
+            let mut base_type_name = visible_typed_binding_type(ref typed_bindings, ref scopes, module, function_name, scope_id, expr_name, at);
+            if base_type_name == "" {
+                base_type_name = visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
+            }
+            if base_type_name != "" {
+                let local_field_type_name = lookup_field_type_name(ref field_facts, module, base_type_name, expr_member_name);
+                if local_field_type_name != "" {
+                    return local_field_type_name;
+                }
+                let mut use_index = 0;
+                while use_index < list_len(ref uses) {
+                    let entry = list_get(ref uses, use_index);
+                    match entry {
+                        Some(value) => {
+                            if value.module == module {
+                                let imported_field_type_name = lookup_field_type_name(ref field_facts, value.name, base_type_name, expr_member_name);
+                                if imported_field_type_name != "" {
+                                    return imported_field_type_name;
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    use_index = use_index + 1;
+                }
+            }
+            return "";
+        },
         expr_call => {
             let function_return_name = visible_function_return_name(ref functions, ref uses, ref items, module, expr_name);
             if function_return_name != "" {
@@ -607,7 +741,7 @@ fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<v
     }
 }
 
-pub fn typecheck_value_facts(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> value_typecheck_summary
+pub fn typecheck_value_facts(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
     intent("Run the next selfhost type-checker slice over local initializers, return expressions, condition types, and assignment compatibility");
     mutates(diags);
@@ -615,96 +749,118 @@ audit {
 }
 {
     let start_diag_count = list_len(ref diags);
-    let mut resolved_bindings = clone_typed_bindings(ref typed_bindings);
+    let mut total_resolved_binding_count = 0;
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let function_entry = list_get(ref functions, function_index);
+        match function_entry {
+            Some(current_function) => {
+                let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
 
-    let mut local_index = 0;
-    while local_index < list_len(ref locals) {
-        let entry = list_get(ref locals, local_index);
-        match entry {
-            Some(current) => {
-                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
-                if current.expected_type_name != "" {
-                    if not current.expected_is_borrow {
-                        if actual_type_name != "" and not type_names_match(current.expected_type_name, actual_type_name) {
-                            push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
-                        }
-                    }
-                } else {
-                    if current.name != "" and actual_type_name != "" {
-                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_type_name, false));
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        local_index = local_index + 1;
-    }
-
-    let mut assignment_index = 0;
-    while assignment_index < list_len(ref assignments) {
-        let entry = list_get(ref assignments, assignment_index);
-        match entry {
-            Some(current) => {
-                let expected_type_name = visible_typed_binding_type(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
-                if expected_type_name != "" {
-                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
-                    if actual_type_name != "" and not type_names_match(expected_type_name, actual_type_name) {
-                        push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        assignment_index = assignment_index + 1;
-    }
-
-    let mut return_index = 0;
-    while return_index < list_len(ref returns) {
-        let entry = list_get(ref returns, return_index);
-        match entry {
-            Some(current) => {
-                let expected_return_name = visible_function_return_name(ref functions, ref uses, ref items, current.module, current.function_name);
-                let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
-                if expected_return_name != "" and not expected_is_borrow {
-                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
-                    if actual_type_name != "" and not type_names_match(expected_return_name, actual_type_name) {
-                        push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        return_index = return_index + 1;
-    }
-
-    let mut condition_index = 0;
-    while condition_index < list_len(ref conditions) {
-        let entry = list_get(ref conditions, condition_index);
-        match entry {
-            Some(current) => {
-                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name);
-                if actual_type_name != "" and actual_type_name != "bool" {
-                    match current.kind {
-                        condition_if => {
-                            push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");
+                let mut local_index = 0;
+                while local_index < list_len(ref locals) {
+                    let local_entry = list_get(ref locals, local_index);
+                    match local_entry {
+                        Some(current) => {
+                            if current.module == current_function.module and current.function_name == current_function.name {
+                                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
+                                if current.expected_type_name != "" {
+                                    if not current.expected_is_borrow {
+                                        if actual_type_name != "" and not type_names_match(current.expected_type_name, actual_type_name) {
+                                            push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                        }
+                                    }
+                                } else {
+                                    if current.name != "" and actual_type_name != "" {
+                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_type_name, false));
+                                    }
+                                }
+                            }
                         },
-                        condition_while => {
-                            push_diag(mutref diags, current.module, current.at, "`while` condition must have type `bool`");
+                        None => {
                         },
                     }
+                    local_index = local_index + 1;
                 }
+
+                let mut assignment_index = 0;
+                while assignment_index < list_len(ref assignments) {
+                    let assignment_entry = list_get(ref assignments, assignment_index);
+                    match assignment_entry {
+                        Some(current) => {
+                            if current.module == current_function.module and current.function_name == current_function.name {
+                                let expected_type_name = visible_typed_binding_type(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
+                                if expected_type_name != "" {
+                                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
+                                    if actual_type_name != "" and not type_names_match(expected_type_name, actual_type_name) {
+                                        push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
+                                    }
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    assignment_index = assignment_index + 1;
+                }
+
+                let mut return_index = 0;
+                while return_index < list_len(ref returns) {
+                    let return_entry = list_get(ref returns, return_index);
+                    match return_entry {
+                        Some(current) => {
+                            if current.module == current_function.module and current.function_name == current_function.name {
+                                let expected_return_name = visible_function_return_name(ref functions, ref uses, ref items, current.module, current.function_name);
+                                let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
+                                if expected_return_name != "" and not expected_is_borrow {
+                                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
+                                    if actual_type_name != "" and not type_names_match(expected_return_name, actual_type_name) {
+                                        push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
+                                    }
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    return_index = return_index + 1;
+                }
+
+                let mut condition_index = 0;
+                while condition_index < list_len(ref conditions) {
+                    let condition_entry = list_get(ref conditions, condition_index);
+                    match condition_entry {
+                        Some(current) => {
+                            if current.module == current_function.module and current.function_name == current_function.name {
+                                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
+                                if actual_type_name != "" and actual_type_name != "bool" {
+                                    match current.kind {
+                                        condition_if => {
+                                            push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");
+                                        },
+                                        condition_while => {
+                                            push_diag(mutref diags, current.module, current.at, "`while` condition must have type `bool`");
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    condition_index = condition_index + 1;
+                }
+
+                total_resolved_binding_count = total_resolved_binding_count + list_len(ref resolved_bindings);
             },
             None => {
             },
         }
-        condition_index = condition_index + 1;
+        function_index = function_index + 1;
     }
 
     return make_value_typecheck_summary(
-        list_len(ref resolved_bindings),
+        total_resolved_binding_count,
         list_len(ref locals),
         list_len(ref returns),
         list_len(ref conditions),

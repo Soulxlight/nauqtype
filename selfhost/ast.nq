@@ -280,6 +280,30 @@ audit {
     };
 }
 
+pub type field_fact {
+    module: str,
+    type_name: str,
+    name: str,
+    at: i32,
+    field_type_name: str,
+}
+
+pub fn make_field_fact(module: str, type_name: str, name: str, at: i32, field_type_name: str) -> field_fact
+audit {
+    intent("Build a flat type-field fact record for selfhost value inference");
+    mutates();
+    effects();
+}
+{
+    return field_fact {
+        module: module,
+        type_name: type_name,
+        name: name,
+        at: at,
+        field_type_name: field_type_name,
+    };
+}
+
 pub type variant_fact {
     module: str,
     enum_name: str,
@@ -387,6 +411,7 @@ pub enum expr_fact_kind {
     expr_i32,
     expr_str,
     expr_name,
+    expr_field,
     expr_call,
     expr_struct,
 }
@@ -401,9 +426,10 @@ pub type local_init_fact {
     expected_is_borrow: bool,
     expr_kind: expr_fact_kind,
     expr_name: str,
+    expr_member_name: str,
 }
 
-pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, expr_kind: expr_fact_kind, expr_name: str) -> local_init_fact
+pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> local_init_fact
 audit {
     intent("Build a flat annotated-local fact record for the next selfhost type-checker slice");
     mutates();
@@ -420,6 +446,7 @@ audit {
         expected_is_borrow: expected_is_borrow,
         expr_kind: expr_kind,
         expr_name: expr_name,
+        expr_member_name: expr_member_name,
     };
 }
 
@@ -430,9 +457,10 @@ pub type return_expr_fact {
     at: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
+    expr_member_name: str,
 }
 
-pub fn make_return_expr_fact(module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str) -> return_expr_fact
+pub fn make_return_expr_fact(module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> return_expr_fact
 audit {
     intent("Build a flat return-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -446,6 +474,7 @@ audit {
         at: at,
         expr_kind: expr_kind,
         expr_name: expr_name,
+        expr_member_name: expr_member_name,
     };
 }
 
@@ -462,9 +491,10 @@ pub type condition_fact {
     kind: condition_fact_kind,
     expr_kind: expr_fact_kind,
     expr_name: str,
+    expr_member_name: str,
 }
 
-pub fn make_condition_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: condition_fact_kind, expr_kind: expr_fact_kind, expr_name: str) -> condition_fact
+pub fn make_condition_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: condition_fact_kind, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> condition_fact
 audit {
     intent("Build a flat condition-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -479,6 +509,7 @@ audit {
         kind: kind,
         expr_kind: expr_kind,
         expr_name: expr_name,
+        expr_member_name: expr_member_name,
     };
 }
 
@@ -490,9 +521,10 @@ pub type assignment_fact {
     at: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
+    expr_member_name: str,
 }
 
-pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_kind: expr_fact_kind, expr_name: str) -> assignment_fact
+pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> assignment_fact
 audit {
     intent("Build a flat assignment-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -507,6 +539,7 @@ audit {
         at: at,
         expr_kind: expr_kind,
         expr_name: expr_name,
+        expr_member_name: expr_member_name,
     };
 }
 

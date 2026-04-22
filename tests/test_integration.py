@@ -140,6 +140,10 @@ class IntegrationTests(unittest.TestCase):
         result = self.run_program(self.root / "selfhost" / "value_flow_typecheck_probe.nq")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_selfhost_multi_module_value_flow_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "multi_module_value_flow_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_selfhost_assignment_value_typecheck_probe_runs(self) -> None:
         result = self.run_program(self.root / "selfhost" / "assignment_value_typecheck_probe.nq")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -154,6 +158,14 @@ class IntegrationTests(unittest.TestCase):
 
     def test_selfhost_inferred_local_return_typecheck_error_probe_reports_error(self) -> None:
         result = self.run_program(self.root / "selfhost" / "inferred_local_return_typecheck_error_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_field_access_inferred_local_typecheck_probe_runs(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "field_access_inferred_local_typecheck_probe.nq")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_selfhost_field_access_return_typecheck_error_probe_reports_error(self) -> None:
+        result = self.run_program(self.root / "selfhost" / "field_access_return_typecheck_error_probe.nq")
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_selfhost_annotated_local_typecheck_error_probe_reports_error(self) -> None:

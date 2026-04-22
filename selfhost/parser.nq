@@ -1263,6 +1263,76 @@ fn collect_type_decl_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
     }
 }
 
+fn collect_value_type_decl_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, field_facts: mutref list<field_fact>) -> unit {
+    advance(mutref cursor);
+    let type_name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let mut type_name_text = "";
+    match type_name.kind {
+        tk_ident => {
+            type_name_text = type_name.text;
+        },
+        _ => {
+        },
+    }
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, open, "expected `{` after type name");
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                push_diag(mutref diags, file, current, "unterminated type declaration");
+                return;
+            },
+            _ => {
+                let field_name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                let mut field_name_text = "";
+                let mut field_at = current.start;
+                match field_name.kind {
+                    tk_ident => {
+                        field_name_text = field_name.text;
+                        field_at = field_name.start;
+                    },
+                    _ => {
+                    },
+                }
+                let colon = token_at(ref tokens, cursor);
+                match colon.kind {
+                    tk_colon => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                        push_diag(mutref diags, file, colon, "expected `:` after field name");
+                    },
+                }
+                let field_type_name = consume_type_name(ref tokens, mutref cursor, mutref diags, file);
+                if type_name_text != "" and field_name_text != "" and field_type_name != "" {
+                    list_push(mutref field_facts, make_field_fact(file, type_name_text, field_name_text, field_at, field_type_name));
+                }
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+}
+
 fn collect_enum_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, variants: mutref list<variant_fact>) -> unit {
     advance(mutref cursor);
     let enum_name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -1740,6 +1810,12 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
         },
         tk_ident => {
             let next = token_at(ref tokens, expr_start + 1);
+            if is_dot_token(next) {
+                let member = token_at(ref tokens, expr_start + 2);
+                if is_ident_token(member) and expr_start + 3 == end {
+                    return expr_field;
+                }
+            }
             if is_lparen_token(next) {
                 return expr_call;
             }
@@ -1773,6 +1849,26 @@ fn classify_expr_name(tokens: ref list<token>, start: i32, end: i32) -> str {
             return "";
         },
     }
+}
+
+fn classify_expr_member_name(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let expr_start = normalized_expr_start(ref tokens, start, end);
+    if expr_start + 2 >= end {
+        return "";
+    }
+    let current = token_at(ref tokens, expr_start);
+    let next = token_at(ref tokens, expr_start + 1);
+    let member = token_at(ref tokens, expr_start + 2);
+    match current.kind {
+        tk_ident => {
+            if is_dot_token(next) and is_ident_token(member) and expr_start + 3 == end {
+                return member.text;
+            }
+        },
+        _ => {
+        },
+    }
+    return "";
 }
 
 fn collect_value_match_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, next_scope_id: mutref i32, typed_bindings: mutref list<typed_binding_fact>, locals: mutref list<local_init_fact>, returns: mutref list<return_expr_fact>, conditions: mutref list<condition_fact>, assignments: mutref list<assignment_fact>) -> unit {
@@ -1868,14 +1964,14 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             let expr_start = cursor;
             skip_until_semi(ref tokens, mutref cursor);
             if local_name != "" {
-                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_is_borrow, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1)));
+                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_is_borrow, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1)));
             }
         },
         tk_kw_if => {
             advance(mutref cursor);
             let condition_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
-            list_push(mutref conditions, make_condition_fact(file, function_name, scope_id, current.start, condition_if, classify_expr_kind(ref tokens, condition_start, cursor), classify_expr_name(ref tokens, condition_start, cursor)));
+            list_push(mutref conditions, make_condition_fact(file, function_name, scope_id, current.start, condition_if, classify_expr_kind(ref tokens, condition_start, cursor), classify_expr_name(ref tokens, condition_start, cursor), classify_expr_member_name(ref tokens, condition_start, cursor)));
             let then_scope_id = next_value_scope_id(mutref next_scope_id);
             collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, mutref next_scope_id, mutref typed_bindings, mutref locals, mutref returns, mutref conditions, mutref assignments);
             let maybe_else = token_at(ref tokens, cursor);
@@ -1893,7 +1989,7 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             advance(mutref cursor);
             let condition_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
-            list_push(mutref conditions, make_condition_fact(file, function_name, scope_id, current.start, condition_while, classify_expr_kind(ref tokens, condition_start, cursor), classify_expr_name(ref tokens, condition_start, cursor)));
+            list_push(mutref conditions, make_condition_fact(file, function_name, scope_id, current.start, condition_while, classify_expr_kind(ref tokens, condition_start, cursor), classify_expr_name(ref tokens, condition_start, cursor), classify_expr_member_name(ref tokens, condition_start, cursor)));
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
             collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, mutref next_scope_id, mutref typed_bindings, mutref locals, mutref returns, mutref conditions, mutref assignments);
         },
@@ -1904,14 +2000,14 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             advance(mutref cursor);
             let expr_start = cursor;
             skip_until_semi(ref tokens, mutref cursor);
-            list_push(mutref returns, make_return_expr_fact(file, function_name, scope_id, current.start, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1)));
+            list_push(mutref returns, make_return_expr_fact(file, function_name, scope_id, current.start, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1)));
         },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
             if is_ident_token(current) and is_eq_token(next) {
                 let expr_start = cursor + 2;
                 skip_until_semi(ref tokens, mutref cursor);
-                list_push(mutref assignments, make_assignment_fact(file, function_name, scope_id, current.text, current.start, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1)));
+                list_push(mutref assignments, make_assignment_fact(file, function_name, scope_id, current.text, current.start, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1)));
             } else {
                 skip_until_semi(ref tokens, mutref cursor);
             }
@@ -2038,10 +2134,10 @@ fn collect_value_function_facts(tokens: ref list<token>, cursor: mutref i32, dia
     collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, root_scope_id, mutref next_scope_id, mutref typed_bindings, mutref locals, mutref returns, mutref conditions, mutref assignments);
 }
 
-pub fn collect_value_type_facts(file: str, tokens: ref list<token>, typed_bindings: mutref list<typed_binding_fact>, locals: mutref list<local_init_fact>, returns: mutref list<return_expr_fact>, conditions: mutref list<condition_fact>, assignments: mutref list<assignment_fact>, diags: mutref list<diag>) -> value_typecheck_summary
+pub fn collect_value_type_facts(file: str, tokens: ref list<token>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, locals: mutref list<local_init_fact>, returns: mutref list<return_expr_fact>, conditions: mutref list<condition_fact>, assignments: mutref list<assignment_fact>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
     intent("Collect flat binding, local, return, condition, and assignment facts for the next selfhost type-checker slice");
-    mutates(typed_bindings, locals, returns, conditions, assignments, diags);
+    mutates(typed_bindings, field_facts, locals, returns, conditions, assignments, diags);
     effects();
 }
 {
@@ -2098,7 +2194,7 @@ audit {
                         collect_value_function_facts(ref tokens, mutref cursor, mutref diags, file, mutref typed_bindings, mutref locals, mutref returns, mutref conditions, mutref assignments);
                     },
                     tk_kw_type => {
-                        collect_type_decl_facts(ref tokens, mutref cursor, mutref diags, file);
+                        collect_value_type_decl_facts(ref tokens, mutref cursor, mutref diags, file, mutref field_facts);
                     },
                     tk_kw_enum => {
                         collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants);
@@ -2113,7 +2209,7 @@ audit {
                 collect_value_function_facts(ref tokens, mutref cursor, mutref diags, file, mutref typed_bindings, mutref locals, mutref returns, mutref conditions, mutref assignments);
             },
             tk_kw_type => {
-                collect_type_decl_facts(ref tokens, mutref cursor, mutref diags, file);
+                collect_value_type_decl_facts(ref tokens, mutref cursor, mutref diags, file, mutref field_facts);
             },
             tk_kw_enum => {
                 collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants);

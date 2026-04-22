@@ -18,6 +18,7 @@ fn main() -> i32 {
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut field_facts: list<field_fact> = list();
     let mut local_inits: list<local_init_fact> = list();
     let mut return_facts: list<return_expr_fact> = list();
     let mut condition_facts: list<condition_fact> = list();
@@ -30,13 +31,13 @@ fn main() -> i32 {
 
     parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
     collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref variant_facts, mutref call_facts, mutref pattern_facts, mutref diags);
-    let collect_summary = collect_value_type_facts("main", ref tokens, mutref typed_bindings, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignments, mutref diags);
+    let collect_summary = collect_value_type_facts("main", ref tokens, mutref typed_bindings, mutref field_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignments, mutref diags);
 
     resolve_modules(ref modules, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-    let summary = typecheck_value_facts(ref function_facts, ref variant_facts, ref scopes, ref typed_bindings, ref local_inits, ref return_facts, ref condition_facts, ref assignments, ref uses, ref items, mutref diags);
+    let summary = typecheck_value_facts(ref function_facts, ref variant_facts, ref scopes, ref typed_bindings, ref field_facts, ref local_inits, ref return_facts, ref condition_facts, ref assignments, ref uses, ref items, mutref diags);
 
     if collect_summary.diag_count != 0 {
         return 1;

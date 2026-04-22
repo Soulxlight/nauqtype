@@ -543,8 +543,8 @@ fn binding_creates_local(binding: body_binding, items: ref list<top_item>, uses:
 }
 
 fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
-    let mut index = 0;
-    while index < list_len(ref scopes) {
+    let mut index = list_len(ref scopes) - 1;
+    while index >= 0 {
         let entry = list_get(ref scopes, index);
         match entry {
             Some(value) => {
@@ -555,14 +555,14 @@ fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str
             None => {
             },
         }
-        index = index + 1;
+        index = index - 1;
     }
     return -1;
 }
 
 fn binding_visible_in_scope(bindings: ref list<body_binding>, items: ref list<top_item>, uses: ref list<module_use>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
-    let mut index = 0;
-    while index < list_len(ref bindings) {
+    let mut index = list_len(ref bindings) - 1;
+    while index >= 0 {
         let entry = list_get(ref bindings, index);
         match entry {
             Some(value) => {
@@ -573,20 +573,97 @@ fn binding_visible_in_scope(bindings: ref list<body_binding>, items: ref list<to
             None => {
             },
         }
-        index = index + 1;
+        index = index - 1;
+    }
+    return false;
+}
+
+fn scope_is_visible(scopes: ref list<body_scope>, module: str, function_name: str, current_scope_id: i32, candidate_scope_id: i32) -> bool {
+    let mut scope_cursor = current_scope_id;
+    while scope_cursor >= 0 {
+        if scope_cursor == candidate_scope_id {
+            return true;
+        }
+        scope_cursor = parent_scope_id(ref scopes, module, function_name, scope_cursor);
     }
     return false;
 }
 
 fn has_visible_binding(bindings: ref list<body_binding>, scopes: ref list<body_scope>, items: ref list<top_item>, uses: ref list<module_use>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
-    let mut current_scope_id = scope_id;
-    while current_scope_id >= 0 {
-        if binding_visible_in_scope(ref bindings, ref items, ref uses, module, function_name, current_scope_id, name, at) {
-            return true;
+    let mut index = list_len(ref bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return true;
+                    }
+                }
+            },
+            None => {
+            },
         }
-        current_scope_id = parent_scope_id(ref scopes, module, function_name, current_scope_id);
+        index = index - 1;
     }
     return false;
+}
+
+fn copy_scopes_for_function(source: ref list<body_scope>, module: str, function_name: str) -> list<body_scope> {
+    let mut copied: list<body_scope> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn copy_bindings_for_function(source: ref list<body_binding>, module: str, function_name: str) -> list<body_binding> {
+    let mut copied: list<body_binding> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn copy_refs_for_function(source: ref list<name_ref>, module: str, function_name: str) -> list<name_ref> {
+    let mut copied: list<name_ref> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
 }
 
 fn count_root_function_scopes(scopes: ref list<body_scope>) -> i32 {
@@ -606,6 +683,119 @@ fn count_root_function_scopes(scopes: ref list<body_scope>) -> i32 {
         index = index + 1;
     }
     return count;
+}
+
+fn resolve_duplicate_bindings(bindings: ref list<body_binding>, items: ref list<top_item>, uses: ref list<module_use>, diags: mutref list<diag>) -> unit {
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(current) => {
+                let current_creates_local = binding_creates_local(current, ref items, ref uses);
+                if current_creates_local {
+                    let mut prev_index = binding_index - 1;
+                    while prev_index >= 0 {
+                        let previous = list_get(ref bindings, prev_index);
+                        match previous {
+                            Some(value) => {
+                                if value.scope_id == current.scope_id and value.name == current.name and binding_creates_local(value, ref items, ref uses) {
+                                    push_diag(mutref diags, current.module, current.at, "duplicate local binding in one scope");
+                                    prev_index = -1;
+                                } else {
+                                    prev_index = prev_index - 1;
+                                }
+                            },
+                            None => {
+                                prev_index = prev_index - 1;
+                            },
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return;
+}
+
+fn resolve_function_refs(scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> unit {
+    let mut ref_index = 0;
+    while ref_index < list_len(ref refs) {
+        let entry = list_get(ref refs, ref_index);
+        match entry {
+            Some(current) => {
+                let has_local = has_visible_binding(ref bindings, ref scopes, ref items, ref uses, current.module, current.function_name, current.scope_id, current.name, current.at);
+                match current.kind {
+                    ref_assign_target => {
+                        if not has_local {
+                            push_diag(mutref diags, current.module, current.at, "unknown assignment target in function body");
+                        }
+                    },
+                    ref_borrow_target => {
+                        if not has_local {
+                            push_diag(mutref diags, current.module, current.at, "cannot borrow unknown local name");
+                        }
+                    },
+                    ref_call => {
+                        if has_local {
+                            push_diag(mutref diags, current.module, current.at, "local name cannot be called in function body");
+                        } else {
+                            if module_has_visible_expression_name(ref items, ref uses, current.module, current.name) {
+                            } else {
+                                if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) {
+                                    push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
+                                } else {
+                                    push_diag(mutref diags, current.module, current.at, "unknown call target in function body");
+                                }
+                            }
+                        }
+                    },
+                    ref_value => {
+                        if not has_local {
+                            if module_has_visible_variant_name(ref items, ref uses, current.module, current.name) {
+                            } else {
+                                if module_has_visible_function_name(ref items, ref uses, current.module, current.name) {
+                                    push_diag(mutref diags, current.module, current.at, "function name cannot be used as a plain value in function body");
+                                } else {
+                                    if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) {
+                                        push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
+                                    } else {
+                                        push_diag(mutref diags, current.module, current.at, "unknown name in function body");
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    ref_struct_type => {
+                        if module_has_visible_type_name(ref items, ref uses, current.module, current.name) {
+                        } else {
+                            if module_has_hidden_imported_type_name(ref items, ref uses, current.module, current.name) {
+                                push_diag(mutref diags, current.module, current.at, "type exists in an imported module but is not `pub`");
+                            } else {
+                                push_diag(mutref diags, current.module, current.at, "unknown struct literal type in function body");
+                            }
+                        }
+                    },
+                    ref_pattern_ctor => {
+                        if module_has_visible_variant_name(ref items, ref uses, current.module, current.name) {
+                        } else {
+                            if module_has_hidden_imported_variant_name(ref items, ref uses, current.module, current.name) {
+                                push_diag(mutref diags, current.module, current.at, "pattern constructor exists in an imported module but is not `pub`");
+                            } else {
+                                push_diag(mutref diags, current.module, current.at, "unknown pattern constructor in function body");
+                            }
+                        }
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        ref_index = ref_index + 1;
+    }
+    return;
 }
 
 pub fn resolve_modules(modules: ref list<str>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> resolve_summary
@@ -722,106 +912,23 @@ audit {
 }
 {
     let start_diag_count = list_len(ref diags);
-
-    let mut binding_index = 0;
-    while binding_index < list_len(ref bindings) {
-        let entry = list_get(ref bindings, binding_index);
+    let mut scope_index = 0;
+    while scope_index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, scope_index);
         match entry {
             Some(current) => {
-                let mut prev_index = 0;
-                while prev_index < binding_index {
-                    let previous = list_get(ref bindings, prev_index);
-                    match previous {
-                        Some(value) => {
-                            if binding_creates_local(current, ref items, ref uses) and binding_creates_local(value, ref items, ref uses) and value.module == current.module and value.function_name == current.function_name and value.scope_id == current.scope_id and value.name == current.name {
-                                push_diag(mutref diags, current.module, current.at, "duplicate local binding in one scope");
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                    prev_index = prev_index + 1;
+                if current.parent_scope_id < 0 {
+                    let function_scopes = copy_scopes_for_function(ref scopes, current.module, current.function_name);
+                    let function_bindings = copy_bindings_for_function(ref bindings, current.module, current.function_name);
+                    let function_refs = copy_refs_for_function(ref refs, current.module, current.function_name);
+                    resolve_duplicate_bindings(ref function_bindings, ref items, ref uses, mutref diags);
+                    resolve_function_refs(ref function_scopes, ref function_bindings, ref function_refs, ref uses, ref items, mutref diags);
                 }
             },
             None => {
             },
         }
-        binding_index = binding_index + 1;
-    }
-
-    let mut ref_index = 0;
-    while ref_index < list_len(ref refs) {
-        let entry = list_get(ref refs, ref_index);
-        match entry {
-            Some(current) => {
-                let has_local = has_visible_binding(ref bindings, ref scopes, ref items, ref uses, current.module, current.function_name, current.scope_id, current.name, current.at);
-                match current.kind {
-                    ref_assign_target => {
-                        if not has_local {
-                            push_diag(mutref diags, current.module, current.at, "unknown assignment target in function body");
-                        }
-                    },
-                    ref_borrow_target => {
-                        if not has_local {
-                            push_diag(mutref diags, current.module, current.at, "cannot borrow unknown local name");
-                        }
-                    },
-                    ref_call => {
-                        if has_local {
-                            push_diag(mutref diags, current.module, current.at, "local name cannot be called in function body");
-                        } else {
-                            if module_has_visible_expression_name(ref items, ref uses, current.module, current.name) {
-                            } else {
-                                if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) {
-                                    push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
-                                } else {
-                                    push_diag(mutref diags, current.module, current.at, "unknown call target in function body");
-                                }
-                            }
-                        }
-                    },
-                    ref_value => {
-                        if not has_local {
-                            if module_has_visible_variant_name(ref items, ref uses, current.module, current.name) {
-                            } else {
-                                if module_has_visible_function_name(ref items, ref uses, current.module, current.name) {
-                                    push_diag(mutref diags, current.module, current.at, "function name cannot be used as a plain value in function body");
-                                } else {
-                                    if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) {
-                                        push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
-                                    } else {
-                                        push_diag(mutref diags, current.module, current.at, "unknown name in function body");
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    ref_struct_type => {
-                        if module_has_visible_type_name(ref items, ref uses, current.module, current.name) {
-                        } else {
-                            if module_has_hidden_imported_type_name(ref items, ref uses, current.module, current.name) {
-                                push_diag(mutref diags, current.module, current.at, "type exists in an imported module but is not `pub`");
-                            } else {
-                                push_diag(mutref diags, current.module, current.at, "unknown struct literal type in function body");
-                            }
-                        }
-                    },
-                    ref_pattern_ctor => {
-                        if module_has_visible_variant_name(ref items, ref uses, current.module, current.name) {
-                        } else {
-                            if module_has_hidden_imported_variant_name(ref items, ref uses, current.module, current.name) {
-                                push_diag(mutref diags, current.module, current.at, "pattern constructor exists in an imported module but is not `pub`");
-                            } else {
-                                push_diag(mutref diags, current.module, current.at, "unknown pattern constructor in function body");
-                            }
-                        }
-                    },
-                }
-            },
-            None => {
-            },
-        }
-        ref_index = ref_index + 1;
+        scope_index = scope_index + 1;
     }
 
     return make_body_resolve_summary(count_root_function_scopes(ref scopes), list_len(ref refs), list_len(ref diags) - start_diag_count);
