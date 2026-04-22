@@ -4,6 +4,24 @@ use lexer;
 use source;
 use token;
 
+type expected_type_ctx {
+    head: str,
+    arg1_name: str,
+    arg2_name: str,
+}
+
+fn make_expected_type_ctx(head: str, arg1_name: str, arg2_name: str) -> expected_type_ctx {
+    return expected_type_ctx {
+        head: head,
+        arg1_name: arg1_name,
+        arg2_name: arg2_name,
+    };
+}
+
+fn empty_expected_type_ctx() -> expected_type_ctx {
+    return make_expected_type_ctx("", "", "");
+}
+
 fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
     list_push(mutref diags, make_diag(file, at, message));
     return;
@@ -406,6 +424,26 @@ fn builtin_function_return_name(name: str) -> str {
     return "";
 }
 
+fn builtin_function_return_arg1_name(name: str) -> str {
+    if name == "read_file" {
+        return "str";
+    }
+    if name == "str_get" {
+        return "i32";
+    }
+    if name == "str_slice" {
+        return "str";
+    }
+    return "";
+}
+
+fn builtin_function_return_arg2_name(name: str) -> str {
+    if name == "read_file" {
+        return "io_err";
+    }
+    return "";
+}
+
 fn builtin_variant_enum_name(name: str) -> str {
     if name == "Some" or name == "None" {
         return "option";
@@ -424,6 +462,42 @@ fn lookup_function_fact_return_name(functions: ref list<function_fact>, module: 
             Some(value) => {
                 if value.module == module and value.name == name {
                     return value.return_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn lookup_function_fact_return_arg1_name(functions: ref list<function_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.return_arg1_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn lookup_function_fact_return_arg2_name(functions: ref list<function_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.return_arg2_name;
                 }
             },
             None => {
@@ -493,6 +567,39 @@ fn visible_function_return_name(functions: ref list<function_fact>, uses: ref li
         use_index = use_index + 1;
     }
     return "";
+}
+
+fn visible_function_return_ctx(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> expected_type_ctx {
+    let builtin = builtin_function_return_name(name);
+    if builtin != "" {
+        return make_expected_type_ctx(builtin, builtin_function_return_arg1_name(name), builtin_function_return_arg2_name(name));
+    }
+    if module_has_local_function_name(ref items, module, name) {
+        return make_expected_type_ctx(
+            lookup_function_fact_return_name(ref functions, module, name),
+            lookup_function_fact_return_arg1_name(ref functions, module, name),
+            lookup_function_fact_return_arg2_name(ref functions, module, name)
+        );
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, name) {
+                    return make_expected_type_ctx(
+                        lookup_function_fact_return_name(ref functions, value.name, name),
+                        lookup_function_fact_return_arg1_name(ref functions, value.name, name),
+                        lookup_function_fact_return_arg2_name(ref functions, value.name, name)
+                    );
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return empty_expected_type_ctx();
 }
 
 fn visible_function_return_is_borrow(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> bool {
@@ -596,6 +703,24 @@ fn lookup_field_type_name(field_facts: ref list<field_fact>, module: str, type_n
     return "";
 }
 
+fn lookup_field_ctx(field_facts: ref list<field_fact>, module: str, type_name: str, field_name: str) -> expected_type_ctx {
+    let mut index = 0;
+    while index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.type_name == type_name and value.name == field_name {
+                    return make_expected_type_ctx(value.field_type_name, value.field_type_arg1_name, value.field_type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return empty_expected_type_ctx();
+}
+
 fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
     let mut index = list_len(ref scopes) - 1;
     while index >= 0 {
@@ -632,6 +757,24 @@ fn typed_binding_type_in_scope(typed_bindings: ref list<typed_binding_fact>, mod
     return "";
 }
 
+fn typed_binding_ctx_in_scope(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at < at {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return empty_expected_type_ctx();
+}
+
 fn scope_is_visible(scopes: ref list<body_scope>, module: str, function_name: str, current_scope_id: i32, candidate_scope_id: i32) -> bool {
     let mut scope_cursor = current_scope_id;
     while scope_cursor >= 0 {
@@ -663,8 +806,122 @@ fn visible_typed_binding_type(typed_bindings: ref list<typed_binding_fact>, scop
     return "";
 }
 
+fn visible_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return empty_expected_type_ctx();
+}
+
+fn exact_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at == at {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return empty_expected_type_ctx();
+}
+
 fn clone_typed_bindings_for_function(source: ref list<typed_binding_fact>, module: str, function_name: str) -> list<typed_binding_fact> {
     let mut copied: list<typed_binding_fact> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn clone_local_inits_for_function(source: ref list<local_init_fact>, module: str, function_name: str) -> list<local_init_fact> {
+    let mut copied: list<local_init_fact> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn clone_returns_for_function(source: ref list<return_expr_fact>, module: str, function_name: str) -> list<return_expr_fact> {
+    let mut copied: list<return_expr_fact> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn clone_conditions_for_function(source: ref list<condition_fact>, module: str, function_name: str) -> list<condition_fact> {
+    let mut copied: list<condition_fact> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref copied, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+fn clone_assignments_for_function(source: ref list<assignment_fact>, module: str, function_name: str) -> list<assignment_fact> {
+    let mut copied: list<assignment_fact> = list();
     let mut index = 0;
     while index < list_len(ref source) {
         let entry = list_get(ref source, index);
@@ -711,6 +968,24 @@ fn lookup_function_param_type_name(function_params: ref list<function_param_fact
         cursor = cursor + 1;
     }
     return "";
+}
+
+fn lookup_function_param_ctx(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> expected_type_ctx {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        let entry = list_get(ref function_params, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return empty_expected_type_ctx();
 }
 
 fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
@@ -796,6 +1071,31 @@ fn visible_function_param_type_name(function_params: ref list<function_param_fac
     return "";
 }
 
+fn visible_function_param_ctx(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> expected_type_ctx {
+    let builtin = builtin_function_param_type_name(function_name, index);
+    if builtin != "" {
+        return make_expected_type_ctx(builtin, "", "");
+    }
+    if module_has_local_function_name(ref items, module, function_name) {
+        return lookup_function_param_ctx(ref function_params, module, function_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, function_name) {
+                    return lookup_function_param_ctx(ref function_params, value.name, function_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return empty_expected_type_ctx();
+}
+
 fn lookup_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, module: str, variant_name: str, index: i32) -> str {
     let mut cursor = 0;
     while cursor < list_len(ref variant_payloads) {
@@ -812,6 +1112,24 @@ fn lookup_variant_payload_type_name(variant_payloads: ref list<variant_payload_f
         cursor = cursor + 1;
     }
     return "";
+}
+
+fn lookup_variant_payload_ctx(variant_payloads: ref list<variant_payload_fact>, module: str, variant_name: str, index: i32) -> expected_type_ctx {
+    let mut cursor = 0;
+    while cursor < list_len(ref variant_payloads) {
+        let entry = list_get(ref variant_payloads, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.variant_name == variant_name and value.index == index {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return empty_expected_type_ctx();
 }
 
 fn visible_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, index: i32) -> str {
@@ -836,6 +1154,30 @@ fn visible_variant_payload_type_name(variant_payloads: ref list<variant_payload_
         use_index = use_index + 1;
     }
     return "";
+}
+
+fn visible_variant_payload_ctx(variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, index: i32) -> expected_type_ctx {
+    if builtin_variant_enum_name(variant_name) != "" {
+        return empty_expected_type_ctx();
+    }
+    if module_has_local_variant_name(ref items, module, variant_name) {
+        return lookup_variant_payload_ctx(ref variant_payloads, module, variant_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant_name(ref items, value.name, variant_name) {
+                    return lookup_variant_payload_ctx(ref variant_payloads, value.name, variant_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return empty_expected_type_ctx();
 }
 
 fn module_source_text(sources: ref list<source_file>, module: str) -> str {
@@ -1192,6 +1534,7 @@ fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut index = start;
+    let mut found = -1;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -1213,7 +1556,7 @@ fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
             },
             tk_dot => {
                 if depth == 0 and brace_depth == 0 {
-                    return index;
+                    found = index;
                 }
             },
             _ => {
@@ -1221,7 +1564,7 @@ fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
         }
         index = index + 1;
     }
-    return -1;
+    return found;
 }
 
 fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
@@ -1427,27 +1770,72 @@ fn push_stage1_limitation(diags: mutref list<diag>, file: str, at: i32) -> unit 
     return;
 }
 
-fn infer_call_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> str {
+fn builtin_variant_return_ctx(call_name: str, expected_ctx: expected_type_ctx) -> expected_type_ctx {
+    let enum_name = builtin_variant_enum_name(call_name);
+    if enum_name == "" {
+        return empty_expected_type_ctx();
+    }
+    if expected_ctx.head != "" and type_names_match(enum_name, expected_ctx.head) {
+        return expected_ctx;
+    }
+    return make_expected_type_ctx(enum_name, "", "");
+}
+
+fn builtin_variant_payload_ctx(call_name: str, return_ctx: expected_type_ctx, index: i32) -> expected_type_ctx {
+    if index != 0 {
+        return empty_expected_type_ctx();
+    }
+    if call_name == "Some" {
+        return make_expected_type_ctx(return_ctx.arg1_name, "", "");
+    }
+    if call_name == "Ok" {
+        return make_expected_type_ctx(return_ctx.arg1_name, "", "");
+    }
+    if call_name == "Err" {
+        return make_expected_type_ctx(return_ctx.arg2_name, "", "");
+    }
+    return empty_expected_type_ctx();
+}
+
+fn infer_call_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> str {
     let head = token_at(ref tokens, start);
     let call_name = head.text;
-    let function_return_name = visible_function_return_name(ref functions, ref uses, ref items, module, call_name);
+    let function_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, module, call_name);
     let variant_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, call_name);
+    let mut call_return_ctx = function_return_ctx;
+    if function_return_ctx.head == "" and variant_enum_name != "" {
+        if builtin_variant_enum_name(call_name) != "" {
+            call_return_ctx = builtin_variant_return_ctx(call_name, expected_ctx);
+        } else {
+            call_return_ctx = make_expected_type_ctx(variant_enum_name, "", "");
+        }
+    }
     let mut arg_start = start + 2;
     let arg_end_limit = end - 1;
     let mut arg_index = 0;
 
     while arg_start < arg_end_limit {
         let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
-        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, mutref diags);
-        if function_return_name != "" {
-            let expected_type_name = visible_function_param_type_name(ref function_params, ref uses, ref items, module, call_name, arg_index);
-            if expected_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
+        let mut expected_arg_ctx = empty_expected_type_ctx();
+        if function_return_ctx.head != "" {
+            expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+        } else {
+            if variant_enum_name != "" {
+                if builtin_variant_enum_name(call_name) != "" {
+                    expected_arg_ctx = builtin_variant_payload_ctx(call_name, call_return_ctx, arg_index);
+                } else {
+                    expected_arg_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+                }
+            }
+        }
+        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, expected_arg_ctx, mutref diags);
+        if function_return_ctx.head != "" {
+            if expected_arg_ctx.head != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_arg_ctx.head, actual_type_name) {
                 push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
             }
         } else {
             if variant_enum_name != "" {
-                let expected_type_name = visible_variant_payload_type_name(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
-                if expected_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
+                if expected_arg_ctx.head != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_arg_ctx.head, actual_type_name) {
                     push_diag(mutref diags, module, head.start, "constructor payload type does not match variant payload type");
                 }
             }
@@ -1456,8 +1844,8 @@ fn infer_call_expr_type_name(functions: ref list<function_fact>, function_params
         arg_start = segment_end + 1;
     }
 
-    if function_return_name != "" {
-        return function_return_name;
+    if call_return_ctx.head != "" {
+        return call_return_ctx.head;
     }
     return variant_enum_name;
 }
@@ -1490,12 +1878,12 @@ fn infer_struct_expr_type_name(functions: ref list<function_fact>, function_para
                 return unsupported_type_name();
             },
         }
-        let expected_field_type_name = lookup_field_type_name(ref field_facts, origin_module, type_name, field_name);
-        if expected_field_type_name == "" {
+        let expected_field_ctx = lookup_field_ctx(ref field_facts, origin_module, type_name, field_name);
+        if expected_field_ctx.head == "" {
             push_diag(mutref diags, module, field_token.start, "struct literal field does not exist on type");
         }
-        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, mutref diags);
-        if expected_field_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_field_type_name, actual_type_name) {
+        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, expected_field_ctx, mutref diags);
+        if expected_field_ctx.head != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_field_ctx.head, actual_type_name) {
             push_diag(mutref diags, module, field_token.start, "struct literal field does not match declared field type");
         }
         field_start = segment_end + 1;
@@ -1520,7 +1908,7 @@ fn infer_struct_expr_type_name(functions: ref list<function_fact>, function_para
     return type_name;
 }
 
-fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, diags: mutref list<diag>) -> str {
+fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> str {
     let mut expr_start = expr_content_start(ref tokens, start, end);
     let mut expr_end = end;
     while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
@@ -1533,8 +1921,8 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
 
     let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
     if or_index >= 0 {
-        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, or_index, at, mutref diags);
-        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, mutref diags);
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, or_index, at, empty_expected_type_ctx(), mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
         if has_known_type_name(left_type_name) and left_type_name != "bool" {
             push_diag(mutref diags, module, at, "logical operand must have type `bool`");
         }
@@ -1546,8 +1934,8 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
 
     let and_index = find_root_and_operator(ref tokens, expr_start, expr_end);
     if and_index >= 0 {
-        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, and_index, at, mutref diags);
-        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, mutref diags);
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, and_index, at, empty_expected_type_ctx(), mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
         if has_known_type_name(left_type_name) and left_type_name != "bool" {
             push_diag(mutref diags, module, at, "logical operand must have type `bool`");
         }
@@ -1559,8 +1947,8 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
 
     let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
     if compare_index >= 0 {
-        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, mutref diags);
-        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, mutref diags);
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
         if has_known_type_name(left_type_name) and has_known_type_name(right_type_name) and not type_names_match(left_type_name, right_type_name) {
             push_diag(mutref diags, module, at, "comparison operands must have matching types");
         }
@@ -1569,8 +1957,8 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
 
     let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
     if additive_index >= 0 {
-        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, mutref diags);
-        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, mutref diags);
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, empty_expected_type_ctx(), mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
         if has_known_type_name(left_type_name) and not is_int_like(left_type_name) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
@@ -1582,8 +1970,8 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
 
     let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
     if multiplicative_index >= 0 {
-        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, mutref diags);
-        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, mutref diags);
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, empty_expected_type_ctx(), mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
         if has_known_type_name(left_type_name) and not is_int_like(left_type_name) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
@@ -1596,20 +1984,20 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
     let current = token_at(ref tokens, expr_start);
     match current.kind {
         tk_kw_ref => {
-            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
         },
         tk_kw_mutref => {
-            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
         },
         tk_kw_not => {
-            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
             if has_known_type_name(inner_type_name) and inner_type_name != "bool" {
                 push_diag(mutref diags, module, current.start, "logical operand must have type `bool`");
             }
             return "bool";
         },
         tk_minus => {
-            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
             if has_known_type_name(inner_type_name) and not is_int_like(inner_type_name) {
                 push_diag(mutref diags, module, current.start, "arithmetic operand must have integer type");
             }
@@ -1637,7 +2025,7 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
         },
         tk_ident => {
             if span_is_call_expr(ref tokens, expr_start, expr_end) {
-                return infer_call_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, mutref diags);
+                return infer_call_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, expected_ctx, mutref diags);
             }
             if span_is_struct_expr(ref tokens, expr_start, expr_end) {
                 return infer_struct_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, mutref diags);
@@ -1660,7 +2048,7 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
         match field_token.kind {
             tk_ident => {
                 if dot_index + 2 == expr_end {
-                    let base_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, dot_index, at, mutref diags);
+                    let base_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref diags);
                     if is_unsupported_type_name(base_type_name) {
                         return base_type_name;
                     }
@@ -1670,42 +2058,42 @@ fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref
                     let origin_module = visible_type_origin_module(ref uses, ref items, module, base_type_name);
                     if origin_module == "" {
                         if base_type_name == "bool" {
-                            push_diag(mutref diags, module, at, "field access base has type `bool`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `bool`");
                             return "";
                         }
                         if is_int_like(base_type_name) {
-                            push_diag(mutref diags, module, at, "field access base has integer type");
+                            push_diag(mutref diags, module, field_token.start, "field access base has integer type");
                             return "";
                         }
                         if base_type_name == "str" {
-                            push_diag(mutref diags, module, at, "field access base has type `str`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `str`");
                             return "";
                         }
                         if base_type_name == "option" {
-                            push_diag(mutref diags, module, at, "field access base has type `option`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `option`");
                             return "";
                         }
                         if base_type_name == "result" {
-                            push_diag(mutref diags, module, at, "field access base has type `result`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `result`");
                             return "";
                         }
                         if base_type_name == "list" {
-                            push_diag(mutref diags, module, at, "field access base has type `list`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `list`");
                             return "";
                         }
                         if base_type_name == "token_kind" {
-                            push_diag(mutref diags, module, at, "field access base has type `token_kind`");
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `token_kind`");
                             return "";
                         }
-                        push_diag(mutref diags, module, at, "field access base does not name a readable product type");
+                        push_diag(mutref diags, module, field_token.start, "field access base does not name a readable product type");
                         return "";
                     }
-                    let field_type_name = lookup_field_type_name(ref field_facts, origin_module, base_type_name, field_token.text);
-                    if field_type_name == "" {
-                        push_diag(mutref diags, module, at, "field does not exist on base type");
+                    let field_ctx = lookup_field_ctx(ref field_facts, origin_module, base_type_name, field_token.text);
+                    if field_ctx.head == "" {
+                        push_diag(mutref diags, module, field_token.start, "field does not exist on base type");
                         return "";
                     }
-                    return field_type_name;
+                    return field_ctx.head;
                 }
             },
             _ => {
@@ -1728,118 +2116,127 @@ audit {
 {
     let start_diag_count = list_len(ref diags);
     let mut total_resolved_binding_count = 0;
-    let mut function_index = 0;
-    while function_index < list_len(ref functions) {
-        let function_entry = list_get(ref functions, function_index);
-        match function_entry {
-            Some(current_function) => {
-                let module_text = module_source_text(ref sources, current_function.module);
-                if module_text == "" {
-                    push_diag(mutref diags, current_function.module, current_function.at, "missing source text for selfhost type-check");
-                }
-                let tokens = lex(module_text);
-                let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
+    let mut source_index = 0;
+    while source_index < list_len(ref sources) {
+        let source_entry = list_get(ref sources, source_index);
+        match source_entry {
+            Some(current_source) => {
+                let tokens = lex(current_source.text);
+                let mut function_index = 0;
+                while function_index < list_len(ref functions) {
+                    let function_entry = list_get(ref functions, function_index);
+                    match function_entry {
+                        Some(current_function) => {
+                            if current_function.module == current_source.name {
+                                let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
+                                let function_locals = clone_local_inits_for_function(ref locals, current_function.module, current_function.name);
+                                let function_assignments = clone_assignments_for_function(ref assignments, current_function.module, current_function.name);
+                                let function_returns = clone_returns_for_function(ref returns, current_function.module, current_function.name);
+                                let function_conditions = clone_conditions_for_function(ref conditions, current_function.module, current_function.name);
 
-                let mut local_index = 0;
-                while local_index < list_len(ref locals) {
-                    let local_entry = list_get(ref locals, local_index);
-                    match local_entry {
-                        Some(current) => {
-                            if current.module == current_function.module and current.function_name == current_function.name {
-                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
-                                if current.expected_type_name != "" {
-                                    if not current.expected_is_borrow {
-                                        if has_known_type_name(actual_type_name) and not type_names_match(current.expected_type_name, actual_type_name) {
-                                            push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
-                                        }
-                                    }
-                                } else {
-                                    if current.name != "" and has_known_type_name(actual_type_name) {
-                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_type_name, false));
-                                    }
-                                }
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                    local_index = local_index + 1;
-                }
-
-                let mut assignment_index = 0;
-                while assignment_index < list_len(ref assignments) {
-                    let assignment_entry = list_get(ref assignments, assignment_index);
-                    match assignment_entry {
-                        Some(current) => {
-                            if current.module == current_function.module and current.function_name == current_function.name {
-                                let expected_type_name = visible_typed_binding_type(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
-                                if expected_type_name != "" {
-                                    let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
-                                    if has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
-                                        push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
-                                    }
-                                }
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                    assignment_index = assignment_index + 1;
-                }
-
-                let mut return_index = 0;
-                while return_index < list_len(ref returns) {
-                    let return_entry = list_get(ref returns, return_index);
-                    match return_entry {
-                        Some(current) => {
-                            if current.module == current_function.module and current.function_name == current_function.name {
-                                let expected_return_name = visible_function_return_name(ref functions, ref uses, ref items, current.module, current.function_name);
-                                let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
-                                if expected_return_name != "" and not expected_is_borrow {
-                                    let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
-                                    if has_known_type_name(actual_type_name) and not type_names_match(expected_return_name, actual_type_name) {
-                                        push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
-                                    }
-                                }
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                    return_index = return_index + 1;
-                }
-
-                let mut condition_index = 0;
-                while condition_index < list_len(ref conditions) {
-                    let condition_entry = list_get(ref conditions, condition_index);
-                    match condition_entry {
-                        Some(current) => {
-                            if current.module == current_function.module and current.function_name == current_function.name {
-                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
-                                if has_known_type_name(actual_type_name) and actual_type_name != "bool" {
-                                    match current.kind {
-                                        condition_if => {
-                                            push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");
+                                let mut local_index = 0;
+                                while local_index < list_len(ref function_locals) {
+                                    let local_entry = list_get(ref function_locals, local_index);
+                                    match local_entry {
+                                        Some(current) => {
+                                            let mut expected_ctx = empty_expected_type_ctx();
+                                            if current.expected_type_name != "" {
+                                                expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                            }
+                                            let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                            if current.expected_type_name != "" {
+                                                if not current.expected_is_borrow {
+                                                    if expected_ctx.head != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_ctx.head, actual_type_name) {
+                                                        push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                                    }
+                                                }
+                                            } else {
+                                                if current.name != "" and has_known_type_name(actual_type_name) {
+                                                    list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_type_name, "", "", false));
+                                                }
+                                            }
                                         },
-                                        condition_while => {
-                                            push_diag(mutref diags, current.module, current.at, "`while` condition must have type `bool`");
+                                        None => {
                                         },
                                     }
+                                    local_index = local_index + 1;
                                 }
+
+                                let mut assignment_index = 0;
+                                while assignment_index < list_len(ref function_assignments) {
+                                    let assignment_entry = list_get(ref function_assignments, assignment_index);
+                                    match assignment_entry {
+                                        Some(current) => {
+                                            let expected_ctx = visible_typed_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
+                                            if expected_ctx.head != "" {
+                                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                                if has_known_type_name(actual_type_name) and not type_names_match(expected_ctx.head, actual_type_name) {
+                                                    push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    assignment_index = assignment_index + 1;
+                                }
+
+                                let mut return_index = 0;
+                                while return_index < list_len(ref function_returns) {
+                                    let return_entry = list_get(ref function_returns, return_index);
+                                    match return_entry {
+                                        Some(current) => {
+                                            let expected_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
+                                            let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
+                                            if expected_return_ctx.head != "" and not expected_is_borrow {
+                                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_return_ctx, mutref diags);
+                                                if has_known_type_name(actual_type_name) and not type_names_match(expected_return_ctx.head, actual_type_name) {
+                                                    push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    return_index = return_index + 1;
+                                }
+
+                                let mut condition_index = 0;
+                                while condition_index < list_len(ref function_conditions) {
+                                    let condition_entry = list_get(ref function_conditions, condition_index);
+                                    match condition_entry {
+                                        Some(current) => {
+                                            let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, make_expected_type_ctx("bool", "", ""), mutref diags);
+                                            if has_known_type_name(actual_type_name) and actual_type_name != "bool" {
+                                                match current.kind {
+                                                    condition_if => {
+                                                        push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");
+                                                    },
+                                                    condition_while => {
+                                                        push_diag(mutref diags, current.module, current.at, "`while` condition must have type `bool`");
+                                                    },
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    condition_index = condition_index + 1;
+                                }
+
+                                total_resolved_binding_count = total_resolved_binding_count + list_len(ref resolved_bindings);
                             }
                         },
                         None => {
                         },
                     }
-                    condition_index = condition_index + 1;
+                    function_index = function_index + 1;
                 }
-
-                total_resolved_binding_count = total_resolved_binding_count + list_len(ref resolved_bindings);
             },
             None => {
             },
         }
-        function_index = function_index + 1;
+        source_index = source_index + 1;
     }
 
     return make_value_typecheck_summary(

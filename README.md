@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: first Nauqtype-written front-end skeleton that can load flat-root modules, lex, shallow-parse, resolve the current graph, and run the current selfhost semantic slices across its loaded module graph
+- `selfhost/`: first Nauqtype-written front-end that can load flat-root modules, lex, shallow-parse, resolve the current graph, and run the current trustworthy selfhost semantic slices across its loaded module graph
 
 ## Quick Start
 
@@ -78,19 +78,22 @@ Current selfhost semantic coverage:
 - body-level imported visibility diagnostics for hidden names, constructors, and struct-literal type heads
 - first selfhost type-checker slice for entry `main` shape plus function/constructor/pattern arity
 - recursive span-based selfhost value typing for the current subset: literals, names, calls, constructors, `base.field`, struct literals, parentheses, unary `not` / unary minus, arithmetic, comparisons, and `and` / `or`
+- nested field-chain typing over the current supported base-expression subset
+- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, and `list()` in annotated locals, assignments, returns, call-argument contexts, constructor-payload contexts, and match-arm bodies
 - explicit selfhost limitation diagnostics for expression shapes outside that supported recursive subset
 - simple unannotated-local inference for inferable supported expressions
 - assignment compatibility checks when the target type and rhs type are both inferable
 - field-access-aware local/return inference including imported type facts in the loaded graph
 - full-graph body resolution and current value-flow checking across the loaded selfhost module set
-- differential stage0-vs-stage1 subset coverage for trusted semantic comparison
+- differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
 
 Current selfhost semantic gaps:
 
 - full expression-aware resolver parity beyond the current call/value/struct-head split
 - fuller body-level resolver parity after the current expression-class slices
 - richer selfhost value inference beyond the current supported recursive subset
-- richer match-result typing
+- richer match-result typing and broader pattern-bound value typing
+- non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - selfhost type-checker parity beyond the current signature/arity/value-flow slices
 
 ## Key Docs

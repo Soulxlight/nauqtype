@@ -111,5 +111,8 @@
 - [x] Make stage1 fail closed with explicit limitation diagnostics for unsupported expression shapes
 - [x] Add differential stage0-vs-stage1 subset parity coverage
 - [x] Generalize selfhost flat-root module loading and reject import cycles
+- [x] Extend the selfhost recursive type-checker slice to nested field chains and contextual builtin `Some` / `None` / `Ok` / `Err` / `list()` typing in current value-flow contexts
+- [x] Expand the differential corpus to lock the current trusted subset and the retained non-name-callee limitation boundary
+- [x] Batch current selfhost value-flow checking by module/function to avoid the obvious repeated full rescans
 - [ ] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to fuller parity
 - [ ] Decide the first trustworthy self-hosting milestone and comparison strategy

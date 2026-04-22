@@ -21,7 +21,15 @@ The current stage0 compiler implements all three locked Stage1 unlocks:
 - builtin `list<T>`
 - minimal bootstrap string helpers including `str_concat(left, right) -> str`
 
-The first selfhost workspace now lives in `selfhost/` and can flat-root load its module graph, reject missing modules and import cycles, lex, shallow-parse, run resolver slices, and run the current type-checker slices across its own module tree.
+The first selfhost workspace now lives in `selfhost/` and can flat-root load its module graph, reject missing modules and import cycles, lex, shallow-parse, run resolver slices, and run the current trustworthy type-checker slices across its own module tree.
+
+Current trustworthy selfhost slice:
+
+- recursive span-based typing for the current supported expression subset
+- nested field-chain typing over supported base expressions
+- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, and `list()` in the current value-flow contexts
+- explicit stage1 limitation diagnostics for unsupported expression shapes
+- differential stage0-vs-stage1 coverage for the trusted subset
 
 ## Acyclic Imports
 
@@ -69,3 +77,5 @@ Stage1 is not self-hosting yet. The next work is semantic parity inside `selfhos
 - type-checker parity
 - stronger diagnostic fidelity
 - broader supported expression/result typing beyond the current trustworthy subset
+- richer match-result typing and pattern-bound value typing
+- retained explicit limitation boundary today: non-name callees and member-call syntax

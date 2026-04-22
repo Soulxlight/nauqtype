@@ -322,7 +322,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 {"ACCEPT"},
             ),
             (
-                "nested field chain limitation",
+                "nested field chain accept",
                 {
                     "main": """
                     type inner {
@@ -340,6 +340,235 @@ class SelfhostDifferentialTests(unittest.TestCase):
                             },
                         }.left.right;
                         return value;
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "nested field chain second-hop missing field",
+                {
+                    "main": """
+                    type inner {
+                        right: i32,
+                    }
+
+                    type outer {
+                        left: inner,
+                    }
+
+                    fn main() -> i32 {
+                        let value: i32 = outer {
+                            left: inner {
+                                right: 3,
+                            },
+                        }.left.missing;
+                        return value;
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "nested field chain argument mismatch",
+                {
+                    "main": """
+                    type inner {
+                        right: bool,
+                    }
+
+                    type outer {
+                        left: inner,
+                    }
+
+                    fn take(value: i32) -> i32 {
+                        return value;
+                    }
+
+                    fn main() -> i32 {
+                        return take(outer {
+                            left: inner {
+                                right: true,
+                            },
+                        }.left.right);
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "contextual option constructor mismatch",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value: option<i32> = Some(true);
+                        match value {
+                            Some(inner) => {
+                                return inner;
+                            },
+                            None => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "contextual list construction success",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let items: list<i32> = list();
+                        return list_len(ref items);
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "assignment rhs builtin context mismatch",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let mut value: option<i32> = Some(1);
+                        value = Some(true);
+                        match value {
+                            Some(inner) => {
+                                return inner;
+                            },
+                            None => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "constructor payload mismatch through composite expression",
+                {
+                    "main": """
+                    type wrapper {
+                        value: bool,
+                    }
+
+                    enum parse_err {
+                        bad_digit(i32),
+                    }
+
+                    fn main() -> i32 {
+                        let value: parse_err = bad_digit(wrapper {
+                            value: true,
+                        }.value);
+                        match value {
+                            bad_digit(_) => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "builtin inside variant payload mismatch",
+                {
+                    "main": """
+                    enum wrapper {
+                        hold(option<i32>),
+                    }
+
+                    fn main() -> i32 {
+                        let value: wrapper = hold(Some(true));
+                        match value {
+                            hold(Some(number)) => {
+                                return number;
+                            },
+                            hold(None) => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "contextual ok return mismatch",
+                {
+                    "main": """
+                    fn bad() -> result<i32, io_err> {
+                        return Ok("bad");
+                    }
+
+                    fn main() -> i32 {
+                        let value = bad();
+                        match value {
+                            Ok(number) => {
+                                return number;
+                            },
+                            Err(err) => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "match arm ok err return success",
+                {
+                    "main": """
+                    fn promote(value: option<i32>) -> result<i32, i32> {
+                        match value {
+                            Some(number) => {
+                                return Ok(number);
+                            },
+                            None => {
+                                return Err(0);
+                            },
+                        }
+                    }
+
+                    fn main() -> i32 {
+                        let value = promote(Some(7));
+                        match value {
+                            Ok(number) => {
+                                return number;
+                            },
+                            Err(_) => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "non-name callee limitation",
+                {
+                    "main": """
+                    fn take(value: i32) -> i32 {
+                        return value;
+                    }
+
+                    fn main() -> i32 {
+                        return (take)(1);
                     }
                     """,
                 },
