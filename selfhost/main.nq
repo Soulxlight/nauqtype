@@ -4,6 +4,7 @@ use diag;
 use lexer;
 use parser;
 use resolve;
+use source;
 use typecheck;
 
 fn list_contains(items: ref list<str>, target: str) -> bool {
@@ -35,6 +36,63 @@ fn queue_if_missing(pending: mutref list<str>, seen: ref list<str>, name: str) -
     return;
 }
 
+fn module_reaches_start(start: str, uses: ref list<module_use>) -> bool {
+    let mut pending: list<str> = list();
+    let mut seen: list<str> = list();
+    let mut cursor = 0;
+    list_push(mutref pending, start);
+    while cursor < list_len(ref pending) {
+        let current = list_get(ref pending, cursor);
+        match current {
+            Some(module_name) => {
+                if not list_contains(ref seen, module_name) {
+                    list_push(mutref seen, module_name);
+                    let mut use_index = 0;
+                    while use_index < list_len(ref uses) {
+                        let entry = list_get(ref uses, use_index);
+                        match entry {
+                            Some(value) => {
+                                if value.module == module_name {
+                                    if value.name == start {
+                                        return true;
+                                    }
+                                    queue_if_missing(mutref pending, ref seen, value.name);
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        use_index = use_index + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return false;
+}
+
+fn detect_import_cycles(modules: ref list<str>, uses: ref list<module_use>, diags: mutref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref modules) {
+        let entry = list_get(ref modules, index);
+        match entry {
+            Some(module_name) => {
+                if module_reaches_start(module_name, ref uses) {
+                    list_push(mutref diags, make_diag(module_name, 0, "import cycle detected"));
+                    return;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn emit_all(diags: ref list<diag>) -> unit {
     let mut index = 0;
     while index < list_len(ref diags) {
@@ -51,11 +109,12 @@ fn emit_all(diags: ref list<diag>) -> unit {
     return;
 }
 
-fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loaded_modules: mutref list<str>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, diags: mutref list<diag>) -> unit {
+fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, diags: mutref list<diag>) -> unit {
     let loaded_file = read_named_module(name);
     match loaded_file {
         Ok(file) => {
             list_push(mutref loaded_modules, name);
+            list_push(mutref sources, file);
             let tokens = lex(file.text);
             let imports = extract_uses(ref tokens);
             let mut import_index = 0;
@@ -71,7 +130,7 @@ fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loa
                 import_index = import_index + 1;
             }
             parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-            collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref variant_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+            collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
             collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
         },
         Err(err) => {
@@ -85,6 +144,7 @@ fn main() -> i32 {
     let mut pending: list<str> = list();
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
+    let mut sources: list<source_file> = list();
     let mut items: list<top_item> = list();
     let mut uses: list<module_use> = list();
     let mut scopes: list<body_scope> = list();
@@ -92,7 +152,9 @@ fn main() -> i32 {
     let mut refs: list<name_ref> = list();
     let mut type_refs: list<type_ref> = list();
     let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
@@ -112,7 +174,7 @@ fn main() -> i32 {
             Some(name) => {
                 if not list_contains(ref seen, name) {
                     list_push(mutref seen, name);
-                    analyze_module(name, mutref pending, ref seen, mutref loaded, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref variant_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
+                    analyze_module(name, mutref pending, ref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
                 }
             },
             None => {
@@ -121,11 +183,12 @@ fn main() -> i32 {
         cursor = cursor + 1;
     }
 
+    detect_import_cycles(ref loaded, ref uses, mutref diags);
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-    typecheck_value_facts(ref function_facts, ref variant_facts, ref scopes, ref typed_bindings, ref field_facts, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
 
     if list_len(ref diags) > 0 {
         emit_all(ref diags);

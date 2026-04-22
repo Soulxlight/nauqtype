@@ -45,6 +45,21 @@ int32_t nq_str_len(NQStr text) {
     return (int32_t)text.len;
 }
 
+NQStr nq_str_concat(NQStr left, NQStr right) {
+    char* buffer = (char*)malloc((size_t)(left.len + right.len) + 1);
+    if (buffer == NULL) {
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    memcpy(buffer, left.data, (size_t)left.len);
+    memcpy(buffer + left.len, right.data, (size_t)right.len);
+    buffer[left.len + right.len] = '\0';
+    return (NQStr){
+        .data = buffer,
+        .len = left.len + right.len,
+    };
+}
+
 NQ_Result__str__io_err nq_read_file(NQStr path) {
     char* file_name = (char*)malloc((size_t)path.len + 1);
     FILE* handle;

@@ -101,11 +101,15 @@
 
 ## Near-Self-Hosting Next
 
-- [ ] Extend `selfhost/` from the first body-level resolver slice to fuller resolver parity
+- [x] Extend `selfhost/` from the first body-level resolver slice to fuller resolver parity
 - [x] Add the first `selfhost/` type-checker slice
 - [x] Add the first `selfhost/` value-flow type-checker slice for annotated locals, returns, and conditions
 - [x] Add simple inferred-local and assignment compatibility checks to the `selfhost/` value-flow slice
 - [x] Add field-access-aware local/return inference for the flat selfhost value-flow slice
 - [x] Extend the current `selfhost/` body-resolution and value-flow slices back to full-graph semantic parity
+- [x] Replace root-shape selfhost value typing with recursive span-based typing for the current supported subset
+- [x] Make stage1 fail closed with explicit limitation diagnostics for unsupported expression shapes
+- [x] Add differential stage0-vs-stage1 subset parity coverage
+- [x] Generalize selfhost flat-root module loading and reject import cycles
 - [ ] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to fuller parity
 - [ ] Decide the first trustworthy self-hosting milestone and comparison strategy

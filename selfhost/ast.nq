@@ -256,6 +256,32 @@ audit {
     };
 }
 
+pub type function_param_fact {
+    module: str,
+    function_name: str,
+    index: i32,
+    at: i32,
+    type_name: str,
+    is_borrow: bool,
+}
+
+pub fn make_function_param_fact(module: str, function_name: str, index: i32, at: i32, type_name: str, is_borrow: bool) -> function_param_fact
+audit {
+    intent("Build a flat function-parameter fact record for recursive selfhost type checking");
+    mutates();
+    effects();
+}
+{
+    return function_param_fact {
+        module: module,
+        function_name: function_name,
+        index: index,
+        at: at,
+        type_name: type_name,
+        is_borrow: is_borrow,
+    };
+}
+
 pub type typed_name_fact {
     module: str,
     function_name: str,
@@ -325,6 +351,30 @@ audit {
         name: name,
         at: at,
         payload_count: payload_count,
+    };
+}
+
+pub type variant_payload_fact {
+    module: str,
+    variant_name: str,
+    index: i32,
+    at: i32,
+    type_name: str,
+}
+
+pub fn make_variant_payload_fact(module: str, variant_name: str, index: i32, at: i32, type_name: str) -> variant_payload_fact
+audit {
+    intent("Build a flat variant-payload fact record for recursive selfhost type checking");
+    mutates();
+    effects();
+}
+{
+    return variant_payload_fact {
+        module: module,
+        variant_name: variant_name,
+        index: index,
+        at: at,
+        type_name: type_name,
     };
 }
 
@@ -424,12 +474,14 @@ pub type local_init_fact {
     at: i32,
     expected_type_name: str,
     expected_is_borrow: bool,
+    expr_start: i32,
+    expr_end: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
     expr_member_name: str,
 }
 
-pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> local_init_fact
+pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> local_init_fact
 audit {
     intent("Build a flat annotated-local fact record for the next selfhost type-checker slice");
     mutates();
@@ -444,6 +496,8 @@ audit {
         at: at,
         expected_type_name: expected_type_name,
         expected_is_borrow: expected_is_borrow,
+        expr_start: expr_start,
+        expr_end: expr_end,
         expr_kind: expr_kind,
         expr_name: expr_name,
         expr_member_name: expr_member_name,
@@ -455,12 +509,14 @@ pub type return_expr_fact {
     function_name: str,
     scope_id: i32,
     at: i32,
+    expr_start: i32,
+    expr_end: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
     expr_member_name: str,
 }
 
-pub fn make_return_expr_fact(module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> return_expr_fact
+pub fn make_return_expr_fact(module: str, function_name: str, scope_id: i32, at: i32, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> return_expr_fact
 audit {
     intent("Build a flat return-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -472,6 +528,8 @@ audit {
         function_name: function_name,
         scope_id: scope_id,
         at: at,
+        expr_start: expr_start,
+        expr_end: expr_end,
         expr_kind: expr_kind,
         expr_name: expr_name,
         expr_member_name: expr_member_name,
@@ -489,12 +547,14 @@ pub type condition_fact {
     scope_id: i32,
     at: i32,
     kind: condition_fact_kind,
+    expr_start: i32,
+    expr_end: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
     expr_member_name: str,
 }
 
-pub fn make_condition_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: condition_fact_kind, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> condition_fact
+pub fn make_condition_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: condition_fact_kind, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> condition_fact
 audit {
     intent("Build a flat condition-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -507,6 +567,8 @@ audit {
         scope_id: scope_id,
         at: at,
         kind: kind,
+        expr_start: expr_start,
+        expr_end: expr_end,
         expr_kind: expr_kind,
         expr_name: expr_name,
         expr_member_name: expr_member_name,
@@ -519,12 +581,14 @@ pub type assignment_fact {
     scope_id: i32,
     target_name: str,
     at: i32,
+    expr_start: i32,
+    expr_end: i32,
     expr_kind: expr_fact_kind,
     expr_name: str,
     expr_member_name: str,
 }
 
-pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> assignment_fact
+pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> assignment_fact
 audit {
     intent("Build a flat assignment-expression fact record for the next selfhost type-checker slice");
     mutates();
@@ -537,6 +601,8 @@ audit {
         scope_id: scope_id,
         target_name: target_name,
         at: at,
+        expr_start: expr_start,
+        expr_end: expr_end,
         expr_kind: expr_kind,
         expr_name: expr_name,
         expr_member_name: expr_member_name,

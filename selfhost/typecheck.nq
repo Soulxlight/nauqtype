@@ -1,9 +1,24 @@
 use ast;
 use diag;
+use lexer;
+use source;
+use token;
 
 fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
     list_push(mutref diags, make_diag(file, at, message));
     return;
+}
+
+fn token_at(tokens: ref list<token>, index: i32) -> token {
+    let found = list_get(ref tokens, index);
+    match found {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return eof_token(index);
+        },
+    }
 }
 
 fn is_function_item(item: top_item) -> bool {
@@ -153,6 +168,9 @@ fn builtin_function_arity(name: str) -> i32 {
     }
     if name == "str_len" {
         return 1;
+    }
+    if name == "str_concat" {
+        return 2;
     }
     if name == "str_get" or name == "str_slice" {
         if name == "str_get" {
@@ -366,6 +384,9 @@ fn builtin_function_return_name(name: str) -> str {
     }
     if name == "str_len" {
         return "i32";
+    }
+    if name == "str_concat" {
+        return "str";
     }
     if name == "str_get" or name == "str_slice" {
         return "option";
@@ -674,74 +695,1031 @@ fn type_names_match(expected: str, actual: str) -> bool {
     return false;
 }
 
-fn infer_expr_type_name(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, at: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> str {
-    match expr_kind {
-        expr_unit => {
-            return "unit";
-        },
-        expr_bool => {
-            return "bool";
-        },
-        expr_i32 => {
-            return "i32";
-        },
-        expr_str => {
+fn lookup_function_param_type_name(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> str {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        let entry = list_get(ref function_params, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index {
+                    return value.type_name;
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return "";
+}
+
+fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
+    if function_name == "print_line" or function_name == "read_file" {
+        if index == 0 {
             return "str";
-        },
-        expr_struct => {
-            return expr_name;
-        },
-        expr_name => {
-            let binding_type_name = visible_typed_binding_type(ref typed_bindings, ref scopes, module, function_name, scope_id, expr_name, at);
-            if binding_type_name != "" {
-                return binding_type_name;
-            }
-            return visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
-        },
-        expr_field => {
-            let mut base_type_name = visible_typed_binding_type(ref typed_bindings, ref scopes, module, function_name, scope_id, expr_name, at);
-            if base_type_name == "" {
-                base_type_name = visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
-            }
-            if base_type_name != "" {
-                let local_field_type_name = lookup_field_type_name(ref field_facts, module, base_type_name, expr_member_name);
-                if local_field_type_name != "" {
-                    return local_field_type_name;
+        }
+    }
+    if function_name == "io_err_text" {
+        if index == 0 {
+            return "io_err";
+        }
+    }
+    if function_name == "str_len" {
+        if index == 0 {
+            return "str";
+        }
+    }
+    if function_name == "str_concat" {
+        if index == 0 or index == 1 {
+            return "str";
+        }
+    }
+    if function_name == "str_get" {
+        if index == 0 {
+            return "str";
+        }
+        if index == 1 {
+            return "i32";
+        }
+    }
+    if function_name == "str_slice" {
+        if index == 0 {
+            return "str";
+        }
+        if index == 1 or index == 2 {
+            return "i32";
+        }
+    }
+    if function_name == "list_push" {
+        if index == 0 {
+            return "list";
+        }
+    }
+    if function_name == "list_len" {
+        if index == 0 {
+            return "list";
+        }
+    }
+    if function_name == "list_get" {
+        if index == 0 {
+            return "list";
+        }
+        if index == 1 {
+            return "i32";
+        }
+    }
+    return "";
+}
+
+fn visible_function_param_type_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> str {
+    let builtin = builtin_function_param_type_name(function_name, index);
+    if builtin != "" {
+        return builtin;
+    }
+    if module_has_local_function_name(ref items, module, function_name) {
+        return lookup_function_param_type_name(ref function_params, module, function_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, function_name) {
+                    return lookup_function_param_type_name(ref function_params, value.name, function_name, index);
                 }
-                let mut use_index = 0;
-                while use_index < list_len(ref uses) {
-                    let entry = list_get(ref uses, use_index);
-                    match entry {
-                        Some(value) => {
-                            if value.module == module {
-                                let imported_field_type_name = lookup_field_type_name(ref field_facts, value.name, base_type_name, expr_member_name);
-                                if imported_field_type_name != "" {
-                                    return imported_field_type_name;
-                                }
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                    use_index = use_index + 1;
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn lookup_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, module: str, variant_name: str, index: i32) -> str {
+    let mut cursor = 0;
+    while cursor < list_len(ref variant_payloads) {
+        let entry = list_get(ref variant_payloads, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.variant_name == variant_name and value.index == index {
+                    return value.type_name;
                 }
-            }
-            return "";
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return "";
+}
+
+fn visible_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, index: i32) -> str {
+    if builtin_variant_enum_name(variant_name) != "" {
+        return "";
+    }
+    if module_has_local_variant_name(ref items, module, variant_name) {
+        return lookup_variant_payload_type_name(ref variant_payloads, module, variant_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant_name(ref items, value.name, variant_name) {
+                    return lookup_variant_payload_type_name(ref variant_payloads, value.name, variant_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn module_source_text(sources: ref list<source_file>, module: str) -> str {
+    let mut cursor = 0;
+    while cursor < list_len(ref sources) {
+        let entry = list_get(ref sources, cursor);
+        match entry {
+            Some(value) => {
+                if value.name == module {
+                    return value.text;
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return "";
+}
+
+fn unsupported_type_name() -> str {
+    return "__stage1_unsupported__";
+}
+
+fn is_unsupported_type_name(type_name: str) -> bool {
+    return type_name == unsupported_type_name();
+}
+
+fn has_known_type_name(type_name: str) -> bool {
+    if type_name == "" {
+        return false;
+    }
+    return not is_unsupported_type_name(type_name);
+}
+
+fn is_int_like(type_name: str) -> bool {
+    if type_name == "int" {
+        return true;
+    }
+    return type_name == "i32";
+}
+
+fn expr_content_start(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut cursor = start;
+    while cursor < end {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eq => {
+                cursor = cursor + 1;
+            },
+            _ => {
+                return cursor;
+            },
+        }
+    }
+    return cursor;
+}
+
+fn token_can_end_expr(tok: token) -> bool {
+    match tok.kind {
+        tk_ident => {
+            return true;
         },
-        expr_call => {
-            let function_return_name = visible_function_return_name(ref functions, ref uses, ref items, module, expr_name);
-            if function_return_name != "" {
-                return function_return_name;
-            }
-            return visible_variant_enum_name(ref variants, ref uses, ref items, module, expr_name);
+        tk_int_lit => {
+            return true;
+        },
+        tk_string_lit => {
+            return true;
+        },
+        tk_kw_true => {
+            return true;
+        },
+        tk_kw_false => {
+            return true;
+        },
+        tk_rparen => {
+            return true;
+        },
+        tk_rbrace => {
+            return true;
         },
         _ => {
-            return "";
+            return false;
         },
     }
 }
 
-pub fn typecheck_value_facts(functions: ref list<function_fact>, variants: ref list<variant_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> value_typecheck_summary
+fn span_is_wrapped_in_parens(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 2 {
+        return false;
+    }
+    let first = token_at(ref tokens, start);
+    let last = token_at(ref tokens, end - 1);
+    match first.kind {
+        tk_lparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match last.kind {
+        tk_rparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                depth = depth - 1;
+                if depth == 0 and index + 1 < end {
+                    return false;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return depth == 0;
+}
+
+fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_kw_or => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_kw_and => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn is_binary_operator_position(tokens: ref list<token>, start: i32, index: i32) -> bool {
+    if index <= start {
+        return false;
+    }
+    let previous = token_at(ref tokens, index - 1);
+    return token_can_end_expr(previous);
+}
+
+fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_eqeq => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_noteq => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_lt => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_gt => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_lte => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_gte => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_plus => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            tk_minus => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_star => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            tk_slash => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_dot => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 3 {
+        return false;
+    }
+    let head = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    match head.kind {
+        tk_ident => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                depth = depth - 1;
+                if depth == 0 {
+                    return index + 1 == end;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 3 {
+        return false;
+    }
+    let head = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    match head.kind {
+        tk_ident => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lbrace => {
+                depth = depth + 1;
+            },
+            tk_rbrace => {
+                depth = depth - 1;
+                if depth == 0 {
+                    return index + 1 == end;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn next_top_level_comma(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_comma => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return end;
+}
+
+fn find_top_level_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_colon => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn count_expected_fields(field_facts: ref list<field_fact>, module: str, type_name: str) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.type_name == type_name {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn struct_literal_has_field(tokens: ref list<token>, start: i32, end: i32, field_name: str) -> bool {
+    let mut field_start = start + 2;
+    let field_end_limit = end - 1;
+    while field_start < field_end_limit {
+        let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
+        let colon_index = find_top_level_colon(ref tokens, field_start, segment_end);
+        if colon_index >= 0 {
+            let field_token = token_at(ref tokens, field_start);
+            match field_token.kind {
+                tk_ident => {
+                    if field_token.text == field_name {
+                        return true;
+                    }
+                },
+                _ => {
+                },
+            }
+        }
+        field_start = segment_end + 1;
+    }
+    return false;
+}
+
+fn push_stage1_limitation(diags: mutref list<diag>, file: str, at: i32) -> unit {
+    push_diag(mutref diags, file, at, "stage1 limitation: unsupported expression shape in recursive type checker");
+    return;
+}
+
+fn infer_call_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> str {
+    let head = token_at(ref tokens, start);
+    let call_name = head.text;
+    let function_return_name = visible_function_return_name(ref functions, ref uses, ref items, module, call_name);
+    let variant_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, call_name);
+    let mut arg_start = start + 2;
+    let arg_end_limit = end - 1;
+    let mut arg_index = 0;
+
+    while arg_start < arg_end_limit {
+        let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
+        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, mutref diags);
+        if function_return_name != "" {
+            let expected_type_name = visible_function_param_type_name(ref function_params, ref uses, ref items, module, call_name, arg_index);
+            if expected_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
+                push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
+            }
+        } else {
+            if variant_enum_name != "" {
+                let expected_type_name = visible_variant_payload_type_name(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+                if expected_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
+                    push_diag(mutref diags, module, head.start, "constructor payload type does not match variant payload type");
+                }
+            }
+        }
+        arg_index = arg_index + 1;
+        arg_start = segment_end + 1;
+    }
+
+    if function_return_name != "" {
+        return function_return_name;
+    }
+    return variant_enum_name;
+}
+
+fn infer_struct_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> str {
+    let type_token = token_at(ref tokens, start);
+    let type_name = type_token.text;
+    let origin_module = visible_type_origin_module(ref uses, ref items, module, type_name);
+    if origin_module == "" {
+        return "";
+    }
+
+    let mut field_start = start + 2;
+    let field_end_limit = end - 1;
+    while field_start < field_end_limit {
+        let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
+        let colon_index = find_top_level_colon(ref tokens, field_start, segment_end);
+        if colon_index < 0 {
+            push_stage1_limitation(mutref diags, module, type_token.start);
+            return unsupported_type_name();
+        }
+        let field_token = token_at(ref tokens, field_start);
+        let mut field_name = "";
+        match field_token.kind {
+            tk_ident => {
+                field_name = field_token.text;
+            },
+            _ => {
+                push_stage1_limitation(mutref diags, module, type_token.start);
+                return unsupported_type_name();
+            },
+        }
+        let expected_field_type_name = lookup_field_type_name(ref field_facts, origin_module, type_name, field_name);
+        if expected_field_type_name == "" {
+            push_diag(mutref diags, module, field_token.start, "struct literal field does not exist on type");
+        }
+        let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, mutref diags);
+        if expected_field_type_name != "" and has_known_type_name(actual_type_name) and not type_names_match(expected_field_type_name, actual_type_name) {
+            push_diag(mutref diags, module, field_token.start, "struct literal field does not match declared field type");
+        }
+        field_start = segment_end + 1;
+    }
+
+    let mut field_index = 0;
+    while field_index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, field_index);
+        match entry {
+            Some(value) => {
+                if value.module == origin_module and value.type_name == type_name {
+                    if not struct_literal_has_field(ref tokens, start, end, value.name) {
+                        push_diag(mutref diags, module, type_token.start, "struct literal is missing required field");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    return type_name;
+}
+
+fn infer_expr_type_name(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, diags: mutref list<diag>) -> str {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return "unit";
+    }
+
+    let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
+    if or_index >= 0 {
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, or_index, at, mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, mutref diags);
+        if has_known_type_name(left_type_name) and left_type_name != "bool" {
+            push_diag(mutref diags, module, at, "logical operand must have type `bool`");
+        }
+        if has_known_type_name(right_type_name) and right_type_name != "bool" {
+            push_diag(mutref diags, module, at, "logical operand must have type `bool`");
+        }
+        return "bool";
+    }
+
+    let and_index = find_root_and_operator(ref tokens, expr_start, expr_end);
+    if and_index >= 0 {
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, and_index, at, mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, mutref diags);
+        if has_known_type_name(left_type_name) and left_type_name != "bool" {
+            push_diag(mutref diags, module, at, "logical operand must have type `bool`");
+        }
+        if has_known_type_name(right_type_name) and right_type_name != "bool" {
+            push_diag(mutref diags, module, at, "logical operand must have type `bool`");
+        }
+        return "bool";
+    }
+
+    let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
+    if compare_index >= 0 {
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, mutref diags);
+        if has_known_type_name(left_type_name) and has_known_type_name(right_type_name) and not type_names_match(left_type_name, right_type_name) {
+            push_diag(mutref diags, module, at, "comparison operands must have matching types");
+        }
+        return "bool";
+    }
+
+    let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
+    if additive_index >= 0 {
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, mutref diags);
+        if has_known_type_name(left_type_name) and not is_int_like(left_type_name) {
+            push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
+        }
+        if has_known_type_name(right_type_name) and not is_int_like(right_type_name) {
+            push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
+        }
+        return "i32";
+    }
+
+    let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
+    if multiplicative_index >= 0 {
+        let left_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, mutref diags);
+        let right_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, mutref diags);
+        if has_known_type_name(left_type_name) and not is_int_like(left_type_name) {
+            push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
+        }
+        if has_known_type_name(right_type_name) and not is_int_like(right_type_name) {
+            push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
+        }
+        return "i32";
+    }
+
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_ref => {
+            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+        },
+        tk_kw_mutref => {
+            return infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+        },
+        tk_kw_not => {
+            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            if has_known_type_name(inner_type_name) and inner_type_name != "bool" {
+                push_diag(mutref diags, module, current.start, "logical operand must have type `bool`");
+            }
+            return "bool";
+        },
+        tk_minus => {
+            let inner_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, mutref diags);
+            if has_known_type_name(inner_type_name) and not is_int_like(inner_type_name) {
+                push_diag(mutref diags, module, current.start, "arithmetic operand must have integer type");
+            }
+            return "i32";
+        },
+        tk_kw_true => {
+            if expr_start + 1 == expr_end {
+                return "bool";
+            }
+        },
+        tk_kw_false => {
+            if expr_start + 1 == expr_end {
+                return "bool";
+            }
+        },
+        tk_int_lit => {
+            if expr_start + 1 == expr_end {
+                return "i32";
+            }
+        },
+        tk_string_lit => {
+            if expr_start + 1 == expr_end {
+                return "str";
+            }
+        },
+        tk_ident => {
+            if span_is_call_expr(ref tokens, expr_start, expr_end) {
+                return infer_call_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, mutref diags);
+            }
+            if span_is_struct_expr(ref tokens, expr_start, expr_end) {
+                return infer_struct_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, mutref diags);
+            }
+            if expr_start + 1 == expr_end {
+                let binding_type_name = visible_typed_binding_type(ref typed_bindings, ref scopes, module, function_name, scope_id, current.text, current.start);
+                if binding_type_name != "" {
+                    return binding_type_name;
+                }
+                return visible_zero_arg_variant_enum_name(ref variants, ref uses, ref items, module, current.text);
+            }
+        },
+        _ => {
+        },
+    }
+
+    let dot_index = find_root_field_dot(ref tokens, expr_start, expr_end);
+    if dot_index >= 0 {
+        let field_token = token_at(ref tokens, dot_index + 1);
+        match field_token.kind {
+            tk_ident => {
+                if dot_index + 2 == expr_end {
+                    let base_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, dot_index, at, mutref diags);
+                    if is_unsupported_type_name(base_type_name) {
+                        return base_type_name;
+                    }
+                    if base_type_name == "" {
+                        return "";
+                    }
+                    let origin_module = visible_type_origin_module(ref uses, ref items, module, base_type_name);
+                    if origin_module == "" {
+                        if base_type_name == "bool" {
+                            push_diag(mutref diags, module, at, "field access base has type `bool`");
+                            return "";
+                        }
+                        if is_int_like(base_type_name) {
+                            push_diag(mutref diags, module, at, "field access base has integer type");
+                            return "";
+                        }
+                        if base_type_name == "str" {
+                            push_diag(mutref diags, module, at, "field access base has type `str`");
+                            return "";
+                        }
+                        if base_type_name == "option" {
+                            push_diag(mutref diags, module, at, "field access base has type `option`");
+                            return "";
+                        }
+                        if base_type_name == "result" {
+                            push_diag(mutref diags, module, at, "field access base has type `result`");
+                            return "";
+                        }
+                        if base_type_name == "list" {
+                            push_diag(mutref diags, module, at, "field access base has type `list`");
+                            return "";
+                        }
+                        if base_type_name == "token_kind" {
+                            push_diag(mutref diags, module, at, "field access base has type `token_kind`");
+                            return "";
+                        }
+                        push_diag(mutref diags, module, at, "field access base does not name a readable product type");
+                        return "";
+                    }
+                    let field_type_name = lookup_field_type_name(ref field_facts, origin_module, base_type_name, field_token.text);
+                    if field_type_name == "" {
+                        push_diag(mutref diags, module, at, "field does not exist on base type");
+                        return "";
+                    }
+                    return field_type_name;
+                }
+            },
+            _ => {
+            },
+        }
+        push_stage1_limitation(mutref diags, module, at);
+        return unsupported_type_name();
+    }
+
+    push_stage1_limitation(mutref diags, module, at);
+    return unsupported_type_name();
+}
+
+pub fn typecheck_value_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
     intent("Run the next selfhost type-checker slice over local initializers, return expressions, condition types, and assignment compatibility");
     mutates(diags);
@@ -755,6 +1733,11 @@ audit {
         let function_entry = list_get(ref functions, function_index);
         match function_entry {
             Some(current_function) => {
+                let module_text = module_source_text(ref sources, current_function.module);
+                if module_text == "" {
+                    push_diag(mutref diags, current_function.module, current_function.at, "missing source text for selfhost type-check");
+                }
+                let tokens = lex(module_text);
                 let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
 
                 let mut local_index = 0;
@@ -763,15 +1746,15 @@ audit {
                     match local_entry {
                         Some(current) => {
                             if current.module == current_function.module and current.function_name == current_function.name {
-                                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
+                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
                                 if current.expected_type_name != "" {
                                     if not current.expected_is_borrow {
-                                        if actual_type_name != "" and not type_names_match(current.expected_type_name, actual_type_name) {
+                                        if has_known_type_name(actual_type_name) and not type_names_match(current.expected_type_name, actual_type_name) {
                                             push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
                                         }
                                     }
                                 } else {
-                                    if current.name != "" and actual_type_name != "" {
+                                    if current.name != "" and has_known_type_name(actual_type_name) {
                                         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_type_name, false));
                                     }
                                 }
@@ -791,8 +1774,8 @@ audit {
                             if current.module == current_function.module and current.function_name == current_function.name {
                                 let expected_type_name = visible_typed_binding_type(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
                                 if expected_type_name != "" {
-                                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
-                                    if actual_type_name != "" and not type_names_match(expected_type_name, actual_type_name) {
+                                    let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
+                                    if has_known_type_name(actual_type_name) and not type_names_match(expected_type_name, actual_type_name) {
                                         push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
                                     }
                                 }
@@ -813,8 +1796,8 @@ audit {
                                 let expected_return_name = visible_function_return_name(ref functions, ref uses, ref items, current.module, current.function_name);
                                 let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
                                 if expected_return_name != "" and not expected_is_borrow {
-                                    let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
-                                    if actual_type_name != "" and not type_names_match(expected_return_name, actual_type_name) {
+                                    let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
+                                    if has_known_type_name(actual_type_name) and not type_names_match(expected_return_name, actual_type_name) {
                                         push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
                                     }
                                 }
@@ -832,8 +1815,8 @@ audit {
                     match condition_entry {
                         Some(current) => {
                             if current.module == current_function.module and current.function_name == current_function.name {
-                                let actual_type_name = infer_expr_type_name(ref functions, ref variants, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, current.at, current.expr_kind, current.expr_name, current.expr_member_name);
-                                if actual_type_name != "" and actual_type_name != "bool" {
+                                let actual_type_name = infer_expr_type_name(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, mutref diags);
+                                if has_known_type_name(actual_type_name) and actual_type_name != "bool" {
                                     match current.kind {
                                         condition_if => {
                                             push_diag(mutref diags, current.module, current.at, "`if` condition must have type `bool`");

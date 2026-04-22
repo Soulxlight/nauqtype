@@ -457,6 +457,7 @@ fn print_line(text: str) -> unit;
 fn read_file(path: str) -> result<str, io_err>;
 fn io_err_text(err: io_err) -> str;
 fn str_len(text: str) -> i32;
+fn str_concat(left: str, right: str) -> str;
 fn str_get(text: str, index: i32) -> option<i32>;
 fn str_slice(text: str, start: i32, end: i32) -> option<str>;
 fn list() -> list<T>;            // requires expected context

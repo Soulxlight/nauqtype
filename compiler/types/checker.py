@@ -69,6 +69,7 @@ class TypeChecker:
             "str_len": FunctionSig("str_len", [STR], I32, None, builtin=True),
             "str_get": FunctionSig("str_get", [STR, I32], Type("option", args=(I32,)), None, builtin=True),
             "str_slice": FunctionSig("str_slice", [STR, I32, I32], Type("option", args=(STR,)), None, builtin=True),
+            "str_concat": FunctionSig("str_concat", [STR, STR], STR, None, builtin=True),
         }
 
         for struct in structs.values():

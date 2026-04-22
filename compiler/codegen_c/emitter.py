@@ -426,6 +426,8 @@ class CEmitter:
                 return f"nq_str_get({args})"
             if expr.function_name == "str_slice":
                 return f"nq_str_slice({args})"
+            if expr.function_name == "str_concat":
+                return f"nq_str_concat({args})"
             if expr.function_name == "list":
                 return f"{self._list_helper_prefix(expr.typ)}_make()"
             if expr.function_name in {"list_push", "list_len", "list_get"}:
