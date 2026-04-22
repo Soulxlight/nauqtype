@@ -9,10 +9,14 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from compiler.main import detect_zig
+
 
 class SelfhostDifferentialTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[1]
+        if detect_zig(self.root) is None:
+            self.skipTest("stage1 differential suite requires .deps/ziglang/zig.exe; run `python scripts/setup_deps.py`")
         self.selfhost_dir = self.root / "selfhost"
         self.selfhost_runtime_modules = [
             "ast.nq",

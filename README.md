@@ -103,6 +103,7 @@ Current selfhost semantic gaps:
 - [GRAMMAR.md](GRAMMAR.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [ROADMAP.md](ROADMAP.md)
+- [PARITY_PLAN.md](PARITY_PLAN.md)
 - [DECISIONS.md](DECISIONS.md)
 - [RISKS.md](RISKS.md)
 - [DEFERRED.md](DEFERRED.md)

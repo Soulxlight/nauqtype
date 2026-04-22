@@ -116,3 +116,10 @@
 - [x] Batch current selfhost value-flow checking by module/function to avoid the obvious repeated full rescans
 - [ ] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to fuller parity
 - [ ] Decide the first trustworthy self-hosting milestone and comparison strategy
+
+## Stage1 Parity Program
+
+- [x] Add a dedicated stage1 parity plan document
+- [ ] Build and maintain a stage0-vs-stage1 parity matrix
+- [ ] Classify and burn down parity gaps by P0/P1/P2 severity
+- [ ] Define and enforce stage1-primary cutover criteria
