@@ -15,6 +15,7 @@
 - [x] Add `LICENSE`
 - [x] Write `AI_CONTRACTS.md`
 - [x] Write `BOOTSTRAP_STAGE1.md`
+- [x] Write `SELFHOST_HANDOFF.md`
 
 ## Compiler Scaffold
 
@@ -127,7 +128,8 @@
 
 ## Genuine Parity Next
 
-- [ ] Add stage1 borrow checking
-- [ ] Add stage1 IR lowering
-- [ ] Add stage1 C emission
+- [ ] Build the structured checked handoff from trusted selfhost semantic outputs
+- [ ] Add stage1 borrow checking on the structured checked handoff
+- [ ] Add stage1 IR lowering on the structured checked handoff
+- [ ] Add stage1 C emission on the structured checked handoff
 - [ ] Define stage1-to-stage2 comparison for first real self-build proof

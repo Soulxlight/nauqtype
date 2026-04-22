@@ -215,3 +215,19 @@
 - Reason chosen: an early Nauqtype-written front end creates real bootstrap pressure and validates the stage1 surface sooner.
 - Consequences: stage1 is near-self-hosting, not fully self-hosting yet.
 - Reversible later: yes, by extending the selfhost compiler rather than replacing it.
+
+## D028: The flat selfhost fact pipeline is accepted only as the stage1 semantic front-end path
+
+- Decision: keep the current selfhost parser/resolve/typecheck pipeline as the trusted semantic front-end path for the current subset.
+- Alternatives considered: rewrite selfhost now into a richer typed AST architecture, or keep extending flat facts indefinitely into every later phase.
+- Reason chosen: the current flat fact pipeline has now earned trust for semantic front-end work, and rewriting it immediately would burn schedule without improving the next real bootstrap blocker.
+- Consequences: the current selfhost front end remains the truth-producing semantic path, but its ownership boundary must stay narrow and explicit.
+- Reversible later: partially; the implementation may evolve, but the checkpoint principle that semantic trust does not require an immediate rewrite should remain.
+
+## D029: Post-typecheck stage1 work must consume a structured checked handoff, not raw flat facts
+
+- Decision: stage1 borrow checking, IR lowering, and C emission must target a downstream structured checked representation built from the trusted selfhost semantic outputs.
+- Alternatives considered: add borrow/IR/codegen directly on top of the current flat parser/typecheck facts, or rewrite the entire front end before starting backend work.
+- Reason chosen: backend growth directly on flat facts would turn a useful semantic front end into an accidental architecture trap, while a full rewrite now would slow genuine parity work unnecessarily.
+- Consequences: a new one-way handoff layer becomes mandatory before backend parity; the flat front end remains in place and is not being replaced in this checkpoint.
+- Reversible later: no for this bootstrap phase; genuine parity work should not bypass the structured checked handoff.

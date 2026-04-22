@@ -40,6 +40,26 @@ Current semantic near-parity milestone:
 - exact wording is not the parity target; accept/reject family is
 - backend work is still outside this milestone
 
+## Architecture Checkpoint
+
+The current selfhost parser/resolve/typecheck design is accepted for the trusted semantic front-end milestone.
+
+That means:
+
+- the flat fact pipeline stays in place as the truth-producing front end for the trusted subset
+- this is not a parser/typechecker rewrite checkpoint
+- the current front end has earned the right to stay as the semantic source of truth
+
+That does not mean:
+
+- borrow checking should be added as more flat-fact logic
+- IR lowering should target raw flat facts
+- C emission should target raw flat facts
+
+From this checkpoint onward, stage1 borrow checking, IR lowering, and C emission must consume a downstream structured checked handoff representation.
+
+See `SELFHOST_HANDOFF.md` for the contract that now sits between semantic front-end parity and genuine backend parity.
+
 ## Acyclic Imports
 
 Stage1 import scope:
@@ -83,8 +103,9 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- stage1 borrow checking
-- stage1 IR lowering and C emission
+- build the structured checked handoff from current semantic outputs
+- stage1 borrow checking on that handoff
+- stage1 IR lowering and C emission on that handoff
 - stage1 self-build proof and stage2 comparison
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

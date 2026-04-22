@@ -101,6 +101,13 @@ Current semantic near-parity milestone:
 - the trusted subset is differential-tested against stage0 by accept/reject family
 - stage1 still stops before borrow checking, IR lowering, C emission, executable build, and self-rebuild
 
+Architecture checkpoint:
+
+- the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
+- that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
+- genuine parity work now starts by building a structured checked handoff from the trusted semantic outputs
+- see `SELFHOST_HANDOFF.md` for the required downstream contract
+
 Current selfhost semantic gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
@@ -128,6 +135,7 @@ Current AI-first compiler output:
 - [AI_AUDIT.md](AI_AUDIT.md)
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
 - [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
+- [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md)
 
 ## Repository Notes
 

@@ -19,6 +19,7 @@ Nauqtype "compiles and runs code" when all of the following are true:
 - `stage1`: a compiler semantic front end written in Nauqtype and built by stage0
 - `semantic near parity`: stage1 can load, parse, resolve, and type-check its own source tree for the trusted subset, with no retained limitation path used by the in-repo `selfhost/` tree
 - `genuine parity`: stage1 adds borrow checking and backend work closely enough to participate in a real self-build proof chain
+- `architecture checkpoint`: the current flat selfhost fact pipeline is accepted as the semantic front-end path, but backend work must target a downstream structured checked handoff instead of raw flat facts
 
 ## Working Vertical Slice
 
@@ -125,6 +126,25 @@ Status:
 - ship a stable versioned JSON schema
 - snapshot-test representative warning and error payloads
 
+### M12: Flat-Architecture Checkpoint
+
+- accept the current flat selfhost parser/resolve/typecheck pipeline as the trusted semantic front-end path
+- explicitly forbid stage1 borrow/IR/codegen growth directly on raw flat facts
+- define the structured checked handoff contract required for downstream genuine-parity work
+
+Status:
+
+- done as an architecture checkpoint
+- the next parity work starts with the structured checked handoff, not direct backend work on flat facts
+
+### M13: Genuine Parity Sequence
+
+- build the structured checked handoff from trusted stage1 semantic outputs
+- add stage1 borrow checking on that representation
+- add stage1 IR lowering
+- add stage1 C emission
+- define the first stage1-to-stage2 self-build comparison proof
+
 ## Feature Ordering
 
 Features required before first success:
@@ -183,3 +203,15 @@ After M0, changes to core syntax or semantics require:
 - a recorded decision entry
 - a stated blocker or contradiction
 - a stated impact on implementation and docs
+
+## Backend Boundary
+
+The current flat selfhost fact pipeline is allowed to own semantic front-end work for the trusted subset.
+
+It is not allowed to own:
+
+- stage1 borrow checking
+- stage1 IR lowering
+- stage1 C emission
+
+Those phases must consume the structured checked handoff defined after the semantic near-parity checkpoint.
