@@ -101,7 +101,7 @@
 
 ## Near-Self-Hosting Next
 
-- [x] Extend `selfhost/` from the first body-level resolver slice to fuller resolver parity
+- [x] Extend `selfhost/` from the first body-level resolver slice to fuller semantic front-end parity for the trusted subset
 - [x] Add the first `selfhost/` type-checker slice
 - [x] Add the first `selfhost/` value-flow type-checker slice for annotated locals, returns, and conditions
 - [x] Add simple inferred-local and assignment compatibility checks to the `selfhost/` value-flow slice
@@ -114,5 +114,20 @@
 - [x] Extend the selfhost recursive type-checker slice to nested field chains and contextual builtin `Some` / `None` / `Ok` / `Err` / `list()` typing in current value-flow contexts
 - [x] Expand the differential corpus to lock the current trusted subset and the retained non-name-callee limitation boundary
 - [x] Batch current selfhost value-flow checking by module/function to avoid the obvious repeated full rescans
-- [ ] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to fuller parity
-- [ ] Decide the first trustworthy self-hosting milestone and comparison strategy
+- [x] Extend `selfhost/` type-checker work from the current signature/arity/value-flow slices to semantic near parity for the trusted subset
+- [x] Decide the first trustworthy self-hosting milestone and comparison strategy
+
+## Machine-Readable Compiler Output
+
+- [x] Add `check --diagnostics json`
+- [x] Add versioned diagnostics JSON schema
+- [x] Add diagnostics JSON golden tests
+- [ ] Add richer `review` v2 output
+- [ ] Add `review-diff`
+
+## Genuine Parity Next
+
+- [ ] Add stage1 borrow checking
+- [ ] Add stage1 IR lowering
+- [ ] Add stage1 C emission
+- [ ] Define stage1-to-stage2 comparison for first real self-build proof

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/diagnostics-v1.schema.json",
+  "title": "Nauqtype Diagnostics v1",
+  "type": "object",
+  "required": ["version", "command", "ok", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "diagnostics/v1"
+    },
+    "command": {
+      "const": "check"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "category", "severity", "message", "span", "notes", "help", "rendered"],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "span": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": ["path", "start", "end"],
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "$ref": "#/$defs/position"
+                  },
+                  "end": {
+                    "$ref": "#/$defs/position"
+                  }
+                }
+              }
+            ]
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "help": {
+            "type": ["string", "null"]
+          },
+          "rendered": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "position": {
+      "type": "object",
+      "required": ["offset", "line", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

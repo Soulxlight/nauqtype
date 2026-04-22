@@ -92,7 +92,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
     list_push(mutref sources, make_source_file("{name}", {name}_text));
     parse_file("{name}", ref {name}_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
     collect_typecheck_facts("{name}", ref {name}_tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
-    collect_value_type_facts("{name}", ref {name}_tokens, mutref typed_bindings, mutref field_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
+    collect_value_type_facts("{name}", ref {name}_tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
 """
             )
 
@@ -139,6 +139,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 let mut pattern_facts: list<pattern_ctor_fact> = list();
                 let mut typed_bindings: list<typed_binding_fact> = list();
                 let mut field_facts: list<field_fact> = list();
+                let mut match_arms: list<match_arm_fact> = list();
                 let mut local_inits: list<local_init_fact> = list();
                 let mut return_facts: list<return_expr_fact> = list();
                 let mut condition_facts: list<condition_fact> = list();
@@ -149,7 +150,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 resolve_types(ref type_refs, ref uses, ref items, mutref diags);
                 resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-                typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+                typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
 
                 if list_len(ref diags) > 0 {{
                     emit_all(ref diags);
@@ -529,6 +530,27 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 {"TYPE"},
             ),
             (
+                "pattern-bound payload mismatch",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value: option<i32> = Some(7);
+                        match value {
+                            Some(number) => {
+                                let wrong: bool = number;
+                                return 0;
+                            },
+                            None => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
                 "match arm ok err return success",
                 {
                     "main": """
@@ -591,6 +613,18 @@ class SelfhostDifferentialTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "stage1 front-end ok\n")
+        self.assertNotIn("stage1 limitation:", result.stdout + result.stderr)
+
+    def test_selfhost_tree_has_no_stage1_limitations(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "compiler.main", "run", str(self.root / "selfhost" / "main.nq")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("stage1 limitation:", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

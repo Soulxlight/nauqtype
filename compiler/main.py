@@ -9,7 +9,7 @@ from pathlib import Path
 from compiler.ast import nodes as ast
 from compiler.borrow import BorrowChecker
 from compiler.codegen_c import CEmitter
-from compiler.diagnostics import DiagnosticBag, SourceFile, render_diagnostics
+from compiler.diagnostics import DiagnosticBag, SourceFile, diagnostics_json_payload, render_diagnostics
 from compiler.ir import lower_program
 from compiler.project import ProjectLoader
 from compiler.resolve import Resolver
@@ -118,6 +118,8 @@ def run_cli(argv: list[str]) -> int:
         sub = subparsers.add_parser(command)
         sub.add_argument("source")
         sub.add_argument("-o", "--output")
+        if command == "check":
+            sub.add_argument("--diagnostics", choices=("text", "json"), default="text")
     review = subparsers.add_parser("review")
     review.add_argument("source")
 
@@ -136,6 +138,9 @@ def run_cli(argv: list[str]) -> int:
         return 0
 
     diagnostics, emitted = compile_source(source)
+    if args.command == "check" and args.diagnostics == "json":
+        print(json.dumps(diagnostics_json_payload(source, diagnostics.items, command="check"), indent=2))
+        return 1 if diagnostics.has_errors() else 0
     if diagnostics.items:
         print(render_diagnostics(source, diagnostics.items), file=sys.stderr)
     if diagnostics.has_errors():

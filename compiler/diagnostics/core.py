@@ -110,3 +110,46 @@ def render_diagnostics(source: SourceFile, diagnostics: list[Diagnostic]) -> str
         if diagnostic.help:
             rendered.append(f"  help: {diagnostic.help}")
     return "\n".join(rendered)
+
+
+def diagnostic_span_payload(source: SourceFile, diagnostic: Diagnostic) -> dict[str, object] | None:
+    active_source = diagnostic.source or source
+    if diagnostic.span is None or active_source is None:
+        return None
+    start_line, start_column = active_source.line_col(diagnostic.span.start)
+    end_line, end_column = active_source.line_col(diagnostic.span.end)
+    return {
+        "path": str(active_source.path),
+        "start": {
+            "offset": diagnostic.span.start,
+            "line": start_line,
+            "column": start_column,
+        },
+        "end": {
+            "offset": diagnostic.span.end,
+            "line": end_line,
+            "column": end_column,
+        },
+    }
+
+
+def diagnostic_payload(source: SourceFile, diagnostic: Diagnostic) -> dict[str, object]:
+    return {
+        "code": diagnostic.code,
+        "category": diagnostic.category,
+        "severity": diagnostic.severity,
+        "message": diagnostic.message,
+        "span": diagnostic_span_payload(source, diagnostic),
+        "notes": list(diagnostic.notes),
+        "help": diagnostic.help,
+        "rendered": render_diagnostics(source, [diagnostic]),
+    }
+
+
+def diagnostics_json_payload(source: SourceFile, diagnostics: list[Diagnostic], *, command: str) -> dict[str, object]:
+    return {
+        "version": "diagnostics/v1",
+        "command": command,
+        "ok": not any(diagnostic.severity == "error" for diagnostic in diagnostics),
+        "diagnostics": [diagnostic_payload(source, diagnostic) for diagnostic in diagnostics],
+    }

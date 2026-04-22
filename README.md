@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: first Nauqtype-written front-end that can load flat-root modules, lex, shallow-parse, resolve the current graph, and run the current trustworthy selfhost semantic slices across its loaded module graph
+- `selfhost/`: Nauqtype-written semantic front end that can load flat-root modules, lex, parse, resolve, and type-check the in-repo selfhost tree with no `stage1 limitation` diagnostics
 
 ## Quick Start
 
@@ -47,6 +47,12 @@ Emit a machine-readable review summary:
 
 ```powershell
 python -m compiler.main review examples\review_contracts.nq
+```
+
+Emit machine-readable compiler diagnostics for `check`:
+
+```powershell
+python -m compiler.main check examples\hello.nq --diagnostics json
 ```
 
 Run the current stage1 selfhost front end:
@@ -84,17 +90,30 @@ Current selfhost semantic coverage:
 - simple unannotated-local inference for inferable supported expressions
 - assignment compatibility checks when the target type and rhs type are both inferable
 - field-access-aware local/return inference including imported type facts in the loaded graph
+- match scrutinee typing plus pattern-bound payload typing for the current enum / `option` / `result` subset
 - full-graph body resolution and current value-flow checking across the loaded selfhost module set
 - differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
+- the in-repo selfhost tree runs with no `stage1 limitation` diagnostics
+
+Current semantic near-parity milestone:
+
+- `selfhost/` can load, parse, resolve, and type-check the full in-repo selfhost tree
+- the trusted subset is differential-tested against stage0 by accept/reject family
+- stage1 still stops before borrow checking, IR lowering, C emission, executable build, and self-rebuild
 
 Current selfhost semantic gaps:
 
-- full expression-aware resolver parity beyond the current call/value/struct-head split
-- fuller body-level resolver parity after the current expression-class slices
 - richer selfhost value inference beyond the current supported recursive subset
-- richer match-result typing and broader pattern-bound value typing
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- selfhost type-checker parity beyond the current signature/arity/value-flow slices
+- selfhost borrow checking
+- selfhost IR lowering and C code generation
+- stage1 self-build / stage2 comparison
+
+Current AI-first compiler output:
+
+- `review` JSON for function-level contract summaries
+- `check --diagnostics json` for deterministic compiler diagnostics
+- `review` v2 and `review-diff` are intentionally deferred
 
 ## Key Docs
 

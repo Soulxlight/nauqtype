@@ -16,8 +16,9 @@ Nauqtype "compiles and runs code" when all of the following are true:
 ## Bootstrap Terms
 
 - `stage0`: the current Python bootstrap compiler
-- `stage1`: a compiler front end written in Nauqtype and built by stage0
-- `near-self-hosting`: stage1 can analyze its own source tree, and the remaining gap is backend/completeness work rather than missing core language features
+- `stage1`: a compiler semantic front end written in Nauqtype and built by stage0
+- `semantic near parity`: stage1 can load, parse, resolve, and type-check its own source tree for the trusted subset, with no retained limitation path used by the in-repo `selfhost/` tree
+- `genuine parity`: stage1 adds borrow checking and backend work closely enough to participate in a real self-build proof chain
 
 ## Working Vertical Slice
 
@@ -105,12 +106,24 @@ Status:
 - done in the current bootstrap compiler
 - `selfhost/` now exercises the stage1 surface by loading, lexing, shallow-parsing, resolving top-level/import facts, resolving a first body-level slice, and diagnosing its own module graph
 
-### M10: Self-Hosting Parity
+### M10: Semantic Near Parity
 
-- extend the Nauqtype stage1 front end beyond shallow parsing, top-level/import resolution, and the first body-level slice
-- add stage1 body-level resolver parity
-- add stage1 type-checker parity
+- extend the Nauqtype stage1 front end beyond the first resolver and value-flow slices
+- add trusted-subset stage1 body-level semantic parity
+- differential-test stage0 vs stage1 by accept/reject family
+- require the in-repo `selfhost/` tree to pass without `stage1 limitation` diagnostics
 - keep the language core frozen unless a concrete bootstrap blocker requires otherwise
+
+Status:
+
+- done for the current semantic front-end milestone
+- remaining gaps are stage1 borrow checking, IR/codegen, and self-build proof work
+
+### M11: Diagnostics JSON v1
+
+- add `check --diagnostics json`
+- ship a stable versioned JSON schema
+- snapshot-test representative warning and error payloads
 
 ## Feature Ordering
 
@@ -161,6 +174,7 @@ Features explicitly not required before first success:
 - type and resolve diagnostics stable by M3
 - borrow diagnostics stable by M4
 - lint diagnostics added by M7
+- diagnostics JSON v1 added by M11
 
 ## Scope Freeze Rule
 

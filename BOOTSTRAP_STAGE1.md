@@ -21,15 +21,24 @@ The current stage0 compiler implements all three locked Stage1 unlocks:
 - builtin `list<T>`
 - minimal bootstrap string helpers including `str_concat(left, right) -> str`
 
-The first selfhost workspace now lives in `selfhost/` and can flat-root load its module graph, reject missing modules and import cycles, lex, shallow-parse, run resolver slices, and run the current trustworthy type-checker slices across its own module tree.
+The first selfhost workspace now lives in `selfhost/` and can flat-root load its module graph, reject missing modules and import cycles, lex, parse, resolve, and type-check the current trusted subset across its own module tree.
 
 Current trustworthy selfhost slice:
 
 - recursive span-based typing for the current supported expression subset
 - nested field-chain typing over supported base expressions
 - contextual builtin typing for `Some`, `None`, `Ok`, `Err`, and `list()` in the current value-flow contexts
+- match scrutinee typing and pattern-bound payload typing for the current enum / `option` / `result` subset
 - explicit stage1 limitation diagnostics for unsupported expression shapes
 - differential stage0-vs-stage1 coverage for the trusted subset
+- the in-repo `selfhost/` tree itself runs with no `stage1 limitation` diagnostics
+
+Current semantic near-parity milestone:
+
+- stage1 is now trustworthy as a semantic front end for the trusted subset
+- stage0 remains the semantic reference in the differential harness
+- exact wording is not the parity target; accept/reject family is
+- backend work is still outside this milestone
 
 ## Acyclic Imports
 
@@ -72,10 +81,10 @@ Minimum collection goal:
 
 ## Immediate Remaining Gap
 
-Stage1 is not self-hosting yet. The next work is semantic parity inside `selfhost/`:
+Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- type-checker parity
-- stronger diagnostic fidelity
-- broader supported expression/result typing beyond the current trustworthy subset
-- richer match-result typing and pattern-bound value typing
+- stage1 borrow checking
+- stage1 IR lowering and C emission
+- stage1 self-build proof and stage2 comparison
+- `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax
