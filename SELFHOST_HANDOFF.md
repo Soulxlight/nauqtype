@@ -18,7 +18,7 @@ This is an architecture checkpoint, not a parser/typechecker rewrite.
 
 ## Current Status
 
-The first stage1 structured checked handoff is now implemented and hardened for backend consumers.
+The first stage1 structured checked handoff is now implemented, hardened for backend consumers, and exercised by the stage1 borrow checker.
 
 It is currently built from the trusted selfhost semantic outputs after parse, resolve, and typecheck, and it is exercised by the in-repo handoff probes plus full-tree selfhost runs.
 
@@ -35,7 +35,7 @@ The implemented handoff currently captures:
 - stable source spans for downstream diagnostics and comparison work
 - fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff
 
-This completes the boundary-definition and backend-readiness hardening step. The next implementation step is stage1 borrow checking on this representation, not more backend work on flat fact lists.
+This completes the boundary-definition and backend-readiness hardening step, and stage1 borrow checking now runs on this representation rather than on raw flat facts. The next implementation step is stage1 IR lowering on this representation, not more backend work on flat fact lists.
 
 ## What The Flat Pipeline Owns
 
@@ -135,9 +135,8 @@ The handoff should be:
 
 The genuine-parity sequence after this checkpoint is:
 
-1. add stage1 borrow checking on the structured checked handoff
-2. add stage1 IR lowering
-3. add stage1 C emission
-4. define the first stage1-to-stage2 self-build comparison proof
+1. add stage1 IR lowering
+2. add stage1 C emission
+3. define the first stage1-to-stage2 self-build comparison proof
 
 Backend work should not be planned directly against the current flat parser/typecheck facts.

@@ -139,8 +139,6 @@ Status:
 
 ### M13: Genuine Parity Sequence
 
-- build the structured checked handoff from trusted stage1 semantic outputs
-- add stage1 borrow checking on that representation
 - add stage1 IR lowering
 - add stage1 C emission
 - define the first stage1-to-stage2 self-build comparison proof

@@ -103,8 +103,6 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- build the structured checked handoff from current semantic outputs
-- stage1 borrow checking on that handoff
 - stage1 IR lowering and C emission on that handoff
 - stage1 self-build proof and stage2 comparison
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline

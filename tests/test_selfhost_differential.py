@@ -16,7 +16,9 @@ class SelfhostDifferentialTests(unittest.TestCase):
         self.selfhost_dir = self.root / "selfhost"
         self.selfhost_runtime_modules = [
             "ast.nq",
+            "borrow.nq",
             "diag.nq",
+            "handoff.nq",
             "lexer.nq",
             "parser.nq",
             "resolve.nq",
@@ -36,6 +38,8 @@ class SelfhostDifferentialTests(unittest.TestCase):
         if returncode == 0:
             return "ACCEPT"
         families = set(re.findall(r"error\[(NQ-[A-Z]+)-\d+\]", output))
+        if "NQ-BORROW" in families:
+            return "BORROW"
         if "NQ-TYPE" in families:
             return "TYPE"
         if "NQ-RESOLVE" in families:
@@ -49,6 +53,17 @@ class SelfhostDifferentialTests(unittest.TestCase):
             return "ACCEPT"
         if "stage1 limitation:" in output:
             return "STAGE1_LIMITATION"
+        borrow_markers = [
+            "use of moved value `",
+            "borrow expressions are only valid as direct call arguments in v0.1",
+            "cannot borrow moved value `",
+            "moving out of fields is not supported in v0.1",
+            "unsupported callee shape",
+            "conflicting borrows of `",
+            "cannot both move and borrow `",
+        ]
+        if any(marker in output for marker in borrow_markers):
+            return "BORROW"
         if "unknown name" in output or "unknown type" in output:
             return "RESOLVE"
         type_markers = [
@@ -93,13 +108,16 @@ class SelfhostDifferentialTests(unittest.TestCase):
     parse_file("{name}", ref {name}_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
     collect_typecheck_facts("{name}", ref {name}_tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
     collect_value_type_facts("{name}", ref {name}_tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
+    collect_stmt_facts("{name}", ref {name}_tokens, mutref stmt_facts, mutref diags);
 """
             )
 
         return textwrap.dedent(
             f"""
             use ast;
+            use borrow;
             use diag;
+            use handoff;
             use lexer;
             use parser;
             use resolve;
@@ -144,6 +162,25 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 let mut return_facts: list<return_expr_fact> = list();
                 let mut condition_facts: list<condition_fact> = list();
                 let mut assignment_facts: list<assignment_fact> = list();
+                let mut stmt_facts: list<stmt_fact> = list();
+                let mut resolved_bindings: list<typed_binding_fact> = list();
+                let mut pattern_bindings: list<pattern_binding_fact> = list();
+                let mut checked_modules: list<checked_module> = list();
+                let mut checked_functions: list<checked_function> = list();
+                let mut checked_bindings: list<checked_binding> = list();
+                let mut checked_params: list<checked_param> = list();
+                let mut checked_type_decls: list<checked_type_decl> = list();
+                let mut checked_field_decls: list<checked_field_decl> = list();
+                let mut checked_enum_decls: list<checked_enum_decl> = list();
+                let mut checked_variant_decls: list<checked_variant_decl> = list();
+                let mut checked_variant_payload_decls: list<checked_variant_payload_decl> = list();
+                let mut checked_blocks: list<checked_block> = list();
+                let mut checked_statements: list<checked_stmt> = list();
+                let mut checked_match_arms: list<checked_match_arm> = list();
+                let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
+                let mut checked_expressions: list<checked_expr> = list();
+                let mut checked_expr_children: list<checked_expr_child> = list();
+                let mut checked_struct_fields: list<checked_struct_field_init> = list();
                 let mut diags: list<diag> = list();
 {''.join(module_blocks)}
                 resolve_modules(ref modules, ref uses, ref items, mutref diags);
@@ -151,9 +188,15 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
                 typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+                collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+                let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+                let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
                 if list_len(ref diags) > 0 {{
                     emit_all(ref diags);
+                    return 1;
+                }}
+                if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {{
                     return 1;
                 }}
                 return 0;
@@ -597,6 +640,246 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 "ACCEPT",
                 {"STAGE1_LIMITATION"},
             ),
+            (
+                "borrow use after move on non-copy local",
+                {
+                    "main": """
+                    type bucket {
+                        items: list<i32>,
+                    }
+
+                    fn take(value: bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket_value = bucket {
+                            items: items,
+                        };
+                        take(bucket_value);
+                        return take(bucket_value);
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow structural copy reuse",
+                {
+                    "main": """
+                    type user {
+                        age: i32,
+                    }
+
+                    fn take(value: user) -> i32 {
+                        return value.age;
+                    }
+
+                    fn main() -> i32 {
+                        let person = user {
+                            age: 7,
+                        };
+                        take(person);
+                        return take(person);
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "borrow use after move across while",
+                {
+                    "main": """
+                    type bucket {
+                        items: list<i32>,
+                    }
+
+                    fn take(value: bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket_value = bucket {
+                            items: items,
+                        };
+                        while true {
+                            take(bucket_value);
+                        }
+                        return 0;
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow moved value",
+                {
+                    "main": """
+                    type bucket {
+                        items: list<i32>,
+                    }
+
+                    fn take(value: bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn inspect(value: ref bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket_value = bucket {
+                            items: items,
+                        };
+                        take(bucket_value);
+                        return inspect(ref bucket_value);
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow conflicting ref mutref in one call",
+                {
+                    "main": """
+                    fn probe(left: ref i32, right: mutref i32) -> unit {
+                        return;
+                    }
+
+                    fn main() -> i32 {
+                        let mut value = 1;
+                        probe(ref value, mutref value);
+                        return 0;
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow move and borrow in one call",
+                {
+                    "main": """
+                    type bucket {
+                        items: list<i32>,
+                    }
+
+                    fn inspect(left: ref bucket, moved: bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket_value = bucket {
+                            items: items,
+                        };
+                        return inspect(ref bucket_value, bucket_value);
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow moving out of non-copy field",
+                {
+                    "main": """
+                    type bucket {
+                        items: list<i32>,
+                    }
+
+                    fn take(values: list<i32>) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut values: list<i32> = list();
+                        list_push(mutref values, 1);
+                        let bucket_value = bucket {
+                            items: values,
+                        };
+                        return take(bucket_value.items);
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "borrow expression outside direct call arg",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value = 1;
+                        let alias: ref i32 = ref value;
+                        return 0;
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "match scrutinee move behavior on non-copy values",
+                {
+                    "main": """
+                    enum wrapper {
+                        hold(list<i32>),
+                    }
+
+                    fn take(value: wrapper) -> i32 {
+                        return 0;
+                    }
+
+                    fn main() -> i32 {
+                        let mut values: list<i32> = list();
+                        list_push(mutref values, 1);
+                        let wrapped: wrapper = hold(values);
+                        match wrapped {
+                            hold(inner) => {
+                                let ignored = list_len(ref inner);
+                                return 0;
+                            },
+                        }
+                        return take(wrapped);
+                    }
+                    """,
+                },
+                "BORROW",
+                {"BORROW"},
+            ),
+            (
+                "pattern-bound payload bindings remain usable inside arm",
+                {
+                    "main": """
+                    enum wrapper {
+                        hold(i32),
+                    }
+
+                    fn main() -> i32 {
+                        let wrapped: wrapper = hold(7);
+                        match wrapped {
+                            hold(inner) => {
+                                return inner;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
         ]
 
         for name, modules, expected_stage0, allowed_stage1 in cases:
@@ -609,7 +892,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
             cwd=self.root,
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=40,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "stage1 front-end ok\n")
@@ -621,7 +904,7 @@ class SelfhostDifferentialTests(unittest.TestCase):
             cwd=self.root,
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=40,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("stage1 limitation:", result.stdout + result.stderr)

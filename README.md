@@ -99,7 +99,8 @@ Current semantic near-parity milestone:
 
 - `selfhost/` can load, parse, resolve, and type-check the full in-repo selfhost tree
 - the trusted subset is differential-tested against stage0 by accept/reject family
-- stage1 still stops before borrow checking, IR lowering, C emission, executable build, and self-rebuild
+- stage1 now also enforces the current stage0-parity borrow rules on the structured checked handoff
+- stage1 still stops before IR lowering, C emission, executable build, and self-rebuild
 
 Architecture checkpoint:
 
@@ -114,7 +115,6 @@ Current selfhost semantic gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- selfhost borrow checking
 - selfhost IR lowering and C code generation
 - stage1 self-build / stage2 comparison
 
