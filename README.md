@@ -106,6 +106,7 @@ Architecture checkpoint:
 - the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
 - that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
 - stage1 now materializes a deterministic structured checked handoff from the trusted semantic outputs
+- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, and fail-closed export diagnostics for the trusted subset
 - genuine parity work now starts from that checked handoff boundary rather than the flat fact lists
 - see `SELFHOST_HANDOFF.md` for the required downstream contract
 

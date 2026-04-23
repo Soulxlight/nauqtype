@@ -105,7 +105,13 @@ class SelfhostHandoffTests(unittest.TestCase):
                 let mut pattern_bindings: list<pattern_binding_fact> = list();
                 let mut checked_modules: list<checked_module> = list();
                 let mut checked_functions: list<checked_function> = list();
+                let mut checked_bindings: list<checked_binding> = list();
                 let mut checked_params: list<checked_param> = list();
+                let mut checked_type_decls: list<checked_type_decl> = list();
+                let mut checked_field_decls: list<checked_field_decl> = list();
+                let mut checked_enum_decls: list<checked_enum_decl> = list();
+                let mut checked_variant_decls: list<checked_variant_decl> = list();
+                let mut checked_variant_payload_decls: list<checked_variant_payload_decl> = list();
                 let mut checked_blocks: list<checked_block> = list();
                 let mut checked_statements: list<checked_stmt> = list();
                 let mut checked_match_arms: list<checked_match_arm> = list();
@@ -122,7 +128,7 @@ class SelfhostHandoffTests(unittest.TestCase):
                 typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
 
-                let summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_params, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+                let summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
 
                 if list_len(ref diags) > 0 {{
                     emit_all(ref diags);
@@ -257,9 +263,138 @@ class SelfhostHandoffTests(unittest.TestCase):
             '                    print_line("missing imported function identity");',
             "                    failures = failures + 1;",
             "                }",
+            '                if not handoff_has_type_decl(ref checked_type_decls, "util", "pair") {',
+            '                    print_line("missing type declaration metadata");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_field_decl(ref checked_field_decls, "util", "pair", "left", "i32") {',
+            '                    print_line("missing field declaration metadata");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_variant_decl(ref checked_variant_decls, "util", "parse_err", "bad", 1) {',
+            '                    print_line("missing variant declaration metadata");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
+            '                    print_line("checked handoff is not structurally complete");',
+            "                    failures = failures + 1;",
+            "                }",
         ]
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
+
+    def test_handoff_reuses_binding_identity_and_exports_borrow_nodes(self) -> None:
+        modules = {
+            "main": """
+            enum wrapped {
+                box(i32),
+            }
+
+            fn read(value: ref i32) -> i32 {
+                return value;
+            }
+
+            fn bump(value: mutref i32) -> unit {
+                value = value + 1;
+                return;
+            }
+
+            fn unwrap(item: wrapped) -> i32 {
+                match item {
+                    box(inner) => {
+                        return inner;
+                    },
+                }
+            }
+
+            fn main() -> i32 {
+                let mut number: i32 = 1;
+                let seen: i32 = read(ref number);
+                bump(mutref number);
+                number = number + 1;
+                return unwrap(box(seen + number));
+            }
+            """,
+        }
+        assertions = [
+            '                if not handoff_has_param_name_binding_reuse(ref checked_params, ref checked_expressions, "main", "read", "value") {',
+            '                    print_line("missing parameter binding reuse");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_local_assignment_name_binding_reuse(ref checked_statements, ref checked_expressions, "main", "main", "number") {',
+            '                    print_line("missing local assignment binding reuse");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_pattern_binding_reuse(ref checked_pattern_bindings, ref checked_expressions, "main", "unwrap", "inner") {',
+            '                    print_line("missing pattern binding reuse");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_borrow_expr(ref checked_expressions, ref checked_expr_children, "main", "main", checked_expr_ref, "number") {',
+            '                    print_line("missing explicit ref expression");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_borrow_expr(ref checked_expressions, ref checked_expr_children, "main", "main", checked_expr_mutref, "number") {',
+            '                    print_line("missing explicit mutref expression");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
+            '                    print_line("checked handoff is not structurally complete");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
+    def test_handoff_preserves_borrowed_local_truth_bits(self) -> None:
+        modules = {
+            "main": """
+            fn read_back(value: ref i32) -> i32 {
+                return value;
+            }
+
+            fn main() -> i32 {
+                let mut number: i32 = 1;
+                let borrowed: ref i32 = ref number;
+                return read_back(borrowed);
+            }
+            """,
+        }
+        assertions = [
+            '                if not handoff_has_local_borrow_binding(ref checked_bindings, "main", "main", "borrowed") {',
+            '                    print_line("missing borrowed local binding truth bit");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_local_borrow_stmt(ref checked_statements, "main", "main", "borrowed") {',
+            '                    print_line("missing borrowed local statement truth bit");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_borrowed_name_expr(ref checked_expressions, "main", "main", "borrowed") {',
+            '                    print_line("missing borrowed name expression truth bit");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
+            '                    print_line("checked handoff is not structurally complete");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
+    def test_handoff_reports_stage1_limitation_for_non_name_callee(self) -> None:
+        modules = {
+            "main": """
+            fn id(value: i32) -> i32 {
+                return value;
+            }
+
+            fn main() -> i32 {
+                return (id)(1);
+            }
+            """,
+        }
+        returncode, output = self._run_probe(modules, [])
+        self.assertNotEqual(returncode, 0, output)
+        self.assertIn("stage1 limitation", output)
 
     def test_selfhost_tree_builds_handoff_without_limitations(self) -> None:
         result = subprocess.run(

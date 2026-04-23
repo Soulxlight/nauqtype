@@ -2474,10 +2474,19 @@ audit {
                                         match local_entry {
                                             Some(current) => {
                                                 let mut expected_ctx = empty_expected_type_ctx();
+                                                let mut expr_start = current.expr_start;
+                                                let eq_token = token_at(ref tokens, expr_start);
+                                                match eq_token.kind {
+                                                    tk_eq => {
+                                                        expr_start = expr_start + 1;
+                                                    },
+                                                    _ => {
+                                                    },
+                                                }
                                                 if current.expected_type_name != "" {
                                                     expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                                                 }
-                                                let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                                let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                 if current.expected_type_name != "" {
                                                     if not current.expected_is_borrow {
                                                         if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
@@ -2645,10 +2654,19 @@ audit {
                                         match local_entry {
                                             Some(current) => {
                                                 let mut expected_ctx = empty_expected_type_ctx();
+                                                let mut expr_start = current.expr_start;
+                                                let eq_token = token_at(ref tokens, expr_start);
+                                                match eq_token.kind {
+                                                    tk_eq => {
+                                                        expr_start = expr_start + 1;
+                                                    },
+                                                    _ => {
+                                                    },
+                                                }
                                                 if current.expected_type_name != "" {
                                                     expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                                                 }
-                                                let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                                let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                 if current.expected_type_name == "" {
                                                     if current.name != "" and has_known_type_ctx(actual_ctx) {
                                                         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false));

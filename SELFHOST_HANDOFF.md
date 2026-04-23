@@ -18,21 +18,24 @@ This is an architecture checkpoint, not a parser/typechecker rewrite.
 
 ## Current Status
 
-The first stage1 structured checked handoff is now implemented.
+The first stage1 structured checked handoff is now implemented and hardened for backend consumers.
 
 It is currently built from the trusted selfhost semantic outputs after parse, resolve, and typecheck, and it is exercised by the in-repo handoff probes plus full-tree selfhost runs.
 
 The implemented handoff currently captures:
 
 - resolved module and function identities
+- stable binding identities for params, locals, and typed pattern payload bindings
 - typed params, locals, returns, and assignment targets
 - typed expression trees for the trusted subset
+- explicit `ref` / `mutref` borrow nodes instead of borrow-sensitive name reconstruction
 - typed `if`, `while`, and `match` statement structure
 - typed pattern bindings for the current enum / `option` / `result` subset
 - resolved function / constructor / field targets
 - stable source spans for downstream diagnostics and comparison work
+- fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff
 
-This completes the boundary-definition step. The next implementation step is stage1 borrow checking on this representation, not more backend work on flat fact lists.
+This completes the boundary-definition and backend-readiness hardening step. The next implementation step is stage1 borrow checking on this representation, not more backend work on flat fact lists.
 
 ## What The Flat Pipeline Owns
 
@@ -67,6 +70,7 @@ The handoff must include, at minimum:
 
 - resolved module identities
 - resolved function identities
+- stable binding identities for params, locals, and typed pattern bindings
 - typed parameter declarations
 - typed local declarations and assignment targets
 - typed return sites
@@ -78,6 +82,7 @@ The handoff must include, at minimum:
 - function call targets with resolved origin
 - field access nodes with resolved base type and resolved field target
 - stable source spans carried through for downstream diagnostics
+- truthful borrow bits and explicit borrow-node shape for `ref` / `mutref`
 
 ## Trusted Expression And Statement Scope
 
@@ -122,6 +127,7 @@ The handoff should be:
 - structured enough for backend work
 - typed enough that borrow/IR/codegen do not need to re-derive semantic truth
 - deterministic in ordering and identity assignment
+- fail-closed when trusted-subset semantic facts cannot be exported
 - stable enough to support later differential or self-build comparisons
 - narrow enough to avoid turning into a second ad hoc front end
 

@@ -129,6 +129,7 @@
 ## Genuine Parity Next
 
 - [x] Build the structured checked handoff from trusted selfhost semantic outputs
+- [x] Harden the structured checked handoff with stable binding identity, explicit borrow nodes, and fail-closed export
 - [ ] Add stage1 borrow checking on the structured checked handoff
 - [ ] Add stage1 IR lowering on the structured checked handoff
 - [ ] Add stage1 C emission on the structured checked handoff
