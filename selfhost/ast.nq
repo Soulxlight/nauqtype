@@ -264,6 +264,7 @@ pub type function_param_fact {
     module: str,
     function_name: str,
     index: i32,
+    name: str,
     at: i32,
     type_name: str,
     type_arg1_name: str,
@@ -271,7 +272,7 @@ pub type function_param_fact {
     is_borrow: bool,
 }
 
-pub fn make_function_param_fact(module: str, function_name: str, index: i32, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool) -> function_param_fact
+pub fn make_function_param_fact(module: str, function_name: str, index: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool) -> function_param_fact
 audit {
     intent("Build a flat function-parameter fact record for recursive selfhost type checking");
     mutates();
@@ -282,6 +283,7 @@ audit {
         module: module,
         function_name: function_name,
         index: index,
+        name: name,
         at: at,
         type_name: type_name,
         type_arg1_name: type_arg1_name,
@@ -479,13 +481,14 @@ pub type match_arm_fact {
     function_name: str,
     scope_id: i32,
     at: i32,
+    match_at: i32,
     scrutinee_start: i32,
     scrutinee_end: i32,
     pattern_start: i32,
     pattern_end: i32,
 }
 
-pub fn make_match_arm_fact(module: str, function_name: str, scope_id: i32, at: i32, scrutinee_start: i32, scrutinee_end: i32, pattern_start: i32, pattern_end: i32) -> match_arm_fact
+pub fn make_match_arm_fact(module: str, function_name: str, scope_id: i32, at: i32, match_at: i32, scrutinee_start: i32, scrutinee_end: i32, pattern_start: i32, pattern_end: i32) -> match_arm_fact
 audit {
     intent("Build a flat match-arm fact record for selfhost pattern typing");
     mutates();
@@ -497,10 +500,91 @@ audit {
         function_name: function_name,
         scope_id: scope_id,
         at: at,
+        match_at: match_at,
         scrutinee_start: scrutinee_start,
         scrutinee_end: scrutinee_end,
         pattern_start: pattern_start,
         pattern_end: pattern_end,
+    };
+}
+
+pub enum stmt_fact_kind {
+    stmt_local,
+    stmt_expr,
+    stmt_assign,
+    stmt_return,
+    stmt_if,
+    stmt_while,
+    stmt_match,
+}
+
+pub type stmt_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    kind: stmt_fact_kind,
+    name: str,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+    child_scope_id: i32,
+    alt_scope_id: i32,
+}
+
+pub fn make_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: stmt_fact_kind, name: str, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, child_scope_id: i32, alt_scope_id: i32) -> stmt_fact
+audit {
+    intent("Build a flat statement fact record for the structured checked handoff");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: kind,
+        name: name,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: child_scope_id,
+        alt_scope_id: alt_scope_id,
+    };
+}
+
+pub type pattern_binding_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+}
+
+pub fn make_pattern_binding_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str) -> pattern_binding_fact
+audit {
+    intent("Build a typed pattern-binding fact record for the structured checked handoff");
+    mutates();
+    effects();
+}
+{
+    return pattern_binding_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
     };
 }
 
@@ -723,6 +807,44 @@ audit {
     return body_resolve_summary {
         function_count: function_count,
         ref_count: ref_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type stmt_fact_summary {
+    stmt_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_stmt_fact_summary(stmt_count: i32, diag_count: i32) -> stmt_fact_summary
+audit {
+    intent("Build a statement-fact collection summary record");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact_summary {
+        stmt_count: stmt_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type resolved_binding_summary {
+    binding_count: i32,
+    pattern_binding_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_resolved_binding_summary(binding_count: i32, pattern_binding_count: i32, diag_count: i32) -> resolved_binding_summary
+audit {
+    intent("Build a resolved-binding collection summary record");
+    mutates();
+    effects();
+}
+{
+    return resolved_binding_summary {
+        binding_count: binding_count,
+        pattern_binding_count: pattern_binding_count,
         diag_count: diag_count,
     };
 }

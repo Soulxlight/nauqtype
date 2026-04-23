@@ -1,0 +1,2095 @@
+use ast;
+use diag;
+use lexer;
+use source;
+use token;
+use typecheck;
+
+pub enum checked_target_kind {
+    checked_target_none,
+    checked_target_function,
+    checked_target_builtin_function,
+    checked_target_constructor,
+    checked_target_builtin_constructor,
+}
+
+pub enum checked_stmt_kind {
+    checked_stmt_local,
+    checked_stmt_expr,
+    checked_stmt_assign,
+    checked_stmt_return,
+    checked_stmt_if,
+    checked_stmt_while,
+    checked_stmt_match,
+}
+
+pub enum checked_expr_kind {
+    checked_expr_unit,
+    checked_expr_bool,
+    checked_expr_i32,
+    checked_expr_str,
+    checked_expr_name,
+    checked_expr_zero_variant,
+    checked_expr_call,
+    checked_expr_field,
+    checked_expr_struct,
+    checked_expr_not,
+    checked_expr_neg,
+    checked_expr_add,
+    checked_expr_sub,
+    checked_expr_mul,
+    checked_expr_div,
+    checked_expr_eq,
+    checked_expr_ne,
+    checked_expr_lt,
+    checked_expr_lte,
+    checked_expr_gt,
+    checked_expr_gte,
+    checked_expr_and,
+    checked_expr_or,
+}
+
+pub type checked_module {
+    id: i32,
+    name: str,
+}
+
+pub type checked_function {
+    id: i32,
+    module_id: i32,
+    module_name: str,
+    name: str,
+    at: i32,
+    root_scope_id: i32,
+    return_name: str,
+    return_arg1_name: str,
+    return_arg2_name: str,
+    return_is_borrow: bool,
+}
+
+pub type checked_param {
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    index: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+}
+
+pub type checked_block {
+    id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    scope_id: i32,
+    parent_block_id: i32,
+    depth: i32,
+}
+
+pub type checked_stmt {
+    id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    block_id: i32,
+    scope_id: i32,
+    at: i32,
+    kind: checked_stmt_kind,
+    name: str,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    expr_id: i32,
+    child_block_id: i32,
+    alt_block_id: i32,
+}
+
+pub type checked_match_arm {
+    id: i32,
+    stmt_id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    block_id: i32,
+    scope_id: i32,
+    at: i32,
+    constructor_name: str,
+    constructor_origin_module: str,
+    constructor_enum_name: str,
+    is_wildcard: bool,
+}
+
+pub type checked_pattern_binding {
+    arm_id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+}
+
+pub type checked_expr {
+    id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    start: i32,
+    end: i32,
+    kind: checked_expr_kind,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    name: str,
+    target_kind: checked_target_kind,
+    target_origin_module: str,
+    field_owner_module: str,
+    field_owner_type: str,
+    field_name: str,
+}
+
+pub type checked_expr_child {
+    parent_expr_id: i32,
+    index: i32,
+    child_expr_id: i32,
+}
+
+pub type checked_struct_field_init {
+    expr_id: i32,
+    index: i32,
+    field_name: str,
+    field_owner_module: str,
+    field_owner_type: str,
+    value_expr_id: i32,
+}
+
+pub type checked_handoff_summary {
+    module_count: i32,
+    function_count: i32,
+    block_count: i32,
+    statement_count: i32,
+    arm_count: i32,
+    pattern_binding_count: i32,
+    expression_count: i32,
+    diag_count: i32,
+}
+
+fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, at, message));
+    return;
+}
+
+fn push_handoff_limitation(diags: mutref list<diag>, file: str, at: i32) -> unit {
+    return;
+}
+
+fn consume_handoff_limitation(diags: mutref list<diag>, file: str, at: i32) -> i32 {
+    push_handoff_limitation(mutref diags, file, at);
+    return -1;
+}
+
+fn token_at(tokens: ref list<token>, index: i32) -> token {
+    let found = list_get(ref tokens, index);
+    match found {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return eof_token(index);
+        },
+    }
+}
+
+fn token_is_ident(tok: token) -> bool {
+    match tok.kind {
+        tk_ident => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn checked_stmt_kind_matches(left: checked_stmt_kind, right: checked_stmt_kind) -> bool {
+    match left {
+        checked_stmt_local => {
+            match right {
+                checked_stmt_local => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_expr => {
+            match right {
+                checked_stmt_expr => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_assign => {
+            match right {
+                checked_stmt_assign => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_return => {
+            match right {
+                checked_stmt_return => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_if => {
+            match right {
+                checked_stmt_if => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_while => {
+            match right {
+                checked_stmt_while => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_match => {
+            match right {
+                checked_stmt_match => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+    }
+}
+
+fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) -> bool {
+    match left {
+        checked_expr_unit => {
+            match right {
+                checked_expr_unit => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_bool => {
+            match right {
+                checked_expr_bool => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_i32 => {
+            match right {
+                checked_expr_i32 => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_str => {
+            match right {
+                checked_expr_str => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_name => {
+            match right {
+                checked_expr_name => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_zero_variant => {
+            match right {
+                checked_expr_zero_variant => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_call => {
+            match right {
+                checked_expr_call => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_field => {
+            match right {
+                checked_expr_field => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_struct => {
+            match right {
+                checked_expr_struct => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_not => {
+            match right {
+                checked_expr_not => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_neg => {
+            match right {
+                checked_expr_neg => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_add => {
+            match right {
+                checked_expr_add => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_sub => {
+            match right {
+                checked_expr_sub => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_mul => {
+            match right {
+                checked_expr_mul => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_div => {
+            match right {
+                checked_expr_div => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_eq => {
+            match right {
+                checked_expr_eq => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_ne => {
+            match right {
+                checked_expr_ne => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_lt => {
+            match right {
+                checked_expr_lt => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_lte => {
+            match right {
+                checked_expr_lte => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_gt => {
+            match right {
+                checked_expr_gt => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_gte => {
+            match right {
+                checked_expr_gte => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_and => {
+            match right {
+                checked_expr_and => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_or => {
+            match right {
+                checked_expr_or => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+    }
+}
+
+fn token_can_end_expr(tok: token) -> bool {
+    match tok.kind {
+        tk_ident => {
+            return true;
+        },
+        tk_int_lit => {
+            return true;
+        },
+        tk_string_lit => {
+            return true;
+        },
+        tk_kw_true => {
+            return true;
+        },
+        tk_kw_false => {
+            return true;
+        },
+        tk_rparen => {
+            return true;
+        },
+        tk_rbrace => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn span_is_wrapped_in_parens(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 2 {
+        return false;
+    }
+    let first = token_at(ref tokens, start);
+    let last = token_at(ref tokens, end - 1);
+    match first.kind {
+        tk_lparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match last.kind {
+        tk_rparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                depth = depth - 1;
+                if depth == 0 and index + 1 < end {
+                    return false;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return depth == 0;
+}
+
+fn is_binary_operator_position(tokens: ref list<token>, start: i32, index: i32) -> bool {
+    if index <= start {
+        return false;
+    }
+    let previous = token_at(ref tokens, index - 1);
+    return token_can_end_expr(previous);
+}
+
+fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_kw_or => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_kw_and => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_eqeq => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_noteq => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_lt => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_gt => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_lte => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            tk_gte => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_plus => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            tk_minus => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_star => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            tk_slash => {
+                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    let mut found = -1;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_dot => {
+                if depth == 0 and brace_depth == 0 {
+                    found = index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return found;
+}
+
+fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 3 {
+        return false;
+    }
+    let head = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    match head.kind {
+        tk_ident => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lparen => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                depth = depth - 1;
+                if depth == 0 {
+                    return index + 1 == end;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 3 {
+        return false;
+    }
+    let head = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    match head.kind {
+        tk_ident => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lbrace => {
+                depth = depth + 1;
+            },
+            tk_rbrace => {
+                depth = depth - 1;
+                if depth == 0 {
+                    return index + 1 == end;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn next_top_level_comma(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_comma => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return end;
+}
+
+fn find_top_level_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut brace_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                depth = depth + 1;
+            },
+            tk_rparen => {
+                if depth > 0 {
+                    depth = depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_colon => {
+                if depth == 0 and brace_depth == 0 {
+                    return index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_module_id(modules: ref list<checked_module>, name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref modules) {
+        let entry = list_get(ref modules, index);
+        match entry {
+            Some(value) => {
+                if value.name == name {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_id(functions: ref list<checked_function>, module_name: str, function_name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == function_name {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_block_id(blocks: ref list<checked_block>, module_name: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref blocks) {
+        let entry = list_get(ref blocks, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and value.scope_id == scope_id {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_root_scope_id(scopes: ref list<body_scope>, module_name: str, function_name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.parent_scope_id < 0 {
+                    return value.scope_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn module_source_text(sources: ref list<source_file>, module_name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref sources) {
+        let entry = list_get(ref sources, index);
+        match entry {
+            Some(value) => {
+                if value.name == module_name {
+                    return value.text;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn exact_resolved_binding_ctx(resolved_bindings: ref list<typed_binding_fact>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut index = list_len(ref resolved_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref resolved_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at == at {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return empty_expected_type_ctx();
+}
+
+fn scope_parent_id(scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = list_len(ref scopes) - 1;
+    while index >= 0 {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.scope_id == scope_id {
+                    return value.parent_scope_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return -1;
+}
+
+fn scope_is_visible(scopes: ref list<body_scope>, module_name: str, function_name: str, current_scope_id: i32, candidate_scope_id: i32) -> bool {
+    let mut scope_cursor = current_scope_id;
+    while scope_cursor >= 0 {
+        if scope_cursor == candidate_scope_id {
+            return true;
+        }
+        scope_cursor = scope_parent_id(ref scopes, module_name, function_name, scope_cursor);
+    }
+    return false;
+}
+
+fn visible_resolved_binding_ctx(resolved_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut index = list_len(ref resolved_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref resolved_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
+                        return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return empty_expected_type_ctx();
+}
+
+fn build_expected_variant_payload_ctx(variant_name: str, expected_ctx: expected_type_ctx, payload_index: i32) -> expected_type_ctx {
+    if variant_name == "Some" and payload_index == 0 and expected_ctx.head == "option" {
+        return make_expected_type_ctx(expected_ctx.arg1_name, "", "");
+    }
+    if variant_name == "Ok" and payload_index == 0 and expected_ctx.head == "result" {
+        return make_expected_type_ctx(expected_ctx.arg1_name, "", "");
+    }
+    if variant_name == "Err" and payload_index == 0 and expected_ctx.head == "result" {
+        return make_expected_type_ctx(expected_ctx.arg2_name, "", "");
+    }
+    return empty_expected_type_ctx();
+}
+
+fn next_expr_id(expressions: ref list<checked_expr>) -> i32 {
+    return list_len(ref expressions) + 1;
+}
+
+fn push_expr_child(expr_children: mutref list<checked_expr_child>, parent_expr_id: i32, index: i32, child_expr_id: i32) -> unit {
+    list_push(mutref expr_children, checked_expr_child {
+        parent_expr_id: parent_expr_id,
+        index: index,
+        child_expr_id: child_expr_id,
+    });
+    return;
+}
+
+fn build_literal_expr(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_name: str, name: str, expressions: mutref list<checked_expr>) -> i32 {
+    let expr_id = next_expr_id(ref expressions);
+    list_push(mutref expressions, checked_expr {
+        id: expr_id,
+        function_id: function_id,
+        module_name: module_name,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        start: start,
+        end: end,
+        kind: kind,
+        type_name: type_name,
+        type_arg1_name: "",
+        type_arg2_name: "",
+        is_borrow: false,
+        name: name,
+        target_kind: checked_target_none,
+        target_origin_module: "",
+        field_owner_module: "",
+        field_owner_type: "",
+        field_name: "",
+    });
+    return expr_id;
+}
+
+fn push_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, expressions: mutref list<checked_expr>) -> i32 {
+    let expr_id = next_expr_id(ref expressions);
+    list_push(mutref expressions, checked_expr {
+        id: expr_id,
+        function_id: function_id,
+        module_name: module_name,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        start: start,
+        end: end,
+        kind: kind,
+        type_name: type_ctx.head,
+        type_arg1_name: type_ctx.arg1_name,
+        type_arg2_name: type_ctx.arg2_name,
+        is_borrow: false,
+        name: name,
+        target_kind: target_kind,
+        target_origin_module: target_origin_module,
+        field_owner_module: field_owner_module,
+        field_owner_type: field_owner_type,
+        field_name: field_name,
+    });
+    return expr_id;
+}
+
+fn binary_expr_kind(op: token_kind) -> checked_expr_kind {
+    match op {
+        tk_plus => {
+            return checked_expr_add;
+        },
+        tk_minus => {
+            return checked_expr_sub;
+        },
+        tk_star => {
+            return checked_expr_mul;
+        },
+        tk_slash => {
+            return checked_expr_div;
+        },
+        tk_eqeq => {
+            return checked_expr_eq;
+        },
+        tk_noteq => {
+            return checked_expr_ne;
+        },
+        tk_lt => {
+            return checked_expr_lt;
+        },
+        tk_lte => {
+            return checked_expr_lte;
+        },
+        tk_gt => {
+            return checked_expr_gt;
+        },
+        tk_gte => {
+            return checked_expr_gte;
+        },
+        tk_kw_and => {
+            return checked_expr_and;
+        },
+        _ => {
+            return checked_expr_or;
+        },
+    }
+}
+
+fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, function_id: i32, module_name: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> i32 {
+    let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, start, end, at, expected_ctx, mutref diags);
+    if is_unsupported_type_ctx(actual_ctx) {
+        return -1;
+    }
+
+    let mut expr_start = start;
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return build_literal_expr(function_id, module_name, function_name, scope_id, at, start, end, checked_expr_unit, "unit", "", mutref expressions);
+    }
+
+    let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
+    if or_index >= 0 {
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_or, actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, or_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if left_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 0, left_id);
+        }
+        if right_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 1, right_id);
+        }
+        return expr_id;
+    }
+
+    let and_index = find_root_and_operator(ref tokens, expr_start, expr_end);
+    if and_index >= 0 {
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_and, actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, and_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if left_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 0, left_id);
+        }
+        if right_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 1, right_id);
+        }
+        return expr_id;
+    }
+
+    let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
+    if compare_index >= 0 {
+        let op = token_at(ref tokens, compare_index);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if left_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 0, left_id);
+        }
+        if right_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 1, right_id);
+        }
+        return expr_id;
+    }
+
+    let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
+    if additive_index >= 0 {
+        let op = token_at(ref tokens, additive_index);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, additive_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if left_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 0, left_id);
+        }
+        if right_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 1, right_id);
+        }
+        return expr_id;
+    }
+
+    let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
+    if multiplicative_index >= 0 {
+        let op = token_at(ref tokens, multiplicative_index);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if left_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 0, left_id);
+        }
+        if right_id >= 0 {
+            push_expr_child(mutref expr_children, expr_id, 1, right_id);
+        }
+        return expr_id;
+    }
+
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_not => {
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_not, actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            if child_id >= 0 {
+                push_expr_child(mutref expr_children, expr_id, 0, child_id);
+            }
+            return expr_id;
+        },
+        tk_minus => {
+            if not is_binary_operator_position(ref tokens, expr_start, expr_start) {
+                let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_neg, actual_ctx, "", checked_target_none, "", "", "", "", mutref expressions);
+                let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                if child_id >= 0 {
+                    push_expr_child(mutref expr_children, expr_id, 0, child_id);
+                }
+                return expr_id;
+            }
+        },
+        _ => {
+        },
+    }
+
+    let dot_index = find_root_field_dot(ref tokens, expr_start, expr_end);
+    if dot_index >= 0 {
+        let field_token = token_at(ref tokens, dot_index + 1);
+        if token_is_ident(field_token) and dot_index + 2 == expr_end {
+            let base_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let base_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref diags);
+            let owner_module = visible_type_origin_module(ref uses, ref items, module_name, base_ctx.head);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_field, actual_ctx, "", checked_target_none, "", owner_module, base_ctx.head, field_token.text, mutref expressions);
+            if base_id >= 0 {
+                push_expr_child(mutref expr_children, expr_id, 0, base_id);
+            }
+            return expr_id;
+        }
+    }
+
+    if span_is_call_expr(ref tokens, expr_start, expr_end) {
+        let head = token_at(ref tokens, expr_start);
+        let function_origin = visible_function_origin_module(ref uses, ref items, module_name, head.text);
+        let variant_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, head.text);
+        let mut target_kind = checked_target_none;
+        let mut target_origin = "";
+        if function_origin != "" {
+            if function_origin == "__builtin__" {
+                target_kind = checked_target_builtin_function;
+            } else {
+                target_kind = checked_target_function;
+            }
+            target_origin = function_origin;
+        } else {
+            if visible_variant_enum_name(ref variants, ref uses, ref items, module_name, head.text) != "" {
+                if variant_origin == "__builtin__" {
+                    target_kind = checked_target_builtin_constructor;
+                } else {
+                    target_kind = checked_target_constructor;
+                }
+                target_origin = variant_origin;
+            }
+        }
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, actual_ctx, head.text, target_kind, target_origin, "", "", "", mutref expressions);
+        let mut arg_start = expr_start + 2;
+        let arg_end_limit = expr_end - 1;
+        let mut arg_index = 0;
+        while arg_start < arg_end_limit {
+            let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
+            let mut arg_expected_ctx = empty_expected_type_ctx();
+            match target_kind {
+                checked_target_function => {
+                    arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module_name, head.text, arg_index);
+                },
+                checked_target_builtin_function => {
+                    arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module_name, head.text, arg_index);
+                },
+                checked_target_constructor => {
+                    arg_expected_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module_name, head.text, arg_index);
+                },
+                checked_target_builtin_constructor => {
+                    arg_expected_ctx = build_expected_variant_payload_ctx(head.text, expected_ctx, arg_index);
+                },
+                _ => {
+                },
+            }
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, arg_expected_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            if child_id >= 0 {
+                push_expr_child(mutref expr_children, expr_id, arg_index, child_id);
+            }
+            arg_index = arg_index + 1;
+            arg_start = segment_end + 1;
+        }
+        return expr_id;
+    }
+
+    if span_is_struct_expr(ref tokens, expr_start, expr_end) {
+        let type_token = token_at(ref tokens, expr_start);
+        let type_origin = visible_type_origin_module(ref uses, ref items, module_name, type_token.text);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_struct, actual_ctx, type_token.text, checked_target_none, "", type_origin, type_token.text, "", mutref expressions);
+        let mut field_start = expr_start + 2;
+        let field_end_limit = expr_end - 1;
+        let mut field_index = 0;
+        while field_start < field_end_limit {
+            let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
+            let colon_index = find_top_level_colon(ref tokens, field_start, segment_end);
+            if colon_index >= 0 {
+                let field_token = token_at(ref tokens, field_start);
+                if token_is_ident(field_token) {
+                    let field_expected_ctx = lookup_field_ctx(ref field_facts, type_origin, type_token.text, field_token.text);
+                    let value_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, field_expected_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                    list_push(mutref struct_fields, checked_struct_field_init {
+                        expr_id: expr_id,
+                        index: field_index,
+                        field_name: field_token.text,
+                        field_owner_module: type_origin,
+                        field_owner_type: type_token.text,
+                        value_expr_id: value_expr_id,
+                    });
+                }
+            }
+            field_index = field_index + 1;
+            field_start = segment_end + 1;
+        }
+        return expr_id;
+    }
+
+    match current.kind {
+        tk_kw_true => {
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "true", mutref expressions);
+        },
+        tk_kw_false => {
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "false", mutref expressions);
+        },
+        tk_int_lit => {
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_i32, actual_ctx.head, current.text, mutref expressions);
+        },
+        tk_string_lit => {
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_str, "str", current.text, mutref expressions);
+        },
+        tk_ident => {
+            if expr_start + 1 == expr_end {
+                let zero_enum = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
+                if zero_enum != "" {
+                    let origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                    let mut target_kind = checked_target_constructor;
+                    if origin == "__builtin__" {
+                        target_kind = checked_target_builtin_constructor;
+                    }
+                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, actual_ctx, current.text, target_kind, origin, "", "", "", mutref expressions);
+                }
+                return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, actual_ctx, current.text, checked_target_none, "", "", "", "", mutref expressions);
+            }
+        },
+        _ => {
+        },
+    }
+
+    return consume_handoff_limitation(mutref diags, module_name, at);
+}
+
+fn append_modules_from_sources(sources: ref list<source_file>, modules: mutref list<checked_module>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref sources) {
+        let entry = list_get(ref sources, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref modules, checked_module {
+                    id: list_len(ref modules) + 1,
+                    name: value.name,
+                });
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_functions_and_params(function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, scopes: ref list<body_scope>, modules: ref list<checked_module>, functions: mutref list<checked_function>, params: mutref list<checked_param>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref function_facts) {
+        let entry = list_get(ref function_facts, index);
+        match entry {
+            Some(value) => {
+                let function_id = list_len(ref functions) + 1;
+                let module_id = lookup_module_id(ref modules, value.module);
+                let root_scope_id = lookup_root_scope_id(ref scopes, value.module, value.name);
+                list_push(mutref functions, checked_function {
+                    id: function_id,
+                    module_id: module_id,
+                    module_name: value.module,
+                    name: value.name,
+                    at: value.at,
+                    root_scope_id: root_scope_id,
+                    return_name: value.return_name,
+                    return_arg1_name: value.return_arg1_name,
+                    return_arg2_name: value.return_arg2_name,
+                    return_is_borrow: value.return_is_borrow,
+                });
+                let mut param_index = 0;
+                while param_index < list_len(ref function_params) {
+                    let param_entry = list_get(ref function_params, param_index);
+                    match param_entry {
+                        Some(param) => {
+                            if param.module == value.module and param.function_name == value.name {
+                                list_push(mutref params, checked_param {
+                                    function_id: function_id,
+                                    module_name: value.module,
+                                    function_name: value.name,
+                                    index: param.index,
+                                    name: param.name,
+                                    at: param.at,
+                                    type_name: param.type_name,
+                                    type_arg1_name: param.type_arg1_name,
+                                    type_arg2_name: param.type_arg2_name,
+                                    is_borrow: param.is_borrow,
+                                });
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    param_index = param_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_blocks(scopes: ref list<body_scope>, functions: ref list<checked_function>, blocks: mutref list<checked_block>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                let function_id = lookup_function_id(ref functions, value.module, value.function_name);
+                let parent_block_id = lookup_block_id(ref blocks, value.module, value.function_name, value.parent_scope_id);
+                if function_id >= 0 {
+                    list_push(mutref blocks, checked_block {
+                        id: list_len(ref blocks) + 1,
+                        function_id: function_id,
+                        module_name: value.module,
+                        function_name: value.function_name,
+                        scope_id: value.scope_id,
+                        parent_block_id: parent_block_id,
+                        depth: value.depth,
+                    });
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_statements_for_source(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, module_name: str, tokens: ref list<token>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: mutref list<checked_stmt>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> unit {
+    let mut stmt_index = 0;
+    while stmt_index < list_len(ref stmt_facts) {
+        let entry = list_get(ref stmt_facts, stmt_index);
+        match entry {
+            Some(current) => {
+                if current.module == module_name {
+                    let function_id = lookup_function_id(ref checked_functions, current.module, current.function_name);
+                    let block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
+                    let mut stmt_type_ctx = empty_expected_type_ctx();
+                    match current.kind {
+                        stmt_local => {
+                            stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
+                            if stmt_type_ctx.head == "" and current.name != "" {
+                                stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                            }
+                        },
+                        stmt_assign => {
+                            stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                        },
+                        stmt_return => {
+                            let function_id_lookup = lookup_function_id(ref checked_functions, current.module, current.function_name);
+                            let function_index = function_id_lookup - 1;
+                            let function_entry = list_get(ref checked_functions, function_index);
+                            match function_entry {
+                                Some(value) => {
+                                    stmt_type_ctx = make_expected_type_ctx(value.return_name, value.return_arg1_name, value.return_arg2_name);
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        _ => {
+                        },
+                    }
+                    let expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, stmt_type_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                    let mut final_expr_id = expr_id;
+                    if final_expr_id < 0 {
+                        match current.expr_kind {
+                            expr_call => {
+                                let mut target_name = current.expr_name;
+                                if target_name == "" {
+                                    target_name = current.name;
+                                }
+                                let function_origin = visible_function_origin_module(ref uses, ref items, current.module, target_name);
+                                let variant_origin = visible_variant_origin_module(ref variants, ref uses, ref items, current.module, target_name);
+                                let mut target_kind = checked_target_none;
+                                let mut target_origin = "";
+                                if function_origin != "" {
+                                    if function_origin == "__builtin__" {
+                                        target_kind = checked_target_builtin_function;
+                                    } else {
+                                        target_kind = checked_target_function;
+                                    }
+                                    target_origin = function_origin;
+                                } else {
+                                    if visible_variant_enum_name(ref variants, ref uses, ref items, current.module, target_name) != "" {
+                                        if variant_origin == "__builtin__" {
+                                            target_kind = checked_target_builtin_constructor;
+                                        } else {
+                                            target_kind = checked_target_constructor;
+                                        }
+                                        target_origin = variant_origin;
+                                    }
+                                }
+                                final_expr_id = push_expr_record(function_id, current.module, current.function_name, current.scope_id, current.at, current.expr_start, current.expr_end, checked_expr_call, stmt_type_ctx, target_name, target_kind, target_origin, "", "", "", mutref expressions);
+                            },
+                            _ => {
+                            },
+                        }
+                    }
+                    let mut checked_kind = checked_stmt_expr;
+                    match current.kind {
+                        stmt_local => {
+                            checked_kind = checked_stmt_local;
+                        },
+                        stmt_expr => {
+                            checked_kind = checked_stmt_expr;
+                        },
+                        stmt_assign => {
+                            checked_kind = checked_stmt_assign;
+                        },
+                        stmt_return => {
+                            checked_kind = checked_stmt_return;
+                        },
+                        stmt_if => {
+                            checked_kind = checked_stmt_if;
+                        },
+                        stmt_while => {
+                            checked_kind = checked_stmt_while;
+                        },
+                        stmt_match => {
+                            checked_kind = checked_stmt_match;
+                        },
+                    }
+                    list_push(mutref statements, checked_stmt {
+                        id: list_len(ref statements) + 1,
+                        function_id: function_id,
+                        module_name: current.module,
+                        function_name: current.function_name,
+                        block_id: block_id,
+                        scope_id: current.scope_id,
+                        at: current.at,
+                        kind: checked_kind,
+                        name: current.name,
+                        type_name: stmt_type_ctx.head,
+                        type_arg1_name: stmt_type_ctx.arg1_name,
+                        type_arg2_name: stmt_type_ctx.arg2_name,
+                        is_borrow: false,
+                        expr_id: final_expr_id,
+                        child_block_id: lookup_block_id(ref blocks, current.module, current.function_name, current.child_scope_id),
+                        alt_block_id: lookup_block_id(ref blocks, current.module, current.function_name, current.alt_scope_id),
+                    });
+                }
+            },
+            None => {
+            },
+        }
+        stmt_index = stmt_index + 1;
+    }
+    return;
+}
+
+fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, module_name: str, tokens: ref list<token>, statements: ref list<checked_stmt>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, checked_match_arms: mutref list<checked_match_arm>, checked_pattern_bindings: mutref list<checked_pattern_binding>) -> unit {
+    let mut arm_index = 0;
+    while arm_index < list_len(ref match_arms) {
+        let arm_entry = list_get(ref match_arms, arm_index);
+        match arm_entry {
+            Some(current) => {
+                if current.module == module_name {
+                    let stmt_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
+                    let mut owner_stmt_id = -1;
+                    let mut statement_index = 0;
+                    while statement_index < list_len(ref statements) {
+                        let stmt_entry = list_get(ref statements, statement_index);
+                        match stmt_entry {
+                            Some(value) => {
+                                if value.module_name == current.module and value.function_name == current.function_name and checked_stmt_kind_matches(value.kind, checked_stmt_match) and value.at == current.match_at {
+                                    owner_stmt_id = value.id;
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        statement_index = statement_index + 1;
+                    }
+                    let mut constructor_name = "";
+                    let mut constructor_origin_module = "";
+                    let mut constructor_enum_name = "";
+                    let mut is_wildcard = false;
+                    let mut pattern_start = current.pattern_start;
+                    let mut pattern_end = current.pattern_end;
+                    while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
+                        pattern_start = pattern_start + 1;
+                        pattern_end = pattern_end - 1;
+                    }
+                    let head = token_at(ref tokens, pattern_start);
+                    if token_is_ident(head) {
+                        if head.text == "_" and pattern_start + 1 == pattern_end {
+                            is_wildcard = true;
+                        } else {
+                            if span_is_call_expr(ref tokens, pattern_start, pattern_end) or pattern_start + 1 == pattern_end {
+                                let enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, current.module, head.text);
+                                if enum_name != "" {
+                                    constructor_name = head.text;
+                                    constructor_origin_module = visible_variant_origin_module(ref variants, ref uses, ref items, current.module, head.text);
+                                    constructor_enum_name = enum_name;
+                                }
+                            }
+                        }
+                    }
+                    let function_id = lookup_function_id(ref checked_functions, current.module, current.function_name);
+                    let block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
+                    list_push(mutref checked_match_arms, checked_match_arm {
+                        id: list_len(ref checked_match_arms) + 1,
+                        stmt_id: owner_stmt_id,
+                        function_id: function_id,
+                        module_name: current.module,
+                        function_name: current.function_name,
+                        block_id: block_id,
+                        scope_id: current.scope_id,
+                        at: current.at,
+                        constructor_name: constructor_name,
+                        constructor_origin_module: constructor_origin_module,
+                        constructor_enum_name: constructor_enum_name,
+                        is_wildcard: is_wildcard,
+                    });
+                    let new_arm_id = list_len(ref checked_match_arms);
+                    let mut binding_index = 0;
+                    while binding_index < list_len(ref pattern_bindings) {
+                        let binding_entry = list_get(ref pattern_bindings, binding_index);
+                        match binding_entry {
+                            Some(value) => {
+                                if value.module == current.module and value.function_name == current.function_name and value.scope_id == current.scope_id {
+                                    list_push(mutref checked_pattern_bindings, checked_pattern_binding {
+                                        arm_id: new_arm_id,
+                                        function_id: function_id,
+                                        module_name: value.module,
+                                        function_name: value.function_name,
+                                        scope_id: value.scope_id,
+                                        name: value.name,
+                                        at: value.at,
+                                        type_name: value.type_name,
+                                        type_arg1_name: value.type_arg1_name,
+                                        type_arg2_name: value.type_arg2_name,
+                                    });
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        binding_index = binding_index + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        arm_index = arm_index + 1;
+    }
+    return;
+}
+
+pub fn build_checked_handoff(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, modules_out: mutref list<checked_module>, functions_out: mutref list<checked_function>, params_out: mutref list<checked_param>, blocks_out: mutref list<checked_block>, statements_out: mutref list<checked_stmt>, match_arms_out: mutref list<checked_match_arm>, pattern_bindings_out: mutref list<checked_pattern_binding>, expressions_out: mutref list<checked_expr>, expr_children_out: mutref list<checked_expr_child>, struct_fields_out: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> checked_handoff_summary
+audit {
+    intent("Build the structured checked handoff from trusted selfhost semantic outputs");
+    mutates(modules_out, functions_out, params_out, blocks_out, statements_out, match_arms_out, pattern_bindings_out, expressions_out, expr_children_out, struct_fields_out, diags);
+    effects();
+}
+{
+    append_modules_from_sources(ref sources, mutref modules_out);
+    append_functions_and_params(ref functions, ref function_params, ref scopes, ref modules_out, mutref functions_out, mutref params_out);
+    append_blocks(ref scopes, ref functions_out, mutref blocks_out);
+
+    let mut source_index = 0;
+    while source_index < list_len(ref sources) {
+        let source_entry = list_get(ref sources, source_index);
+        match source_entry {
+            Some(current_source) => {
+                let tokens = lex(current_source.text);
+                append_statements_for_source(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref stmt_facts, ref uses, ref items, current_source.name, ref tokens, ref functions_out, ref blocks_out, mutref statements_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref diags);
+                append_match_arms_for_source(ref variants, ref uses, ref items, ref match_arms, ref pattern_bindings, current_source.name, ref tokens, ref statements_out, ref functions_out, ref blocks_out, mutref match_arms_out, mutref pattern_bindings_out);
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+
+    return checked_handoff_summary {
+        module_count: list_len(ref modules_out),
+        function_count: list_len(ref functions_out),
+        block_count: list_len(ref blocks_out),
+        statement_count: list_len(ref statements_out),
+        arm_count: list_len(ref match_arms_out),
+        pattern_binding_count: list_len(ref pattern_bindings_out),
+        expression_count: list_len(ref expressions_out),
+        diag_count: list_len(ref diags),
+    };
+}
+
+pub fn summarize_checked_handoff(modules: ref list<checked_module>, functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, diag_count: i32) -> checked_handoff_summary
+audit {
+    intent("Summarize the structured checked handoff for probes and tests");
+    mutates();
+    effects();
+}
+{
+    return checked_handoff_summary {
+        module_count: list_len(ref modules),
+        function_count: list_len(ref functions),
+        block_count: list_len(ref blocks),
+        statement_count: list_len(ref statements),
+        arm_count: list_len(ref match_arms),
+        pattern_binding_count: list_len(ref pattern_bindings),
+        expression_count: list_len(ref expressions),
+        diag_count: diag_count,
+    };
+}
+
+pub fn handoff_has_stmt_kind(statements: ref list<checked_stmt>, module_name: str, function_name: str, kind: checked_stmt_kind) -> bool
+audit {
+    intent("Check whether a checked handoff contains a statement kind in one function");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_stmt_kind_matches(value.kind, kind) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_local_type(statements: ref list<checked_stmt>, module_name: str, function_name: str, name: str, type_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a typed local binding");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_stmt_kind_matches(value.kind, checked_stmt_local) and value.name == name and value.type_name == type_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_assignment_target_type(statements: ref list<checked_stmt>, module_name: str, function_name: str, name: str, type_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a typed assignment target");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_stmt_kind_matches(value.kind, checked_stmt_assign) and value.name == name and value.type_name == type_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_pattern_binding(pattern_bindings: ref list<checked_pattern_binding>, module_name: str, function_name: str, name: str, type_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a typed pattern binding");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref pattern_bindings) {
+        let entry = list_get(ref pattern_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and value.name == name and value.type_name == type_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_call_target(expressions: ref list<checked_expr>, module_name: str, function_name: str, target_name: str, target_origin_module: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a resolved call or constructor target");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_expr_kind_matches(value.kind, checked_expr_call) and value.name == target_name and value.target_origin_module == target_origin_module {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_field_target(expressions: ref list<checked_expr>, module_name: str, function_name: str, field_name: str, owner_type_name: str, owner_module_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a resolved field target");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_expr_kind_matches(value.kind, checked_expr_field) and value.field_name == field_name and value.field_owner_type == owner_type_name and value.field_owner_module == owner_module_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_function_in_module(functions: ref list<checked_function>, module_name: str, function_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a function under the expected module identity");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == function_name and value.module_id >= 0 {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}

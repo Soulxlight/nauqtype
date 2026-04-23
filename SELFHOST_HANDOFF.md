@@ -16,6 +16,24 @@ to:
 
 This is an architecture checkpoint, not a parser/typechecker rewrite.
 
+## Current Status
+
+The first stage1 structured checked handoff is now implemented.
+
+It is currently built from the trusted selfhost semantic outputs after parse, resolve, and typecheck, and it is exercised by the in-repo handoff probes plus full-tree selfhost runs.
+
+The implemented handoff currently captures:
+
+- resolved module and function identities
+- typed params, locals, returns, and assignment targets
+- typed expression trees for the trusted subset
+- typed `if`, `while`, and `match` statement structure
+- typed pattern bindings for the current enum / `option` / `result` subset
+- resolved function / constructor / field targets
+- stable source spans for downstream diagnostics and comparison work
+
+This completes the boundary-definition step. The next implementation step is stage1 borrow checking on this representation, not more backend work on flat fact lists.
+
 ## What The Flat Pipeline Owns
 
 The current flat selfhost pipeline is allowed to own:
@@ -111,10 +129,9 @@ The handoff should be:
 
 The genuine-parity sequence after this checkpoint is:
 
-1. build the structured checked handoff from current selfhost semantic outputs
-2. add stage1 borrow checking on that representation
-3. add stage1 IR lowering
-4. add stage1 C emission
-5. define the first stage1-to-stage2 self-build comparison proof
+1. add stage1 borrow checking on the structured checked handoff
+2. add stage1 IR lowering
+3. add stage1 C emission
+4. define the first stage1-to-stage2 self-build comparison proof
 
 Backend work should not be planned directly against the current flat parser/typecheck facts.

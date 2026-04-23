@@ -4,13 +4,19 @@ use lexer;
 use source;
 use token;
 
-type expected_type_ctx {
+pub type expected_type_ctx {
     head: str,
     arg1_name: str,
     arg2_name: str,
 }
 
-fn make_expected_type_ctx(head: str, arg1_name: str, arg2_name: str) -> expected_type_ctx {
+pub fn make_expected_type_ctx(head: str, arg1_name: str, arg2_name: str) -> expected_type_ctx
+audit {
+    intent("Construct an expected type context for selfhost semantic checks");
+    mutates();
+    effects();
+}
+{
     return expected_type_ctx {
         head: head,
         arg1_name: arg1_name,
@@ -18,7 +24,13 @@ fn make_expected_type_ctx(head: str, arg1_name: str, arg2_name: str) -> expected
     };
 }
 
-fn empty_expected_type_ctx() -> expected_type_ctx {
+pub fn empty_expected_type_ctx() -> expected_type_ctx
+audit {
+    intent("Construct an empty expected type context for selfhost semantic checks");
+    mutates();
+    effects();
+}
+{
     return make_expected_type_ctx("", "", "");
 }
 
@@ -627,7 +639,13 @@ fn visible_function_return_is_borrow(functions: ref list<function_fact>, uses: r
     return false;
 }
 
-fn visible_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+pub fn visible_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str
+audit {
+    intent("Resolve the enum name for a visible variant constructor");
+    mutates();
+    effects();
+}
+{
     let builtin = builtin_variant_enum_name(name);
     if builtin != "" {
         return builtin;
@@ -642,6 +660,66 @@ fn visible_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<mo
             Some(value) => {
                 if value.module == module and module_exports_variant_name(ref items, value.name, name) {
                     return lookup_variant_fact_enum_name(ref variants, value.name, name);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+pub fn visible_function_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str
+audit {
+    intent("Resolve the origin module for a visible function call target");
+    mutates();
+    effects();
+}
+{
+    if builtin_function_arity(name) >= 0 {
+        return "__builtin__";
+    }
+    if module_has_local_function_name(ref items, module, name) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, name) {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+pub fn visible_variant_origin_module(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str
+audit {
+    intent("Resolve the origin module for a visible constructor target");
+    mutates();
+    effects();
+}
+{
+    if builtin_variant_enum_name(name) != "" {
+        return "__builtin__";
+    }
+    if module_has_local_variant_name(ref items, module, name) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant_name(ref items, value.name, name) {
+                    return value.name;
                 }
             },
             None => {
@@ -675,7 +753,13 @@ fn visible_zero_arg_variant_ctx(variants: ref list<variant_fact>, uses: ref list
     return make_expected_type_ctx(enum_name, "", "");
 }
 
-fn visible_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str {
+pub fn visible_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str) -> str
+audit {
+    intent("Resolve the origin module for a visible product type");
+    mutates();
+    effects();
+}
+{
     if module_has_local_type_name(ref items, module, name) {
         return module;
     }
@@ -714,7 +798,13 @@ fn lookup_field_type_name(field_facts: ref list<field_fact>, module: str, type_n
     return "";
 }
 
-fn lookup_field_ctx(field_facts: ref list<field_fact>, module: str, type_name: str, field_name: str) -> expected_type_ctx {
+pub fn lookup_field_ctx(field_facts: ref list<field_fact>, module: str, type_name: str, field_name: str) -> expected_type_ctx
+audit {
+    intent("Resolve the type context of a named field on a product type");
+    mutates();
+    effects();
+}
+{
     let mut index = 0;
     while index < list_len(ref field_facts) {
         let entry = list_get(ref field_facts, index);
@@ -1129,7 +1219,13 @@ fn visible_function_param_type_name(function_params: ref list<function_param_fac
     return "";
 }
 
-fn visible_function_param_ctx(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> expected_type_ctx {
+pub fn visible_function_param_ctx(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> expected_type_ctx
+audit {
+    intent("Resolve the expected type context for a visible function parameter");
+    mutates();
+    effects();
+}
+{
     let builtin = builtin_function_param_type_name(function_name, index);
     if builtin != "" {
         return make_expected_type_ctx(builtin, "", "");
@@ -1214,7 +1310,13 @@ fn visible_variant_payload_type_name(variant_payloads: ref list<variant_payload_
     return "";
 }
 
-fn visible_variant_payload_ctx(variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, index: i32) -> expected_type_ctx {
+pub fn visible_variant_payload_ctx(variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, index: i32) -> expected_type_ctx
+audit {
+    intent("Resolve the expected type context for a visible constructor payload");
+    mutates();
+    effects();
+}
+{
     if builtin_variant_enum_name(variant_name) != "" {
         return empty_expected_type_ctx();
     }
@@ -1268,7 +1370,13 @@ fn is_unsupported_type_name(type_name: str) -> bool {
     return type_name == unsupported_type_name();
 }
 
-fn is_unsupported_type_ctx(type_ctx: expected_type_ctx) -> bool {
+pub fn is_unsupported_type_ctx(type_ctx: expected_type_ctx) -> bool
+audit {
+    intent("Check whether a type context marks a retained stage1 limitation");
+    mutates();
+    effects();
+}
+{
     return is_unsupported_type_name(type_ctx.head);
 }
 
@@ -1279,7 +1387,13 @@ fn has_known_type_name(type_name: str) -> bool {
     return not is_unsupported_type_name(type_name);
 }
 
-fn has_known_type_ctx(type_ctx: expected_type_ctx) -> bool {
+pub fn has_known_type_ctx(type_ctx: expected_type_ctx) -> bool
+audit {
+    intent("Check whether a type context carries a known non-limitation type");
+    mutates();
+    effects();
+}
+{
     return has_known_type_name(type_ctx.head);
 }
 
@@ -2011,7 +2125,13 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
     return make_expected_type_ctx(type_name, "", "");
 }
 
-fn infer_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
+pub fn infer_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx
+audit {
+    intent("Infer the type context of a trusted-subset expression for selfhost semantic checks");
+    mutates(diags);
+    effects();
+}
+{
     let mut expr_start = expr_content_start(ref tokens, start, end);
     let mut expr_end = end;
     while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
@@ -2222,7 +2342,7 @@ fn pattern_payload_ctx(variant_payloads: ref list<variant_payload_fact>, variant
     return visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, variant_name, index);
 }
 
-fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, scrutinee_ctx: expected_type_ctx, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
+fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, scrutinee_ctx: expected_type_ctx, resolved_bindings: mutref list<typed_binding_fact>, pattern_bindings: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> unit {
     let mut pattern_start = start;
     let mut pattern_end = end;
     while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
@@ -2253,7 +2373,7 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
                 while arg_start < arg_end_limit {
                     let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
                     let payload_ctx = pattern_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module, current.text, scrutinee_ctx, arg_index);
-                    typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, payload_ctx, mutref resolved_bindings, mutref diags);
+                    typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, payload_ctx, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
                     arg_index = arg_index + 1;
                     arg_start = segment_end + 1;
                 }
@@ -2269,6 +2389,7 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
                 }
                 if has_known_type_ctx(scrutinee_ctx) {
                     list_push(mutref resolved_bindings, make_typed_binding_fact(module, function_name, scope_id, current.text, current.start, scrutinee_ctx.head, scrutinee_ctx.arg1_name, scrutinee_ctx.arg2_name, false));
+                    list_push(mutref pattern_bindings, make_pattern_binding_fact(module, function_name, scope_id, current.text, current.start, scrutinee_ctx.head, scrutinee_ctx.arg1_name, scrutinee_ctx.arg2_name));
                 }
                 return;
             }
@@ -2280,12 +2401,12 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
     return;
 }
 
-fn typecheck_match_arm(variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, functions: ref list<function_fact>, function_params: ref list<function_param_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, tokens: ref list<token>, arm: match_arm_fact, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
+fn typecheck_match_arm(variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, functions: ref list<function_fact>, function_params: ref list<function_param_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, tokens: ref list<token>, arm: match_arm_fact, resolved_bindings: mutref list<typed_binding_fact>, pattern_bindings: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> unit {
     let scrutinee_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module, function_name, arm.scope_id, ref tokens, arm.scrutinee_start, arm.scrutinee_end, arm.at, empty_expected_type_ctx(), mutref diags);
     if is_unsupported_type_ctx(scrutinee_ctx) {
         return;
     }
-    typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, arm.scope_id, ref tokens, arm.pattern_start, arm.pattern_end, scrutinee_ctx, mutref resolved_bindings, mutref diags);
+    typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, arm.scope_id, ref tokens, arm.pattern_start, arm.pattern_end, scrutinee_ctx, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     return;
 }
 
@@ -2298,6 +2419,7 @@ audit {
 {
     let start_diag_count = list_len(ref diags);
     let mut total_resolved_binding_count = 0;
+    let mut ignored_pattern_bindings: list<pattern_binding_fact> = list();
     let mut source_index = 0;
     while source_index < list_len(ref sources) {
         let source_entry = list_get(ref sources, source_index);
@@ -2342,7 +2464,7 @@ audit {
                                     if next_arm_at <= next_local_at {
                                         match arm_entry {
                                             Some(current) => {
-                                                typecheck_match_arm(ref variants, ref variant_payloads, ref functions, ref function_params, ref scopes, ref field_facts, ref uses, ref items, current.module, current.function_name, ref tokens, current, mutref resolved_bindings, mutref diags);
+                                                typecheck_match_arm(ref variants, ref variant_payloads, ref functions, ref function_params, ref scopes, ref field_facts, ref uses, ref items, current.module, current.function_name, ref tokens, current, mutref resolved_bindings, mutref ignored_pattern_bindings, mutref diags);
                                             },
                                             None => {
                                             },
@@ -2458,6 +2580,117 @@ audit {
         list_len(ref returns),
         list_len(ref conditions),
         list_len(ref assignments),
+        list_len(ref diags) - start_diag_count
+    );
+}
+
+pub fn collect_resolved_binding_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, resolved_bindings_out: mutref list<typed_binding_fact>, pattern_bindings_out: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> resolved_binding_summary
+audit {
+    intent("Materialize resolved binding and typed pattern facts for the structured checked handoff");
+    mutates(resolved_bindings_out, pattern_bindings_out, diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+    let start_binding_count = list_len(ref resolved_bindings_out);
+    let start_pattern_binding_count = list_len(ref pattern_bindings_out);
+    let mut source_index = 0;
+    while source_index < list_len(ref sources) {
+        let source_entry = list_get(ref sources, source_index);
+        match source_entry {
+            Some(current_source) => {
+                let tokens = lex(current_source.text);
+                let mut function_index = 0;
+                while function_index < list_len(ref functions) {
+                    let function_entry = list_get(ref functions, function_index);
+                    match function_entry {
+                        Some(current_function) => {
+                            if current_function.module == current_source.name {
+                                let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
+                                let function_match_arms = clone_match_arms_for_function(ref match_arms, current_function.module, current_function.name);
+                                let function_locals = clone_local_inits_for_function(ref locals, current_function.module, current_function.name);
+
+                                let mut local_index = 0;
+                                let mut arm_index = 0;
+                                while local_index < list_len(ref function_locals) or arm_index < list_len(ref function_match_arms) {
+                                    let mut next_local_at = 2147483647;
+                                    let mut next_arm_at = 2147483647;
+                                    let local_entry = list_get(ref function_locals, local_index);
+                                    match local_entry {
+                                        Some(value) => {
+                                            next_local_at = value.at;
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    let arm_entry = list_get(ref function_match_arms, arm_index);
+                                    match arm_entry {
+                                        Some(value) => {
+                                            next_arm_at = value.at;
+                                        },
+                                        None => {
+                                        },
+                                    }
+
+                                    if next_arm_at <= next_local_at {
+                                        match arm_entry {
+                                            Some(current) => {
+                                                typecheck_match_arm(ref variants, ref variant_payloads, ref functions, ref function_params, ref scopes, ref field_facts, ref uses, ref items, current.module, current.function_name, ref tokens, current, mutref resolved_bindings, mutref pattern_bindings_out, mutref diags);
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                        arm_index = arm_index + 1;
+                                    } else {
+                                        match local_entry {
+                                            Some(current) => {
+                                                let mut expected_ctx = empty_expected_type_ctx();
+                                                if current.expected_type_name != "" {
+                                                    expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                                }
+                                                let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                                if current.expected_type_name == "" {
+                                                    if current.name != "" and has_known_type_ctx(actual_ctx) {
+                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false));
+                                                    }
+                                                }
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                        local_index = local_index + 1;
+                                    }
+                                }
+
+                                let mut resolved_index = 0;
+                                while resolved_index < list_len(ref resolved_bindings) {
+                                    let resolved_entry = list_get(ref resolved_bindings, resolved_index);
+                                    match resolved_entry {
+                                        Some(value) => {
+                                            list_push(mutref resolved_bindings_out, value);
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    resolved_index = resolved_index + 1;
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    function_index = function_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+
+    return make_resolved_binding_summary(
+        list_len(ref resolved_bindings_out) - start_binding_count,
+        list_len(ref pattern_bindings_out) - start_pattern_binding_count,
         list_len(ref diags) - start_diag_count
     );
 }

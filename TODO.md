@@ -128,7 +128,7 @@
 
 ## Genuine Parity Next
 
-- [ ] Build the structured checked handoff from trusted selfhost semantic outputs
+- [x] Build the structured checked handoff from trusted selfhost semantic outputs
 - [ ] Add stage1 borrow checking on the structured checked handoff
 - [ ] Add stage1 IR lowering on the structured checked handoff
 - [ ] Add stage1 C emission on the structured checked handoff
