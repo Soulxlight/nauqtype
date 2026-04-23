@@ -100,14 +100,15 @@ Current semantic near-parity milestone:
 - `selfhost/` can load, parse, resolve, and type-check the full in-repo selfhost tree
 - the trusted subset is differential-tested against stage0 by accept/reject family
 - stage1 now also enforces the current stage0-parity borrow rules on the structured checked handoff
-- stage1 still stops before IR lowering, C emission, executable build, and self-rebuild
+- stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
+- stage1 still stops before C emission, executable build, and self-rebuild
 
 Architecture checkpoint:
 
 - the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
 - that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
 - stage1 now materializes a deterministic structured checked handoff from the trusted semantic outputs
-- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, and fail-closed export diagnostics for the trusted subset
+- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, recursive type-shape truth with origin-aware named types, checked pattern trees, and fail-closed export diagnostics for the trusted subset
 - genuine parity work now starts from that checked handoff boundary rather than the flat fact lists
 - see `SELFHOST_HANDOFF.md` for the required downstream contract
 
@@ -115,7 +116,7 @@ Current selfhost semantic gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- selfhost IR lowering and C code generation
+- selfhost C code generation
 - stage1 self-build / stage2 comparison
 
 Current AI-first compiler output:

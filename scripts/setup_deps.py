@@ -23,10 +23,15 @@ def overlay_tree(src: Path, dst: Path) -> None:
     for entry in src.iterdir():
         target = dst / entry.name
         if entry.is_dir():
-            shutil.copytree(entry, target, dirs_exist_ok=True)
+            target.mkdir(parents=True, exist_ok=True)
+            overlay_tree(entry, target)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry, target)
+            try:
+                shutil.copy2(entry, target)
+            except PermissionError:
+                if not target.exists():
+                    raise
 
 
 def main() -> int:

@@ -18,7 +18,7 @@ This is an architecture checkpoint, not a parser/typechecker rewrite.
 
 ## Current Status
 
-The first stage1 structured checked handoff is now implemented, hardened for backend consumers, and exercised by the stage1 borrow checker.
+The first stage1 structured checked handoff is now implemented, hardened for backend consumers, exercised by the stage1 borrow checker, and consumed by stage1 IR lowering.
 
 It is currently built from the trusted selfhost semantic outputs after parse, resolve, and typecheck, and it is exercised by the in-repo handoff probes plus full-tree selfhost runs.
 
@@ -28,14 +28,16 @@ The implemented handoff currently captures:
 - stable binding identities for params, locals, and typed pattern payload bindings
 - typed params, locals, returns, and assignment targets
 - typed expression trees for the trusted subset
+- recursive checked type-shape truth with canonical backend-facing `type_id` values, including origin-module truth for named types and `ref` vs `mutref` shape truth
 - explicit `ref` / `mutref` borrow nodes instead of borrow-sensitive name reconstruction
 - typed `if`, `while`, and `match` statement structure
+- recursive checked pattern trees for the trusted pattern subset
 - typed pattern bindings for the current enum / `option` / `result` subset
 - resolved function / constructor / field targets
 - stable source spans for downstream diagnostics and comparison work
 - fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff
 
-This completes the boundary-definition and backend-readiness hardening step, and stage1 borrow checking now runs on this representation rather than on raw flat facts. The next implementation step is stage1 IR lowering on this representation, not more backend work on flat fact lists.
+This completes the boundary-definition and backend-readiness hardening step. Stage1 borrow checking and stage1 IR lowering now run on this representation rather than on raw flat facts. The next implementation step is stage1 C emission on this representation, not more backend work on flat fact lists.
 
 ## What The Flat Pipeline Owns
 
@@ -71,7 +73,7 @@ The handoff must include, at minimum:
 - resolved module identities
 - resolved function identities
 - stable binding identities for params, locals, and typed pattern bindings
-- typed parameter declarations
+- typed parameter declarations with stable parameter ordering carried through binding identity
 - typed local declarations and assignment targets
 - typed return sites
 - typed assignment statements
@@ -135,8 +137,7 @@ The handoff should be:
 
 The genuine-parity sequence after this checkpoint is:
 
-1. add stage1 IR lowering
-2. add stage1 C emission
-3. define the first stage1-to-stage2 self-build comparison proof
+1. add stage1 C emission
+2. define the first stage1-to-stage2 self-build comparison proof
 
 Backend work should not be planned directly against the current flat parser/typecheck facts.

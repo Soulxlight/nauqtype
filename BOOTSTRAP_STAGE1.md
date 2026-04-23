@@ -103,7 +103,7 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- stage1 IR lowering and C emission on that handoff
+- stage1 C emission on that handoff
 - stage1 self-build proof and stage2 comparison
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

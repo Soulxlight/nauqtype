@@ -57,6 +57,25 @@ pub enum checked_expr_kind {
     checked_expr_or,
 }
 
+pub enum checked_type_shape_kind {
+    checked_type_bool,
+    checked_type_i32,
+    checked_type_str,
+    checked_type_unit,
+    checked_type_io_err,
+    checked_type_named,
+    checked_type_list,
+    checked_type_option,
+    checked_type_result,
+    checked_type_ref,
+}
+
+pub enum checked_pattern_kind {
+    checked_pattern_wildcard,
+    checked_pattern_bind,
+    checked_pattern_variant,
+}
+
 pub type checked_module {
     id: i32,
     name: str,
@@ -73,6 +92,8 @@ pub type checked_function {
     return_arg1_name: str,
     return_arg2_name: str,
     return_is_borrow: bool,
+    return_borrow_mutable: bool,
+    return_type_id: i32,
 }
 
 pub type checked_binding {
@@ -88,6 +109,8 @@ pub type checked_binding {
     type_arg1_name: str,
     type_arg2_name: str,
     is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
     origin_stmt_id: i32,
     origin_arm_id: i32,
     param_index: i32,
@@ -105,6 +128,8 @@ pub type checked_param {
     type_arg1_name: str,
     type_arg2_name: str,
     is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
 }
 
 pub type checked_block {
@@ -131,6 +156,8 @@ pub type checked_stmt {
     type_arg1_name: str,
     type_arg2_name: str,
     is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
     target_binding_id: i32,
     expr_id: i32,
     child_block_id: i32,
@@ -150,6 +177,7 @@ pub type checked_match_arm {
     constructor_origin_module: str,
     constructor_enum_name: str,
     is_wildcard: bool,
+    pattern_id: i32,
 }
 
 pub type checked_pattern_binding {
@@ -165,6 +193,31 @@ pub type checked_pattern_binding {
     type_arg1_name: str,
     type_arg2_name: str,
     is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
+}
+
+pub type checked_pattern {
+    id: i32,
+    arm_id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    start: i32,
+    end: i32,
+    kind: checked_pattern_kind,
+    binding_id: i32,
+    name: str,
+    constructor_origin_module: str,
+    constructor_enum_name: str,
+}
+
+pub type checked_pattern_child {
+    parent_pattern_id: i32,
+    index: i32,
+    child_pattern_id: i32,
 }
 
 pub type checked_expr {
@@ -181,6 +234,8 @@ pub type checked_expr {
     type_arg1_name: str,
     type_arg2_name: str,
     is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
     binding_id: i32,
     name: str,
     target_kind: checked_target_kind,
@@ -213,6 +268,16 @@ pub type checked_type_decl {
     at: i32,
 }
 
+pub type checked_type_shape {
+    id: i32,
+    kind: checked_type_shape_kind,
+    name: str,
+    origin_module: str,
+    arg1_id: i32,
+    arg2_id: i32,
+    mutable: bool,
+}
+
 pub type checked_field_decl {
     type_id: i32,
     index: i32,
@@ -223,6 +288,9 @@ pub type checked_field_decl {
     field_type_name: str,
     field_type_arg1_name: str,
     field_type_arg2_name: str,
+    field_is_borrow: bool,
+    field_borrow_mutable: bool,
+    field_type_id: i32,
 }
 
 pub type checked_enum_decl {
@@ -249,6 +317,9 @@ pub type checked_variant_payload_decl {
     type_name: str,
     type_arg1_name: str,
     type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+    type_id: i32,
 }
 
 pub type checked_handoff_summary {
@@ -258,8 +329,10 @@ pub type checked_handoff_summary {
     block_count: i32,
     statement_count: i32,
     arm_count: i32,
+    pattern_count: i32,
     pattern_binding_count: i32,
     expression_count: i32,
+    type_shape_count: i32,
     type_decl_count: i32,
     enum_decl_count: i32,
     variant_decl_count: i32,
@@ -1312,6 +1385,24 @@ fn exact_resolved_binding_is_borrow(resolved_bindings: ref list<typed_binding_fa
     return false;
 }
 
+fn exact_resolved_binding_borrow_mutable(resolved_bindings: ref list<typed_binding_fact>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref resolved_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref resolved_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.scope_id == scope_id and value.name == name and value.at == at {
+                    return value.borrow_mutable;
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
 fn scope_parent_id(scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32) -> i32 {
     let mut index = list_len(ref scopes) - 1;
     while index >= 0 {
@@ -1370,6 +1461,26 @@ fn visible_resolved_binding_is_borrow(resolved_bindings: ref list<typed_binding_
                 if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
                     if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
                         return value.is_borrow;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
+fn visible_resolved_binding_borrow_mutable(resolved_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref resolved_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref resolved_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
+                        return value.borrow_mutable;
                     }
                 }
             },
@@ -1491,6 +1602,254 @@ fn lookup_binding_is_borrow(bindings: ref list<checked_binding>, binding_id: i32
     return false;
 }
 
+fn lookup_binding_borrow_mutable(bindings: ref list<checked_binding>, binding_id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if value.id == binding_id {
+                    return value.borrow_mutable;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked_type_shape_kind) -> bool {
+    match left {
+        checked_type_bool => {
+            match right {
+                checked_type_bool => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_i32 => {
+            match right {
+                checked_type_i32 => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_str => {
+            match right {
+                checked_type_str => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_unit => {
+            match right {
+                checked_type_unit => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_io_err => {
+            match right {
+                checked_type_io_err => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_named => {
+            match right {
+                checked_type_named => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_list => {
+            match right {
+                checked_type_list => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_option => {
+            match right {
+                checked_type_option => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_result => {
+            match right {
+                checked_type_result => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_type_ref => {
+            match right {
+                checked_type_ref => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+    }
+}
+
+fn lookup_checked_type_shape_id(type_shapes: ref list<checked_type_shape>, kind: checked_type_shape_kind, name: str, origin_module: str, arg1_id: i32, arg2_id: i32, mutable: bool) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref type_shapes) {
+        let entry = list_get(ref type_shapes, index);
+        match entry {
+            Some(value) => {
+                if checked_type_shape_kind_matches(value.kind, kind) and value.name == name and value.origin_module == origin_module and value.arg1_id == arg1_id and value.arg2_id == arg2_id and value.mutable == mutable {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn push_type_shape(type_shapes: mutref list<checked_type_shape>, kind: checked_type_shape_kind, name: str, origin_module: str, arg1_id: i32, arg2_id: i32, mutable: bool) -> i32 {
+    let existing = lookup_checked_type_shape_id(ref type_shapes, kind, name, origin_module, arg1_id, arg2_id, mutable);
+    if existing >= 0 {
+        return existing;
+    }
+    let next_id = list_len(ref type_shapes) + 1;
+    list_push(mutref type_shapes, checked_type_shape {
+        id: next_id,
+        kind: kind,
+        name: name,
+        origin_module: origin_module,
+        arg1_id: arg1_id,
+        arg2_id: arg2_id,
+        mutable: mutable,
+    });
+    return next_id;
+}
+
+fn canonical_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module_name: str, type_name: str) -> str {
+    if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "list" or type_name == "option" or type_name == "result" {
+        return "";
+    }
+    let origin = visible_type_origin_module(ref uses, ref items, module_name, type_name);
+    if origin != "" {
+        return origin;
+    }
+    return module_name;
+}
+
+fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool, module_name: str, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, diags: mutref list<diag>, at: i32) -> i32 {
+    if is_borrow {
+        let inner_id = intern_checked_type_id(type_name, type_arg1_name, type_arg2_name, false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        if inner_id < 0 {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing inner type shape for checked borrow type");
+        }
+        return push_type_shape(mutref type_shapes, checked_type_ref, "", "", inner_id, -1, borrow_mutable);
+    }
+    if type_name == "" {
+        return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing checked type information");
+    }
+    if type_name == "bool" {
+        return push_type_shape(mutref type_shapes, checked_type_bool, "", "", -1, -1, false);
+    }
+    if type_name == "i32" {
+        return push_type_shape(mutref type_shapes, checked_type_i32, "", "", -1, -1, false);
+    }
+    if type_name == "str" {
+        return push_type_shape(mutref type_shapes, checked_type_str, "", "", -1, -1, false);
+    }
+    if type_name == "unit" {
+        return push_type_shape(mutref type_shapes, checked_type_unit, "", "", -1, -1, false);
+    }
+    if type_name == "io_err" {
+        return push_type_shape(mutref type_shapes, checked_type_io_err, "", "", -1, -1, false);
+    }
+    if type_name == "list" {
+        if type_arg1_name == "" {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing list element type in checked handoff");
+        }
+        let arg1_id = intern_checked_type_id(type_arg1_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        if arg1_id < 0 {
+            return arg1_id;
+        }
+        return push_type_shape(mutref type_shapes, checked_type_list, "", "", arg1_id, -1, false);
+    }
+    if type_name == "option" {
+        if type_arg1_name == "" {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing option payload type in checked handoff");
+        }
+        let arg1_id = intern_checked_type_id(type_arg1_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        if arg1_id < 0 {
+            return arg1_id;
+        }
+        return push_type_shape(mutref type_shapes, checked_type_option, "", "", arg1_id, -1, false);
+    }
+    if type_name == "result" {
+        if type_arg1_name == "" or type_arg2_name == "" {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing result payload type in checked handoff");
+        }
+        let arg1_id = intern_checked_type_id(type_arg1_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        let arg2_id = intern_checked_type_id(type_arg2_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        if arg1_id < 0 or arg2_id < 0 {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing result argument type shapes in checked handoff");
+        }
+        return push_type_shape(mutref type_shapes, checked_type_result, "", "", arg1_id, arg2_id, false);
+    }
+    return push_type_shape(mutref type_shapes, checked_type_named, type_name, canonical_type_origin_module(ref uses, ref items, module_name, type_name), -1, -1, false);
+}
+
+fn lookup_binding_type_id(bindings: ref list<checked_binding>, binding_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if value.id == binding_id {
+                    return value.type_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
 fn build_expected_variant_payload_ctx(variant_name: str, expected_ctx: expected_type_ctx, payload_index: i32) -> expected_type_ctx {
     if variant_name == "Some" and payload_index == 0 and expected_ctx.head == "option" {
         return make_expected_type_ctx(expected_ctx.arg1_name, "", "");
@@ -1525,6 +1884,63 @@ fn function_return_is_borrow_from_origin(functions: ref list<function_fact>, ori
     return false;
 }
 
+fn function_return_borrow_mutable_from_origin(functions: ref list<function_fact>, origin_module: str, name: str) -> bool {
+    if origin_module == "" or origin_module == "__builtin__" {
+        return false;
+    }
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == origin_module and value.name == name {
+                    return value.return_borrow_mutable;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn lookup_field_is_borrow(field_facts: ref list<field_fact>, module_name: str, type_name: str, field_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.type_name == type_name and value.name == field_name {
+                    return value.field_is_borrow;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn lookup_field_borrow_mutable(field_facts: ref list<field_fact>, module_name: str, type_name: str, field_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module_name and value.type_name == type_name and value.name == field_name {
+                    return value.field_borrow_mutable;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
 fn next_expr_id(expressions: ref list<checked_expr>) -> i32 {
     return list_len(ref expressions) + 1;
 }
@@ -1538,8 +1954,9 @@ fn push_expr_child(expr_children: mutref list<checked_expr_child>, parent_expr_i
     return;
 }
 
-fn build_literal_expr(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_name: str, name: str, expressions: mutref list<checked_expr>) -> i32 {
+fn build_literal_expr(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_name: str, name: str, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, diags: mutref list<diag>) -> i32 {
     let expr_id = next_expr_id(ref expressions);
+    let type_id = intern_checked_type_id(type_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
     list_push(mutref expressions, checked_expr {
         id: expr_id,
         function_id: function_id,
@@ -1554,6 +1971,8 @@ fn build_literal_expr(function_id: i32, module_name: str, function_name: str, sc
         type_arg1_name: "",
         type_arg2_name: "",
         is_borrow: false,
+        borrow_mutable: false,
+        type_id: type_id,
         binding_id: -1,
         name: name,
         target_kind: checked_target_none,
@@ -1565,8 +1984,9 @@ fn build_literal_expr(function_id: i32, module_name: str, function_name: str, sc
     return expr_id;
 }
 
-fn push_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, is_borrow: bool, binding_id: i32, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, expressions: mutref list<checked_expr>) -> i32 {
+fn push_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, is_borrow: bool, borrow_mutable: bool, binding_id: i32, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, diags: mutref list<diag>) -> i32 {
     let expr_id = next_expr_id(ref expressions);
+    let type_id = intern_checked_type_id(type_ctx.head, type_ctx.arg1_name, type_ctx.arg2_name, is_borrow, borrow_mutable, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
     list_push(mutref expressions, checked_expr {
         id: expr_id,
         function_id: function_id,
@@ -1581,6 +2001,8 @@ fn push_expr_record(function_id: i32, module_name: str, function_name: str, scop
         type_arg1_name: type_ctx.arg1_name,
         type_arg2_name: type_ctx.arg2_name,
         is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+        type_id: type_id,
         binding_id: binding_id,
         name: name,
         target_kind: target_kind,
@@ -1633,10 +2055,19 @@ fn binary_expr_kind(op: token_kind) -> checked_expr_kind {
     }
 }
 
-fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, function_id: i32, module_name: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> i32 {
+fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, function_id: i32, module_name: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> i32 {
+    let diag_count_before = list_len(ref diags);
     let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, start, end, at, expected_ctx, mutref diags);
     if is_unsupported_type_ctx(actual_ctx) {
         return consume_handoff_limitation_detail(mutref diags, module_name, at, "unsupported checked handoff expression type context");
+    }
+    let mut exported_ctx = actual_ctx;
+    if exported_ctx.head == "" and list_len(ref diags) > diag_count_before {
+        if expected_ctx.head != "" {
+            exported_ctx = expected_ctx;
+        } else {
+            exported_ctx = make_expected_type_ctx("unit", "", "");
+        }
     }
 
     let mut expr_start = start;
@@ -1646,14 +2077,14 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         expr_end = expr_end - 1;
     }
     if expr_start >= expr_end {
-        return build_literal_expr(function_id, module_name, function_name, scope_id, at, start, end, checked_expr_unit, "unit", "", mutref expressions);
+        return build_literal_expr(function_id, module_name, function_name, scope_id, at, start, end, checked_expr_unit, "unit", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
     }
 
     let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
     if or_index >= 0 {
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_or, actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, or_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_or, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, or_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, or_index + 1, expr_end, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
         if left_id < 0 or right_id < 0 {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for logical or");
         }
@@ -1664,9 +2095,9 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
 
     let and_index = find_root_and_operator(ref tokens, expr_start, expr_end);
     if and_index >= 0 {
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_and, actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, and_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_and, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, and_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, and_index + 1, expr_end, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
         if left_id < 0 or right_id < 0 {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for logical and");
         }
@@ -1678,9 +2109,9 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
     if compare_index >= 0 {
         let op = token_at(ref tokens, compare_index);
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
         if left_id < 0 or right_id < 0 {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for comparison");
         }
@@ -1692,9 +2123,9 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
     if additive_index >= 0 {
         let op = token_at(ref tokens, additive_index);
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, additive_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, additive_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
         if left_id < 0 or right_id < 0 {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for additive operator");
         }
@@ -1706,9 +2137,9 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
     if multiplicative_index >= 0 {
         let op = token_at(ref tokens, multiplicative_index);
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, binary_expr_kind(op.kind), exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let left_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        let right_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
         if left_id < 0 or right_id < 0 {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for multiplicative operator");
         }
@@ -1720,28 +2151,28 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     let current = token_at(ref tokens, expr_start);
     match current.kind {
         tk_kw_ref => {
-            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, expr_start + 1).text, current.start + 1);
             if child_id < 0 or binding_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for ref expression: ", token_at(ref tokens, expr_start + 1).text));
             }
-            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_ref, actual_ctx, true, binding_id, "", checked_target_none, "", "", "", "", mutref expressions);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_ref, exported_ctx, true, false, binding_id, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             push_expr_child(mutref expr_children, expr_id, 0, child_id);
             return expr_id;
         },
         tk_kw_mutref => {
-            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, expr_start + 1).text, current.start + 1);
             if child_id < 0 or binding_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for mutref expression: ", token_at(ref tokens, expr_start + 1).text));
             }
-            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_mutref, actual_ctx, true, binding_id, "", checked_target_none, "", "", "", "", mutref expressions);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_mutref, exported_ctx, true, true, binding_id, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             push_expr_child(mutref expr_children, expr_id, 0, child_id);
             return expr_id;
         },
         tk_kw_not => {
-            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_not, actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_not, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             if child_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, current.start, "missing child for unary not expression");
             }
@@ -1750,8 +2181,8 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         },
         tk_minus => {
             if not is_binary_operator_position(ref tokens, expr_start, expr_start) {
-                let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_neg, actual_ctx, false, -1, "", checked_target_none, "", "", "", "", mutref expressions);
-                let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_neg, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
                 if child_id < 0 {
                     return consume_handoff_limitation_detail(mutref diags, module_name, current.start, "missing child for unary negation expression");
                 }
@@ -1767,10 +2198,10 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     if dot_index >= 0 {
         let field_token = token_at(ref tokens, dot_index + 1);
         if token_is_ident(field_token) and dot_index + 2 == expr_end {
-            let base_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let base_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let base_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref diags);
             let owner_module = visible_type_origin_module(ref uses, ref items, module_name, base_ctx.head);
-            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_field, actual_ctx, false, -1, "", checked_target_none, "", owner_module, base_ctx.head, field_token.text, mutref expressions);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_field, exported_ctx, lookup_field_is_borrow(ref field_facts, owner_module, base_ctx.head, field_token.text), lookup_field_borrow_mutable(ref field_facts, owner_module, base_ctx.head, field_token.text), -1, "", checked_target_none, "", owner_module, base_ctx.head, field_token.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             if base_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, field_token.start, str_concat("missing base expression for field access: ", field_token.text));
             }
@@ -1802,7 +2233,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 target_origin = variant_origin;
             }
         }
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, actual_ctx, function_return_is_borrow_from_origin(ref functions, target_origin, head.text), -1, head.text, target_kind, target_origin, "", "", "", mutref expressions);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, exported_ctx, function_return_is_borrow_from_origin(ref functions, target_origin, head.text), function_return_borrow_mutable_from_origin(ref functions, target_origin, head.text), -1, head.text, target_kind, target_origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         let mut arg_start = expr_start + 2;
         let arg_end_limit = expr_end - 1;
         let mut arg_index = 0;
@@ -1825,7 +2256,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 _ => {
                 },
             }
-            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, arg_expected_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, arg_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             if child_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, head.start, str_concat("missing exported call argument expression for call: ", head.text));
             }
@@ -1839,7 +2270,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     if span_is_struct_expr(ref tokens, expr_start, expr_end) {
         let type_token = token_at(ref tokens, expr_start);
         let type_origin = visible_type_origin_module(ref uses, ref items, module_name, type_token.text);
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_struct, actual_ctx, false, -1, type_token.text, checked_target_none, "", type_origin, type_token.text, "", mutref expressions);
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_struct, exported_ctx, false, false, -1, type_token.text, checked_target_none, "", type_origin, type_token.text, "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         let mut field_start = expr_start + 2;
         let field_end_limit = expr_end - 1;
         let mut field_index = 0;
@@ -1850,7 +2281,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 let field_token = token_at(ref tokens, field_start);
                 if token_is_ident(field_token) {
                     let field_expected_ctx = lookup_field_ctx(ref field_facts, type_origin, type_token.text, field_token.text);
-                    let value_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, field_expected_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                    let value_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, colon_index + 1, segment_end, field_token.start, field_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
                     if value_expr_id < 0 {
                         return consume_handoff_limitation_detail(mutref diags, module_name, field_token.start, str_concat("missing exported struct field value expression: ", field_token.text));
                     }
@@ -1872,16 +2303,16 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
 
     match current.kind {
         tk_kw_true => {
-            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "true", mutref expressions);
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "true", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_kw_false => {
-            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "false", mutref expressions);
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_bool, "bool", "false", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_int_lit => {
-            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_i32, actual_ctx.head, current.text, mutref expressions);
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_i32, exported_ctx.head, current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_string_lit => {
-            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_str, "str", current.text, mutref expressions);
+            return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_str, "str", current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_ident => {
             if expr_start + 1 == expr_end {
@@ -1892,13 +2323,13 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                     if origin == "__builtin__" {
                         target_kind = checked_target_builtin_constructor;
                     }
-                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, actual_ctx, false, -1, current.text, target_kind, origin, "", "", "", mutref expressions);
+                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, exported_ctx, false, false, -1, current.text, target_kind, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
                 }
                 let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, current.text, current.start + 1);
                 if binding_id < 0 {
                     return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved binding id for checked name expression: ", current.text));
                 }
-                return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, actual_ctx, lookup_binding_is_borrow(ref bindings, binding_id), binding_id, current.text, checked_target_none, "", "", "", "", mutref expressions);
+                return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, current.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             }
         },
         _ => {
@@ -1927,7 +2358,7 @@ fn append_modules_from_sources(sources: ref list<source_file>, modules: mutref l
     return;
 }
 
-fn append_functions(function_facts: ref list<function_fact>, scopes: ref list<body_scope>, modules: ref list<checked_module>, functions: mutref list<checked_function>) -> unit {
+fn append_functions(function_facts: ref list<function_fact>, scopes: ref list<body_scope>, modules: ref list<checked_module>, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, functions: mutref list<checked_function>, diags: mutref list<diag>) -> unit {
     let mut index = 0;
     while index < list_len(ref function_facts) {
         let entry = list_get(ref function_facts, index);
@@ -1936,6 +2367,7 @@ fn append_functions(function_facts: ref list<function_fact>, scopes: ref list<bo
                 let function_id = list_len(ref functions) + 1;
                 let module_id = lookup_module_id(ref modules, value.module);
                 let root_scope_id = lookup_root_scope_id(ref scopes, value.module, value.name);
+                let return_type_id = intern_checked_type_id(value.return_name, value.return_arg1_name, value.return_arg2_name, value.return_is_borrow, value.return_borrow_mutable, value.module, ref uses, ref items, mutref type_shapes, mutref diags, value.at);
                 list_push(mutref functions, checked_function {
                     id: function_id,
                     module_id: module_id,
@@ -1947,6 +2379,8 @@ fn append_functions(function_facts: ref list<function_fact>, scopes: ref list<bo
                     return_arg1_name: value.return_arg1_name,
                     return_arg2_name: value.return_arg2_name,
                     return_is_borrow: value.return_is_borrow,
+                    return_borrow_mutable: value.return_borrow_mutable,
+                    return_type_id: return_type_id,
                 });
             },
             None => {
@@ -1957,7 +2391,7 @@ fn append_functions(function_facts: ref list<function_fact>, scopes: ref list<bo
     return;
 }
 
-fn append_type_decls(items: ref list<top_item>, field_facts: ref list<field_fact>, modules: ref list<checked_module>, type_decls: mutref list<checked_type_decl>, field_decls: mutref list<checked_field_decl>) -> unit {
+fn append_type_decls(items: ref list<top_item>, uses: ref list<module_use>, field_facts: ref list<field_fact>, modules: ref list<checked_module>, type_shapes: mutref list<checked_type_shape>, type_decls: mutref list<checked_type_decl>, field_decls: mutref list<checked_field_decl>, diags: mutref list<diag>) -> unit {
     let mut item_index = 0;
     while item_index < list_len(ref items) {
         let item_entry = list_get(ref items, item_index);
@@ -1980,6 +2414,7 @@ fn append_type_decls(items: ref list<top_item>, field_facts: ref list<field_fact
                             match field_entry {
                                 Some(field) => {
                                     if field.module == value.module and field.type_name == value.name {
+                                        let field_type_id = intern_checked_type_id(field.field_type_name, field.field_type_arg1_name, field.field_type_arg2_name, field.field_is_borrow, field.field_borrow_mutable, field.module, ref uses, ref items, mutref type_shapes, mutref diags, field.at);
                                         list_push(mutref field_decls, checked_field_decl {
                                             type_id: type_id,
                                             index: ordinal,
@@ -1990,6 +2425,9 @@ fn append_type_decls(items: ref list<top_item>, field_facts: ref list<field_fact
                                             field_type_name: field.field_type_name,
                                             field_type_arg1_name: field.field_type_arg1_name,
                                             field_type_arg2_name: field.field_type_arg2_name,
+                                            field_is_borrow: field.field_is_borrow,
+                                            field_borrow_mutable: field.field_borrow_mutable,
+                                            field_type_id: field_type_id,
                                         });
                                         ordinal = ordinal + 1;
                                     }
@@ -2012,7 +2450,7 @@ fn append_type_decls(items: ref list<top_item>, field_facts: ref list<field_fact
     return;
 }
 
-fn append_enum_decls(variant_facts: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, modules: ref list<checked_module>, enum_decls: mutref list<checked_enum_decl>, variant_decls: mutref list<checked_variant_decl>, variant_payload_decls: mutref list<checked_variant_payload_decl>) -> unit {
+fn append_enum_decls(variant_facts: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, uses: ref list<module_use>, items: ref list<top_item>, modules: ref list<checked_module>, type_shapes: mutref list<checked_type_shape>, enum_decls: mutref list<checked_enum_decl>, variant_decls: mutref list<checked_variant_decl>, variant_payload_decls: mutref list<checked_variant_payload_decl>, diags: mutref list<diag>) -> unit {
     let mut variant_index = 0;
     while variant_index < list_len(ref variant_facts) {
         let variant_entry = list_get(ref variant_facts, variant_index);
@@ -2045,12 +2483,16 @@ fn append_enum_decls(variant_facts: ref list<variant_fact>, variant_payloads: re
                     match payload_entry {
                         Some(payload) => {
                             if payload.module == value.module and payload.variant_name == value.name {
+                                let payload_type_id = intern_checked_type_id(payload.type_name, payload.type_arg1_name, payload.type_arg2_name, payload.is_borrow, payload.borrow_mutable, payload.module, ref uses, ref items, mutref type_shapes, mutref diags, payload.at);
                                 list_push(mutref variant_payload_decls, checked_variant_payload_decl {
                                     variant_id: variant_id,
                                     index: payload.index,
                                     type_name: payload.type_name,
                                     type_arg1_name: payload.type_arg1_name,
                                     type_arg2_name: payload.type_arg2_name,
+                                    is_borrow: payload.is_borrow,
+                                    borrow_mutable: payload.borrow_mutable,
+                                    type_id: payload_type_id,
                                 });
                             }
                         },
@@ -2243,7 +2685,7 @@ fn lookup_predicted_arm_id(predicted: ref list<predicted_arm_id>, module_name: s
     return -1;
 }
 
-fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: ref list<stmt_fact>, pattern_binding_facts: ref list<pattern_binding_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, predicted_stmt_ids: ref list<predicted_stmt_id>, predicted_arm_ids: ref list<predicted_arm_id>, functions: ref list<checked_function>, bindings: mutref list<checked_binding>, diags: mutref list<diag>) -> unit {
+fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: ref list<stmt_fact>, pattern_binding_facts: ref list<pattern_binding_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, predicted_stmt_ids: ref list<predicted_stmt_id>, predicted_arm_ids: ref list<predicted_arm_id>, functions: ref list<checked_function>, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, bindings: mutref list<checked_binding>, diags: mutref list<diag>) -> unit {
     let mut param_index = 0;
     while param_index < list_len(ref function_params) {
         let param_entry = list_get(ref function_params, param_index);
@@ -2251,6 +2693,7 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
             Some(param) => {
                 let function_id = lookup_function_id(ref functions, param.module, param.function_name);
                 if function_id >= 0 {
+                    let type_id = intern_checked_type_id(param.type_name, param.type_arg1_name, param.type_arg2_name, param.is_borrow, param.borrow_mutable, param.module, ref uses, ref items, mutref type_shapes, mutref diags, param.at);
                     list_push(mutref bindings, checked_binding {
                         id: list_len(ref bindings) + 1,
                         function_id: function_id,
@@ -2264,6 +2707,8 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
                         type_arg1_name: param.type_arg1_name,
                         type_arg2_name: param.type_arg2_name,
                         is_borrow: param.is_borrow,
+                        borrow_mutable: param.borrow_mutable,
+                        type_id: type_id,
                         origin_stmt_id: -1,
                         origin_arm_id: -1,
                         param_index: param.index,
@@ -2296,6 +2741,11 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
                             if not binding_is_borrow and current.name != "" {
                                 binding_is_borrow = visible_resolved_binding_is_borrow(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
                             }
+                            let mut binding_borrow_mutable = exact_resolved_binding_borrow_mutable(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                            if not binding_borrow_mutable and current.name != "" {
+                                binding_borrow_mutable = visible_resolved_binding_borrow_mutable(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                            }
+                            let type_id = intern_checked_type_id(ctx.head, ctx.arg1_name, ctx.arg2_name, binding_is_borrow, binding_borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
                             list_push(mutref bindings, checked_binding {
                                 id: list_len(ref bindings) + 1,
                                 function_id: function_id,
@@ -2309,6 +2759,8 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
                                 type_arg1_name: ctx.arg1_name,
                                 type_arg2_name: ctx.arg2_name,
                                 is_borrow: binding_is_borrow,
+                                borrow_mutable: binding_borrow_mutable,
+                                type_id: type_id,
                                 origin_stmt_id: lookup_predicted_stmt_id(ref predicted_stmt_ids, current.module, current.function_name, current.scope_id, current.at, current.kind, current.name),
                                 origin_arm_id: -1,
                                 param_index: -1,
@@ -2336,6 +2788,8 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
                     if resolved_ctx.head == "" {
                         push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing resolved pattern binding type for checked handoff: ", current.name));
                     }
+                    let binding_is_borrow = current.is_borrow;
+                    let type_id = intern_checked_type_id(current.type_name, current.type_arg1_name, current.type_arg2_name, binding_is_borrow, current.borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
                     list_push(mutref bindings, checked_binding {
                         id: list_len(ref bindings) + 1,
                         function_id: function_id,
@@ -2348,7 +2802,9 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
                         type_name: current.type_name,
                         type_arg1_name: current.type_arg1_name,
                         type_arg2_name: current.type_arg2_name,
-                        is_borrow: exact_resolved_binding_is_borrow(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at),
+                        is_borrow: binding_is_borrow,
+                        borrow_mutable: current.borrow_mutable,
+                        type_id: type_id,
                         origin_stmt_id: -1,
                         origin_arm_id: lookup_predicted_arm_id(ref predicted_arm_ids, current.module, current.function_name, current.scope_id),
                         param_index: -1,
@@ -2387,6 +2843,8 @@ fn append_params(function_params: ref list<function_param_fact>, functions: ref 
                         type_arg1_name: param.type_arg1_name,
                         type_arg2_name: param.type_arg2_name,
                         is_borrow: param.is_borrow,
+                        borrow_mutable: param.borrow_mutable,
+                        type_id: lookup_binding_type_id(ref bindings, binding_id),
                     });
                 }
             },
@@ -2426,7 +2884,7 @@ fn append_blocks(scopes: ref list<body_scope>, functions: ref list<checked_funct
     return;
 }
 
-fn append_statements_for_source(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, module_name: str, tokens: ref list<token>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: mutref list<checked_stmt>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> unit {
+fn append_statements_for_source(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, module_name: str, tokens: ref list<token>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, type_shapes: mutref list<checked_type_shape>, statements: mutref list<checked_stmt>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> unit {
     let mut stmt_index = 0;
     while stmt_index < list_len(ref stmt_facts) {
         let entry = list_get(ref stmt_facts, stmt_index);
@@ -2452,6 +2910,7 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                     }
                     let mut stmt_type_ctx = empty_expected_type_ctx();
                     let mut stmt_is_borrow = false;
+                    let mut stmt_borrow_mutable = false;
                     let mut target_binding_id = -1;
                     match current.kind {
                         stmt_local => {
@@ -2461,11 +2920,13 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                             }
                             target_binding_id = exact_binding_id(ref checked_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                             stmt_is_borrow = lookup_binding_is_borrow(ref checked_bindings, target_binding_id);
+                            stmt_borrow_mutable = lookup_binding_borrow_mutable(ref checked_bindings, target_binding_id);
                         },
                         stmt_assign => {
                             stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
                             target_binding_id = visible_binding_id(ref checked_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
                             stmt_is_borrow = lookup_binding_is_borrow(ref checked_bindings, target_binding_id);
+                            stmt_borrow_mutable = lookup_binding_borrow_mutable(ref checked_bindings, target_binding_id);
                         },
                         stmt_return => {
                             let function_id_lookup = lookup_function_id(ref checked_functions, current.module, current.function_name);
@@ -2474,6 +2935,8 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                             match function_entry {
                                 Some(value) => {
                                     stmt_type_ctx = make_expected_type_ctx(value.return_name, value.return_arg1_name, value.return_arg2_name);
+                                    stmt_is_borrow = value.return_is_borrow;
+                                    stmt_borrow_mutable = value.return_borrow_mutable;
                                 },
                                 None => {
                                 },
@@ -2482,7 +2945,7 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         _ => {
                         },
                     }
-                    let expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref checked_bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, stmt_type_ctx, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                    let expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref checked_bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, stmt_type_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
                     let mut final_expr_id = expr_id;
                     if final_expr_id < 0 {
                         final_expr_id = consume_handoff_limitation_detail(mutref diags, current.module, current.at, "missing exported statement expression in checked handoff");
@@ -2516,6 +2979,12 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                     }
                     let child_block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.child_scope_id);
                     let alt_block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.alt_scope_id);
+                    if stmt_type_ctx.head == "" {
+                        stmt_type_ctx = make_expected_type_ctx("unit", "", "");
+                        stmt_is_borrow = false;
+                        stmt_borrow_mutable = false;
+                    }
+                    let stmt_type_id = intern_checked_type_id(stmt_type_ctx.head, stmt_type_ctx.arg1_name, stmt_type_ctx.arg2_name, stmt_is_borrow, stmt_borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
                     let mut checked_kind = checked_stmt_expr;
                     match current.kind {
                         stmt_local => {
@@ -2554,6 +3023,8 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         type_arg1_name: stmt_type_ctx.arg1_name,
                         type_arg2_name: stmt_type_ctx.arg2_name,
                         is_borrow: stmt_is_borrow,
+                        borrow_mutable: stmt_borrow_mutable,
+                        type_id: stmt_type_id,
                         target_binding_id: target_binding_id,
                         expr_id: final_expr_id,
                         child_block_id: child_block_id,
@@ -2569,7 +3040,144 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
     return;
 }
 
-fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, module_name: str, tokens: ref list<token>, statements: ref list<checked_stmt>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, checked_match_arms: mutref list<checked_match_arm>, checked_pattern_bindings: mutref list<checked_pattern_binding>, diags: mutref list<diag>) -> unit {
+fn next_pattern_id(patterns: ref list<checked_pattern>) -> i32 {
+    return list_len(ref patterns) + 1;
+}
+
+fn push_pattern_child(pattern_children: mutref list<checked_pattern_child>, parent_pattern_id: i32, index: i32, child_pattern_id: i32) -> unit {
+    list_push(mutref pattern_children, checked_pattern_child {
+        parent_pattern_id: parent_pattern_id,
+        index: index,
+        child_pattern_id: child_pattern_id,
+    });
+    return;
+}
+
+fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, checked_bindings: ref list<checked_binding>, arm_id: i32, function_id: i32, module_name: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, patterns: mutref list<checked_pattern>, pattern_children: mutref list<checked_pattern_child>, diags: mutref list<diag>) -> i32 {
+    let mut pattern_start = start;
+    let mut pattern_end = end;
+    while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
+        pattern_start = pattern_start + 1;
+        pattern_end = pattern_end - 1;
+    }
+    if pattern_start >= pattern_end {
+        return consume_handoff_limitation_detail(mutref diags, module_name, start, "missing checked pattern span");
+    }
+    let current = token_at(ref tokens, pattern_start);
+    match current.kind {
+        tk_ident => {
+            if current.text == "_" and pattern_start + 1 == pattern_end {
+                let pattern_id = next_pattern_id(ref patterns);
+                list_push(mutref patterns, checked_pattern {
+                    id: pattern_id,
+                    arm_id: arm_id,
+                    function_id: function_id,
+                    module_name: module_name,
+                    function_name: function_name,
+                    scope_id: scope_id,
+                    at: current.start,
+                    start: pattern_start,
+                    end: pattern_end,
+                    kind: checked_pattern_wildcard,
+                    binding_id: -1,
+                    name: "",
+                    constructor_origin_module: "",
+                    constructor_enum_name: "",
+                });
+                return pattern_id;
+            }
+            if span_is_call_expr(ref tokens, pattern_start, pattern_end) {
+                let ctor_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
+                if ctor_enum_name == "" {
+                    return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved constructor for checked pattern: ", current.text));
+                }
+                let ctor_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                let pattern_id = next_pattern_id(ref patterns);
+                list_push(mutref patterns, checked_pattern {
+                    id: pattern_id,
+                    arm_id: arm_id,
+                    function_id: function_id,
+                    module_name: module_name,
+                    function_name: function_name,
+                    scope_id: scope_id,
+                    at: current.start,
+                    start: pattern_start,
+                    end: pattern_end,
+                    kind: checked_pattern_variant,
+                    binding_id: -1,
+                    name: current.text,
+                    constructor_origin_module: ctor_origin,
+                    constructor_enum_name: ctor_enum_name,
+                });
+                let mut arg_start = pattern_start + 2;
+                let arg_end_limit = pattern_end - 1;
+                let mut arg_index = 0;
+                while arg_start < arg_end_limit {
+                    let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
+                    let child_id = build_checked_pattern_tree(ref variants, ref uses, ref items, ref checked_bindings, arm_id, function_id, module_name, function_name, scope_id, ref tokens, arg_start, segment_end, mutref patterns, mutref pattern_children, mutref diags);
+                    if child_id < 0 {
+                        return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing checked child pattern for constructor: ", current.text));
+                    }
+                    push_pattern_child(mutref pattern_children, pattern_id, arg_index, child_id);
+                    arg_index = arg_index + 1;
+                    arg_start = segment_end + 1;
+                }
+                return pattern_id;
+            }
+            if pattern_start + 1 == pattern_end {
+                let zero_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
+                if zero_enum_name != "" {
+                    let zero_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                    let pattern_id = next_pattern_id(ref patterns);
+                    list_push(mutref patterns, checked_pattern {
+                        id: pattern_id,
+                        arm_id: arm_id,
+                        function_id: function_id,
+                        module_name: module_name,
+                        function_name: function_name,
+                        scope_id: scope_id,
+                        at: current.start,
+                        start: pattern_start,
+                        end: pattern_end,
+                        kind: checked_pattern_variant,
+                        binding_id: -1,
+                        name: current.text,
+                        constructor_origin_module: zero_origin,
+                        constructor_enum_name: zero_enum_name,
+                    });
+                    return pattern_id;
+                }
+                let binding_id = exact_binding_id(ref checked_bindings, module_name, function_name, scope_id, current.text, current.start);
+                if binding_id < 0 {
+                    return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing checked binding id for pattern binding: ", current.text));
+                }
+                let pattern_id = next_pattern_id(ref patterns);
+                list_push(mutref patterns, checked_pattern {
+                    id: pattern_id,
+                    arm_id: arm_id,
+                    function_id: function_id,
+                    module_name: module_name,
+                    function_name: function_name,
+                    scope_id: scope_id,
+                    at: current.start,
+                    start: pattern_start,
+                    end: pattern_end,
+                    kind: checked_pattern_bind,
+                    binding_id: binding_id,
+                    name: current.text,
+                    constructor_origin_module: "",
+                    constructor_enum_name: "",
+                });
+                return pattern_id;
+            }
+        },
+        _ => {
+        },
+    }
+    return consume_handoff_limitation_detail(mutref diags, module_name, current.start, "unsupported checked pattern shape");
+}
+
+fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, module_name: str, tokens: ref list<token>, statements: ref list<checked_stmt>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, checked_match_arms: mutref list<checked_match_arm>, checked_pattern_bindings: mutref list<checked_pattern_binding>, checked_patterns: mutref list<checked_pattern>, checked_pattern_children: mutref list<checked_pattern_child>, diags: mutref list<diag>) -> unit {
     let mut arm_index = 0;
     while arm_index < list_len(ref match_arms) {
         let arm_entry = list_get(ref match_arms, arm_index);
@@ -2619,6 +3227,7 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                     }
                     let function_id = lookup_function_id(ref checked_functions, current.module, current.function_name);
                     let block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
+                    let pattern_id = build_checked_pattern_tree(ref variants, ref uses, ref items, ref checked_bindings, list_len(ref checked_match_arms) + 1, function_id, current.module, current.function_name, current.scope_id, ref tokens, current.pattern_start, current.pattern_end, mutref checked_patterns, mutref checked_pattern_children, mutref diags);
                     if owner_stmt_id < 0 or function_id < 0 or block_id < 0 {
                         push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing checked match arm owner ids");
                     }
@@ -2635,6 +3244,7 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                         constructor_origin_module: constructor_origin_module,
                         constructor_enum_name: constructor_enum_name,
                         is_wildcard: is_wildcard,
+                        pattern_id: pattern_id,
                     });
                     let new_arm_id = list_len(ref checked_match_arms);
                     let mut binding_index = 0;
@@ -2660,6 +3270,8 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                                         type_arg1_name: value.type_arg1_name,
                                         type_arg2_name: value.type_arg2_name,
                                         is_borrow: exact_resolved_binding_is_borrow(ref resolved_bindings, value.module, value.function_name, value.scope_id, value.name, value.at),
+                                        borrow_mutable: exact_resolved_binding_borrow_mutable(ref resolved_bindings, value.module, value.function_name, value.scope_id, value.name, value.at),
+                                        type_id: lookup_binding_type_id(ref checked_bindings, binding_id),
                                     });
                                 }
                             },
@@ -2678,21 +3290,21 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
     return;
 }
 
-pub fn build_checked_handoff(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, modules_out: mutref list<checked_module>, functions_out: mutref list<checked_function>, bindings_out: mutref list<checked_binding>, params_out: mutref list<checked_param>, type_decls_out: mutref list<checked_type_decl>, field_decls_out: mutref list<checked_field_decl>, enum_decls_out: mutref list<checked_enum_decl>, variant_decls_out: mutref list<checked_variant_decl>, variant_payload_decls_out: mutref list<checked_variant_payload_decl>, blocks_out: mutref list<checked_block>, statements_out: mutref list<checked_stmt>, match_arms_out: mutref list<checked_match_arm>, pattern_bindings_out: mutref list<checked_pattern_binding>, expressions_out: mutref list<checked_expr>, expr_children_out: mutref list<checked_expr_child>, struct_fields_out: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> checked_handoff_summary
+pub fn build_checked_handoff(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, stmt_facts: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, modules_out: mutref list<checked_module>, functions_out: mutref list<checked_function>, bindings_out: mutref list<checked_binding>, params_out: mutref list<checked_param>, type_shapes_out: mutref list<checked_type_shape>, type_decls_out: mutref list<checked_type_decl>, field_decls_out: mutref list<checked_field_decl>, enum_decls_out: mutref list<checked_enum_decl>, variant_decls_out: mutref list<checked_variant_decl>, variant_payload_decls_out: mutref list<checked_variant_payload_decl>, blocks_out: mutref list<checked_block>, statements_out: mutref list<checked_stmt>, match_arms_out: mutref list<checked_match_arm>, patterns_out: mutref list<checked_pattern>, pattern_children_out: mutref list<checked_pattern_child>, pattern_bindings_out: mutref list<checked_pattern_binding>, expressions_out: mutref list<checked_expr>, expr_children_out: mutref list<checked_expr_child>, struct_fields_out: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> checked_handoff_summary
 audit {
     intent("Build the structured checked handoff from trusted selfhost semantic outputs");
-    mutates(modules_out, functions_out, bindings_out, params_out, type_decls_out, field_decls_out, enum_decls_out, variant_decls_out, variant_payload_decls_out, blocks_out, statements_out, match_arms_out, pattern_bindings_out, expressions_out, expr_children_out, struct_fields_out, diags);
+    mutates(modules_out, functions_out, bindings_out, params_out, type_shapes_out, type_decls_out, field_decls_out, enum_decls_out, variant_decls_out, variant_payload_decls_out, blocks_out, statements_out, match_arms_out, patterns_out, pattern_children_out, pattern_bindings_out, expressions_out, expr_children_out, struct_fields_out, diags);
     effects();
 }
 {
     append_modules_from_sources(ref sources, mutref modules_out);
-    append_functions(ref functions, ref scopes, ref modules_out, mutref functions_out);
-    append_type_decls(ref items, ref field_facts, ref modules_out, mutref type_decls_out, mutref field_decls_out);
-    append_enum_decls(ref variants, ref variant_payloads, ref modules_out, mutref enum_decls_out, mutref variant_decls_out, mutref variant_payload_decls_out);
+    append_functions(ref functions, ref scopes, ref modules_out, ref uses, ref items, mutref type_shapes_out, mutref functions_out, mutref diags);
+    append_type_decls(ref items, ref uses, ref field_facts, ref modules_out, mutref type_shapes_out, mutref type_decls_out, mutref field_decls_out, mutref diags);
+    append_enum_decls(ref variants, ref variant_payloads, ref uses, ref items, ref modules_out, mutref type_shapes_out, mutref enum_decls_out, mutref variant_decls_out, mutref variant_payload_decls_out, mutref diags);
     append_blocks(ref scopes, ref functions_out, mutref blocks_out);
     let predicted_stmt_ids = build_predicted_stmt_ids(ref stmt_facts, ref sources, ref functions_out);
     let predicted_arm_ids = build_predicted_arm_ids(ref match_arms, ref sources);
-    append_bindings(ref function_params, ref stmt_facts, ref pattern_bindings, ref scopes, ref resolved_bindings, ref predicted_stmt_ids, ref predicted_arm_ids, ref functions_out, mutref bindings_out, mutref diags);
+    append_bindings(ref function_params, ref stmt_facts, ref pattern_bindings, ref scopes, ref resolved_bindings, ref predicted_stmt_ids, ref predicted_arm_ids, ref functions_out, ref uses, ref items, mutref type_shapes_out, mutref bindings_out, mutref diags);
     append_params(ref function_params, ref functions_out, ref bindings_out, mutref params_out, mutref diags);
 
     let mut source_index = 0;
@@ -2701,8 +3313,8 @@ audit {
         match source_entry {
             Some(current_source) => {
                 let tokens = lex(current_source.text);
-                append_statements_for_source(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings_out, ref resolved_bindings, ref field_facts, ref stmt_facts, ref uses, ref items, current_source.name, ref tokens, ref functions_out, ref blocks_out, mutref statements_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref diags);
-                append_match_arms_for_source(ref variants, ref uses, ref items, ref match_arms, ref pattern_bindings, ref bindings_out, ref resolved_bindings, current_source.name, ref tokens, ref statements_out, ref functions_out, ref blocks_out, mutref match_arms_out, mutref pattern_bindings_out, mutref diags);
+                append_statements_for_source(ref functions, ref function_params, ref variants, ref variant_payloads, ref scopes, ref bindings_out, ref resolved_bindings, ref field_facts, ref stmt_facts, ref uses, ref items, current_source.name, ref tokens, ref functions_out, ref blocks_out, mutref type_shapes_out, mutref statements_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref diags);
+                append_match_arms_for_source(ref variants, ref uses, ref items, ref match_arms, ref pattern_bindings, ref bindings_out, ref resolved_bindings, current_source.name, ref tokens, ref statements_out, ref functions_out, ref blocks_out, mutref match_arms_out, mutref pattern_bindings_out, mutref patterns_out, mutref pattern_children_out, mutref diags);
             },
             None => {
             },
@@ -2717,8 +3329,10 @@ audit {
         block_count: list_len(ref blocks_out),
         statement_count: list_len(ref statements_out),
         arm_count: list_len(ref match_arms_out),
+        pattern_count: list_len(ref patterns_out),
         pattern_binding_count: list_len(ref pattern_bindings_out),
         expression_count: list_len(ref expressions_out),
+        type_shape_count: list_len(ref type_shapes_out),
         type_decl_count: list_len(ref type_decls_out),
         enum_decl_count: list_len(ref enum_decls_out),
         variant_decl_count: list_len(ref variant_decls_out),
@@ -2726,7 +3340,7 @@ audit {
     };
 }
 
-pub fn summarize_checked_handoff(modules: ref list<checked_module>, functions: ref list<checked_function>, bindings: ref list<checked_binding>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, type_decls: ref list<checked_type_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, diag_count: i32) -> checked_handoff_summary
+pub fn summarize_checked_handoff(modules: ref list<checked_module>, functions: ref list<checked_function>, bindings: ref list<checked_binding>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, patterns: ref list<checked_pattern>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, type_shapes: ref list<checked_type_shape>, type_decls: ref list<checked_type_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, diag_count: i32) -> checked_handoff_summary
 audit {
     intent("Summarize the structured checked handoff for probes and tests");
     mutates();
@@ -2740,8 +3354,10 @@ audit {
         block_count: list_len(ref blocks),
         statement_count: list_len(ref statements),
         arm_count: list_len(ref match_arms),
+        pattern_count: list_len(ref patterns),
         pattern_binding_count: list_len(ref pattern_bindings),
         expression_count: list_len(ref expressions),
+        type_shape_count: list_len(ref type_shapes),
         type_decl_count: list_len(ref type_decls),
         enum_decl_count: list_len(ref enum_decls),
         variant_decl_count: list_len(ref variant_decls),

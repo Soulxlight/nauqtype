@@ -1,0 +1,1428 @@
+use diag;
+use handoff;
+
+pub enum ir_stmt_kind {
+    ir_stmt_let,
+    ir_stmt_assign,
+    ir_stmt_if,
+    ir_stmt_while,
+    ir_stmt_match,
+    ir_stmt_return,
+    ir_stmt_expr,
+}
+
+pub enum ir_expr_kind {
+    ir_expr_unit,
+    ir_expr_bool,
+    ir_expr_i32,
+    ir_expr_str,
+    ir_expr_name,
+    ir_expr_borrow,
+    ir_expr_call,
+    ir_expr_variant,
+    ir_expr_field,
+    ir_expr_struct,
+    ir_expr_not,
+    ir_expr_neg,
+    ir_expr_add,
+    ir_expr_sub,
+    ir_expr_mul,
+    ir_expr_div,
+    ir_expr_eq,
+    ir_expr_ne,
+    ir_expr_lt,
+    ir_expr_lte,
+    ir_expr_gt,
+    ir_expr_gte,
+    ir_expr_and,
+    ir_expr_or,
+}
+
+pub enum ir_pattern_kind {
+    ir_pattern_wildcard,
+    ir_pattern_bind,
+    ir_pattern_variant,
+}
+
+pub type ir_program {
+    entry_function: str,
+}
+
+pub type ir_function_sig {
+    function_id: i32,
+    module_name: str,
+    name: str,
+    internal_name: str,
+    return_type_id: i32,
+    param_count: i32,
+}
+
+pub type ir_function {
+    id: i32,
+    module_name: str,
+    name: str,
+    internal_name: str,
+    return_type_id: i32,
+    root_block_id: i32,
+    at: i32,
+}
+
+pub type ir_local {
+    binding_id: i32,
+    function_id: i32,
+    module_name: str,
+    function_name: str,
+    name: str,
+    at: i32,
+    binding_kind: checked_binding_kind,
+    param_index: i32,
+    type_id: i32,
+    is_ref_param: bool,
+    ref_mutable: bool,
+}
+
+pub type ir_block {
+    id: i32,
+    function_id: i32,
+    parent_block_id: i32,
+    depth: i32,
+}
+
+pub type ir_stmt {
+    id: i32,
+    function_id: i32,
+    block_id: i32,
+    at: i32,
+    kind: ir_stmt_kind,
+    target_local_id: i32,
+    expr_id: i32,
+    child_block_id: i32,
+    alt_block_id: i32,
+}
+
+pub type ir_match_arm {
+    id: i32,
+    stmt_id: i32,
+    block_id: i32,
+    pattern_id: i32,
+    at: i32,
+}
+
+pub type ir_pattern {
+    id: i32,
+    arm_id: i32,
+    function_id: i32,
+    at: i32,
+    start: i32,
+    end: i32,
+    kind: ir_pattern_kind,
+    local_id: i32,
+    name: str,
+    constructor_origin_module: str,
+    constructor_enum_name: str,
+}
+
+pub type ir_pattern_child {
+    parent_pattern_id: i32,
+    index: i32,
+    child_pattern_id: i32,
+}
+
+pub type ir_expr {
+    id: i32,
+    function_id: i32,
+    at: i32,
+    start: i32,
+    end: i32,
+    kind: ir_expr_kind,
+    type_id: i32,
+    local_id: i32,
+    mutable: bool,
+    name: str,
+    target_name: str,
+    target_origin_module: str,
+    field_owner_module: str,
+    field_owner_type: str,
+    field_name: str,
+}
+
+pub type ir_expr_child {
+    parent_expr_id: i32,
+    index: i32,
+    child_expr_id: i32,
+}
+
+pub type ir_field_value {
+    expr_id: i32,
+    index: i32,
+    field_name: str,
+    value_expr_id: i32,
+}
+
+pub type ir_type_shape {
+    id: i32,
+    kind: checked_type_shape_kind,
+    name: str,
+    origin_module: str,
+    arg1_id: i32,
+    arg2_id: i32,
+    mutable: bool,
+}
+
+pub type ir_struct_decl {
+    id: i32,
+    module_name: str,
+    name: str,
+    at: i32,
+}
+
+pub type ir_field_decl {
+    struct_id: i32,
+    index: i32,
+    module_name: str,
+    struct_name: str,
+    name: str,
+    type_id: i32,
+}
+
+pub type ir_enum_decl {
+    id: i32,
+    module_name: str,
+    name: str,
+    at: i32,
+}
+
+pub type ir_variant_decl {
+    id: i32,
+    enum_id: i32,
+    module_name: str,
+    enum_name: str,
+    name: str,
+    payload_count: i32,
+}
+
+pub type ir_variant_payload_decl {
+    variant_id: i32,
+    index: i32,
+    type_id: i32,
+}
+
+pub type ir_summary {
+    program_count: i32,
+    function_count: i32,
+    local_count: i32,
+    block_count: i32,
+    statement_count: i32,
+    arm_count: i32,
+    pattern_count: i32,
+    expression_count: i32,
+    type_shape_count: i32,
+    struct_count: i32,
+    enum_count: i32,
+    variant_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_ir_summary(program_count: i32, function_count: i32, local_count: i32, block_count: i32, statement_count: i32, arm_count: i32, pattern_count: i32, expression_count: i32, type_shape_count: i32, struct_count: i32, enum_count: i32, variant_count: i32, diag_count: i32) -> ir_summary
+audit {
+    intent("Build a stage1 IR summary record");
+    mutates();
+    effects();
+}
+{
+    return ir_summary {
+        program_count: program_count,
+        function_count: function_count,
+        local_count: local_count,
+        block_count: block_count,
+        statement_count: statement_count,
+        arm_count: arm_count,
+        pattern_count: pattern_count,
+        expression_count: expression_count,
+        type_shape_count: type_shape_count,
+        struct_count: struct_count,
+        enum_count: enum_count,
+        variant_count: variant_count,
+        diag_count: diag_count,
+    };
+}
+
+fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, at, message));
+    return;
+}
+
+fn push_ir_limitation(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
+    let prefix = "stage1 ir error: ";
+    push_diag(mutref diags, file, at, str_concat(prefix, detail));
+    return;
+}
+
+fn binding_kind_is_param(kind: checked_binding_kind) -> bool {
+    match kind {
+        checked_binding_param => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn checked_stmt_to_ir_kind(kind: checked_stmt_kind) -> ir_stmt_kind {
+    match kind {
+        checked_stmt_local => {
+            return ir_stmt_let;
+        },
+        checked_stmt_assign => {
+            return ir_stmt_assign;
+        },
+        checked_stmt_if => {
+            return ir_stmt_if;
+        },
+        checked_stmt_while => {
+            return ir_stmt_while;
+        },
+        checked_stmt_match => {
+            return ir_stmt_match;
+        },
+        checked_stmt_return => {
+            return ir_stmt_return;
+        },
+        _ => {
+            return ir_stmt_expr;
+        },
+    }
+}
+
+fn checked_pattern_to_ir_kind(kind: checked_pattern_kind) -> ir_pattern_kind {
+    match kind {
+        checked_pattern_wildcard => {
+            return ir_pattern_wildcard;
+        },
+        checked_pattern_bind => {
+            return ir_pattern_bind;
+        },
+        _ => {
+            return ir_pattern_variant;
+        },
+    }
+}
+
+fn checked_expr_to_ir_kind(expr: checked_expr) -> ir_expr_kind {
+    match expr.kind {
+        checked_expr_unit => {
+            return ir_expr_unit;
+        },
+        checked_expr_bool => {
+            return ir_expr_bool;
+        },
+        checked_expr_i32 => {
+            return ir_expr_i32;
+        },
+        checked_expr_str => {
+            return ir_expr_str;
+        },
+        checked_expr_name => {
+            return ir_expr_name;
+        },
+        checked_expr_zero_variant => {
+            return ir_expr_variant;
+        },
+        checked_expr_ref => {
+            return ir_expr_borrow;
+        },
+        checked_expr_mutref => {
+            return ir_expr_borrow;
+        },
+        checked_expr_call => {
+            match expr.target_kind {
+                checked_target_constructor => {
+                    return ir_expr_variant;
+                },
+                checked_target_builtin_constructor => {
+                    return ir_expr_variant;
+                },
+                _ => {
+                    return ir_expr_call;
+                },
+            }
+        },
+        checked_expr_field => {
+            return ir_expr_field;
+        },
+        checked_expr_struct => {
+            return ir_expr_struct;
+        },
+        checked_expr_not => {
+            return ir_expr_not;
+        },
+        checked_expr_neg => {
+            return ir_expr_neg;
+        },
+        checked_expr_add => {
+            return ir_expr_add;
+        },
+        checked_expr_sub => {
+            return ir_expr_sub;
+        },
+        checked_expr_mul => {
+            return ir_expr_mul;
+        },
+        checked_expr_div => {
+            return ir_expr_div;
+        },
+        checked_expr_eq => {
+            return ir_expr_eq;
+        },
+        checked_expr_ne => {
+            return ir_expr_ne;
+        },
+        checked_expr_lt => {
+            return ir_expr_lt;
+        },
+        checked_expr_lte => {
+            return ir_expr_lte;
+        },
+        checked_expr_gt => {
+            return ir_expr_gt;
+        },
+        checked_expr_gte => {
+            return ir_expr_gte;
+        },
+        checked_expr_and => {
+            return ir_expr_and;
+        },
+        checked_expr_or => {
+            return ir_expr_or;
+        },
+    }
+}
+
+fn lookup_param_count(params: ref list<checked_param>, function_id: i32) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref params) {
+        let entry = list_get(ref params, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn lookup_root_block_id(blocks: ref list<checked_block>, function_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref blocks) {
+        let entry = list_get(ref blocks, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.parent_block_id < 0 {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn build_internal_function_name(module_name: str, name: str) -> str {
+    return str_concat(str_concat(module_name, "::"), name);
+}
+
+pub fn build_ir_program(checked_functions: ref list<checked_function>, checked_bindings: ref list<checked_binding>, checked_params: ref list<checked_param>, checked_type_shapes: ref list<checked_type_shape>, checked_type_decls: ref list<checked_type_decl>, checked_field_decls: ref list<checked_field_decl>, checked_enum_decls: ref list<checked_enum_decl>, checked_variant_decls: ref list<checked_variant_decl>, checked_variant_payload_decls: ref list<checked_variant_payload_decl>, checked_blocks: ref list<checked_block>, checked_statements: ref list<checked_stmt>, checked_match_arms: ref list<checked_match_arm>, checked_patterns: ref list<checked_pattern>, checked_pattern_children: ref list<checked_pattern_child>, checked_pattern_bindings: ref list<checked_pattern_binding>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, programs_out: mutref list<ir_program>, function_sigs_out: mutref list<ir_function_sig>, functions_out: mutref list<ir_function>, locals_out: mutref list<ir_local>, blocks_out: mutref list<ir_block>, statements_out: mutref list<ir_stmt>, match_arms_out: mutref list<ir_match_arm>, patterns_out: mutref list<ir_pattern>, pattern_children_out: mutref list<ir_pattern_child>, expressions_out: mutref list<ir_expr>, expr_children_out: mutref list<ir_expr_child>, field_values_out: mutref list<ir_field_value>, type_shapes_out: mutref list<ir_type_shape>, struct_decls_out: mutref list<ir_struct_decl>, field_decls_out: mutref list<ir_field_decl>, enum_decls_out: mutref list<ir_enum_decl>, variant_decls_out: mutref list<ir_variant_decl>, variant_payload_decls_out: mutref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> ir_summary
+audit {
+    intent("Lower the checked selfhost handoff into backend-ready IR records");
+    mutates(programs_out, function_sigs_out, functions_out, locals_out, blocks_out, statements_out, match_arms_out, patterns_out, pattern_children_out, expressions_out, expr_children_out, field_values_out, type_shapes_out, struct_decls_out, field_decls_out, enum_decls_out, variant_decls_out, variant_payload_decls_out, diags);
+    effects();
+}
+{
+    let mut type_index = 0;
+    while type_index < list_len(ref checked_type_shapes) {
+        let entry = list_get(ref checked_type_shapes, type_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref type_shapes_out, ir_type_shape {
+                    id: value.id,
+                    kind: value.kind,
+                    name: value.name,
+                    origin_module: value.origin_module,
+                    arg1_id: value.arg1_id,
+                    arg2_id: value.arg2_id,
+                    mutable: value.mutable,
+                });
+            },
+            None => {
+            },
+        }
+        type_index = type_index + 1;
+    }
+
+    let mut struct_index = 0;
+    while struct_index < list_len(ref checked_type_decls) {
+        let entry = list_get(ref checked_type_decls, struct_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref struct_decls_out, ir_struct_decl {
+                    id: value.id,
+                    module_name: value.module_name,
+                    name: value.name,
+                    at: value.at,
+                });
+            },
+            None => {
+            },
+        }
+        struct_index = struct_index + 1;
+    }
+
+    let mut checked_field_index = 0;
+    while checked_field_index < list_len(ref checked_field_decls) {
+        let entry = list_get(ref checked_field_decls, checked_field_index);
+        match entry {
+            Some(value) => {
+                if value.field_type_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing field type id in checked handoff");
+                }
+                list_push(mutref field_decls_out, ir_field_decl {
+                    struct_id: value.type_id,
+                    index: value.index,
+                    module_name: value.module_name,
+                    struct_name: value.type_name,
+                    name: value.name,
+                    type_id: value.field_type_id,
+                });
+            },
+            None => {
+            },
+        }
+        checked_field_index = checked_field_index + 1;
+    }
+
+    let mut enum_index = 0;
+    while enum_index < list_len(ref checked_enum_decls) {
+        let entry = list_get(ref checked_enum_decls, enum_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref enum_decls_out, ir_enum_decl {
+                    id: value.id,
+                    module_name: value.module_name,
+                    name: value.name,
+                    at: value.at,
+                });
+            },
+            None => {
+            },
+        }
+        enum_index = enum_index + 1;
+    }
+
+    let mut variant_index = 0;
+    while variant_index < list_len(ref checked_variant_decls) {
+        let entry = list_get(ref checked_variant_decls, variant_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref variant_decls_out, ir_variant_decl {
+                    id: value.id,
+                    enum_id: value.enum_id,
+                    module_name: value.module_name,
+                    enum_name: value.enum_name,
+                    name: value.name,
+                    payload_count: value.payload_count,
+                });
+            },
+            None => {
+            },
+        }
+        variant_index = variant_index + 1;
+    }
+
+    let mut payload_index = 0;
+    while payload_index < list_len(ref checked_variant_payload_decls) {
+        let entry = list_get(ref checked_variant_payload_decls, payload_index);
+        match entry {
+            Some(value) => {
+                if value.type_id < 0 {
+                    push_ir_limitation(mutref diags, "", 0, "missing variant payload type id in checked handoff");
+                }
+                list_push(mutref variant_payload_decls_out, ir_variant_payload_decl {
+                    variant_id: value.variant_id,
+                    index: value.index,
+                    type_id: value.type_id,
+                });
+            },
+            None => {
+            },
+        }
+        payload_index = payload_index + 1;
+    }
+
+    let mut binding_index = 0;
+    while binding_index < list_len(ref checked_bindings) {
+        let entry = list_get(ref checked_bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if value.type_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, str_concat("missing local type id for binding `", str_concat(value.name, "`")));
+                }
+                list_push(mutref locals_out, ir_local {
+                    binding_id: value.id,
+                    function_id: value.function_id,
+                    module_name: value.module_name,
+                    function_name: value.function_name,
+                    name: value.name,
+                    at: value.at,
+                    binding_kind: value.kind,
+                    param_index: value.param_index,
+                    type_id: value.type_id,
+                    is_ref_param: binding_kind_is_param(value.kind) and value.is_borrow,
+                    ref_mutable: value.borrow_mutable,
+                });
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+
+    let mut function_index = 0;
+    let mut entry_name = "";
+    while function_index < list_len(ref checked_functions) {
+        let entry = list_get(ref checked_functions, function_index);
+        match entry {
+            Some(value) => {
+                let internal_name = build_internal_function_name(value.module_name, value.name);
+                let root_block_id = lookup_root_block_id(ref checked_blocks, value.id);
+                if value.return_type_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, str_concat("missing function return type id for `", str_concat(value.name, "`")));
+                }
+                if root_block_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, str_concat("missing lowered root block for `", str_concat(value.name, "`")));
+                }
+                list_push(mutref function_sigs_out, ir_function_sig {
+                    function_id: value.id,
+                    module_name: value.module_name,
+                    name: value.name,
+                    internal_name: internal_name,
+                    return_type_id: value.return_type_id,
+                    param_count: lookup_param_count(ref checked_params, value.id),
+                });
+                list_push(mutref functions_out, ir_function {
+                    id: value.id,
+                    module_name: value.module_name,
+                    name: value.name,
+                    internal_name: internal_name,
+                    return_type_id: value.return_type_id,
+                    root_block_id: root_block_id,
+                    at: value.at,
+                });
+                if value.module_name == "main" and value.name == "main" {
+                    entry_name = internal_name;
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let mut block_index = 0;
+    while block_index < list_len(ref checked_blocks) {
+        let entry = list_get(ref checked_blocks, block_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref blocks_out, ir_block {
+                    id: value.id,
+                    function_id: value.function_id,
+                    parent_block_id: value.parent_block_id,
+                    depth: value.depth,
+                });
+            },
+            None => {
+            },
+        }
+        block_index = block_index + 1;
+    }
+
+    let mut expr_index = 0;
+    while expr_index < list_len(ref checked_expressions) {
+        let entry = list_get(ref checked_expressions, expr_index);
+        match entry {
+            Some(value) => {
+                if value.type_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing expression type id in checked handoff");
+                }
+                match value.kind {
+                    checked_expr_call => {
+                        match value.target_kind {
+                            checked_target_none => {
+                                push_ir_limitation(mutref diags, value.module_name, value.at, str_concat("missing resolved call target in checked handoff: ", value.name));
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+                list_push(mutref expressions_out, ir_expr {
+                    id: value.id,
+                    function_id: value.function_id,
+                    at: value.at,
+                    start: value.start,
+                    end: value.end,
+                    kind: checked_expr_to_ir_kind(value),
+                    type_id: value.type_id,
+                    local_id: value.binding_id,
+                    mutable: value.borrow_mutable,
+                    name: value.name,
+                    target_name: value.name,
+                    target_origin_module: value.target_origin_module,
+                    field_owner_module: value.field_owner_module,
+                    field_owner_type: value.field_owner_type,
+                    field_name: value.field_name,
+                });
+            },
+            None => {
+            },
+        }
+        expr_index = expr_index + 1;
+    }
+
+    let mut expr_child_index = 0;
+    while expr_child_index < list_len(ref checked_expr_children) {
+        let entry = list_get(ref checked_expr_children, expr_child_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref expr_children_out, ir_expr_child {
+                    parent_expr_id: value.parent_expr_id,
+                    index: value.index,
+                    child_expr_id: value.child_expr_id,
+                });
+            },
+            None => {
+            },
+        }
+        expr_child_index = expr_child_index + 1;
+    }
+
+    let mut field_value_index = 0;
+    while field_value_index < list_len(ref checked_struct_fields) {
+        let entry = list_get(ref checked_struct_fields, field_value_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref field_values_out, ir_field_value {
+                    expr_id: value.expr_id,
+                    index: value.index,
+                    field_name: value.field_name,
+                    value_expr_id: value.value_expr_id,
+                });
+            },
+            None => {
+            },
+        }
+        field_value_index = field_value_index + 1;
+    }
+
+    let mut stmt_index = 0;
+    while stmt_index < list_len(ref checked_statements) {
+        let entry = list_get(ref checked_statements, stmt_index);
+        match entry {
+            Some(value) => {
+                if value.expr_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing statement expression id in checked handoff");
+                }
+                list_push(mutref statements_out, ir_stmt {
+                    id: value.id,
+                    function_id: value.function_id,
+                    block_id: value.block_id,
+                    at: value.at,
+                    kind: checked_stmt_to_ir_kind(value.kind),
+                    target_local_id: value.target_binding_id,
+                    expr_id: value.expr_id,
+                    child_block_id: value.child_block_id,
+                    alt_block_id: value.alt_block_id,
+                });
+            },
+            None => {
+            },
+        }
+        stmt_index = stmt_index + 1;
+    }
+
+    let mut arm_index = 0;
+    while arm_index < list_len(ref checked_match_arms) {
+        let entry = list_get(ref checked_match_arms, arm_index);
+        match entry {
+            Some(value) => {
+                if value.pattern_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing checked pattern root for match arm");
+                }
+                list_push(mutref match_arms_out, ir_match_arm {
+                    id: value.id,
+                    stmt_id: value.stmt_id,
+                    block_id: value.block_id,
+                    pattern_id: value.pattern_id,
+                    at: value.at,
+                });
+            },
+            None => {
+            },
+        }
+        arm_index = arm_index + 1;
+    }
+
+    let mut pattern_index = 0;
+    while pattern_index < list_len(ref checked_patterns) {
+        let entry = list_get(ref checked_patterns, pattern_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref patterns_out, ir_pattern {
+                    id: value.id,
+                    arm_id: value.arm_id,
+                    function_id: value.function_id,
+                    at: value.at,
+                    start: value.start,
+                    end: value.end,
+                    kind: checked_pattern_to_ir_kind(value.kind),
+                    local_id: value.binding_id,
+                    name: value.name,
+                    constructor_origin_module: value.constructor_origin_module,
+                    constructor_enum_name: value.constructor_enum_name,
+                });
+            },
+            None => {
+            },
+        }
+        pattern_index = pattern_index + 1;
+    }
+
+    let mut pattern_child_index = 0;
+    while pattern_child_index < list_len(ref checked_pattern_children) {
+        let entry = list_get(ref checked_pattern_children, pattern_child_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref pattern_children_out, ir_pattern_child {
+                    parent_pattern_id: value.parent_pattern_id,
+                    index: value.index,
+                    child_pattern_id: value.child_pattern_id,
+                });
+            },
+            None => {
+            },
+        }
+        pattern_child_index = pattern_child_index + 1;
+    }
+
+    let mut ignored_pattern_binding_index = 0;
+    while ignored_pattern_binding_index < list_len(ref checked_pattern_bindings) {
+        let entry = list_get(ref checked_pattern_bindings, ignored_pattern_binding_index);
+        match entry {
+            Some(value) => {
+                if value.binding_id < 0 or value.type_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing pattern binding identity in checked handoff");
+                }
+            },
+            None => {
+            },
+        }
+        ignored_pattern_binding_index = ignored_pattern_binding_index + 1;
+    }
+
+    list_push(mutref programs_out, ir_program {
+        entry_function: entry_name,
+    });
+
+    let program_count = list_len(ref programs_out);
+    let function_count = list_len(ref functions_out);
+    let local_count = list_len(ref locals_out);
+    let block_count = list_len(ref blocks_out);
+    let statement_count = list_len(ref statements_out);
+    let arm_count = list_len(ref match_arms_out);
+    let pattern_count = list_len(ref patterns_out);
+    let expression_count = list_len(ref expressions_out);
+    let type_shape_count = list_len(ref type_shapes_out);
+    let struct_count = list_len(ref struct_decls_out);
+    let enum_count = list_len(ref enum_decls_out);
+    let variant_count = list_len(ref variant_decls_out);
+    let diag_count = list_len(ref diags);
+    return make_ir_summary(program_count, function_count, local_count, block_count, statement_count, arm_count, pattern_count, expression_count, type_shape_count, struct_count, enum_count, variant_count, diag_count);
+}
+
+pub fn ir_has_function_internal_name(functions: ref list<ir_function>, internal_name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered function name");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.internal_name == internal_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_stmt_kind(statements: ref list<ir_stmt>, function_id: i32, kind: ir_stmt_kind) -> bool
+audit {
+    intent("Check whether stage1 IR contains a statement kind in one function");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_stmt_let => {
+                            match kind {
+                                ir_stmt_let => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_assign => {
+                            match kind {
+                                ir_stmt_assign => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_if => {
+                            match kind {
+                                ir_stmt_if => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_while => {
+                            match kind {
+                                ir_stmt_while => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_match => {
+                            match kind {
+                                ir_stmt_match => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_return => {
+                            match kind {
+                                ir_stmt_return => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_expr => {
+                            match kind {
+                                ir_stmt_expr => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_borrow_expr(expressions: ref list<ir_expr>, function_id: i32, mutable: bool) -> bool
+audit {
+    intent("Check whether stage1 IR contains a borrow expression");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_expr_borrow => {
+                            if value.mutable == mutable {
+                                return true;
+                            }
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_variant_expr(expressions: ref list<ir_expr>, function_id: i32, name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered variant expression");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.target_name == name {
+                    match value.kind {
+                        ir_expr_variant => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_local_with_type(locals: ref list<ir_local>, function_id: i32, name: str, type_id: i32) -> bool
+audit {
+    intent("Check whether stage1 IR contains a local with a specific type id");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == name and value.type_id == type_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_lookup_function_id(functions: ref list<ir_function>, internal_name: str) -> i32
+audit {
+    intent("Look up a lowered stage1 IR function id by internal name");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.internal_name == internal_name {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+pub fn ir_has_ref_local(locals: ref list<ir_local>, function_id: i32, name: str, mutable: bool) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered ref or mutref local/param");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == name and value.is_ref_param and value.ref_mutable == mutable {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_param_local(locals: ref list<ir_local>, function_id: i32, name: str, param_index: i32) -> bool
+audit {
+    intent("Check whether stage1 IR preserves lowered parameter identity and order");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == name and binding_kind_is_param(value.binding_kind) and value.param_index == param_index {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_named_type_shape(type_shapes: ref list<ir_type_shape>, name: str, origin_module: str) -> bool
+audit {
+    intent("Check whether stage1 IR preserves named type origin module truth");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref type_shapes) {
+        let entry = list_get(ref type_shapes, index);
+        match entry {
+            Some(value) => {
+                if value.name == name and value.origin_module == origin_module {
+                    match value.kind {
+                        checked_type_named => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_root_block(functions: ref list<ir_function>, blocks: ref list<ir_block>, internal_name: str) -> bool
+audit {
+    intent("Check whether a lowered IR function root block id points at an actual root block");
+    mutates();
+    effects();
+}
+{
+    let function_id = ir_lookup_function_id(ref functions, internal_name);
+    if function_id < 0 {
+        return false;
+    }
+    let mut root_block_id = -1;
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let function_entry = list_get(ref functions, function_index);
+        match function_entry {
+            Some(value) => {
+                if value.id == function_id {
+                    root_block_id = value.root_block_id;
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+    if root_block_id < 0 {
+        return false;
+    }
+    let mut block_index = 0;
+    while block_index < list_len(ref blocks) {
+        let block_entry = list_get(ref blocks, block_index);
+        match block_entry {
+            Some(value) => {
+                if value.id == root_block_id and value.function_id == function_id and value.parent_block_id < 0 {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        block_index = block_index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_name_expr_local(expressions: ref list<ir_expr>, function_id: i32, name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered name expression tied to a local id");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == name and value.local_id >= 0 {
+                    match value.kind {
+                        ir_expr_name => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_field_expr(expressions: ref list<ir_expr>, function_id: i32, field_name: str, owner_type_name: str, owner_module_name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered field access");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.field_name == field_name and value.field_owner_type == owner_type_name and value.field_owner_module == owner_module_name {
+                    match value.kind {
+                        ir_expr_field => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_call_target(expressions: ref list<ir_expr>, function_id: i32, target_name: str, target_origin_module: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered direct call target");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.target_name == target_name and value.target_origin_module == target_origin_module {
+                    match value.kind {
+                        ir_expr_call => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_struct_expr(expressions: ref list<ir_expr>, function_id: i32, type_name: str, owner_module_name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered struct literal");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == type_name and value.field_owner_module == owner_module_name {
+                    match value.kind {
+                        ir_expr_struct => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_pattern_local(patterns: ref list<ir_pattern>, function_id: i32, name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered binding pattern with a local id");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.name == name and value.local_id >= 0 {
+                    match value.kind {
+                        ir_pattern_bind => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_function_sig(function_sigs: ref list<ir_function_sig>, internal_name: str, param_count: i32) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered function signature");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref function_sigs) {
+        let entry = list_get(ref function_sigs, index);
+        match entry {
+            Some(value) => {
+                if value.internal_name == internal_name and value.param_count == param_count and value.return_type_id >= 0 {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_struct_decl(struct_decls: ref list<ir_struct_decl>, module_name: str, name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered struct declaration");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref struct_decls) {
+        let entry = list_get(ref struct_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_variant_decl(variant_decls: ref list<ir_variant_decl>, module_name: str, enum_name: str, name: str, payload_count: i32) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered variant declaration");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref variant_decls) {
+        let entry = list_get(ref variant_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.enum_name == enum_name and value.name == name and value.payload_count == payload_count {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}

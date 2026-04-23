@@ -143,6 +143,11 @@ Status:
 - add stage1 C emission
 - define the first stage1-to-stage2 self-build comparison proof
 
+Status:
+
+- stage1 borrow checking and stage1 IR lowering are now done on the structured checked handoff
+- the next backend milestone is stage1 C emission on that IR path
+
 ## Feature Ordering
 
 Features required before first success:

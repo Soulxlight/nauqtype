@@ -8,6 +8,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from tests.test_support import run_copied_selfhost
+
 
 class SelfhostBorrowTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -18,6 +20,7 @@ class SelfhostBorrowTests(unittest.TestCase):
             "borrow.nq",
             "diag.nq",
             "handoff.nq",
+            "ir.nq",
             "lexer.nq",
             "parser.nq",
             "resolve.nq",
@@ -65,6 +68,7 @@ class SelfhostBorrowTests(unittest.TestCase):
             use borrow;
             use diag;
             use handoff;
+            use ir;
             use lexer;
             use parser;
             use resolve;
@@ -116,6 +120,7 @@ class SelfhostBorrowTests(unittest.TestCase):
                 let mut checked_functions: list<checked_function> = list();
                 let mut checked_bindings: list<checked_binding> = list();
                 let mut checked_params: list<checked_param> = list();
+                let mut checked_type_shapes: list<checked_type_shape> = list();
                 let mut checked_type_decls: list<checked_type_decl> = list();
                 let mut checked_field_decls: list<checked_field_decl> = list();
                 let mut checked_enum_decls: list<checked_enum_decl> = list();
@@ -124,10 +129,30 @@ class SelfhostBorrowTests(unittest.TestCase):
                 let mut checked_blocks: list<checked_block> = list();
                 let mut checked_statements: list<checked_stmt> = list();
                 let mut checked_match_arms: list<checked_match_arm> = list();
+                let mut checked_patterns: list<checked_pattern> = list();
+                let mut checked_pattern_children: list<checked_pattern_child> = list();
                 let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
                 let mut checked_expressions: list<checked_expr> = list();
                 let mut checked_expr_children: list<checked_expr_child> = list();
                 let mut checked_struct_fields: list<checked_struct_field_init> = list();
+                let mut ir_programs: list<ir_program> = list();
+                let mut ir_function_sigs: list<ir_function_sig> = list();
+                let mut ir_functions: list<ir_function> = list();
+                let mut ir_locals: list<ir_local> = list();
+                let mut ir_blocks: list<ir_block> = list();
+                let mut ir_statements: list<ir_stmt> = list();
+                let mut ir_match_arms: list<ir_match_arm> = list();
+                let mut ir_patterns: list<ir_pattern> = list();
+                let mut ir_pattern_children: list<ir_pattern_child> = list();
+                let mut ir_expressions: list<ir_expr> = list();
+                let mut ir_expr_children: list<ir_expr_child> = list();
+                let mut ir_field_values: list<ir_field_value> = list();
+                let mut ir_type_shapes: list<ir_type_shape> = list();
+                let mut ir_struct_decls: list<ir_struct_decl> = list();
+                let mut ir_field_decls: list<ir_field_decl> = list();
+                let mut ir_enum_decls: list<ir_enum_decl> = list();
+                let mut ir_variant_decls: list<ir_variant_decl> = list();
+                let mut ir_variant_payload_decls: list<ir_variant_payload_decl> = list();
                 let mut diags: list<diag> = list();
 {''.join(module_blocks)}
                 resolve_modules(ref modules, ref uses, ref items, mutref diags);
@@ -136,14 +161,15 @@ class SelfhostBorrowTests(unittest.TestCase):
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
                 typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-                let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+                let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
                 let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+                let ir_summary = build_ir_program(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
 
                 if list_len(ref diags) > 0 {{
                     emit_all(ref diags);
                     return 1;
                 }}
-                if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {{
+                if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count or ir_summary.function_count < checked_summary.function_count {{
                     return 1;
                 }}
                 return 0;
@@ -327,12 +353,7 @@ class SelfhostBorrowTests(unittest.TestCase):
         self.assertIn("borrow expressions are only valid as direct call arguments in v0.1", output)
 
     def test_selfhost_tree_passes_stage1_borrow_trust(self) -> None:
-        result = subprocess.run(
-            [sys.executable, "-m", "compiler.main", "run", str(self.selfhost_dir / "main.nq")],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-        )
+        result = run_copied_selfhost()
         output = (result.stdout + result.stderr).strip()
         self.assertEqual(result.returncode, 0, output)
         self.assertNotIn("stage1 limitation", output)

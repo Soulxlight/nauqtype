@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from compiler.diagnostics import render_diagnostics
@@ -37,3 +39,16 @@ def ensure_bootstrap_deps() -> None:
         raise AssertionError(result.stdout + result.stderr)
     _BOOTSTRAP_READY = True
 
+
+def run_copied_selfhost(timeout: int = 40) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        for module_path in (ROOT / "selfhost").glob("*.nq"):
+            shutil.copy(module_path, tmp / module_path.name)
+        return subprocess.run(
+            [sys.executable, "-m", "compiler.main", "run", str(tmp / "main.nq")],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )

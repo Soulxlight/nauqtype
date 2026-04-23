@@ -11,12 +11,13 @@ from pathlib import Path
 from tests.test_support import run_copied_selfhost
 
 
-class SelfhostHandoffTests(unittest.TestCase):
+class SelfhostIRTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[1]
         self.selfhost_dir = self.root / "selfhost"
         self.runtime_modules = [
             "ast.nq",
+            "borrow.nq",
             "diag.nq",
             "handoff.nq",
             "ir.nq",
@@ -27,10 +28,6 @@ class SelfhostHandoffTests(unittest.TestCase):
             "token.nq",
             "typecheck.nq",
         ]
-
-    def _write_modules(self, tmp: Path, modules: dict[str, str]) -> None:
-        for name, text in modules.items():
-            (tmp / f"{name}.nq").write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
 
     def _escape_nauq_string(self, text: str) -> str:
         return textwrap.dedent(text).strip().replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
@@ -57,6 +54,7 @@ class SelfhostHandoffTests(unittest.TestCase):
         return textwrap.dedent(
             f"""
             use ast;
+            use borrow;
             use diag;
             use handoff;
             use ir;
@@ -152,8 +150,8 @@ class SelfhostHandoffTests(unittest.TestCase):
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
                 typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-
-                let summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+                let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+                let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
                 let ir_summary = build_ir_program(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
 
                 if list_len(ref diags) > 0 {{
@@ -163,8 +161,8 @@ class SelfhostHandoffTests(unittest.TestCase):
 
                 let mut failures = 0;
 {checks}
-                if summary.function_count < 1 or summary.block_count < 1 or summary.expression_count < 1 or ir_summary.function_count < summary.function_count {{
-                    print_line("summary counts did not capture the checked handoff");
+                if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count or ir_summary.function_count < checked_summary.function_count or ir_summary.expression_count < 1 {{
+                    print_line("ir summary did not capture the lowered program");
                     failures = failures + 1;
                 }}
 
@@ -190,30 +188,7 @@ class SelfhostHandoffTests(unittest.TestCase):
             )
             return result.returncode, (result.stdout + result.stderr).strip()
 
-    def test_handoff_captures_typed_local_and_assignment(self) -> None:
-        modules = {
-            "main": """
-            fn main() -> i32 {
-                let mut value: i32 = 1;
-                value = value + 2;
-                return value;
-            }
-            """,
-        }
-        assertions = [
-            '                if not handoff_has_local_type(ref checked_statements, "main", "main", "value", "i32") {',
-            '                    print_line("missing typed local");',
-            "                    failures = failures + 1;",
-            "                }",
-            '                if not handoff_has_assignment_target_type(ref checked_statements, "main", "main", "value", "i32") {',
-            '                    print_line("missing typed assignment target");',
-            "                    failures = failures + 1;",
-            "                }",
-        ]
-        returncode, output = self._run_probe(modules, assertions)
-        self.assertEqual(returncode, 0, output)
-
-    def test_handoff_captures_control_flow_patterns_and_targets(self) -> None:
+    def test_ir_lowers_control_flow_and_metadata(self) -> None:
         modules = {
             "util": """
             pub type pair {
@@ -257,59 +232,64 @@ class SelfhostHandoffTests(unittest.TestCase):
             """,
         }
         assertions = [
-            '                if not handoff_has_stmt_kind(ref checked_statements, "main", "main", checked_stmt_if) {',
-            '                    print_line("missing if statement");',
+            '                let main_fn = ir_lookup_function_id(ref ir_functions, "main::main");',
+            '                if main_fn < 0 {',
+            '                    print_line("missing lowered main function");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_stmt_kind(ref checked_statements, "main", "main", checked_stmt_while) {',
-            '                    print_line("missing while statement");',
+            '                if not ir_has_function_internal_name(ref ir_functions, "util::make_pair") {',
+            '                    print_line("missing lowered util::make_pair function");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_stmt_kind(ref checked_statements, "main", "main", checked_stmt_match) {',
-            '                    print_line("missing match statement");',
+            '                if not ir_has_function_sig(ref ir_function_sigs, "util::make_pair", 1) {',
+            '                    print_line("missing lowered util::make_pair signature");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_pattern_binding(ref checked_pattern_bindings, "main", "main", "code", "i32") {',
-            '                    print_line("missing typed pattern binding");',
+            '                if not ir_has_named_type_shape(ref ir_type_shapes, "pair", "util") {',
+            '                    print_line("missing lowered named type origin for util::pair");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_call_target(ref checked_expressions, "main", "main", "make_pair", "util") {',
-            '                    print_line("missing resolved function target");',
+            '                if not ir_has_root_block(ref ir_functions, ref ir_blocks, "main::main") {',
+            '                    print_line("missing lowered root block mapping for main::main");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_call_target(ref checked_expressions, "main", "main", "bad", "util") {',
-            '                    print_line("missing resolved constructor target");',
+            '                if not ir_has_stmt_kind(ref ir_statements, main_fn, ir_stmt_if) {',
+            '                    print_line("missing lowered if statement");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_field_target(ref checked_expressions, "main", "main", "left", "pair", "util") {',
-            '                    print_line("missing resolved field target");',
+            '                if not ir_has_stmt_kind(ref ir_statements, main_fn, ir_stmt_while) {',
+            '                    print_line("missing lowered while statement");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_function_in_module(ref checked_functions, "util", "make_pair") {',
-            '                    print_line("missing imported function identity");',
+            '                if not ir_has_stmt_kind(ref ir_statements, main_fn, ir_stmt_match) {',
+            '                    print_line("missing lowered match statement");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_type_decl(ref checked_type_decls, "util", "pair") {',
-            '                    print_line("missing type declaration metadata");',
+            '                if not ir_has_call_target(ref ir_expressions, main_fn, "make_pair", "util") {',
+            '                    print_line("missing lowered function call target");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_field_decl(ref checked_field_decls, "util", "pair", "left", "i32") {',
-            '                    print_line("missing field declaration metadata");',
+            '                if not ir_has_variant_expr(ref ir_expressions, main_fn, "bad") {',
+            '                    print_line("missing lowered constructor target");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_variant_decl(ref checked_variant_decls, "util", "parse_err", "bad", 1) {',
-            '                    print_line("missing variant declaration metadata");',
+            '                if not ir_has_field_expr(ref ir_expressions, main_fn, "left", "pair", "util") {',
+            '                    print_line("missing lowered field access");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
-            '                    print_line("checked handoff is not structurally complete");',
+            '                if not ir_has_struct_decl(ref ir_struct_decls, "util", "pair") {',
+            '                    print_line("missing lowered struct declaration");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not ir_has_variant_decl(ref ir_variant_decls, "util", "parse_err", "bad", 1) {',
+            '                    print_line("missing lowered variant declaration");',
             "                    failures = failures + 1;",
             "                }",
         ]
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
-    def test_handoff_reuses_binding_identity_and_exports_borrow_nodes(self) -> None:
+    def test_ir_lowers_borrow_nodes_and_pattern_locals(self) -> None:
         modules = {
             "main": """
             enum wrapped {
@@ -343,88 +323,57 @@ class SelfhostHandoffTests(unittest.TestCase):
             """,
         }
         assertions = [
-            '                if not handoff_has_param_name_binding_reuse(ref checked_params, ref checked_expressions, "main", "read", "value") {',
-            '                    print_line("missing parameter binding reuse");',
+            '                let read_fn = ir_lookup_function_id(ref ir_functions, "main::read");',
+            '                let unwrap_fn = ir_lookup_function_id(ref ir_functions, "main::unwrap");',
+            '                let main_fn = ir_lookup_function_id(ref ir_functions, "main::main");',
+            '                if read_fn < 0 or unwrap_fn < 0 or main_fn < 0 {',
+            '                    print_line("missing lowered function ids");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_local_assignment_name_binding_reuse(ref checked_statements, ref checked_expressions, "main", "main", "number") {',
-            '                    print_line("missing local assignment binding reuse");',
+            '                if not ir_has_ref_local(ref ir_locals, read_fn, "value", false) {',
+            '                    print_line("missing lowered ref param truth");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_pattern_binding_reuse(ref checked_pattern_bindings, ref checked_expressions, "main", "unwrap", "inner") {',
-            '                    print_line("missing pattern binding reuse");',
+            '                if not ir_has_param_local(ref ir_locals, read_fn, "value", 0) {',
+            '                    print_line("missing lowered param order truth");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_borrow_expr(ref checked_expressions, ref checked_expr_children, "main", "main", checked_expr_ref, "number") {',
-            '                    print_line("missing explicit ref expression");',
+            '                if not ir_has_ref_local(ref ir_locals, ir_lookup_function_id(ref ir_functions, "main::bump"), "value", true) {',
+            '                    print_line("missing lowered mutref param truth");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_borrow_expr(ref checked_expressions, ref checked_expr_children, "main", "main", checked_expr_mutref, "number") {',
-            '                    print_line("missing explicit mutref expression");',
+            '                if not ir_has_borrow_expr(ref ir_expressions, main_fn, false) {',
+            '                    print_line("missing lowered ref expression");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
-            '                    print_line("checked handoff is not structurally complete");',
+            '                if not ir_has_borrow_expr(ref ir_expressions, main_fn, true) {',
+            '                    print_line("missing lowered mutref expression");',
             "                    failures = failures + 1;",
             "                }",
-        ]
-        returncode, output = self._run_probe(modules, assertions)
-        self.assertEqual(returncode, 0, output)
-
-    def test_handoff_preserves_borrowed_local_truth_bits(self) -> None:
-        modules = {
-            "main": """
-            fn read_back(value: ref i32) -> i32 {
-                return value;
-            }
-
-            fn main() -> i32 {
-                let mut number: i32 = 1;
-                let borrowed: ref i32 = ref number;
-                return read_back(borrowed);
-            }
-            """,
-        }
-        assertions = [
-            '                if not handoff_has_local_borrow_binding(ref checked_bindings, "main", "main", "borrowed") {',
-            '                    print_line("missing borrowed local binding truth bit");',
+            '                if not ir_has_name_expr_local(ref ir_expressions, read_fn, "value") {',
+            '                    print_line("missing lowered local-backed name expression");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_local_borrow_stmt(ref checked_statements, "main", "main", "borrowed") {',
-            '                    print_line("missing borrowed local statement truth bit");',
+            '                if not ir_has_pattern_local(ref ir_patterns, unwrap_fn, "inner") {',
+            '                    print_line("missing lowered pattern local");',
             "                    failures = failures + 1;",
             "                }",
-            '                if not handoff_has_borrowed_name_expr(ref checked_expressions, "main", "main", "borrowed") {',
-            '                    print_line("missing borrowed name expression truth bit");',
-            "                    failures = failures + 1;",
-            "                }",
-            '                if not handoff_is_structurally_complete(ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields) {',
-            '                    print_line("checked handoff is not structurally complete");',
+            '                if not ir_has_variant_expr(ref ir_expressions, main_fn, "box") {',
+            '                    print_line("missing lowered variant expression");',
             "                    failures = failures + 1;",
             "                }",
         ]
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
-    def test_handoff_reports_stage1_limitation_for_non_name_callee(self) -> None:
-        modules = {
-            "main": """
-            fn id(value: i32) -> i32 {
-                return value;
-            }
-
-            fn main() -> i32 {
-                return (id)(1);
-            }
-            """,
-        }
-        returncode, output = self._run_probe(modules, [])
-        self.assertNotEqual(returncode, 0, output)
-        self.assertIn("stage1 limitation", output)
-
-    def test_selfhost_tree_builds_handoff_without_limitations(self) -> None:
+    def test_selfhost_tree_lowers_without_ir_errors(self) -> None:
         result = run_copied_selfhost()
         output = (result.stdout + result.stderr).strip()
         self.assertEqual(result.returncode, 0, output)
         self.assertNotIn("stage1 limitation", output)
+        self.assertNotIn("stage1 ir error:", output)
         self.assertIn("stage1 front-end ok", output)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -967,13 +967,17 @@ type parsed_type_shape {
     head: str,
     arg1_name: str,
     arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
 }
 
-fn make_parsed_type_shape(head: str, arg1_name: str, arg2_name: str) -> parsed_type_shape {
+fn make_parsed_type_shape(head: str, arg1_name: str, arg2_name: str, is_borrow: bool, borrow_mutable: bool) -> parsed_type_shape {
     return parsed_type_shape {
         head: head,
         arg1_name: arg1_name,
         arg2_name: arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
     };
 }
 
@@ -982,11 +986,13 @@ fn consume_type_shape(tokens: ref list<token>, cursor: mutref i32, diags: mutref
     match current.kind {
         tk_kw_ref => {
             advance(mutref cursor);
-            return consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+            let inner = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+            return make_parsed_type_shape(inner.head, inner.arg1_name, inner.arg2_name, true, false);
         },
         tk_kw_mutref => {
             advance(mutref cursor);
-            return consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+            let inner = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+            return make_parsed_type_shape(inner.head, inner.arg1_name, inner.arg2_name, true, true);
         },
         tk_ident => {
             let head = current.text;
@@ -1022,11 +1028,11 @@ fn consume_type_shape(tokens: ref list<token>, cursor: mutref i32, diags: mutref
                 _ => {
                 },
             }
-            return make_parsed_type_shape(head, arg1_name, arg2_name);
+            return make_parsed_type_shape(head, arg1_name, arg2_name, false, false);
         },
         _ => {
             push_diag(mutref diags, file, current, "expected type");
-            return make_parsed_type_shape("", "", "");
+            return make_parsed_type_shape("", "", "", false, false);
         },
     }
 }
@@ -1342,7 +1348,7 @@ fn collect_value_type_decl_facts(tokens: ref list<token>, cursor: mutref i32, di
                 let field_type = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                 let field_type_name = field_type.head;
                 if type_name_text != "" and field_name_text != "" and field_type_name != "" {
-                    list_push(mutref field_facts, make_field_fact(file, type_name_text, field_name_text, field_at, field_type_name, field_type.arg1_name, field_type.arg2_name));
+                    list_push(mutref field_facts, make_field_fact(file, type_name_text, field_name_text, field_at, field_type_name, field_type.arg1_name, field_type.arg2_name, field_type.is_borrow, field_type.borrow_mutable));
                 }
                 let maybe_comma = token_at(ref tokens, cursor);
                 match maybe_comma.kind {
@@ -1409,7 +1415,7 @@ fn collect_enum_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref
                         let mut payload_index = 0;
                         let first_type = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                         if variant_name_text != "" and first_type.head != "" {
-                            list_push(mutref variant_payloads, make_variant_payload_fact(file, variant_name_text, payload_index, variant_at, first_type.head, first_type.arg1_name, first_type.arg2_name));
+                            list_push(mutref variant_payloads, make_variant_payload_fact(file, variant_name_text, payload_index, variant_at, first_type.head, first_type.arg1_name, first_type.arg2_name, first_type.is_borrow, first_type.borrow_mutable));
                         }
                         payload_count = payload_count + 1;
                         payload_index = payload_index + 1;
@@ -1421,7 +1427,7 @@ fn collect_enum_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref
                                     advance(mutref cursor);
                                     let next_type = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                                     if variant_name_text != "" and next_type.head != "" {
-                                        list_push(mutref variant_payloads, make_variant_payload_fact(file, variant_name_text, payload_index, variant_at, next_type.head, next_type.arg1_name, next_type.arg2_name));
+                                        list_push(mutref variant_payloads, make_variant_payload_fact(file, variant_name_text, payload_index, variant_at, next_type.head, next_type.arg1_name, next_type.arg2_name, next_type.is_borrow, next_type.borrow_mutable));
                                     }
                                     payload_count = payload_count + 1;
                                     payload_index = payload_index + 1;
@@ -1508,13 +1514,12 @@ fn collect_function_facts(tokens: ref list<token>, cursor: mutref i32, diags: mu
                         push_diag(mutref diags, file, colon, "expected `:` after parameter name");
                     },
                 }
-                let is_borrow = type_starts_with_borrow(ref tokens, cursor);
                 let type_shape = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                 let type_name = type_shape.head;
                 match param_name.kind {
                     tk_ident => {
                         if function_name != "" and type_name != "" {
-                            list_push(mutref function_params, make_function_param_fact(file, function_name, param_index, param_name.text, param_name.start, type_name, type_shape.arg1_name, type_shape.arg2_name, is_borrow));
+                            list_push(mutref function_params, make_function_param_fact(file, function_name, param_index, param_name.text, param_name.start, type_name, type_shape.arg1_name, type_shape.arg2_name, type_shape.is_borrow, type_shape.borrow_mutable));
                         }
                     },
                     _ => {
@@ -1546,22 +1551,10 @@ fn collect_function_facts(tokens: ref list<token>, cursor: mutref i32, diags: mu
             push_diag(mutref diags, file, arrow, "expected `->` after parameter list");
         },
     }
-    let return_current = token_at(ref tokens, cursor);
-    let mut return_is_borrow = false;
-    match return_current.kind {
-        tk_kw_ref => {
-            return_is_borrow = true;
-        },
-        tk_kw_mutref => {
-            return_is_borrow = true;
-        },
-        _ => {
-        },
-    }
     let return_type = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
     let return_name = return_type.head;
     if function_name != "" {
-        list_push(mutref functions, make_function_fact(file, function_name, function_at, param_count, return_name, return_type.arg1_name, return_type.arg2_name, return_is_borrow));
+        list_push(mutref functions, make_function_fact(file, function_name, function_at, param_count, return_name, return_type.arg1_name, return_type.arg2_name, return_type.is_borrow, return_type.borrow_mutable));
     }
     parse_audit(ref tokens, mutref cursor, mutref diags, file);
     collect_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, mutref calls, mutref patterns);
@@ -2010,15 +2003,15 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             }
             let mut expected_type_name = "";
             let mut expected_is_borrow = false;
-            let maybe_colon = token_at(ref tokens, cursor);
-            match maybe_colon.kind {
-                tk_colon => {
-                    advance(mutref cursor);
-                    expected_is_borrow = type_starts_with_borrow(ref tokens, cursor);
+                let maybe_colon = token_at(ref tokens, cursor);
+                match maybe_colon.kind {
+                    tk_colon => {
+                        advance(mutref cursor);
                     let expected_type = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                     expected_type_name = expected_type.head;
+                    expected_is_borrow = expected_type.is_borrow;
                     if local_name != "" and expected_type_name != "" {
-                        list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_type.arg1_name, expected_type.arg2_name, expected_is_borrow));
+                        list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_type.arg1_name, expected_type.arg2_name, expected_is_borrow, expected_type.borrow_mutable));
                     }
                 },
                 _ => {
@@ -2163,11 +2156,10 @@ fn collect_value_function_facts(tokens: ref list<token>, cursor: mutref i32, dia
                         push_diag(mutref diags, file, colon, "expected `:` after parameter name");
                     },
                 }
-                let is_borrow = type_starts_with_borrow(ref tokens, cursor);
                 let type_shape = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                 let type_name = type_shape.head;
                 if param_text != "" and type_name != "" {
-                    list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, root_scope_id, param_text, param_at, type_name, type_shape.arg1_name, type_shape.arg2_name, is_borrow));
+                    list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, root_scope_id, param_text, param_at, type_name, type_shape.arg1_name, type_shape.arg2_name, type_shape.is_borrow, type_shape.borrow_mutable));
                 }
                 let maybe_comma = token_at(ref tokens, cursor);
                 match maybe_comma.kind {
