@@ -105,12 +105,13 @@ fn main() -> i32 {
         Ready => {
             return user.age;
         },
-    }
+        }
 }
 """
         diagnostics, emitted = compile_text(source)
         self.assertFalse(diagnostics.has_errors(), [d.message for d in diagnostics.items])
-        self.assertIn("int main(void)", emitted)
+        self.assertIn("int main(int argc, char** argv)", emitted)
+        self.assertIn("nq_init_process_args(argc, argv);", emitted)
 
 
 if __name__ == "__main__":

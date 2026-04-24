@@ -262,7 +262,8 @@ class CEmitter:
             self.lines.append("}")
             self.lines.append("")
         if self.program.entry_function is not None:
-            self.lines.append("int main(void) {")
+            self.lines.append("int main(int argc, char** argv) {")
+            self.lines.append("    nq_init_process_args(argc, argv);")
             self.lines.append(f"    return {self._function_name(self.program.entry_function)}();")
             self.lines.append("}")
             self.lines.append("")
@@ -420,6 +421,12 @@ class CEmitter:
                 return f"nq_read_file({args})"
             if expr.function_name == "write_file":
                 return f"nq_write_file({args})"
+            if expr.function_name == "arg_count":
+                return "nq_arg_count()"
+            if expr.function_name == "arg_get":
+                return f"nq_arg_get({args})"
+            if expr.function_name == "create_dir_all":
+                return f"nq_create_dir_all({args})"
             if expr.function_name == "io_err_text":
                 return f"nq_io_err_text({args})"
             if expr.function_name == "str_len":
@@ -504,6 +511,8 @@ class CEmitter:
             return "NQUnit"
         if typ.kind == "io_err":
             return "NQIoErr"
+        if typ.kind == "process_result":
+            return "NQ_process_result"
         if typ.kind == "named":
             return self._named_type_name(typ.name)
         if typ.kind == "option":

@@ -113,7 +113,7 @@ class Resolver:
         return module
 
     def _install_builtins(self, module: ModuleInfo) -> None:
-        for name in ("print_line", "read_file", "write_file", "io_err_text", "str_len", "str_get", "str_slice", "str_concat", "list", "list_push", "list_len", "list_get"):
+        for name in ("print_line", "read_file", "write_file", "arg_count", "arg_get", "create_dir_all", "io_err_text", "str_len", "str_get", "str_slice", "str_concat", "list", "list_push", "list_len", "list_get"):
             module.functions[name] = FunctionInfo(name, name, "<builtin>", None, True, builtin=True)
         module.variants["Some"] = VariantInfo("Some", "Some", "option", "option", "<builtin>", 1, True, builtin_kind="option")
         module.variants["None"] = VariantInfo("None", "None", "option", "option", "<builtin>", 0, True, builtin_kind="option")
@@ -125,6 +125,9 @@ class Resolver:
                     "print_line": "print_line",
                     "read_file": "read_file",
                     "write_file": "write_file",
+                    "arg_count": "arg_count",
+                    "arg_get": "arg_get",
+                    "create_dir_all": "create_dir_all",
                     "io_err_text": "io_err_text",
                     "str_len": "str_len",
                     "str_get": "str_get",
@@ -212,7 +215,7 @@ class Resolver:
             self._import_public_names(scope.enums, imported_scope.exported_enums, scope.hidden_types, scope.source, item.span, "enum")
             self._import_public_names(scope.variants, imported_scope.exported_variants, scope.hidden_variants, scope.source, item.span, "variant")
 
-            scope.hidden_functions.update(set(imported_scope.functions) - set(imported_scope.exported_functions) - {"print_line", "read_file", "write_file", "io_err_text", "str_len", "str_get", "str_slice", "str_concat", "list", "list_push", "list_len", "list_get"})
+            scope.hidden_functions.update(set(imported_scope.functions) - set(imported_scope.exported_functions) - {"print_line", "read_file", "write_file", "arg_count", "arg_get", "create_dir_all", "io_err_text", "str_len", "str_get", "str_slice", "str_concat", "list", "list_push", "list_len", "list_get"})
             scope.hidden_types.update((set(imported_scope.structs) - set(imported_scope.exported_structs)) | (set(imported_scope.enums) - set(imported_scope.exported_enums)))
             scope.hidden_variants.update(set(imported_scope.variants) - set(imported_scope.exported_variants) - {"Some", "None", "Ok", "Err"})
 
@@ -457,7 +460,7 @@ class Resolver:
         if isinstance(type_expr, ast.BorrowTypeExpr):
             self._resolve_type_expr(type_expr.inner, scope)
             return
-        if type_expr.name in {"bool", "i32", "str", "unit", "option", "result", "list", "io_err"}:
+        if type_expr.name in {"bool", "i32", "str", "unit", "option", "result", "list", "io_err", "process_result"}:
             for arg in type_expr.args:
                 self._resolve_type_expr(arg, scope)
             return

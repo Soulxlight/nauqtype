@@ -4,7 +4,7 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 
 Current bootstrap status:
 
-- `stage0`: Python bootstrap compiler in the current workspace
+- `stage0`: frozen Python bootstrap/reference compiler in the current workspace
 - flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
 - nominal `type` and `enum`
@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, and emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check` and `emit-c`
 
 ## Quick Start
 
@@ -31,34 +31,31 @@ Run the full test suite:
 python -m unittest discover -s tests -v
 ```
 
-Compile and run an example:
-
-```powershell
-python -m compiler.main run examples\hello.nq
-```
-
-Run the AI-friendliness audit:
-
-```powershell
-python scripts/run_ai_audit.py
-```
-
-Emit a machine-readable review summary:
-
-```powershell
-python -m compiler.main review examples\review_contracts.nq
-```
-
-Emit machine-readable compiler diagnostics for `check`:
-
-```powershell
-python -m compiler.main check examples\hello.nq --diagnostics json
-```
-
-Run the current stage1 selfhost front end:
+Bootstrap the stage1 driver once:
 
 ```powershell
 python -m compiler.main run selfhost\main.nq
+```
+
+Use the active Nauqtype-owned driver for `check`:
+
+```powershell
+selfhost\build\main.exe check examples\hello.nq
+```
+
+Use the active Nauqtype-owned driver for `emit-c`:
+
+```powershell
+selfhost\build\main.exe emit-c examples\hello.nq -o build\hello.c
+```
+
+Frozen bootstrap/reference workflows that still exist during the cutover:
+
+```powershell
+python -m compiler.main check examples\hello.nq --diagnostics json
+python -m compiler.main review examples\review_contracts.nq
+python -m compiler.main run examples\hello.nq
+python scripts/run_ai_audit.py
 ```
 
 Example programs worth checking first:
@@ -103,6 +100,7 @@ Current semantic near-parity milestone:
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 - the first copied-selfhost stage1-to-stage2 comparison proof is now complete
+- the stage1 executable now owns the active `check` and `emit-c` workflow, while `review`, `build`, and `run` remain on the frozen stage0 reference path until the next cutover slice
 
 Architecture checkpoint:
 
@@ -118,6 +116,8 @@ Current remaining gaps:
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
+- finish the stage1 executable driver cutover for `review`, then `build` / `run`
+- replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
 
 Current AI-first compiler output:
 
@@ -142,6 +142,6 @@ Current AI-first compiler output:
 
 ## Repository Notes
 
-- The current compiler is a Python bootstrap because this workspace did not provide a Rust toolchain.
-- The long-term implementation preference remains Rust.
+- Nauqtype is now the active implementation language for the project.
+- The Python compiler remains in-repo only as a frozen bootstrap/reference path during the toolchain cutover.
 - The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, and the minimal text file output builtin `write_file(path: str, text: str) -> result<unit, io_err>`.

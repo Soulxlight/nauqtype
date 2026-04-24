@@ -14,6 +14,7 @@ int32_t nq_fn_mutate_counter__main(void) {
     return nqv_2_value;
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    nq_init_process_args(argc, argv);
     return nq_fn_mutate_counter__main();
 }

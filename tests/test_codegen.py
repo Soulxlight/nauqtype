@@ -16,7 +16,8 @@ fn main() -> i32 {
         diagnostics, emitted = compile_text(source)
         self.assertFalse(diagnostics.has_errors(), [d.message for d in diagnostics.items])
         assert emitted is not None
-        self.assertIn("int main(void)", emitted)
+        self.assertIn("int main(int argc, char** argv)", emitted)
+        self.assertIn("nq_init_process_args(argc, argv);", emitted)
         self.assertIn("nq_print_line", emitted)
 
     def test_emits_c_while_loop(self) -> None:

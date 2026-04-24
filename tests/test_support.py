@@ -131,3 +131,15 @@ def compile_and_run_c(c_path: Path, *, cwd: Path | None = None) -> subprocess.Co
 def run_copied_selfhost(timeout: int = 90) -> subprocess.CompletedProcess[str]:
     with copied_selfhost_workspace() as tmp:
         return run_stage0_selfhost(tmp, timeout=timeout)
+
+
+@contextmanager
+def built_stage1_driver(timeout: int = 240):
+    with copied_selfhost_workspace() as tmp:
+        result = run_stage0_selfhost(tmp, timeout=timeout)
+        emitted_exe = tmp / "build" / "main.exe"
+        if result.returncode != 0:
+            raise AssertionError(result.stdout + result.stderr)
+        if not emitted_exe.exists():
+            raise AssertionError(f"missing stage1 driver at {emitted_exe}")
+        yield tmp, emitted_exe

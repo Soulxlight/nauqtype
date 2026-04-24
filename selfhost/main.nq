@@ -11,6 +11,33 @@ use resolve;
 use source;
 use typecheck;
 
+enum driver_mode {
+    driver_legacy,
+    driver_check,
+    driver_emit_c,
+    driver_invalid,
+}
+
+type driver_request {
+    mode: driver_mode,
+    entry_path: str,
+    entry_module: str,
+    workspace_root: str,
+    output_path: str,
+    error_message: str,
+}
+
+fn make_driver_request(mode: driver_mode, entry_path: str, entry_module: str, workspace_root: str, output_path: str, error_message: str) -> driver_request {
+    return driver_request {
+        mode: mode,
+        entry_path: entry_path,
+        entry_module: entry_module,
+        workspace_root: workspace_root,
+        output_path: output_path,
+        error_message: error_message,
+    };
+}
+
 fn list_contains(items: ref list<str>, target: str) -> bool {
     let mut index = 0;
     while index < list_len(ref items) {
@@ -38,6 +65,53 @@ fn queue_if_missing(pending: mutref list<str>, seen: ref list<str>, name: str) -
     }
     list_push(mutref pending, name);
     return;
+}
+
+fn str_contains(text: str, pattern: str) -> bool {
+    if pattern == "" {
+        return true;
+    }
+    let text_len = str_len(text);
+    let pattern_len = str_len(pattern);
+    if pattern_len > text_len {
+        return false;
+    }
+    let mut start = 0;
+    while start <= text_len - pattern_len {
+        let mut offset = 0;
+        let mut matches = true;
+        while offset < pattern_len {
+            let left = str_get(text, start + offset);
+            let right = str_get(pattern, offset);
+            match left {
+                Some(left_ch) => {
+                    match right {
+                        Some(right_ch) => {
+                            if left_ch != right_ch {
+                                matches = false;
+                            }
+                        },
+                        None => {
+                            matches = false;
+                        },
+                    }
+                },
+                None => {
+                    matches = false;
+                },
+            }
+            if not matches {
+                offset = pattern_len;
+            } else {
+                offset = offset + 1;
+            }
+        }
+        if matches {
+            return true;
+        }
+        start = start + 1;
+    }
+    return false;
 }
 
 fn module_reaches_start(start: str, uses: ref list<module_use>) -> bool {
@@ -113,26 +187,46 @@ fn emit_all(diags: ref list<diag>) -> unit {
     return;
 }
 
-fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, diags: mutref list<diag>) -> unit {
-    let loaded_file = read_named_module(name);
+fn read_module_source(name: str, workspace_root: str, entry_module: str, entry_path: str) -> result<source_file, io_err> {
+    if entry_path != "" and name == entry_module {
+        return read_source_at_path(entry_path, entry_module);
+    }
+    return read_workspace_module(workspace_root, name);
+}
+
+fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_path: str, loading_path: str, seen_modules: mutref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, diags: mutref list<diag>) -> unit {
+    if list_contains(ref seen_modules, name) {
+        return;
+    }
+    let stack_key = str_concat(str_concat("|", name), "|");
+    if str_contains(loading_path, stack_key) {
+        list_push(mutref diags, make_diag(name, 0, "import cycle detected"));
+        return;
+    }
+    let loaded_file = read_module_source(name, workspace_root, entry_module, entry_path);
     match loaded_file {
         Ok(file) => {
-            list_push(mutref loaded_modules, name);
-            list_push(mutref sources, file);
             let tokens = lex(file.text);
             let imports = extract_uses(ref tokens);
+            let next_loading_path = str_concat(loading_path, stack_key);
             let mut import_index = 0;
             while import_index < list_len(ref imports) {
                 let entry = list_get(ref imports, import_index);
                 match entry {
                     Some(import_name) => {
-                        queue_if_missing(mutref pending, ref seen, import_name);
+                        load_module_graph(import_name, workspace_root, entry_module, entry_path, next_loading_path, mutref seen_modules, mutref loaded_modules, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
                     },
                     None => {
                     },
                 }
                 import_index = import_index + 1;
             }
+            if list_contains(ref seen_modules, name) {
+                return;
+            }
+            list_push(mutref seen_modules, name);
+            list_push(mutref loaded_modules, name);
+            list_push(mutref sources, file);
             parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
             collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
             collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
@@ -145,8 +239,107 @@ fn analyze_module(name: str, pending: mutref list<str>, seen: ref list<str>, loa
     return;
 }
 
-fn main() -> i32 {
-    let mut pending: list<str> = list();
+fn option_text(value: option<str>) -> str {
+    match value {
+        Some(text) => {
+            return text;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn invalid_request(message: str) -> driver_request {
+    return make_driver_request(driver_invalid, "", "", ".", "", message);
+}
+
+fn usage_text() -> str {
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>]";
+}
+
+fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
+    if explicit_output != "" {
+        return explicit_output;
+    }
+    return replace_extension(source_path, ".c");
+}
+
+fn parse_driver_request() -> driver_request {
+    let argc = arg_count();
+    if argc <= 1 {
+        return make_driver_request(driver_legacy, "main.nq", "main", ".", "build/main.c", "");
+    }
+
+    let command = option_text(arg_get(1));
+    if command == "check" {
+        if argc != 3 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `check`");
+        }
+        return make_driver_request(driver_check, source_path, entry_module, path_dir(source_path), "", "");
+    }
+
+    if command == "emit-c" {
+        if argc != 3 and argc != 5 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `emit-c`");
+        }
+        let mut explicit_output = "";
+        if argc == 5 {
+            let flag = option_text(arg_get(3));
+            if flag != "-o" and flag != "--output" {
+                return invalid_request("expected `-o` or `--output` after the source path");
+            }
+            explicit_output = option_text(arg_get(4));
+            if explicit_output == "" {
+                return invalid_request("missing output path for `emit-c`");
+            }
+        }
+        return make_driver_request(driver_emit_c, source_path, entry_module, path_dir(source_path), build_emit_output_path(source_path, explicit_output), "");
+    }
+
+    if command == "review" or command == "build" or command == "run" {
+        return invalid_request(str_concat("stage1 driver command not yet implemented: ", command));
+    }
+
+    if command == "" {
+        return invalid_request(usage_text());
+    }
+    return invalid_request(str_concat("unknown stage1 driver command: ", command));
+}
+
+fn write_c_output(output_path: str, rendered_c: str, diags: mutref list<diag>) -> unit {
+    let ensure_result = ensure_parent_dir(output_path);
+    match ensure_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            list_push(mutref diags, make_diag(output_path, 0, io_err_text(err)));
+            return;
+        },
+    }
+
+    let write_result = write_rendered_c(output_path, rendered_c);
+    match write_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            list_push(mutref diags, make_diag(output_path, 0, io_err_text(err)));
+        },
+    }
+    return;
+}
+
+fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_path: str, write_output: bool, success_message: str) -> i32 {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut sources: list<source_file> = list();
@@ -211,48 +404,23 @@ fn main() -> i32 {
     let mut ir_variant_payload_decls: list<ir_variant_payload_decl> = list();
     let mut c_lines: list<str> = list();
     let mut diags: list<diag> = list();
-    let mut cursor = 0;
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
-    list_push(mutref pending, "main");
-
-    while cursor < list_len(ref pending) {
-        let current = list_get(ref pending, cursor);
-        match current {
-            Some(name) => {
-                if not list_contains(ref seen, name) {
-                    list_push(mutref seen, name);
-                    analyze_module(name, mutref pending, ref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
-                }
-            },
-            None => {
-            },
-        }
-        cursor = cursor + 1;
-    }
-
-    detect_import_cycles(ref loaded, ref uses, mutref diags);
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
-    typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
+    typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, true, mutref diags);
     typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
 
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
-    let ir_summary = build_ir_program(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+    let ir_summary = build_ir_program_for_entry(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
     let c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
 
-    if list_len(ref diags) == 0 {
+    if list_len(ref diags) == 0 and write_output {
         let rendered_c = render_c_lines(ref c_lines);
-        let write_result = write_rendered_c("build/main.c", rendered_c);
-        match write_result {
-            Ok(_) => {
-            },
-            Err(err) => {
-                list_push(mutref diags, make_diag("main", 0, io_err_text(err)));
-            },
-        }
+        write_c_output(output_path, rendered_c, mutref diags);
     }
 
     if list_len(ref diags) > 0 {
@@ -265,6 +433,27 @@ fn main() -> i32 {
         return 1;
     }
 
-    print_line("stage1 front-end ok");
+    if success_message != "" {
+        print_line(success_message);
+    }
     return 0;
+}
+
+fn main() -> i32 {
+    let request = parse_driver_request();
+    match request.mode {
+        driver_legacy => {
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "stage1 front-end ok");
+        },
+        driver_check => {
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, "", false, "");
+        },
+        driver_emit_c => {
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "");
+        },
+        driver_invalid => {
+            print_line(request.error_message);
+            return 1;
+        },
+    }
 }

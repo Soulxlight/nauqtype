@@ -15,8 +15,8 @@ Nauqtype "compiles and runs code" when all of the following are true:
 
 ## Bootstrap Terms
 
-- `stage0`: the current Python bootstrap compiler
-- `stage1`: a compiler semantic front end written in Nauqtype and built by stage0
+- `stage0`: the frozen Python bootstrap/reference compiler
+- `stage1`: a compiler semantic front end and active executable driver written in Nauqtype and built by stage0
 - `semantic near parity`: stage1 can load, parse, resolve, and type-check its own source tree for the trusted subset, with no retained limitation path used by the in-repo `selfhost/` tree
 - `genuine parity`: stage1 adds borrow checking and backend work closely enough to participate in a real self-build proof chain
 - `architecture checkpoint`: the current flat selfhost fact pipeline is accepted as the semantic front-end path, but backend work must target a downstream structured checked handoff instead of raw flat facts
@@ -167,6 +167,34 @@ Status:
 - the proof reuses the copied-workspace smoke, emitted-C compile/run helper, and shared structural C normalization
 - stage1 and stage2 now match on normalized structural C plus smoke behavior for the in-repo copied selfhost workspace
 - broader proof hardening and any wider proof targets remain explicit future work, not implied by this first checkpoint
+
+### M15: Nauqtype-Owned Driver Cutover
+
+- freeze `compiler/`, `scripts/`, and the Python-heavy harness as bootstrap/reference code
+- turn the selfhost executable into the active compiler driver
+- first slice: `check` and `emit-c`
+- second slice: `review`
+- third slice: `build` and `run`
+- keep the no-arg copied-selfhost proof path intact while the executable driver grows
+
+Status:
+
+- in progress
+- the stage1 executable now owns `check` and `emit-c`
+- the legacy no-arg selfhost path is preserved for the copied-selfhost proof flow
+- `review`, then `build` / `run`, remain the next cutover slice
+
+### M16: Nauqtype-Owned Proof And Corpus Runner
+
+- replace the active Python proof/test orchestration with a Nauqtype-owned runner
+- keep the copied-selfhost proof as a standing serial gate on Windows
+- run the locked example corpus through emit/compile/run from the Nauqtype-owned runner
+- preserve normalized structural C plus smoke-behavior comparison
+
+Status:
+
+- not started
+- the current Python proof/corpus harness remains the frozen reference path until M15 completes
 
 ## Feature Ordering
 

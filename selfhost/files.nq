@@ -1,17 +1,171 @@
 use source;
 
-pub fn read_named_module(name: str) -> result<source_file, io_err>
+fn slice_text(text: str, start: i32, end: i32) -> str {
+    let value = str_slice(text, start, end);
+    match value {
+        Some(part) => {
+            return part;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn char_at(text: str, index: i32) -> i32 {
+    let value = str_get(text, index);
+    match value {
+        Some(ch) => {
+            return ch;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+fn is_separator(ch: i32) -> bool {
+    return ch == 47 or ch == 92;
+}
+
+fn last_separator_index(path: str) -> i32 {
+    let mut index = 0;
+    let mut last = -1;
+    while index < str_len(path) {
+        let ch = char_at(path, index);
+        if is_separator(ch) {
+            last = index;
+        }
+        index = index + 1;
+    }
+    return last;
+}
+
+fn last_dot_after_separator(path: str) -> i32 {
+    let mut index = 0;
+    let mut last_sep = -1;
+    let mut last_dot = -1;
+    while index < str_len(path) {
+        let ch = char_at(path, index);
+        if is_separator(ch) {
+            last_sep = index;
+            last_dot = -1;
+        } else {
+            if ch == 46 {
+                last_dot = index;
+            }
+        }
+        index = index + 1;
+    }
+    if last_dot <= last_sep + 0 {
+        return -1;
+    }
+    return last_dot;
+}
+
+pub fn path_dir(path: str) -> str
 audit {
-    intent("Read one flat-root Nauqtype module by name from the current workspace");
+    intent("Return the parent directory of a filesystem path");
     mutates();
     effects();
 }
 {
-    let path = str_concat(name, ".nq");
+    let sep = last_separator_index(path);
+    if sep < 0 {
+        return ".";
+    }
+    if sep == 0 {
+        return slice_text(path, 0, 1);
+    }
+    if sep == 2 and char_at(path, 1) == 58 {
+        return slice_text(path, 0, 3);
+    }
+    return slice_text(path, 0, sep);
+}
+
+pub fn path_file_name(path: str) -> str
+audit {
+    intent("Return the last component of a filesystem path");
+    mutates();
+    effects();
+}
+{
+    let sep = last_separator_index(path);
+    if sep < 0 {
+        return path;
+    }
+    return slice_text(path, sep + 1, str_len(path));
+}
+
+pub fn path_stem(path: str) -> str
+audit {
+    intent("Return the basename of a path without its last extension");
+    mutates();
+    effects();
+}
+{
+    let file_name = path_file_name(path);
+    let dot = last_dot_after_separator(file_name);
+    if dot <= 0 {
+        return file_name;
+    }
+    return slice_text(file_name, 0, dot);
+}
+
+pub fn join_path(base: str, child: str) -> str
+audit {
+    intent("Join two path segments with one directory separator");
+    mutates();
+    effects();
+}
+{
+    if base == "" or base == "." {
+        return child;
+    }
+    let last_index = str_len(base) - 1;
+    let last_ch = char_at(base, last_index);
+    if is_separator(last_ch) {
+        return str_concat(base, child);
+    }
+    return str_concat(str_concat(base, "/"), child);
+}
+
+pub fn replace_extension(path: str, extension: str) -> str
+audit {
+    intent("Replace the last file extension of a path");
+    mutates();
+    effects();
+}
+{
+    let dot = last_dot_after_separator(path);
+    if dot < 0 {
+        return str_concat(path, extension);
+    }
+    return str_concat(slice_text(path, 0, dot), extension);
+}
+
+pub fn ensure_parent_dir(path: str) -> result<unit, io_err>
+audit {
+    intent("Ensure that the parent directory of a file path exists");
+    mutates();
+    effects();
+}
+{
+    let parent = path_dir(path);
+    return create_dir_all(parent);
+}
+
+pub fn read_source_at_path(path: str, module_name: str) -> result<source_file, io_err>
+audit {
+    intent("Read one Nauqtype module from an explicit source path");
+    mutates();
+    effects();
+}
+{
     let data = read_file(path);
     match data {
         Ok(text) => {
-            return Ok(make_source_file(name, text));
+            return Ok(make_source_file(module_name, text));
         },
         Err(err) => {
             return Err(err);
@@ -19,3 +173,23 @@ audit {
     }
 }
 
+pub fn read_workspace_module(workspace_root: str, name: str) -> result<source_file, io_err>
+audit {
+    intent("Read one flat-root Nauqtype module by name from a workspace root");
+    mutates();
+    effects();
+}
+{
+    let path = join_path(workspace_root, str_concat(name, ".nq"));
+    return read_source_at_path(path, name);
+}
+
+pub fn read_named_module(name: str) -> result<source_file, io_err>
+audit {
+    intent("Read one flat-root Nauqtype module by name from the current workspace");
+    mutates();
+    effects();
+}
+{
+    return read_workspace_module(".", name);
+}

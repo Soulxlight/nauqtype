@@ -231,3 +231,11 @@
 - Reason chosen: backend growth directly on flat facts would turn a useful semantic front end into an accidental architecture trap, while a full rewrite now would slow genuine parity work unnecessarily.
 - Consequences: a new one-way handoff layer becomes mandatory before backend parity; the flat front end remains in place and is not being replaced in this checkpoint.
 - Reversible later: no for this bootstrap phase; genuine parity work should not bypass the structured checked handoff.
+
+## D030: Nauqtype becomes the active implementation language after the first self-build proof
+
+- Decision: after the first stage1-to-stage2 self-build comparison proof, Nauqtype becomes the active implementation language for the project, and the Python compiler remains in-repo only as a frozen bootstrap/reference path during the cutover.
+- Alternatives considered: continue feature work primarily in Python, revive the older Rust preference, or defer the transition until every stage0 feature is already mirrored.
+- Reason chosen: the first self-build proof means the project can finally teach, exercise, and harden the language through its own implementation path instead of continuing to invest in a throwaway host-language center of gravity.
+- Consequences: new active workflows should move onto the stage1 executable driver first, while Python is limited to narrow bootstrap/reference fixes until the Nauqtype-owned driver and runner fully replace it.
+- Reversible later: partially; bootstrap reference code may survive for history, but the active toolchain direction should remain Nauqtype-first.

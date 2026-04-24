@@ -13,7 +13,7 @@ class Type:
     mutable: bool = False
 
     def display(self) -> str:
-        if self.kind in {"bool", "i32", "str", "unit", "io_err"}:
+        if self.kind in {"bool", "i32", "str", "unit", "io_err", "process_result"}:
             return self.kind
         if self.kind == "named":
             if self.name is None:
@@ -31,7 +31,7 @@ class Type:
         return self.kind
 
     def is_copy(self) -> bool:
-        if self.kind in {"bool", "i32", "str", "unit", "ref", "io_err"}:
+        if self.kind in {"bool", "i32", "str", "unit", "ref", "io_err", "process_result"}:
             return True
         if self.kind == "list":
             return False
@@ -50,6 +50,7 @@ I32 = Type("i32")
 STR = Type("str")
 UNIT = Type("unit")
 IO_ERR = Type("io_err")
+PROCESS_RESULT = Type("process_result")
 
 
 @dataclass(slots=True)

@@ -134,3 +134,14 @@
 - [x] Add stage1 IR lowering on the structured checked handoff
 - [x] Add stage1 C emission on the structured checked handoff
 - [x] Define and execute the first stage1-to-stage2 self-build comparison proof
+
+## Nauqtype-Only Transition
+
+- [x] Decide that Nauqtype is now the active implementation language and Python is frozen bootstrap/reference code
+- [x] Cut over the stage1 executable driver for `check`
+- [x] Cut over the stage1 executable driver for `emit-c`
+- [ ] Cut over the stage1 executable driver for `review`
+- [ ] Add the remaining minimal tooling runtime surface needed for `build` / `run`
+- [ ] Cut over the stage1 executable driver for `build`
+- [ ] Cut over the stage1 executable driver for `run`
+- [ ] Replace the active Python proof/corpus orchestration with a Nauqtype-owned runner

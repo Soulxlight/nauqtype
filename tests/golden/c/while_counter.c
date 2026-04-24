@@ -10,6 +10,7 @@ int32_t nq_fn_while_counter__main(void) {
     return nqv_1_count;
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    nq_init_process_args(argc, argv);
     return nq_fn_while_counter__main();
 }

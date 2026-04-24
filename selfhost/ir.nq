@@ -440,7 +440,7 @@ fn build_internal_function_name(module_name: str, name: str) -> str {
     return str_concat(str_concat(module_name, "::"), name);
 }
 
-pub fn build_ir_program(checked_functions: ref list<checked_function>, checked_bindings: ref list<checked_binding>, checked_params: ref list<checked_param>, checked_type_shapes: ref list<checked_type_shape>, checked_type_decls: ref list<checked_type_decl>, checked_field_decls: ref list<checked_field_decl>, checked_enum_decls: ref list<checked_enum_decl>, checked_variant_decls: ref list<checked_variant_decl>, checked_variant_payload_decls: ref list<checked_variant_payload_decl>, checked_blocks: ref list<checked_block>, checked_statements: ref list<checked_stmt>, checked_match_arms: ref list<checked_match_arm>, checked_patterns: ref list<checked_pattern>, checked_pattern_children: ref list<checked_pattern_child>, checked_pattern_bindings: ref list<checked_pattern_binding>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, programs_out: mutref list<ir_program>, function_sigs_out: mutref list<ir_function_sig>, functions_out: mutref list<ir_function>, locals_out: mutref list<ir_local>, blocks_out: mutref list<ir_block>, statements_out: mutref list<ir_stmt>, match_arms_out: mutref list<ir_match_arm>, patterns_out: mutref list<ir_pattern>, pattern_children_out: mutref list<ir_pattern_child>, expressions_out: mutref list<ir_expr>, expr_children_out: mutref list<ir_expr_child>, field_values_out: mutref list<ir_field_value>, type_shapes_out: mutref list<ir_type_shape>, struct_decls_out: mutref list<ir_struct_decl>, field_decls_out: mutref list<ir_field_decl>, enum_decls_out: mutref list<ir_enum_decl>, variant_decls_out: mutref list<ir_variant_decl>, variant_payload_decls_out: mutref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> ir_summary
+pub fn build_ir_program_for_entry(checked_functions: ref list<checked_function>, checked_bindings: ref list<checked_binding>, checked_params: ref list<checked_param>, checked_type_shapes: ref list<checked_type_shape>, checked_type_decls: ref list<checked_type_decl>, checked_field_decls: ref list<checked_field_decl>, checked_enum_decls: ref list<checked_enum_decl>, checked_variant_decls: ref list<checked_variant_decl>, checked_variant_payload_decls: ref list<checked_variant_payload_decl>, checked_blocks: ref list<checked_block>, checked_statements: ref list<checked_stmt>, checked_match_arms: ref list<checked_match_arm>, checked_patterns: ref list<checked_pattern>, checked_pattern_children: ref list<checked_pattern_child>, checked_pattern_bindings: ref list<checked_pattern_binding>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, entry_module: str, require_entry: bool, programs_out: mutref list<ir_program>, function_sigs_out: mutref list<ir_function_sig>, functions_out: mutref list<ir_function>, locals_out: mutref list<ir_local>, blocks_out: mutref list<ir_block>, statements_out: mutref list<ir_stmt>, match_arms_out: mutref list<ir_match_arm>, patterns_out: mutref list<ir_pattern>, pattern_children_out: mutref list<ir_pattern_child>, expressions_out: mutref list<ir_expr>, expr_children_out: mutref list<ir_expr_child>, field_values_out: mutref list<ir_field_value>, type_shapes_out: mutref list<ir_type_shape>, struct_decls_out: mutref list<ir_struct_decl>, field_decls_out: mutref list<ir_field_decl>, enum_decls_out: mutref list<ir_enum_decl>, variant_decls_out: mutref list<ir_variant_decl>, variant_payload_decls_out: mutref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> ir_summary
 audit {
     intent("Lower the checked selfhost handoff into backend-ready IR records");
     mutates(programs_out, function_sigs_out, functions_out, locals_out, blocks_out, statements_out, match_arms_out, patterns_out, pattern_children_out, expressions_out, expr_children_out, field_values_out, type_shapes_out, struct_decls_out, field_decls_out, enum_decls_out, variant_decls_out, variant_payload_decls_out, diags);
@@ -626,7 +626,7 @@ audit {
                     root_block_id: root_block_id,
                     at: value.at,
                 });
-                if value.module_name == "main" and value.name == "main" {
+                if value.module_name == entry_module and value.name == "main" {
                     entry_name = internal_name;
                 }
             },
@@ -839,6 +839,10 @@ audit {
         ignored_pattern_binding_index = ignored_pattern_binding_index + 1;
     }
 
+    if require_entry and entry_name == "" {
+        push_ir_limitation(mutref diags, entry_module, 0, "missing lowered entry function");
+    }
+
     list_push(mutref programs_out, ir_program {
         entry_function: entry_name,
     });
@@ -857,6 +861,16 @@ audit {
     let variant_count = list_len(ref variant_decls_out);
     let diag_count = list_len(ref diags);
     return make_ir_summary(program_count, function_count, local_count, block_count, statement_count, arm_count, pattern_count, expression_count, type_shape_count, struct_count, enum_count, variant_count, diag_count);
+}
+
+pub fn build_ir_program(checked_functions: ref list<checked_function>, checked_bindings: ref list<checked_binding>, checked_params: ref list<checked_param>, checked_type_shapes: ref list<checked_type_shape>, checked_type_decls: ref list<checked_type_decl>, checked_field_decls: ref list<checked_field_decl>, checked_enum_decls: ref list<checked_enum_decl>, checked_variant_decls: ref list<checked_variant_decl>, checked_variant_payload_decls: ref list<checked_variant_payload_decl>, checked_blocks: ref list<checked_block>, checked_statements: ref list<checked_stmt>, checked_match_arms: ref list<checked_match_arm>, checked_patterns: ref list<checked_pattern>, checked_pattern_children: ref list<checked_pattern_child>, checked_pattern_bindings: ref list<checked_pattern_binding>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, programs_out: mutref list<ir_program>, function_sigs_out: mutref list<ir_function_sig>, functions_out: mutref list<ir_function>, locals_out: mutref list<ir_local>, blocks_out: mutref list<ir_block>, statements_out: mutref list<ir_stmt>, match_arms_out: mutref list<ir_match_arm>, patterns_out: mutref list<ir_pattern>, pattern_children_out: mutref list<ir_pattern_child>, expressions_out: mutref list<ir_expr>, expr_children_out: mutref list<ir_expr_child>, field_values_out: mutref list<ir_field_value>, type_shapes_out: mutref list<ir_type_shape>, struct_decls_out: mutref list<ir_struct_decl>, field_decls_out: mutref list<ir_field_decl>, enum_decls_out: mutref list<ir_enum_decl>, variant_decls_out: mutref list<ir_variant_decl>, variant_payload_decls_out: mutref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> ir_summary
+audit {
+    intent("Lower the checked selfhost handoff into backend-ready IR records");
+    mutates(programs_out, function_sigs_out, functions_out, locals_out, blocks_out, statements_out, match_arms_out, patterns_out, pattern_children_out, expressions_out, expr_children_out, field_values_out, type_shapes_out, struct_decls_out, field_decls_out, enum_decls_out, variant_decls_out, variant_payload_decls_out, diags);
+    effects();
+}
+{
+    return build_ir_program_for_entry(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, "main", true, mutref programs_out, mutref function_sigs_out, mutref functions_out, mutref locals_out, mutref blocks_out, mutref statements_out, mutref match_arms_out, mutref patterns_out, mutref pattern_children_out, mutref expressions_out, mutref expr_children_out, mutref field_values_out, mutref type_shapes_out, mutref struct_decls_out, mutref field_decls_out, mutref enum_decls_out, mutref variant_decls_out, mutref variant_payload_decls_out, mutref diags);
 }
 
 pub fn ir_has_function_internal_name(functions: ref list<ir_function>, internal_name: str) -> bool

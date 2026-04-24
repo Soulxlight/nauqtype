@@ -43,6 +43,7 @@ int32_t nq_fn_result_handling__main(void) {
     }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    nq_init_process_args(argc, argv);
     return nq_fn_result_handling__main();
 }

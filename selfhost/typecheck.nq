@@ -196,11 +196,14 @@ fn module_exports_type_name(items: ref list<top_item>, module: str, name: str) -
 }
 
 fn builtin_function_arity(name: str) -> i32 {
-    if name == "print_line" or name == "read_file" or name == "io_err_text" {
+    if name == "print_line" or name == "read_file" or name == "arg_get" or name == "create_dir_all" or name == "io_err_text" {
         return 1;
     }
     if name == "write_file" {
         return 2;
+    }
+    if name == "arg_count" {
+        return 0;
     }
     if name == "str_len" {
         return 1;
@@ -322,13 +325,13 @@ fn visible_variant_arity(variants: ref list<variant_fact>, uses: ref list<module
     return -1;
 }
 
-fn find_entry_main(functions: ref list<function_fact>) -> option<function_fact> {
+fn find_entry_main(functions: ref list<function_fact>, entry_module: str) -> option<function_fact> {
     let mut index = 0;
     while index < list_len(ref functions) {
         let entry = list_get(ref functions, index);
         match entry {
             Some(value) => {
-                if value.module == "main" and value.name == "main" {
+                if value.module == entry_module and value.name == "main" {
                     return Some(value);
                 }
             },
@@ -340,7 +343,7 @@ fn find_entry_main(functions: ref list<function_fact>) -> option<function_fact> 
     return None;
 }
 
-pub fn typecheck_modules(functions: ref list<function_fact>, variants: ref list<variant_fact>, calls: ref list<call_fact>, patterns: ref list<pattern_ctor_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> typecheck_summary
+pub fn typecheck_modules_for_entry(functions: ref list<function_fact>, variants: ref list<variant_fact>, calls: ref list<call_fact>, patterns: ref list<pattern_ctor_fact>, uses: ref list<module_use>, items: ref list<top_item>, entry_module: str, require_entry: bool, diags: mutref list<diag>) -> typecheck_summary
 audit {
     intent("Run the first selfhost type-checker slice over function signatures, calls, and constructor arity");
     mutates(diags);
@@ -349,16 +352,18 @@ audit {
 {
     let start_diag_count = list_len(ref diags);
 
-    let entry = find_entry_main(ref functions);
-    match entry {
-        Some(main_fn) => {
-            if main_fn.param_count != 0 or main_fn.return_name != "i32" or main_fn.return_is_borrow {
-                push_diag(mutref diags, main_fn.module, main_fn.at, "`main` must take no parameters and return plain `i32`");
-            }
-        },
-        None => {
-            push_diag(mutref diags, "main", 0, "missing `main` entry point");
-        },
+    if require_entry {
+        let entry = find_entry_main(ref functions, entry_module);
+        match entry {
+            Some(main_fn) => {
+                if main_fn.param_count != 0 or main_fn.return_name != "i32" or main_fn.return_is_borrow {
+                    push_diag(mutref diags, main_fn.module, main_fn.at, "`main` must take no parameters and return plain `i32`");
+                }
+            },
+            None => {
+                push_diag(mutref diags, entry_module, 0, "missing `main` entry point");
+            },
+        }
     }
 
     let mut call_index = 0;
@@ -408,6 +413,16 @@ audit {
     );
 }
 
+pub fn typecheck_modules(functions: ref list<function_fact>, variants: ref list<variant_fact>, calls: ref list<call_fact>, patterns: ref list<pattern_ctor_fact>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> typecheck_summary
+audit {
+    intent("Run the first selfhost type-checker slice over function signatures, calls, and constructor arity");
+    mutates(diags);
+    effects();
+}
+{
+    return typecheck_modules_for_entry(ref functions, ref variants, ref calls, ref patterns, ref uses, ref items, "main", true, mutref diags);
+}
+
 fn builtin_function_return_name(name: str) -> str {
     if name == "print_line" {
         return "unit";
@@ -416,6 +431,15 @@ fn builtin_function_return_name(name: str) -> str {
         return "result";
     }
     if name == "write_file" {
+        return "result";
+    }
+    if name == "arg_count" {
+        return "i32";
+    }
+    if name == "arg_get" {
+        return "option";
+    }
+    if name == "create_dir_all" {
         return "result";
     }
     if name == "io_err_text" {
@@ -452,6 +476,12 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     if name == "write_file" {
         return "unit";
     }
+    if name == "arg_get" {
+        return "str";
+    }
+    if name == "create_dir_all" {
+        return "unit";
+    }
     if name == "str_get" {
         return "i32";
     }
@@ -462,7 +492,7 @@ fn builtin_function_return_arg1_name(name: str) -> str {
 }
 
 fn builtin_function_return_arg2_name(name: str) -> str {
-    if name == "read_file" or name == "write_file" {
+    if name == "read_file" or name == "write_file" or name == "create_dir_all" {
         return "io_err";
     }
     return "";

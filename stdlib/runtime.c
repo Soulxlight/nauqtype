@@ -1,5 +1,17 @@
 #include "runtime.h"
 
+#ifdef _WIN32
+#include <direct.h>
+#include <errno.h>
+#else
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+
+static int nq_process_argc = 0;
+static char** nq_process_argv = NULL;
+
 static char* nq_dup_cstr(const char* text) {
     size_t len = strlen(text);
     char* copy = (char*)malloc(len + 1);
@@ -18,6 +30,11 @@ void* nq_realloc(void* ptr, size_t size) {
         exit(1);
     }
     return next;
+}
+
+void nq_init_process_args(int argc, char** argv) {
+    nq_process_argc = argc;
+    nq_process_argv = argv;
 }
 
 NQUnit nq_print_line(NQStr text) {
@@ -161,6 +178,89 @@ NQ_Result__unit__io_err nq_write_file(NQStr path, NQStr text) {
             .data.Err = { ._0 = nq_make_io_err(8, "failed to close file after write") },
         };
     }
+    return (NQ_Result__unit__io_err){
+        .tag = NQ_Result__unit__io_err_Tag_Ok,
+        .data.Ok = { ._0 = NQ_UNIT },
+    };
+}
+
+int32_t nq_arg_count(void) {
+    return (int32_t)nq_process_argc;
+}
+
+NQ_Option__str nq_arg_get(int32_t index) {
+    if (index < 0 || index >= (int32_t)nq_process_argc || nq_process_argv == NULL) {
+        return (NQ_Option__str){
+            .tag = NQ_Option__str_Tag_None,
+            .data.None = NQ_UNIT,
+        };
+    }
+    return (NQ_Option__str){
+        .tag = NQ_Option__str_Tag_Some,
+        .data.Some = {
+            ._0 = nq_str(nq_process_argv[index]),
+        },
+    };
+}
+
+static int nq_mkdir_single(const char* path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0777);
+#endif
+}
+
+NQ_Result__unit__io_err nq_create_dir_all(NQStr path) {
+    char* value;
+    size_t index;
+    size_t start_index = 0;
+    if (path.len == 0) {
+        return (NQ_Result__unit__io_err){
+            .tag = NQ_Result__unit__io_err_Tag_Ok,
+            .data.Ok = { ._0 = NQ_UNIT },
+        };
+    }
+    value = (char*)malloc((size_t)path.len + 1);
+    if (value == NULL) {
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    memcpy(value, path.data, (size_t)path.len);
+    value[path.len] = '\0';
+    if (path.len >= 3 && value[1] == ':' && (value[2] == '\\' || value[2] == '/')) {
+        start_index = 3;
+    } else if (path.len >= 1 && (value[0] == '\\' || value[0] == '/')) {
+        start_index = 1;
+    }
+    for (index = start_index; index < (size_t)path.len; index += 1) {
+        if (value[index] != '\\' && value[index] != '/') {
+            continue;
+        }
+        if (index == 0) {
+            continue;
+        }
+        {
+            char saved = value[index];
+            value[index] = '\0';
+            if (strlen(value) > 0 && nq_mkdir_single(value) != 0 && errno != EEXIST) {
+                free(value);
+                return (NQ_Result__unit__io_err){
+                    .tag = NQ_Result__unit__io_err_Tag_Err,
+                    .data.Err = { ._0 = nq_make_io_err(9, "failed to create directory") },
+                };
+            }
+            value[index] = saved;
+        }
+    }
+    if (nq_mkdir_single(value) != 0 && errno != EEXIST) {
+        free(value);
+        return (NQ_Result__unit__io_err){
+            .tag = NQ_Result__unit__io_err_Tag_Err,
+            .data.Err = { ._0 = nq_make_io_err(9, "failed to create directory") },
+        };
+    }
+    free(value);
     return (NQ_Result__unit__io_err){
         .tag = NQ_Result__unit__io_err_Tag_Ok,
         .data.Ok = { ._0 = NQ_UNIT },

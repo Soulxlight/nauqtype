@@ -274,7 +274,8 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("nq_write_file(", emitted)
         self.assertIn("switch (nq_tmp_1.tag)", emitted)
         self.assertIn("const int32_t* nqv_", emitted)
-        self.assertIn("int main(void)", emitted)
+        self.assertIn("int main(int argc, char** argv)", emitted)
+        self.assertIn("nq_init_process_args(argc, argv);", emitted)
 
     def test_stage1_c_emit_matches_stage0_structurally_on_locked_corpus(self) -> None:
         cases = {

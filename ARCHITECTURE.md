@@ -16,20 +16,19 @@ The v0.1 compiler should deliver a real vertical slice:
 
 ## Implementation Language
 
-Preferred long-term implementation language:
+Active implementation language:
 
-- Rust
+- Nauqtype
 
-Current bootstrap implementation in this workspace:
+Frozen bootstrap/reference implementation in this workspace:
 
 - Python
 
 Reason:
 
-- Rust remains the preferred destination for long-term compiler implementation.
-- The current environment does not provide a Rust toolchain.
-- The bootstrap compiler should still be built now rather than blocked on environment setup.
-- Python is sufficient for a small front-end and C-emitting prototype while the language design stays backend-agnostic.
+- The first stage1-to-stage2 self-build proof is complete.
+- The project now benefits more from teaching and exercising Nauqtype through its own implementation path than from continuing to grow the host-language bootstrap.
+- Python remains valuable as a pinned bootstrap/reference path while the active driver and runner finish cutting over.
 
 ## Top-Level Module Boundaries
 

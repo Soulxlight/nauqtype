@@ -1363,6 +1363,15 @@ fn builtin_call_name(name: str) -> str {
     if name == "write_file" {
         return "nq_write_file";
     }
+    if name == "arg_count" {
+        return "nq_arg_count";
+    }
+    if name == "arg_get" {
+        return "nq_arg_get";
+    }
+    if name == "create_dir_all" {
+        return "nq_create_dir_all";
+    }
     if name == "io_err_text" {
         return "nq_io_err_text";
     }
@@ -2543,7 +2552,8 @@ audit {
 
     let entry_function = lookup_program_entry(ref programs);
     if entry_function != "" {
-        append_line(mutref lines_out, "int main(void) {");
+        append_line(mutref lines_out, "int main(int argc, char** argv) {");
+        append_line(mutref lines_out, "    nq_init_process_args(argc, argv);");
         append_line(mutref lines_out, concat4("    return ", function_name(entry_function), "();", ""));
         append_line(mutref lines_out, "}");
         append_line(mutref lines_out, "");

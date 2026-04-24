@@ -7,6 +7,7 @@ int32_t nq_fn_hello__main(void) {
     return 0;
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    nq_init_process_args(argc, argv);
     return nq_fn_hello__main();
 }

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from compiler.ast import nodes as ast
 from compiler.diagnostics import DiagnosticBag, SourceFile
 from compiler.resolve import ModuleInfo
-from compiler.types.model import BOOL, I32, IO_ERR, STR, UNIT, BindingInfo, EnumDef, FunctionSig, StructDef, Type, VariantDef
+from compiler.types.model import BOOL, I32, IO_ERR, PROCESS_RESULT, STR, UNIT, BindingInfo, EnumDef, FunctionSig, StructDef, Type, VariantDef
 
 
 @dataclass(slots=True)
@@ -32,7 +32,7 @@ class SemanticProgram:
     copyable_named: dict[str, bool]
 
     def is_copy_type(self, typ: Type) -> bool:
-        if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err"}:
+        if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err", "process_result"}:
             return True
         if typ.kind == "list":
             return False
@@ -66,6 +66,9 @@ class TypeChecker:
             "print_line": FunctionSig("print_line", [STR], UNIT, None, builtin=True),
             "read_file": FunctionSig("read_file", [STR], Type("result", args=(STR, IO_ERR)), None, builtin=True),
             "write_file": FunctionSig("write_file", [STR, STR], Type("result", args=(UNIT, IO_ERR)), None, builtin=True),
+            "arg_count": FunctionSig("arg_count", [], I32, None, builtin=True),
+            "arg_get": FunctionSig("arg_get", [I32], Type("option", args=(STR,)), None, builtin=True),
+            "create_dir_all": FunctionSig("create_dir_all", [STR], Type("result", args=(UNIT, IO_ERR)), None, builtin=True),
             "io_err_text": FunctionSig("io_err_text", [IO_ERR], STR, None, builtin=True),
             "str_len": FunctionSig("str_len", [STR], I32, None, builtin=True),
             "str_get": FunctionSig("str_get", [STR, I32], Type("option", args=(I32,)), None, builtin=True),
@@ -250,6 +253,8 @@ class TypeChecker:
             return UNIT
         if name == "io_err":
             return IO_ERR
+        if name == "process_result":
+            return PROCESS_RESULT
         if name == "list":
             if len(type_expr.args) != 1:
                 self.diagnostics.add("NQ-TYPE-031", "TYPE", "`list` expects one type argument", type_expr.span)
@@ -652,6 +657,19 @@ class TypeChecker:
             return UNIT
         if isinstance(expr, ast.FieldExpr):
             base_type = self._check_expr(expr.base, env, semantic_function, module, structs, enums, functions, copyable_named, source)
+            if base_type.kind == "process_result":
+                if expr.name == "exit_code":
+                    expr.inferred_type = I32
+                    return I32
+                if expr.name == "stdout":
+                    expr.inferred_type = STR
+                    return STR
+                if expr.name == "stderr":
+                    expr.inferred_type = STR
+                    return STR
+                self.diagnostics.add("NQ-TYPE-023", "TYPE", "`process_result` has no field `{}`".format(expr.name), expr.span, source=source)
+                expr.inferred_type = UNIT
+                return UNIT
             if base_type.kind != "named" or base_type.name not in structs:
                 self.diagnostics.add("NQ-TYPE-022", "TYPE", "field access requires a struct value", expr.span, source=source)
                 expr.inferred_type = UNIT
@@ -698,7 +716,7 @@ class TypeChecker:
         return UNIT
 
     def _is_copy(self, typ: Type, copyable_named: dict[str, bool]) -> bool:
-        if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err"}:
+        if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err", "process_result"}:
             return True
         if typ.kind == "list":
             return False
