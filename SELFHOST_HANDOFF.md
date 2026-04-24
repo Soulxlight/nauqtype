@@ -37,7 +37,7 @@ The implemented handoff currently captures:
 - stable source spans for downstream diagnostics and comparison work
 - fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff
 
-This completes the boundary-definition and backend-readiness hardening step. Stage1 borrow checking, stage1 IR lowering, and stage1 C emission now run downstream of this representation rather than on raw flat facts. The next implementation step is the first stage1-to-stage2 self-build comparison proof, not more backend work on flat fact lists.
+This completes the boundary-definition and backend-readiness hardening step. Stage1 borrow checking, stage1 IR lowering, and stage1 C emission now run downstream of this representation rather than on raw flat facts. The first copied-selfhost stage1-to-stage2 self-build comparison proof is now complete on top of this boundary, so later work should not backslide into direct backend work on flat fact lists.
 
 ## What The Flat Pipeline Owns
 
@@ -133,15 +133,9 @@ The handoff should be:
 - stable enough to support later differential or self-build comparisons
 - narrow enough to avoid turning into a second ad hoc front end
 
-## Required Next Sequence
-
-The genuine-parity sequence after this checkpoint is:
-
-1. define and execute the first stage1-to-stage2 self-build comparison proof
-
 ## First Self-Build Proof Contract
 
-The next milestone should reuse the current downstream boundary instead of inventing a separate proof path.
+The first self-build proof reused the current downstream boundary instead of inventing a separate proof path.
 
 Locked proof chain:
 
@@ -159,7 +153,14 @@ Comparison notes:
 - normalized structural C is the parity target, not raw byte-for-byte text identity
 - the proof harness should reuse the copied-workspace helper, emitted-C compile/run helper, and structural C normalization already present in the current tests
 - keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
-- the current structural C normalization still lives in the stage1 C-emission tests, so the proof milestone should lift it into a shared helper instead of cloning it
+- the shared structural C normalization now lives in the test support layer so proof and C-emission checks use the same normalization rules
 - Windows serial execution, longer copied-selfhost timeout, and temp-dir cleanup friction should be treated as explicit harness constraints when the proof milestone is implemented
+
+Current status:
+
+- done for the first copied-selfhost target
+- stage1-emitted and stage2-emitted `build/main.c` now match by normalized structural C on that target
+- stage1 and stage2 smoke behavior now match on that target
+- any broader proof hardening or wider proof targets remain future work
 
 Backend work should not be planned directly against the current flat parser/typecheck facts.

@@ -133,4 +133,4 @@
 - [x] Add stage1 borrow checking on the structured checked handoff
 - [x] Add stage1 IR lowering on the structured checked handoff
 - [x] Add stage1 C emission on the structured checked handoff
-- [ ] Define and execute the first stage1-to-stage2 self-build comparison proof
+- [x] Define and execute the first stage1-to-stage2 self-build comparison proof

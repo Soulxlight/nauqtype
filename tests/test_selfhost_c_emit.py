@@ -6,10 +6,16 @@ import sys
 import tempfile
 import textwrap
 import unittest
-import re
 from pathlib import Path
 
-from tests.test_support import ROOT, compile_and_run_c, copy_selfhost_workspace, ensure_bootstrap_deps
+from tests.test_support import (
+    ROOT,
+    compile_and_run_c,
+    copy_selfhost_workspace,
+    ensure_bootstrap_deps,
+    normalize_structural_c,
+    run_stage0_selfhost,
+)
 
 
 class SelfhostCEmitTests(unittest.TestCase):
@@ -198,39 +204,8 @@ class SelfhostCEmitTests(unittest.TestCase):
                 generated = generated_path.read_text(encoding="utf-8")
             return result.returncode, (result.stdout + result.stderr).strip(), generated
 
-    def _normalize_c(self, text: str) -> str:
-        normalized_lines: list[str] = []
-        binding_ids: dict[str, str] = {}
-        tmp_ids: dict[str, str] = {}
-
-        def replace_binding(match: re.Match[str]) -> str:
-            original = match.group(1)
-            if original not in binding_ids:
-                binding_ids[original] = str(len(binding_ids) + 1)
-            return f"nqv_{binding_ids[original]}_{match.group(2)}"
-
-        def replace_tmp(match: re.Match[str]) -> str:
-            original = match.group(1)
-            if original not in tmp_ids:
-                tmp_ids[original] = str(len(tmp_ids) + 1)
-            return f"nq_tmp_{tmp_ids[original]}"
-
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            line = re.sub(r"nqv_(\d+)_([A-Za-z0-9_]+)", replace_binding, line)
-            line = re.sub(r"nq_tmp_(\d+)", replace_tmp, line)
-            normalized_lines.append(line)
-        return "\n".join(normalized_lines)
-
     def _run_stage0(self, workspace: Path) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, "-m", "compiler.main", "run", str(workspace / "main.nq")],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-        )
+        return run_stage0_selfhost(workspace, timeout=180)
 
     def _emit_stage0_c(self, workspace: Path) -> str:
         output = workspace / "stage0.c"
@@ -416,7 +391,7 @@ class SelfhostCEmitTests(unittest.TestCase):
                     modules = {path.stem: content for path, content in ((tmp / filename, content) for filename, content in files.items())}
                     returncode, output, stage1_c = self._run_stage1_emit(modules)
                     self.assertEqual(returncode, 0, output)
-                    self.assertEqual(self._normalize_c(stage1_c), self._normalize_c(stage0_c))
+                    self.assertEqual(normalize_structural_c(stage1_c), normalize_structural_c(stage0_c))
 
     def test_stage1_emitted_c_compiles_and_runs_on_locked_corpus(self) -> None:
         ensure_bootstrap_deps()

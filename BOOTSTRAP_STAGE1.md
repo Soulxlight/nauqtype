@@ -42,11 +42,11 @@ Current semantic near-parity milestone:
 - stage0 remains the semantic reference in the differential harness
 - exact wording is not the parity target; accept/reject family is
 - the first backend-complete milestone now includes borrow checking, IR lowering, and deterministic C emission
-- self-build proof and stage2 comparison are still outside this milestone
+- the first copied-selfhost stage1-to-stage2 comparison proof is now complete
 
 ## First Self-Build Proof Contract
 
-The next genuine-parity milestone is the first stage1-to-stage2 self-build comparison proof.
+The first stage1-to-stage2 self-build comparison proof is now complete for the in-repo copied selfhost workspace.
 
 That proof target is locked to the in-repo copied selfhost workspace first:
 
@@ -131,6 +131,6 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- the first stage1-to-stage2 self-build comparison proof
+- broader proof hardening beyond the first copied-selfhost self-build checkpoint
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

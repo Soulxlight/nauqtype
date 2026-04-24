@@ -163,9 +163,10 @@ Status:
 
 Status:
 
-- next genuine-parity milestone
-- reuse the copied-workspace smoke, emitted-C compile/run helper, and structural C normalization already exercised by the current stage1 C-emission tests
-- keep the proof target to the in-repo selfhost workspace first; do not widen to arbitrary projects yet
+- done for the first copied-selfhost target
+- the proof reuses the copied-workspace smoke, emitted-C compile/run helper, and shared structural C normalization
+- stage1 and stage2 now match on normalized structural C plus smoke behavior for the in-repo copied selfhost workspace
+- broader proof hardening and any wider proof targets remain explicit future work, not implied by this first checkpoint
 
 ## Feature Ordering
 

@@ -102,15 +102,7 @@ Current semantic near-parity milestone:
 - stage1 now also enforces the current stage0-parity borrow rules on the structured checked handoff
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- stage1 still stops before self-build proof and stage2 comparison
-
-Next genuine-parity milestone:
-
-- run `selfhost/main.nq` in a copied workspace under stage0 to emit stage1 `build/main.c`
-- compile that emitted C into a stage2 executable and rerun it on the same copied workspace
-- capture the stage2-emitted `build/main.c`
-- compare stage1 vs stage2 output by normalized structural C, not raw byte-for-byte text
-- require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
+- the first copied-selfhost stage1-to-stage2 comparison proof is now complete
 
 Architecture checkpoint:
 
@@ -125,7 +117,7 @@ Current remaining gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- the first stage1-to-stage2 self-build comparison proof
+- broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
 
 Current AI-first compiler output:
 
