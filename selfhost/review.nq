@@ -1,0 +1,1297 @@
+use ast;
+use lexer;
+use source;
+use token;
+
+pub type review_function_fact {
+    module: str,
+    name: str,
+    at: i32,
+    is_public: bool,
+    has_audit: bool,
+    intent: str,
+}
+
+pub fn make_review_function_fact(module: str, name: str, at: i32, is_public: bool, has_audit: bool, intent: str) -> review_function_fact
+audit {
+    intent("Build a flat review-function fact record for stage1 review output");
+    mutates();
+    effects();
+}
+{
+    return review_function_fact {
+        module: module,
+        name: name,
+        at: at,
+        is_public: is_public,
+        has_audit: has_audit,
+        intent: intent,
+    };
+}
+
+pub enum review_decl_kind {
+    review_decl_mutates,
+    review_decl_effects,
+}
+
+pub type review_decl_entry {
+    module: str,
+    function_name: str,
+    name: str,
+    at: i32,
+    kind: review_decl_kind,
+}
+
+pub fn make_review_decl_entry(module: str, function_name: str, name: str, at: i32, kind: review_decl_kind) -> review_decl_entry
+audit {
+    intent("Build a flat review declaration entry for stage1 review output");
+    mutates();
+    effects();
+}
+{
+    return review_decl_entry {
+        module: module,
+        function_name: function_name,
+        name: name,
+        at: at,
+        kind: kind,
+    };
+}
+
+pub type review_summary {
+    function_count: i32,
+    declaration_count: i32,
+    warning_count: i32,
+    error_count: i32,
+}
+
+pub fn make_review_summary(function_count: i32, declaration_count: i32, warning_count: i32, error_count: i32) -> review_summary
+audit {
+    intent("Build a stage1 review summary record");
+    mutates();
+    effects();
+}
+{
+    return review_summary {
+        function_count: function_count,
+        declaration_count: declaration_count,
+        warning_count: warning_count,
+        error_count: error_count,
+    };
+}
+
+fn concat3(a: str, b: str, c: str) -> str {
+    return str_concat(a, str_concat(b, c));
+}
+
+fn concat4(a: str, b: str, c: str, d: str) -> str {
+    return str_concat(a, concat3(b, c, d));
+}
+
+fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
+    return str_concat(a, concat4(b, c, d, e));
+}
+
+fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
+    return str_concat(a, concat5(b, c, d, e, f));
+}
+
+fn token_at(tokens: ref list<token>, index: i32) -> token {
+    let found = list_get(ref tokens, index);
+    match found {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return eof_token(index);
+        },
+    }
+}
+
+fn advance(cursor: mutref i32) -> unit {
+    cursor = cursor + 1;
+    return;
+}
+
+fn list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn push_if_missing(items: mutref list<str>, value: str) -> unit {
+    if not list_contains(ref items, value) {
+        list_push(mutref items, value);
+    }
+    return;
+}
+
+fn function_internal_name(module: str, name: str) -> str {
+    return concat3(module, "::", name);
+}
+
+fn bool_text(value: bool) -> str {
+    if value {
+        return "true";
+    }
+    return "false";
+}
+
+fn json_escape(text: str) -> str {
+    let mut escaped = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let ch = str_get(text, index);
+        match ch {
+            Some(value) => {
+                if value == 92 {
+                    escaped = str_concat(escaped, "\\\\");
+                } else {
+                    if value == 34 {
+                        escaped = str_concat(escaped, "\\\"");
+                    } else {
+                        if value == 10 {
+                            escaped = str_concat(escaped, "\\n");
+                        } else {
+                                if value == 9 {
+                                    escaped = str_concat(escaped, "\\t");
+                                } else {
+                                    let slice = str_slice(text, index, index + 1);
+                                    match slice {
+                                        Some(chunk) => {
+                                            escaped = str_concat(escaped, chunk);
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                }
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return escaped;
+}
+
+fn json_quote(text: str) -> str {
+    return concat3("\"", json_escape(text), "\"");
+}
+
+fn render_lines(lines: ref list<str>) -> str {
+    let mut chunks: list<str> = list();
+    let mut current = "";
+    let mut current_count = 0;
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                current = str_concat(current, value);
+                current = str_concat(current, "\n");
+                current_count = current_count + 1;
+                if current_count >= 64 {
+                    list_push(mutref chunks, current);
+                    current = "";
+                    current_count = 0;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if current != "" {
+        list_push(mutref chunks, current);
+    }
+
+    let mut rendered = "";
+    let mut chunk_index = 0;
+    while chunk_index < list_len(ref chunks) {
+        let entry = list_get(ref chunks, chunk_index);
+        match entry {
+            Some(value) => {
+                rendered = str_concat(rendered, value);
+            },
+            None => {
+            },
+        }
+        chunk_index = chunk_index + 1;
+    }
+    return rendered;
+}
+
+fn emit_lines(lines: ref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                print_line(value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_named_string_array(lines: mutref list<str>, indent: str, name: str, values: ref list<str>, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    if list_len(ref values) == 0 {
+        list_push(mutref lines, concat5(indent, json_quote(name), ": []", suffix, ""));
+        return;
+    }
+
+    list_push(mutref lines, concat5(indent, json_quote(name), ": [", "", ""));
+    let mut index = 0;
+    while index < list_len(ref values) {
+        let entry = list_get(ref values, index);
+        match entry {
+            Some(value) => {
+                let mut value_suffix = "";
+                if index + 1 < list_len(ref values) {
+                    value_suffix = ",";
+                }
+                list_push(mutref lines, concat5(indent, "  ", json_quote(value), value_suffix, ""));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, concat3(indent, "]", suffix));
+    return;
+}
+
+fn is_function_fact(entry: review_function_fact, module: str, name: str) -> bool {
+    return entry.module == module and entry.name == name;
+}
+
+fn module_has_local_function(functions: ref list<review_function_fact>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if is_function_fact(value, module, name) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_function(functions: ref list<review_function_fact>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if is_function_fact(value, module, name) and value.is_public {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn is_builtin_function(name: str) -> bool {
+    if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "io_err_text" {
+        return true;
+    }
+    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" {
+        return true;
+    }
+    if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
+        return true;
+    }
+    return false;
+}
+
+fn visible_function_origin(functions: ref list<review_function_fact>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if is_builtin_function(name) {
+        return "__builtin__";
+    }
+    if module_has_local_function(ref functions, module, name) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function(ref functions, value.name, name) {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn skip_until_semi(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    let mut brace_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_semi => {
+                if paren_depth == 0 and brace_depth == 0 {
+                    advance(mutref cursor);
+                    return;
+                }
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn skip_type(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let current = token_at(ref tokens, cursor);
+    match current.kind {
+        tk_kw_ref => {
+            advance(mutref cursor);
+            skip_type(ref tokens, mutref cursor);
+        },
+        tk_kw_mutref => {
+            advance(mutref cursor);
+            skip_type(ref tokens, mutref cursor);
+        },
+        tk_ident => {
+            advance(mutref cursor);
+            let maybe_lt = token_at(ref tokens, cursor);
+            match maybe_lt.kind {
+                tk_lt => {
+                    advance(mutref cursor);
+                    skip_type(ref tokens, mutref cursor);
+                    let maybe_comma = token_at(ref tokens, cursor);
+                    match maybe_comma.kind {
+                        tk_comma => {
+                            advance(mutref cursor);
+                            skip_type(ref tokens, mutref cursor);
+                        },
+                        _ => {
+                        },
+                    }
+                    let maybe_gt = token_at(ref tokens, cursor);
+                    match maybe_gt.kind {
+                        tk_gt => {
+                            advance(mutref cursor);
+                        },
+                        _ => {
+                        },
+                    }
+                },
+                _ => {
+                },
+            }
+        },
+        _ => {
+            advance(mutref cursor);
+        },
+    }
+    return;
+}
+
+fn skip_param_list(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lparen => {
+            advance(mutref cursor);
+        },
+        _ => {
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rparen => {
+                advance(mutref cursor);
+                return;
+            },
+            tk_eof => {
+                return;
+            },
+            tk_ident => {
+                advance(mutref cursor);
+                let maybe_colon = token_at(ref tokens, cursor);
+                match maybe_colon.kind {
+                    tk_colon => {
+                        advance(mutref cursor);
+                        skip_type(ref tokens, mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn skip_brace_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            return;
+        },
+    }
+    let mut depth = 1;
+    while depth > 0 {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lbrace => {
+                depth = depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rbrace => {
+                depth = depth - 1;
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+    return;
+}
+
+fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                advance(mutref cursor);
+            },
+            tk_lbrace => {
+                if paren_depth == 0 {
+                    return;
+                }
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn skip_type_or_enum_decl(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    advance(mutref cursor);
+    let maybe_name = token_at(ref tokens, cursor);
+    match maybe_name.kind {
+        tk_ident => {
+            advance(mutref cursor);
+        },
+        _ => {
+        },
+    }
+    skip_until_block(ref tokens, mutref cursor);
+    skip_brace_block(ref tokens, mutref cursor);
+    return;
+}
+
+fn parse_ident_list(tokens: ref list<token>, cursor: mutref i32, module: str, function_name: str, kind: review_decl_kind, decls_out: mutref list<review_decl_entry>) -> unit {
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lparen => {
+            advance(mutref cursor);
+        },
+        _ => {
+            skip_until_semi(ref tokens, mutref cursor);
+            return;
+        },
+    }
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rparen => {
+                advance(mutref cursor);
+                let maybe_semi = token_at(ref tokens, cursor);
+                match maybe_semi.kind {
+                    tk_semi => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+                return;
+            },
+            tk_eof => {
+                return;
+            },
+            tk_ident => {
+                list_push(mutref decls_out, make_review_decl_entry(module, function_name, current.text, current.start, kind));
+                advance(mutref cursor);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        advance(mutref cursor);
+                    },
+                    _ => {
+                    },
+                }
+            },
+            tk_comma => {
+                advance(mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn parse_intent_clause(tokens: ref list<token>, cursor: mutref i32) -> str {
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lparen => {
+            advance(mutref cursor);
+        },
+        _ => {
+            skip_until_semi(ref tokens, mutref cursor);
+            return "";
+        },
+    }
+    let mut value = "";
+    let current = token_at(ref tokens, cursor);
+    match current.kind {
+        tk_string_lit => {
+            value = current.text;
+            advance(mutref cursor);
+        },
+        _ => {
+        },
+    }
+    let close = token_at(ref tokens, cursor);
+    match close.kind {
+        tk_rparen => {
+            advance(mutref cursor);
+        },
+        _ => {
+        },
+    }
+    let maybe_semi = token_at(ref tokens, cursor);
+    match maybe_semi.kind {
+        tk_semi => {
+            advance(mutref cursor);
+        },
+        _ => {
+        },
+    }
+    return value;
+}
+
+fn parse_audit_block(tokens: ref list<token>, cursor: mutref i32, module: str, function_name: str, decls_out: mutref list<review_decl_entry>) -> option<str> {
+    let audit_tok = token_at(ref tokens, cursor);
+    match audit_tok.kind {
+        tk_kw_audit => {
+            advance(mutref cursor);
+        },
+        _ => {
+            return None;
+        },
+    }
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            advance(mutref cursor);
+        },
+        _ => {
+            return Some("");
+        },
+    }
+    let mut intent = "";
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                advance(mutref cursor);
+                return Some(intent);
+            },
+            tk_eof => {
+                return Some(intent);
+            },
+            tk_ident => {
+                if current.text == "intent" {
+                    advance(mutref cursor);
+                    intent = parse_intent_clause(ref tokens, mutref cursor);
+                } else {
+                    if current.text == "mutates" {
+                        advance(mutref cursor);
+                        parse_ident_list(ref tokens, mutref cursor, module, function_name, review_decl_mutates, mutref decls_out);
+                    } else {
+                        if current.text == "effects" {
+                            advance(mutref cursor);
+                            parse_ident_list(ref tokens, mutref cursor, module, function_name, review_decl_effects, mutref decls_out);
+                        } else {
+                            skip_until_semi(ref tokens, mutref cursor);
+                        }
+                    }
+                }
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn collect_review_function(tokens: ref list<token>, cursor: mutref i32, module: str, is_public: bool, functions_out: mutref list<review_function_fact>, decls_out: mutref list<review_decl_entry>) -> unit {
+    advance(mutref cursor);
+    let name_tok = token_at(ref tokens, cursor);
+    let mut function_name = "";
+    let mut function_at = name_tok.start;
+    match name_tok.kind {
+        tk_ident => {
+            function_name = name_tok.text;
+            function_at = name_tok.start;
+            advance(mutref cursor);
+        },
+        _ => {
+            advance(mutref cursor);
+        },
+    }
+    skip_param_list(ref tokens, mutref cursor);
+    let maybe_arrow = token_at(ref tokens, cursor);
+    match maybe_arrow.kind {
+        tk_arrow => {
+            advance(mutref cursor);
+            skip_type(ref tokens, mutref cursor);
+        },
+        _ => {
+        },
+    }
+    let audit_result = parse_audit_block(ref tokens, mutref cursor, module, function_name, mutref decls_out);
+    let mut has_audit = false;
+    let mut intent = "";
+    match audit_result {
+        Some(value) => {
+            has_audit = true;
+            intent = value;
+        },
+        None => {
+        },
+    }
+    list_push(mutref functions_out, make_review_function_fact(module, function_name, function_at, is_public, has_audit, intent));
+    skip_until_block(ref tokens, mutref cursor);
+    skip_brace_block(ref tokens, mutref cursor);
+    return;
+}
+
+fn collect_review_facts(file: str, tokens: ref list<token>, functions_out: mutref list<review_function_fact>, decls_out: mutref list<review_decl_entry>) -> unit {
+    let mut cursor = 0;
+    let mut scanning_uses = true;
+    while scanning_uses {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_kw_use => {
+                skip_until_semi(ref tokens, mutref cursor);
+            },
+            _ => {
+                scanning_uses = false;
+            },
+        }
+    }
+
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_kw_pub => {
+                advance(mutref cursor);
+                let next = token_at(ref tokens, cursor);
+                match next.kind {
+                    tk_kw_fn => {
+                        collect_review_function(ref tokens, mutref cursor, file, true, mutref functions_out, mutref decls_out);
+                    },
+                    tk_kw_type => {
+                        skip_type_or_enum_decl(ref tokens, mutref cursor);
+                    },
+                    tk_kw_enum => {
+                        skip_type_or_enum_decl(ref tokens, mutref cursor);
+                    },
+                    _ => {
+                        advance(mutref cursor);
+                    },
+                }
+            },
+            tk_kw_fn => {
+                collect_review_function(ref tokens, mutref cursor, file, false, mutref functions_out, mutref decls_out);
+            },
+            tk_kw_type => {
+                skip_type_or_enum_decl(ref tokens, mutref cursor);
+            },
+            tk_kw_enum => {
+                skip_type_or_enum_decl(ref tokens, mutref cursor);
+            },
+            _ => {
+                advance(mutref cursor);
+            },
+        }
+    }
+}
+
+fn decl_entries_for_function(decls: ref list<review_decl_entry>, module: str, function_name: str, kind: review_decl_kind) -> list<str> {
+    let mut names: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref decls) {
+        let entry = list_get(ref decls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    match value.kind {
+                        review_decl_mutates => {
+                            match kind {
+                                review_decl_mutates => {
+                                    list_push(mutref names, value.name);
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        review_decl_effects => {
+                            match kind {
+                                review_decl_effects => {
+                                    list_push(mutref names, value.name);
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return names;
+}
+
+fn param_is_mutref(function_params: ref list<function_param_fact>, module: str, function_name: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.is_borrow and value.borrow_mutable {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn assignment_targets_name(assignments: ref list<assignment_fact>, module: str, function_name: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref assignments) {
+        let entry = list_get(ref assignments, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.target_name == name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn inferred_mutates(function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, module: str, function_name: str) -> list<str> {
+    let mut names: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.is_borrow and value.borrow_mutable and assignment_targets_name(ref assignments, module, function_name, value.name) {
+                    list_push(mutref names, value.name);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return names;
+}
+
+fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and (value.name == "print_line" or value.name == "eprint_line") {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn build_print_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {
+    let mut inferred: list<str> = list();
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                if function_has_direct_print(ref calls, value.module, value.name) {
+                    push_if_missing(mutref inferred, function_internal_name(value.module, value.name));
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut index = 0;
+        while index < list_len(ref functions) {
+            let entry = list_get(ref functions, index);
+            match entry {
+                Some(value) => {
+                    let internal_name = function_internal_name(value.module, value.name);
+                    if not list_contains(ref inferred, internal_name) {
+                        let mut call_index = 0;
+                        let mut found_print = false;
+                        while call_index < list_len(ref calls) {
+                            let current = list_get(ref calls, call_index);
+                            match current {
+                                Some(call_entry) => {
+                                    if call_entry.module == value.module and call_entry.function_name == value.name {
+                                        if call_entry.name == "print_line" or call_entry.name == "eprint_line" {
+                                            found_print = true;
+                                        } else {
+                                            let origin = visible_function_origin(ref functions, ref uses, value.module, call_entry.name);
+                                            if origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
+                                                found_print = true;
+                                            }
+                                        }
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            call_index = call_index + 1;
+                        }
+                        if found_print {
+                            list_push(mutref inferred, internal_name);
+                            changed = true;
+                        }
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+    }
+    return inferred;
+}
+
+fn emit_review_message(kind: str, code: str, message: str) -> unit {
+    eprint_line(concat5(kind, "[", code, "] ", message));
+    return;
+}
+
+fn emit_public_missing_audit_warning(function_name: str) -> unit {
+    emit_review_message("warning", "NQ-CONTRACT-001", concat5("public function `", function_name, "` is missing an `audit` block", "", ""));
+    return;
+}
+
+fn emit_empty_intent_error() -> unit {
+    emit_review_message("error", "NQ-CONTRACT-003", "`intent(...)` text must be non-empty");
+    return;
+}
+
+fn emit_invalid_mutates_error(name: str) -> unit {
+    emit_review_message("error", "NQ-CONTRACT-004", concat5("`mutates(...)` entry `", name, "` must name a `mutref` parameter", "", ""));
+    return;
+}
+
+fn emit_omitted_mutates_error(name: str) -> unit {
+    emit_review_message("error", "NQ-CONTRACT-005", concat5("`audit` omits mutated `mutref` parameter `", name, "`", "", ""));
+    return;
+}
+
+fn emit_overdeclared_mutates_warning(name: str) -> unit {
+    emit_review_message("warning", "NQ-CONTRACT-006", concat5("`audit` declares mutation of `", name, "` but no write-through was inferred", "", ""));
+    return;
+}
+
+fn emit_unknown_effect_error(name: str) -> unit {
+    emit_review_message("error", "NQ-CONTRACT-007", concat5("unknown audit effect `", name, "`", "", ""));
+    return;
+}
+
+fn emit_missing_print_error() -> unit {
+    emit_review_message("error", "NQ-CONTRACT-008", "`audit` omits `print` from `effects(...)`");
+    return;
+}
+
+fn emit_overdeclared_print_warning() -> unit {
+    emit_review_message("warning", "NQ-CONTRACT-009", "`audit` declares `print` in `effects(...)` but no print effect was inferred");
+    return;
+}
+
+fn emit_duplicate_entry_error(kind: str, name: str) -> unit {
+    emit_review_message("error", "NQ-CONTRACT-010", concat6("duplicate `", kind, "(...)` entry `", name, "`", ""));
+    return;
+}
+
+fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> review_summary {
+    let mut warning_count = 0;
+    let mut error_count = 0;
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                let inferred_print = list_contains(ref print_effects, function_internal_name(value.module, value.name));
+                if value.is_public and not value.has_audit {
+                    emit_public_missing_audit_warning(value.name);
+                    warning_count = warning_count + 1;
+                } else {
+                    if value.has_audit {
+                        if value.intent == "" {
+                            emit_empty_intent_error();
+                            error_count = error_count + 1;
+                        }
+
+                        let mut seen_mutates: list<str> = list();
+                        let mut valid_mutates: list<str> = list();
+                        let mut mutate_index = 0;
+                        while mutate_index < list_len(ref decls) {
+                            let decl_entry = list_get(ref decls, mutate_index);
+                            match decl_entry {
+                                Some(decl_value) => {
+                                    if decl_value.module == value.module and decl_value.function_name == value.name {
+                                        match decl_value.kind {
+                                            review_decl_mutates => {
+                                                if list_contains(ref seen_mutates, decl_value.name) {
+                                                    emit_duplicate_entry_error("mutates", decl_value.name);
+                                                    error_count = error_count + 1;
+                                                } else {
+                                                    list_push(mutref seen_mutates, decl_value.name);
+                                                    if param_is_mutref(ref function_params, value.module, value.name, decl_value.name) {
+                                                        list_push(mutref valid_mutates, decl_value.name);
+                                                    } else {
+                                                        emit_invalid_mutates_error(decl_value.name);
+                                                        error_count = error_count + 1;
+                                                    }
+                                                }
+                                            },
+                                            _ => {
+                                            },
+                                        }
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            mutate_index = mutate_index + 1;
+                        }
+
+                        let mut seen_effects: list<str> = list();
+                        let mut valid_effects: list<str> = list();
+                        let mut effect_index = 0;
+                        while effect_index < list_len(ref decls) {
+                            let decl_entry = list_get(ref decls, effect_index);
+                            match decl_entry {
+                                Some(decl_value) => {
+                                    if decl_value.module == value.module and decl_value.function_name == value.name {
+                                        match decl_value.kind {
+                                            review_decl_effects => {
+                                                if list_contains(ref seen_effects, decl_value.name) {
+                                                    emit_duplicate_entry_error("effects", decl_value.name);
+                                                    error_count = error_count + 1;
+                                                } else {
+                                                    list_push(mutref seen_effects, decl_value.name);
+                                                    if decl_value.name == "print" {
+                                                        list_push(mutref valid_effects, decl_value.name);
+                                                    } else {
+                                                        emit_unknown_effect_error(decl_value.name);
+                                                        error_count = error_count + 1;
+                                                    }
+                                                }
+                                            },
+                                            _ => {
+                                            },
+                                        }
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            effect_index = effect_index + 1;
+                        }
+
+                        let mut inferred_index = 0;
+                        while inferred_index < list_len(ref inferred_mutate_names) {
+                            let inferred_entry = list_get(ref inferred_mutate_names, inferred_index);
+                            match inferred_entry {
+                                Some(inferred_name) => {
+                                    if not list_contains(ref valid_mutates, inferred_name) {
+                                        emit_omitted_mutates_error(inferred_name);
+                                        error_count = error_count + 1;
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            inferred_index = inferred_index + 1;
+                        }
+
+                        let mut declared_index = 0;
+                        while declared_index < list_len(ref valid_mutates) {
+                            let declared_entry = list_get(ref valid_mutates, declared_index);
+                            match declared_entry {
+                                Some(declared_name) => {
+                                    if not list_contains(ref inferred_mutate_names, declared_name) {
+                                        emit_overdeclared_mutates_warning(declared_name);
+                                        warning_count = warning_count + 1;
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            declared_index = declared_index + 1;
+                        }
+
+                        if inferred_print and not list_contains(ref valid_effects, "print") {
+                            emit_missing_print_error();
+                            error_count = error_count + 1;
+                        }
+                        if list_contains(ref valid_effects, "print") and not inferred_print {
+                            emit_overdeclared_print_warning();
+                            warning_count = warning_count + 1;
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return make_review_summary(list_len(ref functions), list_len(ref decls), warning_count, error_count);
+}
+
+fn module_function_count(functions: ref list<review_function_fact>, module: str) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let total_functions = module_function_count(ref functions, entry_module);
+    let mut emitted_functions = 0;
+
+    list_push(mutref lines, "{");
+    list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
+    list_push(mutref lines, "  \"functions\": [");
+
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == entry_module {
+                    let declared_mutates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_mutates);
+                    let declared_effects = decl_entries_for_function(ref decls, value.module, value.name, review_decl_effects);
+                    let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                    let mut inferred_effect_names: list<str> = list();
+                    if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
+                        list_push(mutref inferred_effect_names, "print");
+                    }
+
+                    list_push(mutref lines, "    {");
+                    list_push(mutref lines, concat3("      \"name\": ", json_quote(value.name), ","));
+                    list_push(mutref lines, concat3("      \"public\": ", bool_text(value.is_public), ","));
+                    if value.has_audit {
+                        list_push(mutref lines, "      \"audit\": {");
+                        list_push(mutref lines, concat3("        \"intent\": ", json_quote(value.intent), ","));
+                        append_named_string_array(mutref lines, "        ", "mutates", ref declared_mutates, true);
+                        append_named_string_array(mutref lines, "        ", "effects", ref declared_effects, false);
+                        list_push(mutref lines, "      },");
+                    } else {
+                        list_push(mutref lines, "      \"audit\": null,");
+                    }
+                    list_push(mutref lines, "      \"inferred\": {");
+                    append_named_string_array(mutref lines, "        ", "mutates", ref inferred_mutate_names, true);
+                    append_named_string_array(mutref lines, "        ", "effects", ref inferred_effect_names, false);
+                    list_push(mutref lines, "      }");
+
+                    emitted_functions = emitted_functions + 1;
+                    if emitted_functions < total_functions {
+                        list_push(mutref lines, "    },");
+                    } else {
+                        list_push(mutref lines, "    }");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+
+    list_push(mutref lines, "  ]");
+    list_push(mutref lines, "}");
+    return;
+}
+
+pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
+audit {
+    intent("Emit deterministic stage1 review JSON from selfhost facts and audit blocks");
+    mutates();
+    effects(print);
+}
+{
+    let mut functions: list<review_function_fact> = list();
+    let mut decls: list<review_decl_entry> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref sources) {
+        let entry = list_get(ref sources, source_index);
+        match entry {
+            Some(file) => {
+                let tokens = lex(file.text);
+                collect_review_facts(file.name, ref tokens, mutref functions, mutref decls);
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+
+    let summary = validate_contracts(ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    if summary.error_count > 0 {
+        return summary;
+    }
+
+    let mut lines: list<str> = list();
+    append_review_json(mutref lines, entry_module, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    emit_lines(ref lines);
+    return summary;
+}

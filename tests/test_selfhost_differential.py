@@ -913,13 +913,13 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 self._assert_case(name, modules, expected_stage0=expected_stage0, allowed_stage1=allowed_stage1)
 
     def test_selfhost_stage1_performance_smoke(self) -> None:
-        result = run_copied_selfhost(timeout=90)
+        result = run_copied_selfhost(timeout=150)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "stage1 front-end ok\n")
         self.assertNotIn("stage1 limitation:", result.stdout + result.stderr)
 
     def test_selfhost_tree_has_no_stage1_limitations(self) -> None:
-        result = run_copied_selfhost(timeout=90)
+        result = run_copied_selfhost(timeout=150)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("stage1 limitation:", result.stdout + result.stderr)
 

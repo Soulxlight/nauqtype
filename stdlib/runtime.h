@@ -96,6 +96,7 @@ static inline bool nq_str_eq(NQStr left, NQStr right) {
 void* nq_realloc(void* ptr, size_t size);
 void nq_init_process_args(int argc, char** argv);
 NQUnit nq_print_line(NQStr text);
+NQUnit nq_eprint_line(NQStr text);
 NQIoErr nq_make_io_err(int32_t code, const char* text);
 NQStr nq_io_err_text(NQIoErr err);
 int32_t nq_str_len(NQStr text);

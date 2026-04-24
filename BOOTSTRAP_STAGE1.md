@@ -35,7 +35,7 @@ Current trustworthy selfhost slice:
 - stage1 borrow checking now runs on the structured checked handoff
 - stage1 IR lowering now runs on the structured checked handoff
 - stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` driver workflow
+- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` driver workflow
 
 Current semantic near-parity milestone:
 
@@ -124,7 +124,7 @@ Minimum collection goal:
 
 ## Relationship To AI Contracts
 
-- `review` output should consume imported function audits once imports land.
+- `review` output now follows the current imported-call surface used by the active driver slice, while richer machine-readable review surfaces remain future work.
 - AI Contracts should remain small while Stage1 focuses on expressiveness needed for a self-hosted compiler.
 - Do not let the AI-first differentiator stall bootstrap-critical work.
 
@@ -133,7 +133,7 @@ Minimum collection goal:
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
-- finish the executable-driver cutover for `review`, then `build` / `run`
+- finish the executable-driver cutover for `build` / `run`
 - replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

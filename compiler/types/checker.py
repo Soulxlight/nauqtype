@@ -64,6 +64,7 @@ class TypeChecker:
 
         functions: dict[str, FunctionSig] = {
             "print_line": FunctionSig("print_line", [STR], UNIT, None, builtin=True),
+            "eprint_line": FunctionSig("eprint_line", [STR], UNIT, None, builtin=True),
             "read_file": FunctionSig("read_file", [STR], Type("result", args=(STR, IO_ERR)), None, builtin=True),
             "write_file": FunctionSig("write_file", [STR, STR], Type("result", args=(UNIT, IO_ERR)), None, builtin=True),
             "arg_count": FunctionSig("arg_count", [], I32, None, builtin=True),
@@ -582,7 +583,7 @@ class TypeChecker:
                     expr.call_kind = "function"
                     expr.target_name = target_name
                     expr.param_types = list(signature.param_types)
-                    if target_name == "print_line":
+                    if target_name == "print_line" or target_name == "eprint_line":
                         semantic_function.direct_print = True
                     elif not signature.builtin:
                         semantic_function.direct_calls.add(target_name)

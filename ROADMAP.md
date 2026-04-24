@@ -180,9 +180,9 @@ Status:
 Status:
 
 - in progress
-- the stage1 executable now owns `check` and `emit-c`
+- the stage1 executable now owns `check`, `emit-c`, and `review`
 - the legacy no-arg selfhost path is preserved for the copied-selfhost proof flow
-- `review`, then `build` / `run`, remain the next cutover slice
+- `build` / `run` remain the next cutover slice
 
 ### M16: Nauqtype-Owned Proof And Corpus Runner
 

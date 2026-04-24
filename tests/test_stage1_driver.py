@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -124,6 +125,91 @@ class Stage1DriverTests(unittest.TestCase):
             stage0_c = stage0_out.read_text(encoding="utf-8")
             stage1_c = emitted.read_text(encoding="utf-8")
             self.assertEqual(normalize_structural_c(stage1_c), normalize_structural_c(stage0_c))
+
+    def test_stage1_driver_review_matches_stage0_golden(self) -> None:
+        example = self.root / "examples" / "review_contracts.nq"
+        golden = self.root / "tests" / "golden" / "review" / "review_contracts.json"
+        result = subprocess.run(
+            [str(self.driver_exe), "review", str(example)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(result.stdout.rstrip("\n"), golden.read_text(encoding="utf-8").rstrip("\n"))
+
+    def test_stage1_driver_review_warns_for_missing_audit_and_keeps_json_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "warning_review.nq": """
+                    pub fn greet() -> unit {
+                        return;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "warning_review.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('"module": "warning_review"', result.stdout)
+            self.assertIn('"audit": null', result.stdout)
+            self.assertIn("warning[NQ-CONTRACT-001]", result.stderr)
+
+    def test_stage1_driver_review_infers_transitive_print_across_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    use helper;
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Run helper");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        helper();
+                        return 0;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub fn helper() -> unit
+                    audit {
+                        intent("Print a line");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        print_line("hi");
+                        return;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["print"])
 
 
 if __name__ == "__main__":

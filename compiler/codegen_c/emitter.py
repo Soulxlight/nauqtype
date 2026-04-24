@@ -417,6 +417,8 @@ class CEmitter:
             args = ", ".join(self._emit_expr(arg) for arg in expr.args)
             if expr.function_name == "print_line":
                 return f"nq_print_line({args})"
+            if expr.function_name == "eprint_line":
+                return f"nq_eprint_line({args})"
             if expr.function_name == "read_file":
                 return f"nq_read_file({args})"
             if expr.function_name == "write_file":

@@ -51,7 +51,7 @@ audit {
 
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `review` still runs on the frozen stage0 reference path while the stage1 executable-driver cutover finishes.
+During the current Nauqtype-only toolchain transition, `review` is now owned by the active stage1 executable driver. The frozen stage0 path remains in-repo only as bootstrap/reference code while the remaining `build` / `run` cutover finishes.
 
 ## Explicit Non-Goals For Alpha
 

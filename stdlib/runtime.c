@@ -44,6 +44,13 @@ NQUnit nq_print_line(NQStr text) {
     return NQ_UNIT;
 }
 
+NQUnit nq_eprint_line(NQStr text) {
+    fwrite(text.data, 1, (size_t)text.len, stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+    return NQ_UNIT;
+}
+
 NQIoErr nq_make_io_err(int32_t code, const char* text) {
     return (NQIoErr){
         .code = code,

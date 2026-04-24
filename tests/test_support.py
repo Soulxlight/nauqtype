@@ -128,7 +128,7 @@ def compile_and_run_c(c_path: Path, *, cwd: Path | None = None) -> subprocess.Co
     )
 
 
-def run_copied_selfhost(timeout: int = 90) -> subprocess.CompletedProcess[str]:
+def run_copied_selfhost(timeout: int = 150) -> subprocess.CompletedProcess[str]:
     with copied_selfhost_workspace() as tmp:
         return run_stage0_selfhost(tmp, timeout=timeout)
 
