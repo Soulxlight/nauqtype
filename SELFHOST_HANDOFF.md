@@ -137,6 +137,29 @@ The handoff should be:
 
 The genuine-parity sequence after this checkpoint is:
 
-1. define the first stage1-to-stage2 self-build comparison proof
+1. define and execute the first stage1-to-stage2 self-build comparison proof
+
+## First Self-Build Proof Contract
+
+The next milestone should reuse the current downstream boundary instead of inventing a separate proof path.
+
+Locked proof chain:
+
+1. run `selfhost/main.nq` under stage0 in a copied workspace
+2. capture the stage1-emitted `build/main.c`
+3. compile that emitted C into a stage2 executable
+4. run the stage2 executable on the same copied workspace
+5. capture the stage2-emitted `build/main.c`
+6. compare stage1 vs stage2 output by normalized structural C
+7. also require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
+
+Comparison notes:
+
+- the proof target is the in-repo copied selfhost workspace first
+- normalized structural C is the parity target, not raw byte-for-byte text identity
+- the proof harness should reuse the copied-workspace helper, emitted-C compile/run helper, and structural C normalization already present in the current tests
+- keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
+- the current structural C normalization still lives in the stage1 C-emission tests, so the proof milestone should lift it into a shared helper instead of cloning it
+- Windows serial execution, longer copied-selfhost timeout, and temp-dir cleanup friction should be treated as explicit harness constraints when the proof milestone is implemented
 
 Backend work should not be planned directly against the current flat parser/typecheck facts.

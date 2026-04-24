@@ -118,7 +118,8 @@ Status:
 Status:
 
 - done for the current semantic front-end milestone
-- remaining gaps are stage1 borrow checking, IR/codegen, and self-build proof work
+- backend work has moved downstream of the structured checked handoff
+- semantic near parity is now the trusted front-end checkpoint for the first self-build proof
 
 ### M11: Diagnostics JSON v1
 
@@ -137,17 +138,34 @@ Status:
 - done as an architecture checkpoint
 - the next parity work starts with the structured checked handoff, not direct backend work on flat facts
 
-### M13: Genuine Parity Sequence
+### M13: Genuine Parity Backend Path
 
+- build the structured checked handoff from trusted semantic outputs
+- harden the checked handoff for backend consumers
+- add stage1 borrow checking
 - add stage1 IR lowering
 - add stage1 C emission
-- define the first stage1-to-stage2 self-build comparison proof
 
 Status:
 
-- stage1 borrow checking and stage1 IR lowering are now done on the structured checked handoff
-- stage1 C emission is now done on the structured IR path
-- the next backend milestone is the first stage1-to-stage2 self-build comparison proof
+- done on the current trusted subset
+- borrow checking now runs on the structured checked handoff
+- IR lowering now runs on the structured checked handoff
+- C emission now runs on the structured IR path
+
+### M14: First Self-Build Proof
+
+- run stage0 on a copied selfhost workspace to emit stage1 `build/main.c`
+- compile the emitted stage1 C into a stage2 executable
+- run the stage2 executable on the same copied workspace to emit stage2 `build/main.c`
+- compare stage1-emitted vs stage2-emitted output by normalized structural C
+- also require matching proof smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
+
+Status:
+
+- next genuine-parity milestone
+- reuse the copied-workspace smoke, emitted-C compile/run helper, and structural C normalization already exercised by the current stage1 C-emission tests
+- keep the proof target to the in-repo selfhost workspace first; do not widen to arbitrary projects yet
 
 ## Feature Ordering
 

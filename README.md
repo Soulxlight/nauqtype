@@ -104,6 +104,14 @@ Current semantic near-parity milestone:
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 - stage1 still stops before self-build proof and stage2 comparison
 
+Next genuine-parity milestone:
+
+- run `selfhost/main.nq` in a copied workspace under stage0 to emit stage1 `build/main.c`
+- compile that emitted C into a stage2 executable and rerun it on the same copied workspace
+- capture the stage2-emitted `build/main.c`
+- compare stage1 vs stage2 output by normalized structural C, not raw byte-for-byte text
+- require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
+
 Architecture checkpoint:
 
 - the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
@@ -113,11 +121,11 @@ Architecture checkpoint:
 - genuine parity work now continues from that checked handoff boundary rather than the flat fact lists
 - see `SELFHOST_HANDOFF.md` for the required downstream contract
 
-Current selfhost semantic gaps:
+Current remaining gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- stage1 self-build / stage2 comparison
+- the first stage1-to-stage2 self-build comparison proof
 
 Current AI-first compiler output:
 

@@ -44,6 +44,30 @@ Current semantic near-parity milestone:
 - the first backend-complete milestone now includes borrow checking, IR lowering, and deterministic C emission
 - self-build proof and stage2 comparison are still outside this milestone
 
+## First Self-Build Proof Contract
+
+The next genuine-parity milestone is the first stage1-to-stage2 self-build comparison proof.
+
+That proof target is locked to the in-repo copied selfhost workspace first:
+
+1. run `selfhost/main.nq` under stage0 in a copied workspace
+2. capture the stage1-emitted `build/main.c`
+3. compile that emitted C to a stage2 executable
+4. run the stage2 executable on the same copied workspace
+5. capture the stage2-emitted `build/main.c`
+6. compare stage1 vs stage2 output by normalized structural C, not raw byte-for-byte text
+7. also require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
+
+The proof harness should reuse the existing copied-workspace helper, emitted-C compile/run helper, and structural C normalization already used by the stage1 C-emission tests.
+
+Current harness constraints to treat as proof-path facts, not surprise bugs:
+
+- run the copied-selfhost proof serially on Windows
+- keep the relaxed copied-selfhost timeout because stage1 now performs full C emission before success
+- keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
+- tolerate Windows temp-dir cleanup friction from emitted executables and debug artifacts
+- lift the current structural C normalization out of the stage1 C-emission test module into a shared proof helper instead of duplicating it during the proof milestone
+
 ## Architecture Checkpoint
 
 The current selfhost parser/resolve/typecheck design is accepted for the trusted semantic front-end milestone.
@@ -107,6 +131,6 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- stage1 self-build proof and stage2 comparison
+- the first stage1-to-stage2 self-build comparison proof
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax
