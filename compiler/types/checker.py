@@ -65,6 +65,7 @@ class TypeChecker:
         functions: dict[str, FunctionSig] = {
             "print_line": FunctionSig("print_line", [STR], UNIT, None, builtin=True),
             "read_file": FunctionSig("read_file", [STR], Type("result", args=(STR, IO_ERR)), None, builtin=True),
+            "write_file": FunctionSig("write_file", [STR, STR], Type("result", args=(UNIT, IO_ERR)), None, builtin=True),
             "io_err_text": FunctionSig("io_err_text", [IO_ERR], STR, None, builtin=True),
             "str_len": FunctionSig("str_len", [STR], I32, None, builtin=True),
             "str_get": FunctionSig("str_get", [STR, I32], Type("option", args=(I32,)), None, builtin=True),

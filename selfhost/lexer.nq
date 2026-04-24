@@ -1,5 +1,10 @@
 use token;
 
+type scanned_string {
+    text: str,
+    end: i32,
+}
+
 fn is_space(ch: i32) -> bool {
     return ch == 32 or ch == 9 or ch == 10 or ch == 13;
 }
@@ -128,6 +133,62 @@ fn scan_string_end(text: str, start: i32, length: i32) -> i32 {
         }
     }
     return length;
+}
+
+fn scan_string_value(text: str, start: i32, length: i32) -> scanned_string {
+    let mut index = start + 1;
+    let mut value = "";
+    while index < length {
+        let entry = str_get(text, index);
+        match entry {
+            Some(ch) => {
+                if ch == 34 {
+                    return scanned_string {
+                        text: value,
+                        end: index + 1,
+                    };
+                }
+                if ch == 92 {
+                    let next_entry = str_get(text, index + 1);
+                    match next_entry {
+                        Some(escape) => {
+                            if escape == 110 {
+                                value = str_concat(value, "\n");
+                            } else {
+                                if escape == 116 {
+                                    value = str_concat(value, "\t");
+                                } else {
+                                    let piece = slice_text(text, index + 1, index + 2);
+                                    value = str_concat(value, piece);
+                                }
+                            }
+                            index = index + 2;
+                        },
+                        None => {
+                            return scanned_string {
+                                text: value,
+                                end: length,
+                            };
+                        },
+                    }
+                } else {
+                    let piece = slice_text(text, index, index + 1);
+                    value = str_concat(value, piece);
+                    index = index + 1;
+                }
+            },
+            None => {
+                return scanned_string {
+                    text: value,
+                    end: length,
+                };
+            },
+        }
+    }
+    return scanned_string {
+        text: value,
+        end: length,
+    };
 }
 
 fn scan_digit_end(text: str, start: i32, length: i32) -> i32 {
@@ -363,10 +424,9 @@ audit {
                                 index = after_operator;
                             } else {
                                 if ch == 34 {
-                                    let end = scan_string_end(text, index, length);
-                                    let value = slice_text(text, index, end);
-                                    push_token(mutref tokens, tk_string_lit, value, index, end);
-                                    index = end;
+                                    let string_value = scan_string_value(text, index, length);
+                                    push_token(mutref tokens, tk_string_lit, string_value.text, index, string_value.end);
+                                    index = string_value.end;
                                 } else {
                                     if is_digit(ch) {
                                         let end = scan_digit_end(text, index, length);

@@ -62,6 +62,19 @@ typedef struct NQ_Result__str__io_err {
     } data;
 } NQ_Result__str__io_err;
 
+typedef enum NQ_Result__unit__io_err_Tag {
+    NQ_Result__unit__io_err_Tag_Ok,
+    NQ_Result__unit__io_err_Tag_Err,
+} NQ_Result__unit__io_err_Tag;
+
+typedef struct NQ_Result__unit__io_err {
+    NQ_Result__unit__io_err_Tag tag;
+    union {
+        struct { NQUnit _0; } Ok;
+        struct { NQIoErr _0; } Err;
+    } data;
+} NQ_Result__unit__io_err;
+
 static inline NQStr nq_str(const char* data) {
     return (NQStr){data, (intptr_t)strlen(data)};
 }
@@ -80,6 +93,7 @@ NQStr nq_io_err_text(NQIoErr err);
 int32_t nq_str_len(NQStr text);
 NQStr nq_str_concat(NQStr left, NQStr right);
 NQ_Result__str__io_err nq_read_file(NQStr path);
+NQ_Result__unit__io_err nq_write_file(NQStr path, NQStr text);
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index);
 NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end);
 

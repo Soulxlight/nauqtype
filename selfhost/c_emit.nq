@@ -1,0 +1,2647 @@
+use diag;
+use handoff;
+use ir;
+
+pub type c_emit_summary {
+    line_count: i32,
+    function_count: i32,
+    diag_count: i32,
+}
+
+type result_generic_entry {
+    ok_type_id: i32,
+    err_type_id: i32,
+}
+
+pub fn make_c_emit_summary(line_count: i32, function_count: i32, diag_count: i32) -> c_emit_summary
+audit {
+    intent("Build a stage1 C-emission summary record");
+    mutates();
+    effects();
+}
+{
+    return c_emit_summary {
+        line_count: line_count,
+        function_count: function_count,
+        diag_count: diag_count,
+    };
+}
+
+fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
+    list_push(mutref diags, make_diag(file, at, message));
+    return;
+}
+
+fn push_c_error(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
+    push_diag(mutref diags, file, at, str_concat("stage1 c error: ", detail));
+    return;
+}
+
+fn concat3(a: str, b: str, c: str) -> str {
+    return str_concat(str_concat(a, b), c);
+}
+
+fn concat4(a: str, b: str, c: str, d: str) -> str {
+    return str_concat(str_concat(a, b), str_concat(c, d));
+}
+
+fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
+    return str_concat(str_concat(str_concat(a, b), str_concat(c, d)), e);
+}
+
+fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
+    return str_concat(str_concat(str_concat(a, b), str_concat(c, d)), str_concat(e, f));
+}
+
+fn concat7(a: str, b: str, c: str, d: str, e: str, f: str, g: str) -> str {
+    return str_concat(concat6(a, b, c, d, e, f), g);
+}
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+fn i32_to_str(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
+}
+
+fn str_less(left: str, right: str) -> bool {
+    let mut index = 0;
+    let left_len = str_len(left);
+    let right_len = str_len(right);
+    while index < left_len and index < right_len {
+        let left_entry = str_get(left, index);
+        let right_entry = str_get(right, index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if left_value < right_value {
+                            return true;
+                        }
+                        if left_value > right_value {
+                            return false;
+                        }
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return left_len < right_len;
+}
+
+fn indent(level: i32) -> str {
+    let mut text = "";
+    let mut index = 0;
+    while index < level {
+        text = str_concat(text, "    ");
+        index = index + 1;
+    }
+    return text;
+}
+
+fn append_line(lines: mutref list<str>, text: str) -> unit {
+    list_push(mutref lines, text);
+    return;
+}
+
+fn list_contains_i32(items: ref list<i32>, target: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn list_contains_result_entry(items: ref list<result_generic_entry>, ok_type_id: i32, err_type_id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.ok_type_id == ok_type_id and value.err_type_id == err_type_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn lookup_type_shape(type_shapes: ref list<ir_type_shape>, type_id: i32) -> option<ir_type_shape> {
+    let mut index = 0;
+    while index < list_len(ref type_shapes) {
+        let entry = list_get(ref type_shapes, index);
+        match entry {
+            Some(value) => {
+                if value.id == type_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_function(functions: ref list<ir_function>, function_id: i32) -> option<ir_function> {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.id == function_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_local(locals: ref list<ir_local>, binding_id: i32) -> option<ir_local> {
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.binding_id == binding_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_block(blocks: ref list<ir_block>, block_id: i32) -> option<ir_block> {
+    let mut index = 0;
+    while index < list_len(ref blocks) {
+        let entry = list_get(ref blocks, index);
+        match entry {
+            Some(value) => {
+                if value.id == block_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_statement(statements: ref list<ir_stmt>, stmt_id: i32) -> option<ir_stmt> {
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.id == stmt_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_expression(expressions: ref list<ir_expr>, expr_id: i32) -> option<ir_expr> {
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.id == expr_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_pattern(patterns: ref list<ir_pattern>, pattern_id: i32) -> option<ir_pattern> {
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.id == pattern_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_program_entry(programs: ref list<ir_program>) -> str {
+    let entry = list_get(ref programs, 0);
+    match entry {
+        Some(value) => {
+            return value.entry_function;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn lookup_field_decl(field_decls: ref list<ir_field_decl>, module_name: str, struct_name: str, field_name: str) -> option<ir_field_decl> {
+    let mut index = 0;
+    while index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.struct_name == struct_name and value.name == field_name {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_variant_decl(variant_decls: ref list<ir_variant_decl>, module_name: str, enum_name: str, variant_name: str) -> option<ir_variant_decl> {
+    let mut index = 0;
+    while index < list_len(ref variant_decls) {
+        let entry = list_get(ref variant_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.enum_name == enum_name and value.name == variant_name {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_expr_child_ids(expr_children: ref list<ir_expr_child>, parent_expr_id: i32) -> list<i32> {
+    let mut ids: list<i32> = list();
+    let mut count = 0;
+    let mut scan_index = 0;
+    while scan_index < list_len(ref expr_children) {
+        let scan_entry = list_get(ref expr_children, scan_index);
+        match scan_entry {
+            Some(value) => {
+                if value.parent_expr_id == parent_expr_id {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        scan_index = scan_index + 1;
+    }
+    let mut target_index = 0;
+    while target_index < count {
+        let mut index = 0;
+        while index < list_len(ref expr_children) {
+            let entry = list_get(ref expr_children, index);
+            match entry {
+                Some(value) => {
+                    if value.parent_expr_id == parent_expr_id and value.index == target_index {
+                        list_push(mutref ids, value.child_expr_id);
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+        target_index = target_index + 1;
+    }
+    return ids;
+}
+
+fn lookup_pattern_child_ids(pattern_children: ref list<ir_pattern_child>, parent_pattern_id: i32) -> list<i32> {
+    let mut ids: list<i32> = list();
+    let mut count = 0;
+    let mut scan_index = 0;
+    while scan_index < list_len(ref pattern_children) {
+        let scan_entry = list_get(ref pattern_children, scan_index);
+        match scan_entry {
+            Some(value) => {
+                if value.parent_pattern_id == parent_pattern_id {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        scan_index = scan_index + 1;
+    }
+    let mut target_index = 0;
+    while target_index < count {
+        let mut index = 0;
+        while index < list_len(ref pattern_children) {
+            let entry = list_get(ref pattern_children, index);
+            match entry {
+                Some(value) => {
+                    if value.parent_pattern_id == parent_pattern_id and value.index == target_index {
+                        list_push(mutref ids, value.child_pattern_id);
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+        target_index = target_index + 1;
+    }
+    return ids;
+}
+
+fn lookup_struct_field_values(field_values: ref list<ir_field_value>, expr_id: i32) -> list<ir_field_value> {
+    let mut values: list<ir_field_value> = list();
+    let mut count = 0;
+    let mut scan_index = 0;
+    while scan_index < list_len(ref field_values) {
+        let scan_entry = list_get(ref field_values, scan_index);
+        match scan_entry {
+            Some(value) => {
+                if value.expr_id == expr_id {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        scan_index = scan_index + 1;
+    }
+    let mut target_index = 0;
+    while target_index < count {
+        let mut index = 0;
+        while index < list_len(ref field_values) {
+            let entry = list_get(ref field_values, index);
+            match entry {
+                Some(value) => {
+                    if value.expr_id == expr_id and value.index == target_index {
+                        list_push(mutref values, value);
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+        target_index = target_index + 1;
+    }
+    return values;
+}
+
+fn lookup_match_arms_for_stmt(match_arms: ref list<ir_match_arm>, stmt_id: i32) -> list<ir_match_arm> {
+    let mut arms: list<ir_match_arm> = list();
+    let mut index = 0;
+    while index < list_len(ref match_arms) {
+        let entry = list_get(ref match_arms, index);
+        match entry {
+            Some(value) => {
+                if value.stmt_id == stmt_id {
+                    list_push(mutref arms, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return arms;
+}
+
+fn lookup_statements_for_block(statements: ref list<ir_stmt>, block_id: i32) -> list<ir_stmt> {
+    let mut result: list<ir_stmt> = list();
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.block_id == block_id {
+                    list_push(mutref result, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn block_ends_with_return(statements: ref list<ir_stmt>, block_id: i32) -> bool {
+    let block_statements = lookup_statements_for_block(ref statements, block_id);
+    let entry = list_get(ref block_statements, list_len(ref block_statements) - 1);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                ir_stmt_return => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn is_ref_shape(type_shapes: ref list<ir_type_shape>, type_id: i32) -> bool {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_ref => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn unwrap_ref_type_id(type_shapes: ref list<ir_type_shape>, type_id: i32) -> i32 {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_ref => {
+                    return value.arg1_id;
+                },
+                _ => {
+                    return type_id;
+                },
+            }
+        },
+        None => {
+            return type_id;
+        },
+    }
+}
+
+fn named_type_full_name(origin_module: str, name: str) -> str {
+    if origin_module == "" {
+        return name;
+    }
+    return concat3(origin_module, "::", name);
+}
+
+fn escape_c_string(text: str) -> str {
+    let mut escaped = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let entry = str_get(text, index);
+        match entry {
+            Some(value) => {
+                if value == 92 {
+                    escaped = str_concat(escaped, "\\\\");
+                } else {
+                    if value == 34 {
+                        escaped = str_concat(escaped, "\\\"");
+                    } else {
+                        if value == 10 {
+                            escaped = str_concat(escaped, "\\n");
+                        } else {
+                            let slice = str_slice(text, index, index + 1);
+                            match slice {
+                                Some(chunk) => {
+                                    escaped = str_concat(escaped, chunk);
+                                },
+                                None => {
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return escaped;
+}
+
+fn sanitize_name(name: str) -> str {
+    let mut sanitized = "";
+    let mut index = 0;
+    while index < str_len(name) {
+        let entry = str_get(name, index);
+        match entry {
+            Some(value) => {
+                if value == 58 {
+                    sanitized = str_concat(sanitized, "_");
+                } else {
+                    let slice = str_slice(name, index, index + 1);
+                    match slice {
+                        Some(chunk) => {
+                            sanitized = str_concat(sanitized, chunk);
+                        },
+                        None => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return sanitized;
+}
+
+fn binding_name(local: ir_local) -> str {
+    return concat5("nqv_", i32_to_str(local.binding_id), "_", local.name, "");
+}
+
+fn function_name(internal_name: str) -> str {
+    return concat3("nq_fn_", sanitize_name(internal_name), "");
+}
+
+fn named_type_name(origin_module: str, name: str) -> str {
+    return concat3("NQ_", sanitize_name(named_type_full_name(origin_module, name)), "");
+}
+
+fn type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_bool => {
+                    return "bool";
+                },
+                checked_type_i32 => {
+                    return "i32";
+                },
+                checked_type_str => {
+                    return "str";
+                },
+                checked_type_unit => {
+                    return "unit";
+                },
+                checked_type_io_err => {
+                    return "io_err";
+                },
+                checked_type_named => {
+                    return sanitize_name(named_type_full_name(value.origin_module, value.name));
+                },
+                checked_type_option => {
+                    return concat3("option__", type_mangle(ref type_shapes, value.arg1_id), "");
+                },
+                checked_type_result => {
+                    return concat4("result__", type_mangle(ref type_shapes, value.arg1_id), "__", type_mangle(ref type_shapes, value.arg2_id));
+                },
+                checked_type_list => {
+                    return concat3("list__", type_mangle(ref type_shapes, value.arg1_id), "");
+                },
+                checked_type_ref => {
+                    if value.mutable {
+                        return concat3("mutref__", type_mangle(ref type_shapes, value.arg1_id), "");
+                    }
+                    return concat3("ref__", type_mangle(ref type_shapes, value.arg1_id), "");
+                },
+            }
+        },
+        None => {
+            return "missing_type";
+        },
+    }
+}
+
+fn c_type(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_bool => {
+                    return "bool";
+                },
+                checked_type_i32 => {
+                    return "int32_t";
+                },
+                checked_type_str => {
+                    return "NQStr";
+                },
+                checked_type_unit => {
+                    return "NQUnit";
+                },
+                checked_type_io_err => {
+                    return "NQIoErr";
+                },
+                checked_type_named => {
+                    return named_type_name(value.origin_module, value.name);
+                },
+                checked_type_option => {
+                    return concat3("NQ_Option__", type_mangle(ref type_shapes, value.arg1_id), "");
+                },
+                checked_type_result => {
+                    return concat4("NQ_Result__", type_mangle(ref type_shapes, value.arg1_id), "__", type_mangle(ref type_shapes, value.arg2_id));
+                },
+                checked_type_list => {
+                    return concat3("NQ_List__", type_mangle(ref type_shapes, value.arg1_id), "");
+                },
+                checked_type_ref => {
+                    return c_type(ref type_shapes, value.arg1_id);
+                },
+            }
+        },
+        None => {
+            return "void";
+        },
+    }
+}
+
+fn option_type_name(type_shapes: ref list<ir_type_shape>, payload_type_id: i32) -> str {
+    return concat3("NQ_Option__", type_mangle(ref type_shapes, payload_type_id), "");
+}
+
+fn result_type_name(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> str {
+    return concat4("NQ_Result__", type_mangle(ref type_shapes, ok_type_id), "__", type_mangle(ref type_shapes, err_type_id));
+}
+
+fn list_type_name(type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> str {
+    return concat3("NQ_List__", type_mangle(ref type_shapes, element_type_id), "");
+}
+
+fn list_helper_prefix(type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> str {
+    return concat3("nq_list__", type_mangle(ref type_shapes, element_type_id), "");
+}
+
+fn tag_name_for_variant(type_shapes: ref list<ir_type_shape>, type_id: i32, variant_name: str) -> str {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_option => {
+                    return concat3(c_type(ref type_shapes, type_id), "_Tag_", variant_name);
+                },
+                checked_type_result => {
+                    return concat3(c_type(ref type_shapes, type_id), "_Tag_", variant_name);
+                },
+                checked_type_named => {
+                    return concat3(named_type_name(value.origin_module, value.name), "_Tag_", variant_name);
+                },
+                _ => {
+                    return "";
+                },
+            }
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn is_runtime_native_option(type_shapes: ref list<ir_type_shape>, payload_type_id: i32) -> bool {
+    let entry = lookup_type_shape(ref type_shapes, payload_type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_i32 => {
+                    return true;
+                },
+                checked_type_str => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> bool {
+    let ok_entry = lookup_type_shape(ref type_shapes, ok_type_id);
+    let err_entry = lookup_type_shape(ref type_shapes, err_type_id);
+    match ok_entry {
+        Some(ok_value) => {
+            match err_entry {
+                Some(err_value) => {
+                    match err_value.kind {
+                        checked_type_io_err => {
+                            match ok_value.kind {
+                                checked_type_str => {
+                                    return true;
+                                },
+                                checked_type_unit => {
+                                    return true;
+                                },
+                                _ => {
+                                    return false;
+                                },
+                            }
+                        },
+                        _ => {
+                            return false;
+                        },
+                    }
+                },
+                None => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn option_key(type_shapes: ref list<ir_type_shape>, payload_type_id: i32) -> str {
+    return concat3("0::", type_mangle(ref type_shapes, payload_type_id), "");
+}
+
+fn result_key(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> str {
+    return concat4("1::", type_mangle(ref type_shapes, ok_type_id), "__", type_mangle(ref type_shapes, err_type_id));
+}
+
+fn list_key(type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> str {
+    return concat3("2::", type_mangle(ref type_shapes, element_type_id), "");
+}
+
+fn insert_option_type_sorted(options: ref list<i32>, type_shapes: ref list<ir_type_shape>, payload_type_id: i32) -> list<i32> {
+    if list_contains_i32(ref options, payload_type_id) {
+        let mut cloned: list<i32> = list();
+        let mut clone_index = 0;
+        while clone_index < list_len(ref options) {
+            let clone_entry = list_get(ref options, clone_index);
+            match clone_entry {
+                Some(value) => {
+                    list_push(mutref cloned, value);
+                },
+                None => {
+                },
+            }
+            clone_index = clone_index + 1;
+        }
+        return cloned;
+    }
+    let target_key = option_key(ref type_shapes, payload_type_id);
+    let mut inserted = false;
+    let mut result: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref options) {
+        let entry = list_get(ref options, index);
+        match entry {
+            Some(value) => {
+                if not inserted and str_less(target_key, option_key(ref type_shapes, value)) {
+                    list_push(mutref result, payload_type_id);
+                    inserted = true;
+                }
+                list_push(mutref result, value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if not inserted {
+        list_push(mutref result, payload_type_id);
+    }
+    return result;
+}
+
+fn insert_list_type_sorted(lists: ref list<i32>, type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> list<i32> {
+    if list_contains_i32(ref lists, element_type_id) {
+        let mut cloned: list<i32> = list();
+        let mut clone_index = 0;
+        while clone_index < list_len(ref lists) {
+            let clone_entry = list_get(ref lists, clone_index);
+            match clone_entry {
+                Some(value) => {
+                    list_push(mutref cloned, value);
+                },
+                None => {
+                },
+            }
+            clone_index = clone_index + 1;
+        }
+        return cloned;
+    }
+    let target_key = list_key(ref type_shapes, element_type_id);
+    let mut inserted = false;
+    let mut result: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref lists) {
+        let entry = list_get(ref lists, index);
+        match entry {
+            Some(value) => {
+                if not inserted and str_less(target_key, list_key(ref type_shapes, value)) {
+                    list_push(mutref result, element_type_id);
+                    inserted = true;
+                }
+                list_push(mutref result, value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if not inserted {
+        list_push(mutref result, element_type_id);
+    }
+    return result;
+}
+
+fn insert_result_type_sorted(results: ref list<result_generic_entry>, type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> list<result_generic_entry> {
+    if list_contains_result_entry(ref results, ok_type_id, err_type_id) {
+        let mut cloned: list<result_generic_entry> = list();
+        let mut clone_index = 0;
+        while clone_index < list_len(ref results) {
+            let clone_entry = list_get(ref results, clone_index);
+            match clone_entry {
+                Some(value) => {
+                    list_push(mutref cloned, value);
+                },
+                None => {
+                },
+            }
+            clone_index = clone_index + 1;
+        }
+        return cloned;
+    }
+    let target_key = result_key(ref type_shapes, ok_type_id, err_type_id);
+    let mut inserted = false;
+    let mut result: list<result_generic_entry> = list();
+    let mut index = 0;
+    while index < list_len(ref results) {
+        let entry = list_get(ref results, index);
+        match entry {
+            Some(value) => {
+                if not inserted and str_less(target_key, result_key(ref type_shapes, value.ok_type_id, value.err_type_id)) {
+                    list_push(mutref result, result_generic_entry { ok_type_id: ok_type_id, err_type_id: err_type_id });
+                    inserted = true;
+                }
+                list_push(mutref result, value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if not inserted {
+        list_push(mutref result, result_generic_entry { ok_type_id: ok_type_id, err_type_id: err_type_id });
+    }
+    return result;
+}
+
+fn collect_type_generics(type_shapes: ref list<ir_type_shape>, type_id: i32, options: mutref list<i32>, results: mutref list<result_generic_entry>, lists: mutref list<i32>) -> unit {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_option => {
+                    if not is_runtime_native_option(ref type_shapes, value.arg1_id) {
+                        let next = insert_option_type_sorted(ref options, ref type_shapes, value.arg1_id);
+                        options = next;
+                    }
+                    collect_type_generics(ref type_shapes, value.arg1_id, mutref options, mutref results, mutref lists);
+                },
+                checked_type_result => {
+                    if not is_runtime_native_result(ref type_shapes, value.arg1_id, value.arg2_id) {
+                        let next = insert_result_type_sorted(ref results, ref type_shapes, value.arg1_id, value.arg2_id);
+                        results = next;
+                    }
+                    collect_type_generics(ref type_shapes, value.arg1_id, mutref options, mutref results, mutref lists);
+                    collect_type_generics(ref type_shapes, value.arg2_id, mutref options, mutref results, mutref lists);
+                },
+                checked_type_list => {
+                    let next = insert_list_type_sorted(ref lists, ref type_shapes, value.arg1_id);
+                    lists = next;
+                    if not is_runtime_native_option(ref type_shapes, value.arg1_id) {
+                        let option_next = insert_option_type_sorted(ref options, ref type_shapes, value.arg1_id);
+                        options = option_next;
+                    }
+                    collect_type_generics(ref type_shapes, value.arg1_id, mutref options, mutref results, mutref lists);
+                },
+                checked_type_ref => {
+                    collect_type_generics(ref type_shapes, value.arg1_id, mutref options, mutref results, mutref lists);
+                },
+                _ => {
+                },
+            }
+        },
+        None => {
+        },
+    }
+    return;
+}
+
+fn collect_program_generics(function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, options: mutref list<i32>, results: mutref list<result_generic_entry>, lists: mutref list<i32>) -> unit {
+    let mut field_index = 0;
+    while field_index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, field_index);
+        match entry {
+            Some(value) => {
+                collect_type_generics(ref type_shapes, value.type_id, mutref options, mutref results, mutref lists);
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+
+    let mut payload_index = 0;
+    while payload_index < list_len(ref variant_payload_decls) {
+        let entry = list_get(ref variant_payload_decls, payload_index);
+        match entry {
+            Some(value) => {
+                collect_type_generics(ref type_shapes, value.type_id, mutref options, mutref results, mutref lists);
+            },
+            None => {
+            },
+        }
+        payload_index = payload_index + 1;
+    }
+
+    let mut local_index = 0;
+    while local_index < list_len(ref locals) {
+        let entry = list_get(ref locals, local_index);
+        match entry {
+            Some(value) => {
+                collect_type_generics(ref type_shapes, value.type_id, mutref options, mutref results, mutref lists);
+            },
+            None => {
+            },
+        }
+        local_index = local_index + 1;
+    }
+
+    let mut expr_index = 0;
+    while expr_index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, expr_index);
+        match entry {
+            Some(value) => {
+                collect_type_generics(ref type_shapes, value.type_id, mutref options, mutref results, mutref lists);
+            },
+            None => {
+            },
+        }
+        expr_index = expr_index + 1;
+    }
+
+    let mut sig_index = 0;
+    while sig_index < list_len(ref function_sigs) {
+        let entry = list_get(ref function_sigs, sig_index);
+        match entry {
+            Some(value) => {
+                collect_type_generics(ref type_shapes, value.return_type_id, mutref options, mutref results, mutref lists);
+            },
+            None => {
+            },
+        }
+        sig_index = sig_index + 1;
+    }
+
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                let mut param_cursor = 0;
+                while param_cursor < list_len(ref locals) {
+                    let local_entry = list_get(ref locals, param_cursor);
+                    match local_entry {
+                        Some(local_value) => {
+                            if local_value.function_id == value.id and local_value.param_index >= 0 {
+                                collect_type_generics(ref type_shapes, local_value.type_id, mutref options, mutref results, mutref lists);
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    param_cursor = param_cursor + 1;
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+    return;
+}
+
+fn emit_option_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, payload_type_id: i32) -> unit {
+    let type_name = option_type_name(ref type_shapes, payload_type_id);
+    let tag_name = concat3(type_name, "_Tag", "");
+    append_line(mutref lines, concat3("typedef enum ", tag_name, " {"));
+    append_line(mutref lines, concat3("    ", tag_name, "_Some,"));
+    append_line(mutref lines, concat3("    ", tag_name, "_None,"));
+    append_line(mutref lines, concat4("} ", tag_name, ";", ""));
+    append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+    append_line(mutref lines, concat3("    ", tag_name, " tag;"));
+    append_line(mutref lines, "    union {");
+    append_line(mutref lines, concat5("        struct { ", c_type(ref type_shapes, payload_type_id), " _0; } Some;", "", ""));
+    append_line(mutref lines, "        NQUnit None;");
+    append_line(mutref lines, "    } data;");
+    append_line(mutref lines, concat4("} ", type_name, ";", ""));
+    append_line(mutref lines, "");
+    return;
+}
+
+fn emit_result_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> unit {
+    let type_name = result_type_name(ref type_shapes, ok_type_id, err_type_id);
+    let tag_name = concat3(type_name, "_Tag", "");
+    append_line(mutref lines, concat3("typedef enum ", tag_name, " {"));
+    append_line(mutref lines, concat3("    ", tag_name, "_Ok,"));
+    append_line(mutref lines, concat3("    ", tag_name, "_Err,"));
+    append_line(mutref lines, concat4("} ", tag_name, ";", ""));
+    append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+    append_line(mutref lines, concat3("    ", tag_name, " tag;"));
+    append_line(mutref lines, "    union {");
+    append_line(mutref lines, concat5("        struct { ", c_type(ref type_shapes, ok_type_id), " _0; } Ok;", "", ""));
+    append_line(mutref lines, concat5("        struct { ", c_type(ref type_shapes, err_type_id), " _0; } Err;", "", ""));
+    append_line(mutref lines, "    } data;");
+    append_line(mutref lines, concat4("} ", type_name, ";", ""));
+    append_line(mutref lines, "");
+    return;
+}
+
+fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> unit {
+    let type_name = list_type_name(ref type_shapes, element_type_id);
+    let helper = list_helper_prefix(ref type_shapes, element_type_id);
+    let option_type = option_type_name(ref type_shapes, element_type_id);
+    append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+    append_line(mutref lines, concat5("    ", c_type(ref type_shapes, element_type_id), "* data;", "", ""));
+    append_line(mutref lines, "    int32_t len;");
+    append_line(mutref lines, "    int32_t cap;");
+    append_line(mutref lines, concat4("} ", type_name, ";", ""));
+    append_line(mutref lines, concat5("static inline ", type_name, " ", helper, "_make(void) {"));
+    append_line(mutref lines, concat5("    return (", type_name, "){ .data = NULL, .len = 0, .cap = 0 };", "", ""));
+    append_line(mutref lines, "}");
+    append_line(mutref lines, concat7("static inline NQUnit ", helper, "_push(", type_name, "* items, ", c_type(ref type_shapes, element_type_id), " value) {"));
+    append_line(mutref lines, "    if (items->len == items->cap) {");
+    append_line(mutref lines, "        int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;");
+    append_line(mutref lines, concat6("        items->data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(items->data, sizeof(", c_type(ref type_shapes, element_type_id), ") * (size_t)next_cap);", ""));
+    append_line(mutref lines, "        items->cap = next_cap;");
+    append_line(mutref lines, "    }");
+    append_line(mutref lines, "    items->data[items->len] = value;");
+    append_line(mutref lines, "    items->len += 1;");
+    append_line(mutref lines, "    return NQ_UNIT;");
+    append_line(mutref lines, "}");
+    append_line(mutref lines, concat5("static inline int32_t ", helper, "_len(const ", type_name, "* items) {"));
+    append_line(mutref lines, "    return items->len;");
+    append_line(mutref lines, "}");
+    append_line(mutref lines, concat7("static inline ", option_type, " ", helper, "_get(const ", type_name, "* items, int32_t index) {"));
+    append_line(mutref lines, "    if (index < 0 || index >= items->len) {");
+    append_line(mutref lines, concat5("        return (", option_type, "){ .tag = ", concat3(option_type, "_Tag_None", ""), ", .data.None = NQ_UNIT };"));
+    append_line(mutref lines, "    }");
+    append_line(mutref lines, concat6("    return (", option_type, "){ .tag = ", concat3(option_type, "_Tag_Some", ""), ", .data.Some = { ._0 = items->data[index] } };", ""));
+    append_line(mutref lines, "}");
+    append_line(mutref lines, "");
+    return;
+}
+
+fn emit_user_enum(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, enum_decl: ir_enum_decl, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>) -> unit {
+    let type_name = named_type_name(enum_decl.module_name, enum_decl.name);
+    let tag_name = concat3(type_name, "_Tag", "");
+    append_line(mutref lines, concat3("typedef enum ", tag_name, " {"));
+    let mut variant_index = 0;
+    while variant_index < list_len(ref variant_decls) {
+        let entry = list_get(ref variant_decls, variant_index);
+        match entry {
+            Some(value) => {
+                if value.enum_id == enum_decl.id {
+                    append_line(mutref lines, concat5("    ", tag_name, "_", value.name, ","));
+                }
+            },
+            None => {
+            },
+        }
+        variant_index = variant_index + 1;
+    }
+    append_line(mutref lines, concat4("} ", tag_name, ";", ""));
+    append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+    append_line(mutref lines, concat3("    ", tag_name, " tag;"));
+    append_line(mutref lines, "    union {");
+    variant_index = 0;
+    while variant_index < list_len(ref variant_decls) {
+        let entry = list_get(ref variant_decls, variant_index);
+        match entry {
+            Some(value) => {
+                if value.enum_id == enum_decl.id {
+                    if value.payload_count < 1 {
+                        append_line(mutref lines, concat3("        NQUnit ", value.name, ";"));
+                    } else {
+                        let mut payload_parts = "";
+                        let mut payload_index = 0;
+                        while payload_index < value.payload_count {
+                            let mut resolved_type_id = -1;
+                            let mut payload_cursor = 0;
+                            while payload_cursor < list_len(ref variant_payload_decls) {
+                                let payload_entry = list_get(ref variant_payload_decls, payload_cursor);
+                                match payload_entry {
+                                    Some(payload_value) => {
+                                        if payload_value.variant_id == value.id and payload_value.index == payload_index {
+                                            resolved_type_id = payload_value.type_id;
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                payload_cursor = payload_cursor + 1;
+                            }
+                            let field_part = concat5(c_type(ref type_shapes, resolved_type_id), " _", i32_to_str(payload_index), ";", "");
+                            if payload_parts == "" {
+                                payload_parts = field_part;
+                            } else {
+                                payload_parts = str_concat(payload_parts, str_concat(" ", field_part));
+                            }
+                            payload_index = payload_index + 1;
+                        }
+                        append_line(mutref lines, concat5("        struct { ", payload_parts, " } ", value.name, ";"));
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        variant_index = variant_index + 1;
+    }
+    append_line(mutref lines, "    } data;");
+    append_line(mutref lines, concat4("} ", type_name, ";", ""));
+    append_line(mutref lines, "");
+    return;
+}
+
+fn emit_user_struct(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, struct_decl: ir_struct_decl, field_decls: ref list<ir_field_decl>) -> unit {
+    let type_name = named_type_name(struct_decl.module_name, struct_decl.name);
+    append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+    let mut field_index = 0;
+    while field_index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, field_index);
+        match entry {
+            Some(value) => {
+                if value.struct_id == struct_decl.id {
+                    append_line(mutref lines, concat5("    ", c_type(ref type_shapes, value.type_id), " ", value.name, ";"));
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    append_line(mutref lines, concat4("} ", type_name, ";", ""));
+    append_line(mutref lines, "");
+    return;
+}
+
+fn lookup_param_local(locals: ref list<ir_local>, function_id: i32, param_index: i32) -> option<ir_local> {
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.param_index == param_index {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn function_signature(function: ir_function, locals: ref list<ir_local>, type_shapes: ref list<ir_type_shape>) -> str {
+    let mut rendered_params = "";
+    let mut index = 0;
+    while true {
+        let entry = lookup_param_local(ref locals, function.id, index);
+        match entry {
+            Some(value) => {
+                let mut rendered = "";
+                if value.is_ref_param {
+                    let pointee_type_id = unwrap_ref_type_id(ref type_shapes, value.type_id);
+                    let pointee = c_type(ref type_shapes, pointee_type_id);
+                    rendered = concat4(pointee, "* ", binding_name(value), "");
+                    if not value.ref_mutable {
+                        rendered = concat5("const ", pointee, "* ", binding_name(value), "");
+                    }
+                } else {
+                    rendered = concat5(c_type(ref type_shapes, value.type_id), " ", binding_name(value), "", "");
+                }
+                if rendered_params == "" {
+                    rendered_params = rendered;
+                } else {
+                    rendered_params = str_concat(rendered_params, str_concat(", ", rendered));
+                }
+            },
+            None => {
+                if index == 0 {
+                    rendered_params = "void";
+                }
+                return concat6(c_type(ref type_shapes, function.return_type_id), " ", function_name(function.internal_name), "(", rendered_params, ")");
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn builtin_call_name(name: str) -> str {
+    if name == "print_line" {
+        return "nq_print_line";
+    }
+    if name == "read_file" {
+        return "nq_read_file";
+    }
+    if name == "write_file" {
+        return "nq_write_file";
+    }
+    if name == "io_err_text" {
+        return "nq_io_err_text";
+    }
+    if name == "str_len" {
+        return "nq_str_len";
+    }
+    if name == "str_concat" {
+        return "nq_str_concat";
+    }
+    if name == "str_get" {
+        return "nq_str_get";
+    }
+    if name == "str_slice" {
+        return "nq_str_slice";
+    }
+    return "";
+}
+
+fn emit_variant_constructor(type_shapes: ref list<ir_type_shape>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, type_id: i32, variant_name: str, payloads: ref list<str>) -> str {
+    let shape_entry = lookup_type_shape(ref type_shapes, type_id);
+    match shape_entry {
+        Some(shape) => {
+            match shape.kind {
+                checked_type_option => {
+                    let type_name = c_type(ref type_shapes, type_id);
+                    let tag = tag_name_for_variant(ref type_shapes, type_id, variant_name);
+                    if variant_name == "None" {
+                        return concat6("(", type_name, "){ .tag = ", tag, ", .data.None = NQ_UNIT }", "");
+                    }
+                    let first_entry = list_get(ref payloads, 0);
+                    match first_entry {
+                        Some(value) => {
+                            return concat6("(", type_name, "){ .tag = ", tag, ", .data.Some = { ._0 = ", str_concat(value, " } }"));
+                        },
+                        None => {
+                            return concat6("(", type_name, "){ .tag = ", tag, ", .data.None = NQ_UNIT }", "");
+                        },
+                    }
+                },
+                checked_type_result => {
+                    let type_name = c_type(ref type_shapes, type_id);
+                    let tag = tag_name_for_variant(ref type_shapes, type_id, variant_name);
+                    let first_entry = list_get(ref payloads, 0);
+                    match first_entry {
+                        Some(value) => {
+                            if variant_name == "Ok" {
+                                return concat6("(", type_name, "){ .tag = ", tag, ", .data.Ok = { ._0 = ", str_concat(value, " } }"));
+                            }
+                            return concat6("(", type_name, "){ .tag = ", tag, ", .data.Err = { ._0 = ", str_concat(value, " } }"));
+                        },
+                        None => {
+                            return concat6("(", type_name, "){ .tag = ", tag, ", .data.Ok = { ._0 = NQ_UNIT } }", "");
+                        },
+                    }
+                },
+                checked_type_named => {
+                    let type_name = c_type(ref type_shapes, type_id);
+                    let tag = tag_name_for_variant(ref type_shapes, type_id, variant_name);
+                    let variant_entry = lookup_variant_decl(ref variant_decls, shape.origin_module, shape.name, variant_name);
+                    match variant_entry {
+                        Some(variant) => {
+                            if variant.payload_count < 1 {
+                                return concat6("(", type_name, "){ .tag = ", tag, " }", "");
+                            }
+                            let mut fields = "";
+                            let mut index = 0;
+                            while index < variant.payload_count {
+                                let payload_entry = list_get(ref payloads, index);
+                                match payload_entry {
+                                    Some(value) => {
+                                        let field_text = concat5("._", i32_to_str(index), " = ", value, "");
+                                        if fields == "" {
+                                            fields = field_text;
+                                        } else {
+                                            fields = str_concat(fields, str_concat(", ", field_text));
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                index = index + 1;
+                            }
+                            return concat6("(", type_name, "){ .tag = ", tag, ", .data.", concat3(variant_name, " = { ", str_concat(fields, " } }")));
+                        },
+                        None => {
+                            return concat6("(", type_name, "){ .tag = ", tag, " }", "");
+                        },
+                    }
+                },
+                _ => {
+                    return "";
+                },
+            }
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
+    let expr_entry = lookup_expression(ref expressions, expr_id);
+    match expr_entry {
+        Some(expr) => {
+            match expr.kind {
+                ir_expr_unit => {
+                    return "NQ_UNIT";
+                },
+                ir_expr_i32 => {
+                    return expr.name;
+                },
+                ir_expr_str => {
+                    return concat3("nq_str(\"", concat3(escape_c_string(expr.name), "\")", ""), "");
+                },
+                ir_expr_bool => {
+                    if expr.name == "true" {
+                        return "true";
+                    }
+                    return "false";
+                },
+                ir_expr_name => {
+                    let local_entry = lookup_local(ref locals, expr.local_id);
+                    match local_entry {
+                        Some(local_value) => {
+                            let local_name = binding_name(local_value);
+                            if local_value.is_ref_param {
+                                return concat3("(*", str_concat(local_name, ")"), "");
+                            }
+                            return local_name;
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing local identity for name expression");
+                            return "0";
+                        },
+                    }
+                },
+                ir_expr_borrow => {
+                    let local_entry = lookup_local(ref locals, expr.local_id);
+                    match local_entry {
+                        Some(local_value) => {
+                            let local_name = binding_name(local_value);
+                            if local_value.is_ref_param {
+                                return local_name;
+                            }
+                            return concat3("&", local_name, "");
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing local identity for borrow expression");
+                            return "0";
+                        },
+                    }
+                },
+                ir_expr_not => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_entry = list_get(ref child_ids, 0);
+                    match child_entry {
+                        Some(child_id) => {
+                            return concat3("(!", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")"), "");
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing unary child expression");
+                            return "0";
+                        },
+                    }
+                },
+                ir_expr_neg => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_entry = list_get(ref child_ids, 0);
+                    match child_entry {
+                        Some(child_id) => {
+                            return concat3("(-", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")"), "");
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing unary child expression");
+                            return "0";
+                        },
+                    }
+                },
+                ir_expr_add => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") + (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_sub => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") - (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_mul => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") * (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_div => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") / (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_eq => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    let left_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
+                                    let right_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
+                                    let left_shape = lookup_type_shape(ref type_shapes, expr.type_id);
+                                    match left_shape {
+                                        Some(shape) => {
+                                            match shape.kind {
+                                                checked_type_bool => {
+                                                },
+                                                _ => {
+                                                },
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    let left_expr = lookup_expression(ref expressions, left_id);
+                                    match left_expr {
+                                        Some(left_value) => {
+                                            let left_type = lookup_type_shape(ref type_shapes, left_value.type_id);
+                                            match left_type {
+                                                Some(type_value) => {
+                                                    match type_value.kind {
+                                                        checked_type_str => {
+                                                            return concat4("nq_str_eq(", left_text, ", ", str_concat(right_text, ")"));
+                                                        },
+                                                        _ => {
+                                                            return concat5("((", left_text, ") == (", right_text, "))");
+                                                        },
+                                                    }
+                                                },
+                                                None => {
+                                                },
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_ne => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    let left_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
+                                    let right_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
+                                    let left_expr = lookup_expression(ref expressions, left_id);
+                                    match left_expr {
+                                        Some(left_value) => {
+                                            let left_type = lookup_type_shape(ref type_shapes, left_value.type_id);
+                                            match left_type {
+                                                Some(type_value) => {
+                                                    match type_value.kind {
+                                                        checked_type_str => {
+                                                            return concat4("(!nq_str_eq(", left_text, ", ", str_concat(right_text, "))"));
+                                                        },
+                                                        _ => {
+                                                            return concat5("((", left_text, ") != (", right_text, "))");
+                                                        },
+                                                    }
+                                                },
+                                                None => {
+                                                },
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_lt => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") < (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_lte => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") <= (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_gt => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") > (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_gte => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") >= (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_and => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") && (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_or => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") || (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
+                ir_expr_call => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let mut args = "";
+                    let mut arg_index = 0;
+                    while arg_index < list_len(ref child_ids) {
+                        let child_entry = list_get(ref child_ids, arg_index);
+                        match child_entry {
+                            Some(child_id) => {
+                                let arg_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                if args == "" {
+                                    args = arg_text;
+                                } else {
+                                    args = str_concat(args, str_concat(", ", arg_text));
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        arg_index = arg_index + 1;
+                    }
+                    let builtin = builtin_call_name(expr.target_name);
+                    if builtin != "" {
+                        return concat4(builtin, "(", args, ")");
+                    }
+                    if expr.target_name == "list" {
+                        let list_type_id = unwrap_ref_type_id(ref type_shapes, expr.type_id);
+                        let list_shape = lookup_type_shape(ref type_shapes, list_type_id);
+                        match list_shape {
+                            Some(value) => {
+                                return concat4(list_helper_prefix(ref type_shapes, value.arg1_id), "_make(", "", ")");
+                            },
+                            None => {
+                            },
+                        }
+                    }
+                    if expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" {
+                        let first_child_entry = list_get(ref child_ids, 0);
+                        match first_child_entry {
+                            Some(first_child_id) => {
+                                let first_child = lookup_expression(ref expressions, first_child_id);
+                                match first_child {
+                                    Some(first_expr) => {
+                                        let list_type_id = unwrap_ref_type_id(ref type_shapes, first_expr.type_id);
+                                        let list_shape = lookup_type_shape(ref type_shapes, list_type_id);
+                                        match list_shape {
+                                            Some(value) => {
+                                                let helper = list_helper_prefix(ref type_shapes, value.arg1_id);
+                                                let suffix = "";
+                                                if expr.target_name == "list_push" {
+                                                    return concat4(helper, "_push(", args, ")");
+                                                }
+                                                if expr.target_name == "list_len" {
+                                                    return concat4(helper, "_len(", args, ")");
+                                                }
+                                                return concat4(helper, "_get(", args, ")");
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        push_c_error(mutref diags, "", expr.at, "missing list helper type truth");
+                        return "0";
+                    }
+                    return concat4(function_name(named_type_full_name(expr.target_origin_module, expr.target_name)), "(", args, ")");
+                },
+                ir_expr_variant => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let mut payloads: list<str> = list();
+                    let mut arg_index = 0;
+                    while arg_index < list_len(ref child_ids) {
+                        let child_entry = list_get(ref child_ids, arg_index);
+                        match child_entry {
+                            Some(child_id) => {
+                                list_push(mutref payloads, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags));
+                            },
+                            None => {
+                            },
+                        }
+                        arg_index = arg_index + 1;
+                    }
+                    return emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, expr.type_id, expr.name, ref payloads);
+                },
+                ir_expr_field => {
+                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_entry = list_get(ref child_ids, 0);
+                    match child_entry {
+                        Some(child_id) => {
+                            return concat4("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")).", expr.field_name);
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing field base expression");
+                            return "0";
+                        },
+                    }
+                },
+                ir_expr_struct => {
+                    let fields = lookup_struct_field_values(ref field_values, expr.id);
+                    let mut field_text = "";
+                    let mut index = 0;
+                    while index < list_len(ref fields) {
+                        let entry = list_get(ref fields, index);
+                        match entry {
+                            Some(value) => {
+                                let rendered = concat4(".", value.field_name, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, mutref diags));
+                                if field_text == "" {
+                                    field_text = rendered;
+                                } else {
+                                    field_text = str_concat(field_text, str_concat(", ", rendered));
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                    let shape_entry = lookup_type_shape(ref type_shapes, expr.type_id);
+                    match shape_entry {
+                        Some(shape) => {
+                            return concat6("(", named_type_name(shape.origin_module, shape.name), "){ ", field_text, " }", "");
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", expr.at, "missing struct literal type truth");
+                            return "0";
+                        },
+                    }
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", 0, "missing expression record during C emission");
+            return "0";
+        },
+    }
+}
+
+fn lookup_variant_payload_type_id(type_shapes: ref list<ir_type_shape>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, scrutinee_type_id: i32, variant_name: str, index: i32) -> i32 {
+    let shape_entry = lookup_type_shape(ref type_shapes, scrutinee_type_id);
+    match shape_entry {
+        Some(shape) => {
+            match shape.kind {
+                checked_type_option => {
+                    if variant_name == "Some" and index == 0 {
+                        return shape.arg1_id;
+                    }
+                    return -1;
+                },
+                checked_type_result => {
+                    if variant_name == "Ok" and index == 0 {
+                        return shape.arg1_id;
+                    }
+                    if variant_name == "Err" and index == 0 {
+                        return shape.arg2_id;
+                    }
+                    return -1;
+                },
+                checked_type_named => {
+                    let variant_entry = lookup_variant_decl(ref variant_decls, shape.origin_module, shape.name, variant_name);
+                    match variant_entry {
+                        Some(variant) => {
+                            let mut payload_index = 0;
+                            while payload_index < list_len(ref variant_payload_decls) {
+                                let entry = list_get(ref variant_payload_decls, payload_index);
+                                match entry {
+                                    Some(value) => {
+                                        if value.variant_id == variant.id and value.index == index {
+                                            return value.type_id;
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                payload_index = payload_index + 1;
+                            }
+                            return -1;
+                        },
+                        None => {
+                            return -1;
+                        },
+                    }
+                },
+                _ => {
+                    return -1;
+                },
+            }
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+fn require_type_shape(diags: mutref list<diag>, file: str, at: i32, detail: str, type_shapes: ref list<ir_type_shape>, type_id: i32) -> bool {
+    if type_id < 0 {
+        push_c_error(mutref diags, file, at, detail);
+        return false;
+    }
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(_) => {
+            return true;
+        },
+        None => {
+            push_c_error(mutref diags, file, at, detail);
+            return false;
+        },
+    }
+}
+
+fn validate_type_shapes(type_shapes: ref list<ir_type_shape>, diags: mutref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref type_shapes) {
+        let entry = list_get(ref type_shapes, index);
+        match entry {
+            Some(value) => {
+                match value.kind {
+                    checked_type_option => {
+                        require_type_shape(mutref diags, value.origin_module, 0, "missing option payload type truth during C emission", ref type_shapes, value.arg1_id);
+                    },
+                    checked_type_result => {
+                        require_type_shape(mutref diags, value.origin_module, 0, "missing result ok type truth during C emission", ref type_shapes, value.arg1_id);
+                        require_type_shape(mutref diags, value.origin_module, 0, "missing result err type truth during C emission", ref type_shapes, value.arg2_id);
+                    },
+                    checked_type_list => {
+                        require_type_shape(mutref diags, value.origin_module, 0, "missing list element type truth during C emission", ref type_shapes, value.arg1_id);
+                    },
+                    checked_type_ref => {
+                        require_type_shape(mutref diags, value.origin_module, 0, "missing borrow pointee type truth during C emission", ref type_shapes, value.arg1_id);
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn validate_c_emit_inputs(function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> unit {
+    validate_type_shapes(ref type_shapes, mutref diags);
+
+    let mut sig_index = 0;
+    while sig_index < list_len(ref function_sigs) {
+        let entry = list_get(ref function_sigs, sig_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, value.module_name, 0, str_concat("missing function signature return type during C emission: ", value.internal_name), ref type_shapes, value.return_type_id);
+            },
+            None => {
+            },
+        }
+        sig_index = sig_index + 1;
+    }
+
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, value.module_name, value.at, str_concat("missing function return type during C emission: ", value.internal_name), ref type_shapes, value.return_type_id);
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let mut local_index = 0;
+    while local_index < list_len(ref locals) {
+        let entry = list_get(ref locals, local_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, value.module_name, value.at, str_concat("missing local type truth during C emission: ", value.name), ref type_shapes, value.type_id);
+            },
+            None => {
+            },
+        }
+        local_index = local_index + 1;
+    }
+
+    let mut field_index = 0;
+    while field_index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, field_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, value.module_name, 0, str_concat("missing field type truth during C emission: ", str_concat(value.struct_name, str_concat(".", value.name))), ref type_shapes, value.type_id);
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+
+    let mut payload_index = 0;
+    while payload_index < list_len(ref variant_payload_decls) {
+        let entry = list_get(ref variant_payload_decls, payload_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, "", 0, "missing variant payload type truth during C emission", ref type_shapes, value.type_id);
+            },
+            None => {
+            },
+        }
+        payload_index = payload_index + 1;
+    }
+
+    let mut expr_index = 0;
+    while expr_index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, expr_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, "", value.at, "missing expression type truth during C emission", ref type_shapes, value.type_id);
+            },
+            None => {
+            },
+        }
+        expr_index = expr_index + 1;
+    }
+    return;
+}
+
+fn emit_pattern_bindings(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, pattern_id: i32, scrutinee_type_id: i32, value_expr: str, level: i32, diags: mutref list<diag>) -> unit {
+    let pattern_entry = lookup_pattern(ref patterns, pattern_id);
+    match pattern_entry {
+        Some(pattern) => {
+            match pattern.kind {
+                ir_pattern_bind => {
+                    let local_entry = lookup_local(ref locals, pattern.local_id);
+                    match local_entry {
+                        Some(local_value) => {
+                            append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(value_expr, ";")));
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", pattern.at, "missing local identity for bind pattern");
+                        },
+                    }
+                },
+                ir_pattern_variant => {
+                    let child_ids = lookup_pattern_child_ids(ref pattern_children, pattern.id);
+                    let mut index = 0;
+                    while index < list_len(ref child_ids) {
+                        let child_entry = list_get(ref child_ids, index);
+                        match child_entry {
+                            Some(child_id) => {
+                                let child_pattern = lookup_pattern(ref patterns, child_id);
+                                match child_pattern {
+                                    Some(child_value) => {
+                                        let payload_expr = concat6(value_expr, ".data.", pattern.name, "._", i32_to_str(index), "");
+                                        match child_value.kind {
+                                            ir_pattern_wildcard => {
+                                            },
+                                            ir_pattern_bind => {
+                                                let local_entry = lookup_local(ref locals, child_value.local_id);
+                                                match local_entry {
+                                                    Some(local_value) => {
+                                                        append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(payload_expr, ";")));
+                                                    },
+                                                    None => {
+                                                        push_c_error(mutref diags, "", child_value.at, "missing local identity for variant payload binding");
+                                                    },
+                                                }
+                                            },
+                                            ir_pattern_variant => {
+                                                let nested_child_ids = lookup_pattern_child_ids(ref pattern_children, child_value.id);
+                                                if list_len(ref nested_child_ids) > 0 {
+                                                    push_c_error(mutref diags, "", child_value.at, "nested constructor patterns must be rejected before C emission");
+                                                } else {
+                                                    let payload_type_id = lookup_variant_payload_type_id(ref type_shapes, ref variant_decls, ref variant_payload_decls, scrutinee_type_id, pattern.name, index);
+                                                    if payload_type_id < 0 {
+                                                        push_c_error(mutref diags, "", child_value.at, "missing payload type truth for nested variant pattern");
+                                                    } else {
+                                                        let tag_check = tag_name_for_variant(ref type_shapes, payload_type_id, child_value.name);
+                                                        append_line(mutref lines, concat6(indent(level), "if (", payload_expr, ".tag != ", tag_check, ") {"));
+                                                        append_line(mutref lines, concat3(indent(level + 1), "break;", ""));
+                                                        append_line(mutref lines, concat3(indent(level), "}", ""));
+                                                    }
+                                                }
+                                            },
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                },
+                _ => {
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", 0, "missing pattern record during C emission");
+        },
+    }
+    return;
+}
+
+fn emit_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let expr_entry = lookup_expression(ref expressions, stmt.expr_id);
+    match expr_entry {
+        Some(scrutinee_expr) => {
+            temp_index = temp_index + 1;
+            let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
+            append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+            append_line(mutref lines, concat4(indent(level), "switch (", temp_name, ".tag) {"));
+            let arms = lookup_match_arms_for_stmt(ref match_arms, stmt.id);
+            let mut default_arm_id = -1;
+            let mut arm_index = 0;
+            while arm_index < list_len(ref arms) {
+                let arm_entry = list_get(ref arms, arm_index);
+                match arm_entry {
+                    Some(arm) => {
+                        let pattern_entry = lookup_pattern(ref patterns, arm.pattern_id);
+                        match pattern_entry {
+                            Some(pattern) => {
+                                match pattern.kind {
+                                    ir_pattern_wildcard => {
+                                        default_arm_id = arm.id;
+                                    },
+                                    ir_pattern_bind => {
+                                        default_arm_id = arm.id;
+                                    },
+                                    ir_pattern_variant => {
+                                        let tag = tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, pattern.name);
+                                        append_line(mutref lines, concat6(indent(level + 1), "case ", tag, ": {", "", ""));
+                                        emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_expr.type_id, temp_name, level + 2, mutref diags);
+                                        emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.block_id, level + 2, mutref temp_index, mutref diags);
+                                        append_line(mutref lines, concat3(indent(level + 2), "break;", ""));
+                                        append_line(mutref lines, concat3(indent(level + 1), "}", ""));
+                                    },
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                    },
+                    None => {
+                    },
+                }
+                arm_index = arm_index + 1;
+            }
+            if default_arm_id > 0 {
+                let mut lookup_index = 0;
+                while lookup_index < list_len(ref arms) {
+                    let arm_entry = list_get(ref arms, lookup_index);
+                    match arm_entry {
+                        Some(arm) => {
+                            if arm.id == default_arm_id {
+                                append_line(mutref lines, concat3(indent(level + 1), "default: {", ""));
+                                emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_expr.type_id, temp_name, level + 2, mutref diags);
+                                emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.block_id, level + 2, mutref temp_index, mutref diags);
+                                append_line(mutref lines, concat3(indent(level + 2), "break;", ""));
+                                append_line(mutref lines, concat3(indent(level + 1), "}", ""));
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    lookup_index = lookup_index + 1;
+                }
+            }
+            append_line(mutref lines, concat3(indent(level), "}", ""));
+        },
+        None => {
+            push_c_error(mutref diags, "", stmt.at, "missing match scrutinee expression");
+        },
+    }
+    return;
+}
+
+fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let prefix = indent(level);
+    match stmt.kind {
+        ir_stmt_let => {
+            let local_entry = lookup_local(ref locals, stmt.target_local_id);
+            match local_entry {
+                Some(local_value) => {
+                    append_line(mutref lines, concat6(prefix, c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing local identity for let statement");
+                },
+            }
+        },
+        ir_stmt_assign => {
+            let local_entry = lookup_local(ref locals, stmt.target_local_id);
+            match local_entry {
+                Some(local_value) => {
+                    let mut target = binding_name(local_value);
+                    if local_value.is_ref_param {
+                        target = concat3("*", target, "");
+                    }
+                    append_line(mutref lines, concat5(prefix, target, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing local identity for assignment");
+                },
+            }
+        },
+        ir_stmt_if => {
+            append_line(mutref lines, concat4(prefix, "if (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ") {"));
+            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+            if stmt.alt_block_id > 0 {
+                append_line(mutref lines, concat3(prefix, "} else {", ""));
+                emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.alt_block_id, level + 1, mutref temp_index, mutref diags);
+            }
+            append_line(mutref lines, concat3(prefix, "}", ""));
+        },
+        ir_stmt_while => {
+            append_line(mutref lines, concat4(prefix, "while (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ") {"));
+            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+            append_line(mutref lines, concat3(prefix, "}", ""));
+        },
+        ir_stmt_match => {
+            emit_match_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
+        },
+        ir_stmt_return => {
+            if stmt.expr_id > 0 {
+                append_line(mutref lines, concat4(prefix, "return ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+            } else {
+                append_line(mutref lines, concat3(prefix, "return NQ_UNIT;", ""));
+            }
+        },
+        _ => {
+            append_line(mutref lines, str_concat(prefix, str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+        },
+    }
+    return;
+}
+
+fn emit_block(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, block_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let block_statements = lookup_statements_for_block(ref statements, block_id);
+    let mut index = 0;
+    while index < list_len(ref block_statements) {
+        let entry = list_get(ref block_statements, index);
+        match entry {
+            Some(value) => {
+                emit_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, level, mutref temp_index, mutref diags);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+pub fn emit_c_program(programs: ref list<ir_program>, function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, lines_out: mutref list<str>, diags: mutref list<diag>) -> c_emit_summary
+audit {
+    intent("Emit deterministic stage1 C from backend-ready IR");
+    mutates(lines_out, diags);
+    effects();
+}
+  {
+      let start_diag_count = list_len(ref diags);
+      let mut option_types: list<i32> = list();
+      let mut result_types: list<result_generic_entry> = list();
+      let mut list_types: list<i32> = list();
+      let mut temp_index = 0;
+
+      validate_c_emit_inputs(ref function_sigs, ref functions, ref locals, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref diags);
+      if list_len(ref diags) > start_diag_count {
+          return make_c_emit_summary(
+              list_len(ref lines_out),
+              list_len(ref functions),
+              list_len(ref diags)
+          );
+      }
+  
+      collect_program_generics(ref function_sigs, ref functions, ref locals, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref option_types, mutref result_types, mutref list_types);
+
+    append_line(mutref lines_out, "#include \"runtime.h\"");
+    append_line(mutref lines_out, "");
+
+    let mut enum_index = 0;
+    while enum_index < list_len(ref enum_decls) {
+        let entry = list_get(ref enum_decls, enum_index);
+        match entry {
+            Some(value) => {
+                emit_user_enum(mutref lines_out, ref type_shapes, value, ref variant_decls, ref variant_payload_decls);
+            },
+            None => {
+            },
+        }
+        enum_index = enum_index + 1;
+    }
+
+    let mut struct_index = 0;
+    while struct_index < list_len(ref struct_decls) {
+        let entry = list_get(ref struct_decls, struct_index);
+        match entry {
+            Some(value) => {
+                emit_user_struct(mutref lines_out, ref type_shapes, value, ref field_decls);
+            },
+            None => {
+            },
+        }
+        struct_index = struct_index + 1;
+    }
+
+    let mut option_index = 0;
+    while option_index < list_len(ref option_types) {
+        let entry = list_get(ref option_types, option_index);
+        match entry {
+            Some(value) => {
+                emit_option_definition(mutref lines_out, ref type_shapes, value);
+            },
+            None => {
+            },
+        }
+        option_index = option_index + 1;
+    }
+
+    let mut result_index = 0;
+    while result_index < list_len(ref result_types) {
+        let entry = list_get(ref result_types, result_index);
+        match entry {
+            Some(value) => {
+                emit_result_definition(mutref lines_out, ref type_shapes, value.ok_type_id, value.err_type_id);
+            },
+            None => {
+            },
+        }
+        result_index = result_index + 1;
+    }
+
+    let mut list_index = 0;
+    while list_index < list_len(ref list_types) {
+        let entry = list_get(ref list_types, list_index);
+        match entry {
+            Some(value) => {
+                emit_list_definition(mutref lines_out, ref type_shapes, value);
+            },
+            None => {
+            },
+        }
+        list_index = list_index + 1;
+    }
+
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                append_line(mutref lines_out, concat3(function_signature(value, ref locals, ref type_shapes), ";", ""));
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+    if list_len(ref functions) > 0 {
+        append_line(mutref lines_out, "");
+    }
+
+    function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                append_line(mutref lines_out, concat3(function_signature(value, ref locals, ref type_shapes), " {", ""));
+                emit_block(mutref lines_out, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.root_block_id, 1, mutref temp_index, mutref diags);
+                let return_shape = lookup_type_shape(ref type_shapes, value.return_type_id);
+                match return_shape {
+                    Some(return_type) => {
+                        match return_type.kind {
+                            checked_type_unit => {
+                                if not block_ends_with_return(ref statements, value.root_block_id) {
+                                    append_line(mutref lines_out, "    return NQ_UNIT;");
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    None => {
+                        push_c_error(mutref diags, value.module_name, value.at, "missing function return type during C emission");
+                    },
+                }
+                append_line(mutref lines_out, "}");
+                append_line(mutref lines_out, "");
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let entry_function = lookup_program_entry(ref programs);
+    if entry_function != "" {
+        append_line(mutref lines_out, "int main(void) {");
+        append_line(mutref lines_out, concat4("    return ", function_name(entry_function), "();", ""));
+        append_line(mutref lines_out, "}");
+        append_line(mutref lines_out, "");
+    } else {
+        push_c_error(mutref diags, "main", 0, "missing program entry metadata during C emission");
+    }
+
+    return make_c_emit_summary(
+        list_len(ref lines_out),
+        list_len(ref functions),
+        list_len(ref diags) - start_diag_count
+    );
+}
+
+pub fn render_c_lines(lines: ref list<str>) -> str
+audit {
+    intent("Render emitted stage1 C lines into one string");
+    mutates();
+    effects();
+}
+{
+    let mut chunks: list<str> = list();
+    let mut current_chunk = "";
+    let mut current_count = 0;
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                current_chunk = str_concat(current_chunk, value);
+                current_chunk = str_concat(current_chunk, "\n");
+                current_count = current_count + 1;
+                if current_count >= 128 {
+                    list_push(mutref chunks, current_chunk);
+                    current_chunk = "";
+                    current_count = 0;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if current_count > 0 or current_chunk != "" {
+        list_push(mutref chunks, current_chunk);
+    }
+    let mut rendered = "";
+    let mut chunk_index = 0;
+    while chunk_index < list_len(ref chunks) {
+        let entry = list_get(ref chunks, chunk_index);
+        match entry {
+            Some(value) => {
+                rendered = str_concat(rendered, value);
+            },
+            None => {
+            },
+        }
+        chunk_index = chunk_index + 1;
+    }
+    return rendered;
+}
+
+pub fn c_emit_render_type_text(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str
+audit {
+    intent("Expose stage1 C type rendering for focused tests");
+    mutates();
+    effects();
+}
+{
+    return c_type(ref type_shapes, type_id);
+}
+
+pub fn c_emit_render_type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str
+audit {
+    intent("Expose stage1 C type mangling for focused tests");
+    mutates();
+    effects();
+}
+{
+    return type_mangle(ref type_shapes, type_id);
+}
+
+pub fn c_emit_render_tag_name(type_shapes: ref list<ir_type_shape>, type_id: i32, variant_name: str) -> str
+audit {
+    intent("Expose stage1 C tag rendering for focused tests");
+    mutates();
+    effects();
+}
+{
+    return tag_name_for_variant(ref type_shapes, type_id, variant_name);
+}
+
+pub fn write_rendered_c(path: str, text: str) -> result<unit, io_err>
+audit {
+    intent("Write rendered stage1 C output to disk");
+    mutates();
+    effects();
+}
+{
+    return write_file(path, text);
+}

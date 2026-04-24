@@ -418,6 +418,8 @@ class CEmitter:
                 return f"nq_print_line({args})"
             if expr.function_name == "read_file":
                 return f"nq_read_file({args})"
+            if expr.function_name == "write_file":
+                return f"nq_write_file({args})"
             if expr.function_name == "io_err_text":
                 return f"nq_io_err_text({args})"
             if expr.function_name == "str_len":
@@ -556,6 +558,7 @@ class CEmitter:
             (typ.kind == "option" and typ.args == (Type("i32"),))
             or (typ.kind == "option" and typ.args == (Type("str"),))
             or (typ.kind == "result" and typ.args == (Type("str"), Type("io_err")))
+            or (typ.kind == "result" and typ.args == (Type("unit"), Type("io_err")))
         )
 
     def _fresh_temp(self) -> str:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from compiler.diagnostics import render_diagnostics
 from compiler.diagnostics import SourceFile
-from compiler.main import compile_source
+from compiler.main import compile_c, compile_source
 
 ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_READY = False
@@ -40,11 +40,29 @@ def ensure_bootstrap_deps() -> None:
     _BOOTSTRAP_READY = True
 
 
-def run_copied_selfhost(timeout: int = 40) -> subprocess.CompletedProcess[str]:
-    with tempfile.TemporaryDirectory() as tmp_dir:
+def copy_selfhost_workspace(destination: Path) -> None:
+    for module_path in (ROOT / "selfhost").glob("*.nq"):
+        shutil.copy(module_path, destination / module_path.name)
+
+
+def compile_and_run_c(c_path: Path, *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    ensure_bootstrap_deps()
+    exe_path = c_path.with_suffix(".exe")
+    code, output = compile_c(ROOT, c_path, exe_path)
+    if code != 0:
+        raise AssertionError(output)
+    return subprocess.run(
+        [str(exe_path)],
+        cwd=cwd if cwd is not None else c_path.parent,
+        capture_output=True,
+        text=True,
+    )
+
+
+def run_copied_selfhost(timeout: int = 90) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         tmp = Path(tmp_dir)
-        for module_path in (ROOT / "selfhost").glob("*.nq"):
-            shutil.copy(module_path, tmp / module_path.name)
+        copy_selfhost_workspace(tmp)
         return subprocess.run(
             [sys.executable, "-m", "compiler.main", "run", str(tmp / "main.nq")],
             cwd=ROOT,

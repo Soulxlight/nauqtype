@@ -1725,6 +1725,20 @@ fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked
     }
 }
 
+fn handoff_is_type_item(item: top_item) -> bool {
+    match item.kind {
+        item_type => {
+            return true;
+        },
+        item_enum => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn lookup_checked_type_shape_id(type_shapes: ref list<checked_type_shape>, kind: checked_type_shape_kind, name: str, origin_module: str, arg1_id: i32, arg2_id: i32, mutable: bool) -> i32 {
     let mut index = 0;
     while index < list_len(ref type_shapes) {
@@ -1768,6 +1782,32 @@ fn canonical_type_origin_module(uses: ref list<module_use>, items: ref list<top_
     let origin = visible_type_origin_module(ref uses, ref items, module_name, type_name);
     if origin != "" {
         return origin;
+    }
+    let mut unique_origin = "";
+    let mut found = false;
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.name == type_name and handoff_is_type_item(value) {
+                    if not found {
+                        unique_origin = value.module;
+                        found = true;
+                    } else {
+                        if unique_origin != value.module {
+                            return module_name;
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if found {
+        return unique_origin;
     }
     return module_name;
 }
@@ -2316,6 +2356,10 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         },
         tk_ident => {
             if expr_start + 1 == expr_end {
+                let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, current.text, current.start + 1);
+                if binding_id >= 0 {
+                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, current.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                }
                 let zero_enum = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
                 if zero_enum != "" {
                     let origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
@@ -2325,11 +2369,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                     }
                     return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, exported_ctx, false, false, -1, current.text, target_kind, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
                 }
-                let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, current.text, current.start + 1);
-                if binding_id < 0 {
-                    return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved binding id for checked name expression: ", current.text));
-                }
-                return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, current.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved binding id for checked name expression: ", current.text));
             }
         },
         _ => {

@@ -129,6 +129,44 @@ NQ_Result__str__io_err nq_read_file(NQStr path) {
     };
 }
 
+NQ_Result__unit__io_err nq_write_file(NQStr path, NQStr text) {
+    char* file_name = (char*)malloc((size_t)path.len + 1);
+    FILE* handle;
+    size_t written;
+    if (file_name == NULL) {
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    memcpy(file_name, path.data, (size_t)path.len);
+    file_name[path.len] = '\0';
+    handle = fopen(file_name, "wb");
+    free(file_name);
+    if (handle == NULL) {
+        return (NQ_Result__unit__io_err){
+            .tag = NQ_Result__unit__io_err_Tag_Err,
+            .data.Err = { ._0 = nq_make_io_err(6, "failed to open file for write") },
+        };
+    }
+    written = fwrite(text.data, 1, (size_t)text.len, handle);
+    if (written != (size_t)text.len) {
+        fclose(handle);
+        return (NQ_Result__unit__io_err){
+            .tag = NQ_Result__unit__io_err_Tag_Err,
+            .data.Err = { ._0 = nq_make_io_err(7, "failed to write file") },
+        };
+    }
+    if (fclose(handle) != 0) {
+        return (NQ_Result__unit__io_err){
+            .tag = NQ_Result__unit__io_err_Tag_Err,
+            .data.Err = { ._0 = nq_make_io_err(8, "failed to close file after write") },
+        };
+    }
+    return (NQ_Result__unit__io_err){
+        .tag = NQ_Result__unit__io_err_Tag_Ok,
+        .data.Ok = { ._0 = NQ_UNIT },
+    };
+}
+
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index) {
     if (index < 0 || index >= (int32_t)text.len) {
         return (NQ_Option__i32){

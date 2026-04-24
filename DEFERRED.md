@@ -53,4 +53,4 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - They are not required for a real v0.1 vertical slice.
 - Several would materially increase parser, type checker, or ownership complexity.
 - The project should first prove the core pipeline: source -> checked IR -> C -> executable.
-- Stage1 already activates the minimum bootstrap-critical additions: flat-root imports, `read_file`, and builtin `list<T>`.
+- Stage1 already activates the minimum bootstrap-critical additions: flat-root imports, `read_file`, `write_file`, bootstrap string helpers, and builtin `list<T>`.

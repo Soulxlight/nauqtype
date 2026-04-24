@@ -455,6 +455,7 @@ fn print_line(text: str) -> unit;
 
 ```nauq
 fn read_file(path: str) -> result<str, io_err>;
+fn write_file(path: str, text: str) -> result<unit, io_err>;
 fn io_err_text(err: io_err) -> str;
 fn str_len(text: str) -> i32;
 fn str_concat(left: str, right: str) -> str;

@@ -78,6 +78,9 @@ fn is_type_item(item: top_item) -> bool {
         item_type => {
             return true;
         },
+        item_enum => {
+            return true;
+        },
         _ => {
             return false;
         },
@@ -195,6 +198,9 @@ fn module_exports_type_name(items: ref list<top_item>, module: str, name: str) -
 fn builtin_function_arity(name: str) -> i32 {
     if name == "print_line" or name == "read_file" or name == "io_err_text" {
         return 1;
+    }
+    if name == "write_file" {
+        return 2;
     }
     if name == "str_len" {
         return 1;
@@ -409,6 +415,9 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "read_file" {
         return "result";
     }
+    if name == "write_file" {
+        return "result";
+    }
     if name == "io_err_text" {
         return "str";
     }
@@ -440,6 +449,9 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     if name == "read_file" {
         return "str";
     }
+    if name == "write_file" {
+        return "unit";
+    }
     if name == "str_get" {
         return "i32";
     }
@@ -450,7 +462,7 @@ fn builtin_function_return_arg1_name(name: str) -> str {
 }
 
 fn builtin_function_return_arg2_name(name: str) -> str {
-    if name == "read_file" {
+    if name == "read_file" or name == "write_file" {
         return "io_err";
     }
     return "";
@@ -1139,6 +1151,11 @@ fn lookup_function_param_ctx(function_params: ref list<function_param_fact>, mod
 fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
     if function_name == "print_line" or function_name == "read_file" {
         if index == 0 {
+            return "str";
+        }
+    }
+    if function_name == "write_file" {
+        if index == 0 or index == 1 {
             return "str";
         }
     }

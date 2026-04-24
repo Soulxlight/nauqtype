@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written semantic front end that can load flat-root modules, lex, parse, resolve, and type-check the in-repo selfhost tree with no `stage1 limitation` diagnostics
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, and emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics
 
 ## Quick Start
 
@@ -101,7 +101,8 @@ Current semantic near-parity milestone:
 - the trusted subset is differential-tested against stage0 by accept/reject family
 - stage1 now also enforces the current stage0-parity borrow rules on the structured checked handoff
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
-- stage1 still stops before C emission, executable build, and self-rebuild
+- stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
+- stage1 still stops before self-build proof and stage2 comparison
 
 Architecture checkpoint:
 
@@ -109,14 +110,13 @@ Architecture checkpoint:
 - that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
 - stage1 now materializes a deterministic structured checked handoff from the trusted semantic outputs
 - the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, recursive type-shape truth with origin-aware named types, checked pattern trees, and fail-closed export diagnostics for the trusted subset
-- genuine parity work now starts from that checked handoff boundary rather than the flat fact lists
+- genuine parity work now continues from that checked handoff boundary rather than the flat fact lists
 - see `SELFHOST_HANDOFF.md` for the required downstream contract
 
 Current selfhost semantic gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- selfhost C code generation
 - stage1 self-build / stage2 comparison
 
 Current AI-first compiler output:
@@ -144,4 +144,4 @@ Current AI-first compiler output:
 
 - The current compiler is a Python bootstrap because this workspace did not provide a Rust toolchain.
 - The long-term implementation preference remains Rust.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, and builtin `list<T>`.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, and the minimal text file output builtin `write_file(path: str, text: str) -> result<unit, io_err>`.

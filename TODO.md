@@ -132,5 +132,5 @@
 - [x] Harden the structured checked handoff with stable binding identity, explicit borrow nodes, and fail-closed export
 - [x] Add stage1 borrow checking on the structured checked handoff
 - [x] Add stage1 IR lowering on the structured checked handoff
-- [ ] Add stage1 C emission on the structured checked handoff
+- [x] Add stage1 C emission on the structured checked handoff
 - [ ] Define stage1-to-stage2 comparison for first real self-build proof

@@ -32,13 +32,17 @@ Current trustworthy selfhost slice:
 - explicit stage1 limitation diagnostics for unsupported expression shapes
 - differential stage0-vs-stage1 coverage for the trusted subset
 - the in-repo `selfhost/` tree itself runs with no `stage1 limitation` diagnostics
+- stage1 borrow checking now runs on the structured checked handoff
+- stage1 IR lowering now runs on the structured checked handoff
+- stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 
 Current semantic near-parity milestone:
 
 - stage1 is now trustworthy as a semantic front end for the trusted subset
 - stage0 remains the semantic reference in the differential harness
 - exact wording is not the parity target; accept/reject family is
-- backend work is still outside this milestone
+- the first backend-complete milestone now includes borrow checking, IR lowering, and deterministic C emission
+- self-build proof and stage2 comparison are still outside this milestone
 
 ## Architecture Checkpoint
 
@@ -103,7 +107,6 @@ Minimum collection goal:
 
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
-- stage1 C emission on that handoff
 - stage1 self-build proof and stage2 comparison
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

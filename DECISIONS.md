@@ -202,7 +202,7 @@
 
 ## D026: Stage1 file/string/list support is builtin, not a broader stdlib family
 
-- Decision: add only `read_file`, `io_err_text`, `str_len`, `str_get`, `str_slice`, and builtin `list<T>` helpers.
+- Decision: add only `read_file`, `write_file`, `io_err_text`, `str_len`, `str_concat`, `str_get`, `str_slice`, and builtin `list<T>` helpers.
 - Alternatives considered: broader filesystem APIs, list literals, maps/sets, methods.
 - Reason chosen: this is the minimum runtime surface needed to write a compiler front end in Nauqtype.
 - Consequences: the runtime grows slightly, but the language avoids a broad library design commitment.

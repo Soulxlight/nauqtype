@@ -67,6 +67,62 @@ fn main() -> i32 {
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("failed to open file", result.stdout)
 
+    def test_write_file_success_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            source = """
+fn main() -> i32 {
+    let outcome = write_file("output.txt", "hello");
+    match outcome {
+        Ok(_) => {
+            let reread = read_file("output.txt");
+            match reread {
+                Ok(text) => {
+                    return str_len(text);
+                },
+                Err(err) => {
+                    print_line(io_err_text(err));
+                    return 1;
+                },
+            }
+        },
+        Err(err) => {
+            print_line(io_err_text(err));
+            return 1;
+        },
+    }
+}
+"""
+            (tmp / "main.nq").write_text(source, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-m", "compiler.main", "run", str(tmp / "main.nq")],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 5, result.stderr)
+            self.assertEqual((tmp / "output.txt").read_text(encoding="utf-8"), "hello")
+
+    def test_write_file_error_path(self) -> None:
+        result = self.run_program(
+            """
+fn main() -> i32 {
+    let outcome = write_file("missing/output.txt", "hello");
+    match outcome {
+        Ok(_) => {
+            return 0;
+        },
+        Err(err) => {
+            print_line(io_err_text(err));
+            return 1;
+        },
+    }
+}
+"""
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("failed to open file for write", result.stdout)
+
     def test_list_push_len_and_get_run(self) -> None:
         result = self.run_program(
             """

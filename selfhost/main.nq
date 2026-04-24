@@ -1,5 +1,6 @@
 use ast;
 use borrow;
+use c_emit;
 use files;
 use handoff;
 use ir;
@@ -208,6 +209,7 @@ fn main() -> i32 {
     let mut ir_enum_decls: list<ir_enum_decl> = list();
     let mut ir_variant_decls: list<ir_variant_decl> = list();
     let mut ir_variant_payload_decls: list<ir_variant_payload_decl> = list();
+    let mut c_lines: list<str> = list();
     let mut diags: list<diag> = list();
     let mut cursor = 0;
 
@@ -239,13 +241,26 @@ fn main() -> i32 {
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
     let ir_summary = build_ir_program(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+    let c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
+
+    if list_len(ref diags) == 0 {
+        let rendered_c = render_c_lines(ref c_lines);
+        let write_result = write_rendered_c("build/main.c", rendered_c);
+        match write_result {
+            Ok(_) => {
+            },
+            Err(err) => {
+                list_push(mutref diags, make_diag("main", 0, io_err_text(err)));
+            },
+        }
+    }
 
     if list_len(ref diags) > 0 {
         emit_all(ref diags);
         return 1;
     }
 
-    if checked_summary.function_count < 1 or checked_summary.block_count < 1 or borrow_summary.function_count < checked_summary.function_count or ir_summary.function_count < checked_summary.function_count {
+    if checked_summary.function_count < 1 or checked_summary.block_count < 1 or borrow_summary.function_count < checked_summary.function_count or ir_summary.function_count < checked_summary.function_count or c_summary.function_count < ir_summary.function_count or c_summary.line_count < 1 {
         emit_all(ref diags);
         return 1;
     }

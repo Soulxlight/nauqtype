@@ -146,7 +146,8 @@ Status:
 Status:
 
 - stage1 borrow checking and stage1 IR lowering are now done on the structured checked handoff
-- the next backend milestone is stage1 C emission on that IR path
+- stage1 C emission is now done on the structured IR path
+- the next backend milestone is the first stage1-to-stage2 self-build comparison proof
 
 ## Feature Ordering
 
