@@ -179,10 +179,10 @@ Status:
 
 Status:
 
-- in progress
-- the stage1 executable now owns `check`, `emit-c`, and `review`
+- done for the active driver slice
+- the stage1 executable now owns `check`, `emit-c`, `review`, `build`, and `run`
 - the legacy no-arg selfhost path is preserved for the copied-selfhost proof flow
-- `build` / `run` remain the next cutover slice
+- the current `build` / `run` slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the repo-root bootstrap layout
 
 ### M16: Nauqtype-Owned Proof And Corpus Runner
 
@@ -194,7 +194,7 @@ Status:
 Status:
 
 - not started
-- the current Python proof/corpus harness remains the frozen reference path until M15 completes
+- the current Python proof/corpus harness remains the frozen reference path until this runner lands
 
 ## Feature Ordering
 

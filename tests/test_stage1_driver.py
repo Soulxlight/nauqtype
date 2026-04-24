@@ -211,6 +211,67 @@ class Stage1DriverTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["print"])
 
+    def test_stage1_driver_build_creates_default_c_and_exe_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        return 7;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "build", str(tmp / "main.nq")],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "")
+            self.assertTrue((tmp / "build" / "main.c").exists())
+            self.assertTrue((tmp / "build" / "main.exe").exists())
+
+    def test_stage1_driver_run_executes_with_source_directory_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        let data = read_file("input.txt");
+                        match data {
+                            Ok(text) => {
+                                print_line(text);
+                                return 0;
+                            },
+                            Err(err) => {
+                                print_line(io_err_text(err));
+                                return 1;
+                            },
+                        }
+                    }
+                    """,
+                },
+            )
+            (tmp / "input.txt").write_text("hello", encoding="utf-8")
+            result = subprocess.run(
+                [str(self.driver_exe), "run", str(tmp / "main.nq")],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "hello\n")
+            self.assertEqual(result.stderr, "")
+
 
 if __name__ == "__main__":
     unittest.main()

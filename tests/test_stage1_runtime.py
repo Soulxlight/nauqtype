@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -166,6 +167,89 @@ fn main() -> i32 {
         self.assertIsNone(emitted)
         codes = [item.code for item in diagnostics.items]
         self.assertIn("NQ-TYPE-037", codes)
+
+    def test_run_process_success_path(self) -> None:
+        if os.name == "nt":
+            program = "cmd"
+            arg_lines = """
+    list_push(mutref args, "/c");
+    list_push(mutref args, "echo hello");
+"""
+        else:
+            program = "sh"
+            arg_lines = """
+    list_push(mutref args, "-c");
+    list_push(mutref args, "printf hello");
+"""
+        result = self.run_program(
+            f"""
+fn main() -> i32 {{
+    let mut args: list<str> = list();
+{arg_lines}
+    let outcome = run_process("{program}", ref args, ".");
+    match outcome {{
+        Ok(process) => {{
+            if process.exit_code != 0 {{
+                return process.exit_code;
+            }}
+            if str_len(process.stdout) > 0 and process.stderr == "" {{
+                return 10;
+            }}
+            return 1;
+        }},
+        Err(err) => {{
+            print_line(io_err_text(err));
+            return 1;
+        }},
+    }}
+}}
+"""
+        )
+        self.assertEqual(result.returncode, 10, result.stderr)
+
+    def test_run_process_uses_supplied_cwd(self) -> None:
+        if os.name == "nt":
+            program = "cmd"
+            arg_lines = """
+    list_push(mutref args, "/c");
+    list_push(mutref args, "type marker.txt");
+"""
+        else:
+            program = "sh"
+            arg_lines = """
+    list_push(mutref args, "-c");
+    list_push(mutref args, "cat marker.txt");
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            (tmp / "main.nq").write_text(
+                f"""
+fn main() -> i32 {{
+    let mut args: list<str> = list();
+{arg_lines}
+    let outcome = run_process("{program}", ref args, ".");
+    match outcome {{
+        Ok(process) => {{
+            return str_len(process.stdout);
+        }},
+        Err(err) => {{
+            print_line(io_err_text(err));
+            return 1;
+        }},
+    }}
+}}
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            (tmp / "marker.txt").write_text("hello", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-m", "compiler.main", "run", str(tmp / "main.nq")],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 5, result.stderr)
 
 
 if __name__ == "__main__":

@@ -202,6 +202,9 @@ fn builtin_function_arity(name: str) -> i32 {
     if name == "write_file" {
         return 2;
     }
+    if name == "run_process" {
+        return 3;
+    }
     if name == "arg_count" {
         return 0;
     }
@@ -445,6 +448,9 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "create_dir_all" {
         return "result";
     }
+    if name == "run_process" {
+        return "result";
+    }
     if name == "io_err_text" {
         return "str";
     }
@@ -485,6 +491,9 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     if name == "create_dir_all" {
         return "unit";
     }
+    if name == "run_process" {
+        return "process_result";
+    }
     if name == "str_get" {
         return "i32";
     }
@@ -495,7 +504,7 @@ fn builtin_function_return_arg1_name(name: str) -> str {
 }
 
 fn builtin_function_return_arg2_name(name: str) -> str {
-    if name == "read_file" or name == "write_file" or name == "create_dir_all" {
+    if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
     }
     return "";
@@ -1197,6 +1206,14 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
             return "io_err";
         }
     }
+    if function_name == "run_process" {
+        if index == 0 or index == 2 {
+            return "str";
+        }
+        if index == 1 {
+            return "list";
+        }
+    }
     if function_name == "str_len" {
         if index == 0 {
             return "str";
@@ -1244,6 +1261,17 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
     return "";
 }
 
+fn builtin_function_param_ctx(function_name: str, index: i32) -> expected_type_ctx {
+    let builtin = builtin_function_param_type_name(function_name, index);
+    if builtin == "" {
+        return empty_expected_type_ctx();
+    }
+    if function_name == "run_process" and index == 1 {
+        return make_expected_type_ctx("list", "str", "");
+    }
+    return make_expected_type_ctx(builtin, "", "");
+}
+
 fn visible_function_param_type_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> str {
     let builtin = builtin_function_param_type_name(function_name, index);
     if builtin != "" {
@@ -1276,9 +1304,9 @@ audit {
     effects();
 }
 {
-    let builtin = builtin_function_param_type_name(function_name, index);
-    if builtin != "" {
-        return make_expected_type_ctx(builtin, "", "");
+    let builtin = builtin_function_param_ctx(function_name, index);
+    if builtin.head != "" {
+        return builtin;
     }
     if module_has_local_function_name(ref items, module, function_name) {
         return lookup_function_param_ctx(ref function_params, module, function_name, index);
@@ -2356,6 +2384,16 @@ audit {
                         }
                         if base_type_ctx.head == "token_kind" {
                             push_diag(mutref diags, module, field_token.start, "field access base has type `token_kind`");
+                            return empty_expected_type_ctx();
+                        }
+                        if base_type_ctx.head == "process_result" {
+                            if field_token.text == "exit_code" {
+                                return make_expected_type_ctx("i32", "", "");
+                            }
+                            if field_token.text == "stdout" or field_token.text == "stderr" {
+                                return make_expected_type_ctx("str", "", "");
+                            }
+                            push_diag(mutref diags, module, field_token.start, "field does not exist on base type");
                             return empty_expected_type_ctx();
                         }
                         push_diag(mutref diags, module, field_token.start, "field access base does not name a readable product type");

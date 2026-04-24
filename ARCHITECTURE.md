@@ -376,7 +376,10 @@ Current bootstrap runtime responsibilities:
 - `str` representation
 - printing support
 - bootstrap file input helpers
+- bootstrap file output helpers
 - typed list allocation helpers
+- process argument access for the active stage1 driver
+- narrow directory creation and subprocess helpers for driver/proof orchestration
 - helper constructors or tag definitions if needed
 
 Everything else stays out unless it is required by the vertical slice.

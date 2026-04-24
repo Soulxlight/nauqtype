@@ -63,6 +63,7 @@ pub enum checked_type_shape_kind {
     checked_type_str,
     checked_type_unit,
     checked_type_io_err,
+    checked_type_process_result,
     checked_type_named,
     checked_type_list,
     checked_type_option,
@@ -1672,6 +1673,16 @@ fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked
                 },
             }
         },
+        checked_type_process_result => {
+            match right {
+                checked_type_process_result => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_type_named => {
             match right {
                 checked_type_named => {
@@ -1837,6 +1848,9 @@ fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: s
     }
     if type_name == "io_err" {
         return push_type_shape(mutref type_shapes, checked_type_io_err, "", "", -1, -1, false);
+    }
+    if type_name == "process_result" {
+        return push_type_shape(mutref type_shapes, checked_type_process_result, "", "", -1, -1, false);
     }
     if type_name == "list" {
         if type_arg1_name == "" {

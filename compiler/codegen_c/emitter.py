@@ -429,6 +429,8 @@ class CEmitter:
                 return f"nq_arg_get({args})"
             if expr.function_name == "create_dir_all":
                 return f"nq_create_dir_all({args})"
+            if expr.function_name == "run_process":
+                return f"nq_run_process({args})"
             if expr.function_name == "io_err_text":
                 return f"nq_io_err_text({args})"
             if expr.function_name == "str_len":
@@ -570,6 +572,8 @@ class CEmitter:
             or (typ.kind == "option" and typ.args == (Type("str"),))
             or (typ.kind == "result" and typ.args == (Type("str"), Type("io_err")))
             or (typ.kind == "result" and typ.args == (Type("unit"), Type("io_err")))
+            or (typ.kind == "result" and typ.args == (Type("process_result"), Type("io_err")))
+            or (typ.kind == "list" and typ.args == (Type("str"),))
         )
 
     def _fresh_temp(self) -> str:

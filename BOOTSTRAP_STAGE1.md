@@ -35,7 +35,7 @@ Current trustworthy selfhost slice:
 - stage1 borrow checking now runs on the structured checked handoff
 - stage1 IR lowering now runs on the structured checked handoff
 - stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` driver workflow
+- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` / `build` / `run` driver workflow
 
 Current semantic near-parity milestone:
 
@@ -68,6 +68,7 @@ Current harness constraints to treat as proof-path facts, not surprise bugs:
 - keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
 - tolerate Windows temp-dir cleanup friction from emitted executables and debug artifacts
 - lift the current structural C normalization out of the stage1 C-emission test module into a shared proof helper instead of duplicating it during the proof milestone
+- during the current driver cutover, invoke stage1 `build` / `run` from the repo root because that slice still resolves `.deps/ziglang/zig.exe` and `stdlib/runtime.c` from the pinned workspace bootstrap layout
 
 ## Architecture Checkpoint
 
@@ -133,7 +134,6 @@ Minimum collection goal:
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
-- finish the executable-driver cutover for `build` / `run`
 - replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

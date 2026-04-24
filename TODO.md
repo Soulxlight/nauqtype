@@ -141,7 +141,7 @@
 - [x] Cut over the stage1 executable driver for `check`
 - [x] Cut over the stage1 executable driver for `emit-c`
 - [x] Cut over the stage1 executable driver for `review`
-- [ ] Add the remaining minimal tooling runtime surface needed for `build` / `run`
-- [ ] Cut over the stage1 executable driver for `build`
-- [ ] Cut over the stage1 executable driver for `run`
+- [x] Add the remaining minimal tooling runtime surface needed for `build` / `run`
+- [x] Cut over the stage1 executable driver for `build`
+- [x] Cut over the stage1 executable driver for `run`
 - [ ] Replace the active Python proof/corpus orchestration with a Nauqtype-owned runner

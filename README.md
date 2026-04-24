@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, and `review`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `review`, `build`, and `run`
 
 ## Quick Start
 
@@ -54,6 +54,20 @@ Use the active Nauqtype-owned driver for `review`:
 ```powershell
 selfhost\build\main.exe review examples\review_contracts.nq
 ```
+
+Use the active Nauqtype-owned driver for `build`:
+
+```powershell
+selfhost\build\main.exe build examples\hello.nq
+```
+
+Use the active Nauqtype-owned driver for `run`:
+
+```powershell
+selfhost\build\main.exe run examples\hello.nq
+```
+
+Current cutover note: invoke stage1 `build` / `run` from the repo root for now, because that slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 
 Frozen bootstrap/reference workflows that still exist during the cutover:
 
@@ -105,7 +119,7 @@ Current semantic near-parity milestone:
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 - the first copied-selfhost stage1-to-stage2 comparison proof is now complete
-- the stage1 executable now owns the active `check`, `emit-c`, and `review` workflow, while `build` and `run` remain on the frozen stage0 reference path until the next cutover slice
+- the stage1 executable now owns the active `check`, `emit-c`, `review`, `build`, and `run` workflow while preserving the no-arg copied-selfhost proof path
 
 Architecture checkpoint:
 
@@ -121,7 +135,6 @@ Current remaining gaps:
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
-- finish the stage1 executable driver cutover for `build` / `run`
 - replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
 
 Current AI-first compiler output:

@@ -70,6 +70,13 @@ class TypeChecker:
             "arg_count": FunctionSig("arg_count", [], I32, None, builtin=True),
             "arg_get": FunctionSig("arg_get", [I32], Type("option", args=(STR,)), None, builtin=True),
             "create_dir_all": FunctionSig("create_dir_all", [STR], Type("result", args=(UNIT, IO_ERR)), None, builtin=True),
+            "run_process": FunctionSig(
+                "run_process",
+                [STR, Type("ref", args=(Type("list", args=(STR,)),)), STR],
+                Type("result", args=(PROCESS_RESULT, IO_ERR)),
+                None,
+                builtin=True,
+            ),
             "io_err_text": FunctionSig("io_err_text", [IO_ERR], STR, None, builtin=True),
             "str_len": FunctionSig("str_len", [STR], I32, None, builtin=True),
             "str_get": FunctionSig("str_get", [STR, I32], Type("option", args=(I32,)), None, builtin=True),
@@ -189,7 +196,7 @@ class TypeChecker:
         visiting: set[str] = set()
 
         def inner(typ: Type) -> bool:
-            if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err"}:
+            if typ.kind in {"bool", "i32", "str", "unit", "ref", "io_err", "process_result"}:
                 return True
             if typ.kind == "list":
                 return False

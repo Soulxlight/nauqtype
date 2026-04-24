@@ -17,6 +17,8 @@ enum driver_mode {
     driver_check,
     driver_emit_c,
     driver_review,
+    driver_build,
+    driver_run,
     driver_invalid,
 }
 
@@ -256,8 +258,53 @@ fn invalid_request(message: str) -> driver_request {
     return make_driver_request(driver_invalid, "", "", ".", "", message);
 }
 
+fn slice_text(text: str, start: i32, end: i32) -> str {
+    let entry = str_slice(text, start, end);
+    match entry {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
+    if end > start {
+        let last_entry = str_get(text, end - 1);
+        match last_entry {
+            Some(value) => {
+                if value == 13 {
+                    return slice_text(text, start, end - 1);
+                }
+            },
+            None => {
+            },
+        }
+    }
+    return slice_text(text, start, end);
+}
+
+fn str_ends_with(text: str, suffix: str) -> bool {
+    let text_len = str_len(text);
+    let suffix_len = str_len(suffix);
+    if suffix_len > text_len {
+        return false;
+    }
+    let slice = str_slice(text, text_len - suffix_len, text_len);
+    match slice {
+        Some(value) => {
+            return value == suffix;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc review <source>";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc review <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>]";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -265,6 +312,32 @@ fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
         return explicit_output;
     }
     return replace_extension(source_path, ".c");
+}
+
+fn default_build_dir(source_path: str) -> str {
+    return join_path(path_dir(source_path), "build");
+}
+
+fn default_build_c_path(source_path: str) -> str {
+    return join_path(default_build_dir(source_path), str_concat(path_stem(source_path), ".c"));
+}
+
+fn default_build_exe_path(source_path: str) -> str {
+    return join_path(default_build_dir(source_path), str_concat(path_stem(source_path), ".exe"));
+}
+
+fn build_c_output_path(source_path: str, explicit_output: str) -> str {
+    if explicit_output != "" and str_ends_with(explicit_output, ".c") {
+        return explicit_output;
+    }
+    return default_build_c_path(source_path);
+}
+
+fn build_exe_output_path(source_path: str, explicit_output: str) -> str {
+    if explicit_output != "" and not str_ends_with(explicit_output, ".c") {
+        return explicit_output;
+    }
+    return default_build_exe_path(source_path);
 }
 
 fn parse_driver_request() -> driver_request {
@@ -322,7 +395,29 @@ fn parse_driver_request() -> driver_request {
     }
 
     if command == "build" or command == "run" {
-        return invalid_request(str_concat("stage1 driver command not yet implemented: ", command));
+        if argc != 3 and argc != 5 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        if source_path == "" or entry_module == "" {
+            return invalid_request(str_concat("missing source path for `", str_concat(command, "`")));
+        }
+        let mut explicit_output = "";
+        if argc == 5 {
+            let flag = option_text(arg_get(3));
+            if flag != "-o" and flag != "--output" {
+                return invalid_request("expected `-o` or `--output` after the source path");
+            }
+            explicit_output = option_text(arg_get(4));
+            if explicit_output == "" {
+                return invalid_request(str_concat("missing output path for `", str_concat(command, "`")));
+            }
+        }
+        if command == "build" {
+            return make_driver_request(driver_build, source_path, entry_module, path_dir(source_path), explicit_output, "");
+        }
+        return make_driver_request(driver_run, source_path, entry_module, path_dir(source_path), explicit_output, "");
     }
 
     if command == "" {
@@ -498,6 +593,110 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str) -> i32 {
     return 0;
 }
 
+fn emit_text_output(text: str, to_stderr: bool) -> unit {
+    let mut start = 0;
+    let mut index = 0;
+    while index < str_len(text) {
+        let entry = str_get(text, index);
+        match entry {
+            Some(value) => {
+                if value == 10 {
+                    let line = slice_text_without_trailing_cr(text, start, index);
+                    if to_stderr {
+                        eprint_line(line);
+                    } else {
+                        print_line(line);
+                    }
+                    start = index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if start < str_len(text) {
+        let tail = slice_text_without_trailing_cr(text, start, str_len(text));
+        if to_stderr {
+            eprint_line(tail);
+        } else {
+            print_line(tail);
+        }
+    }
+    return;
+}
+
+fn emit_process_output(result: process_result) -> unit {
+    if result.stdout != "" {
+        emit_text_output(result.stdout, false);
+    }
+    if result.stderr != "" {
+        emit_text_output(result.stderr, true);
+    }
+    return;
+}
+
+fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_err> {
+    let ensure_result = ensure_parent_dir(exe_path);
+    match ensure_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            return Err(err);
+        },
+    }
+
+    let mut args: list<str> = list();
+    list_push(mutref args, "cc");
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-Istdlib");
+    list_push(mutref args, c_path);
+    list_push(mutref args, "stdlib/runtime.c");
+    list_push(mutref args, "-o");
+    list_push(mutref args, exe_path);
+    return run_process(".deps/ziglang/zig.exe", ref args, ".");
+}
+
+fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
+    let c_path = build_c_output_path(request.entry_path, request.output_path);
+    let exe_path = build_exe_output_path(request.entry_path, request.output_path);
+    let emit_code = run_pipeline(request.workspace_root, request.entry_module, request.entry_path, c_path, true, "");
+    if emit_code != 0 {
+        return emit_code;
+    }
+
+    let compile_result = compile_emitted_c(c_path, exe_path);
+    match compile_result {
+        Ok(compile_status) => {
+            emit_process_output(compile_status);
+            if compile_status.exit_code != 0 {
+                return compile_status.exit_code;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    if not execute_program {
+        return 0;
+    }
+
+    let empty_args: list<str> = list();
+    let run_result = run_process(exe_path, ref empty_args, path_dir(request.entry_path));
+    match run_result {
+        Ok(run_status) => {
+            emit_process_output(run_status);
+            return run_status.exit_code;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+}
+
 fn main() -> i32 {
     let request = parse_driver_request();
     match request.mode {
@@ -512,6 +711,12 @@ fn main() -> i32 {
         },
         driver_review => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path);
+        },
+        driver_build => {
+            return run_build_command(request, false);
+        },
+        driver_run => {
+            return run_build_command(request, true);
         },
         driver_invalid => {
             print_line(request.error_message);

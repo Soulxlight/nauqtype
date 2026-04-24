@@ -691,6 +691,9 @@ fn type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 checked_type_io_err => {
                     return "io_err";
                 },
+                checked_type_process_result => {
+                    return "process_result";
+                },
                 checked_type_named => {
                     return sanitize_name(named_type_full_name(value.origin_module, value.name));
                 },
@@ -736,6 +739,9 @@ fn c_type(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 },
                 checked_type_io_err => {
                     return "NQIoErr";
+                },
+                checked_type_process_result => {
+                    return "NQ_process_result";
                 },
                 checked_type_named => {
                     return named_type_name(value.origin_module, value.name);
@@ -823,6 +829,25 @@ fn is_runtime_native_option(type_shapes: ref list<ir_type_shape>, payload_type_i
     }
 }
 
+fn is_runtime_native_list(type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> bool {
+    let entry = lookup_type_shape(ref type_shapes, element_type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_str => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
 fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> bool {
     let ok_entry = lookup_type_shape(ref type_shapes, ok_type_id);
     let err_entry = lookup_type_shape(ref type_shapes, err_type_id);
@@ -837,6 +862,9 @@ fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i3
                                     return true;
                                 },
                                 checked_type_unit => {
+                                    return true;
+                                },
+                                checked_type_process_result => {
                                     return true;
                                 },
                                 _ => {
@@ -1019,8 +1047,10 @@ fn collect_type_generics(type_shapes: ref list<ir_type_shape>, type_id: i32, opt
                     collect_type_generics(ref type_shapes, value.arg2_id, mutref options, mutref results, mutref lists);
                 },
                 checked_type_list => {
-                    let next = insert_list_type_sorted(ref lists, ref type_shapes, value.arg1_id);
-                    lists = next;
+                    if not is_runtime_native_list(ref type_shapes, value.arg1_id) {
+                        let next = insert_list_type_sorted(ref lists, ref type_shapes, value.arg1_id);
+                        lists = next;
+                    }
                     if not is_runtime_native_option(ref type_shapes, value.arg1_id) {
                         let option_next = insert_option_type_sorted(ref options, ref type_shapes, value.arg1_id);
                         options = option_next;
@@ -1374,6 +1404,9 @@ fn builtin_call_name(name: str) -> str {
     }
     if name == "create_dir_all" {
         return "nq_create_dir_all";
+    }
+    if name == "run_process" {
+        return "nq_run_process";
     }
     if name == "io_err_text" {
         return "nq_io_err_text";
