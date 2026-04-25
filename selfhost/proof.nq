@@ -10,10 +10,26 @@ type norm_token {
     next_index: i32,
 }
 
+type corpus_case {
+    name: str,
+    source_path: str,
+    expected_exit_code: i32,
+    expected_stdout: str,
+}
+
 fn make_norm_mapping(original: str, replacement: str) -> norm_mapping {
     return norm_mapping {
         original: original,
         replacement: replacement,
+    };
+}
+
+fn make_corpus_case(name: str, source_path: str, expected_exit_code: i32, expected_stdout: str) -> corpus_case {
+    return corpus_case {
+        name: name,
+        source_path: source_path,
+        expected_exit_code: expected_exit_code,
+        expected_stdout: expected_stdout,
     };
 }
 
@@ -162,6 +178,25 @@ fn starts_with_at(text: str, index: i32, pattern: str) -> bool {
         offset = offset + 1;
     }
     return true;
+}
+
+fn text_contains(text: str, pattern: str) -> bool {
+    if pattern == "" {
+        return true;
+    }
+    let text_len = str_len(text);
+    let pattern_len = str_len(pattern);
+    if pattern_len > text_len {
+        return false;
+    }
+    let mut start = 0;
+    while start <= text_len - pattern_len {
+        if starts_with_at(text, start, pattern) {
+            return true;
+        }
+        start = start + 1;
+    }
+    return false;
 }
 
 fn trim_slice(text: str, start: i32, end: i32) -> str {
@@ -323,6 +358,23 @@ fn normalize_structural_c(text: str) -> str {
     return out;
 }
 
+fn normalize_newlines(text: str) -> str {
+    let mut out = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let ch = char_at(text, index);
+        if ch != 13 {
+            out = str_concat(out, slice_text(text, index, index + 1));
+        }
+        index = index + 1;
+    }
+    return out;
+}
+
+fn output_matches(actual: str, expected: str) -> bool {
+    return normalize_newlines(actual) == normalize_newlines(expected);
+}
+
 fn copy_file_text(source_path: str, dest_path: str) -> result<unit, io_err> {
     let ensure_result = ensure_parent_dir(dest_path);
     match ensure_result {
@@ -431,9 +483,200 @@ fn run_driver_build(driver_path: str, entry_path: str) -> result<process_result,
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_emit_c(driver_path: str, entry_path: str, output_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "emit-c");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, "-o");
+    list_push(mutref args, output_path);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_run(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "run");
+    list_push(mutref args, entry_path);
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_stage2(stage2_path: str, proof_dir: str) -> result<process_result, io_err> {
     let args: list<str> = list();
     return run_process(stage2_path, ref args, proof_dir);
+}
+
+fn default_build_c_path(source_path: str) -> str {
+    return join_path(join_path(path_dir(source_path), "build"), str_concat(path_stem(source_path), ".c"));
+}
+
+fn corpus_emit_c_path(case_name: str) -> str {
+    return join_path(join_path("build/corpus", case_name), "emit.c");
+}
+
+fn has_stage1_failure_text(status: process_result) -> bool {
+    if text_contains(status.stdout, "stage1 limitation") or text_contains(status.stderr, "stage1 limitation") {
+        return true;
+    }
+    if text_contains(status.stdout, "stage1 c error") or text_contains(status.stderr, "stage1 c error") {
+        return true;
+    }
+    return false;
+}
+
+fn driver_step_ok(step_name: str, status: process_result) -> bool {
+    if status.exit_code != 0 {
+        eprint_line(str_concat(step_name, " failed"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(step_name, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if status.stdout != "" or status.stderr != "" {
+        eprint_line(str_concat(step_name, " produced unexpected output"));
+        emit_process_output(status);
+        return false;
+    }
+    return true;
+}
+
+fn read_text_or_report(path: str, label: str, output: mutref str) -> bool {
+    let data = read_file(path);
+    match data {
+        Ok(text) => {
+            output = text;
+            return true;
+        },
+        Err(err) => {
+            eprint_line(str_concat(label, str_concat(": ", io_err_text(err))));
+            return false;
+        },
+    }
+}
+
+fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
+    list_push(mutref cases, make_corpus_case("enum_match", "examples/enum_match.nq", 1, ""));
+    list_push(mutref cases, make_corpus_case("fallible_function", "examples/fallible_function.nq", 7, ""));
+    list_push(mutref cases, make_corpus_case("fibonacci", "examples/fibonacci.nq", 55, ""));
+    list_push(mutref cases, make_corpus_case("hello", "examples/hello.nq", 0, "Hello, Nauqtype!\n"));
+    list_push(mutref cases, make_corpus_case("list_sum", "examples/list_sum.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("multi_file_main", "examples/multi_file_main.nq", 7, ""));
+    list_push(mutref cases, make_corpus_case("mutate_counter", "examples/mutate_counter.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("read_file_len", "examples/read_file_len.nq", 6, ""));
+    list_push(mutref cases, make_corpus_case("result_handling", "examples/result_handling.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("review_contracts", "examples/review_contracts.nq", 42, "Hello, contracts!\n"));
+    list_push(mutref cases, make_corpus_case("simple_add", "examples/simple_add.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("user_record", "examples/user_record.nq", 32, ""));
+    list_push(mutref cases, make_corpus_case("while_counter", "examples/while_counter.nq", 5, ""));
+    return;
+}
+
+fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
+    let emit_path = corpus_emit_c_path(entry.name);
+    let emit_result = run_driver_emit_c(driver_path, entry.source_path, emit_path);
+    match emit_result {
+        Ok(status) => {
+            if not driver_step_ok(str_concat("emit-c ", entry.name), status) {
+                return false;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+
+    let mut emit_c = "";
+    if not read_text_or_report(emit_path, str_concat("failed to read emitted C for ", entry.name), mutref emit_c) {
+        return false;
+    }
+
+    let build_result = run_driver_build(driver_path, entry.source_path);
+    match build_result {
+        Ok(status) => {
+            if not driver_step_ok(str_concat("build ", entry.name), status) {
+                return false;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+
+    let build_c_path = default_build_c_path(entry.source_path);
+    let mut build_c = "";
+    if not read_text_or_report(build_c_path, str_concat("failed to read build C for ", entry.name), mutref build_c) {
+        return false;
+    }
+    if normalize_structural_c(emit_c) != normalize_structural_c(build_c) {
+        eprint_line(str_concat("corpus proof failed: emit/build C changed for ", entry.name));
+        return false;
+    }
+
+    let run_result = run_driver_run(driver_path, entry.source_path);
+    match run_result {
+        Ok(status) => {
+            if status.exit_code != entry.expected_exit_code {
+                eprint_line(str_concat("corpus proof failed: unexpected exit code for ", entry.name));
+                emit_process_output(status);
+                return false;
+            }
+            if not output_matches(status.stdout, entry.expected_stdout) or status.stderr != "" {
+                eprint_line(str_concat("corpus proof failed: unexpected stdout/stderr for ", entry.name));
+                emit_process_output(status);
+                return false;
+            }
+            if has_stage1_failure_text(status) {
+                eprint_line(str_concat("corpus proof failed: stage1 diagnostic text for ", entry.name));
+                emit_process_output(status);
+                return false;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+
+    let mut run_c = "";
+    if not read_text_or_report(build_c_path, str_concat("failed to read run C for ", entry.name), mutref run_c) {
+        return false;
+    }
+    if normalize_structural_c(emit_c) != normalize_structural_c(run_c) {
+        eprint_line(str_concat("corpus proof failed: emit/run C changed for ", entry.name));
+        return false;
+    }
+
+    return true;
+}
+
+pub fn run_example_corpus(driver_path: str) -> i32
+audit {
+    intent("Run the stage1-owned locked example corpus gate");
+    mutates();
+    effects(print);
+}
+{
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let entry = list_get(ref cases, index);
+        match entry {
+            Some(value) => {
+                if not run_corpus_case(driver_path, value) {
+                    return 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    print_line("example corpus ok");
+    return 0;
 }
 
 pub fn run_selfhost_proof(driver_path: str) -> i32

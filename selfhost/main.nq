@@ -21,6 +21,7 @@ enum driver_mode {
     driver_build,
     driver_run,
     driver_prove_selfhost,
+    driver_prove_corpus,
     driver_invalid,
 }
 
@@ -306,7 +307,7 @@ fn str_ends_with(text: str, suffix: str) -> bool {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc review <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove-selfhost";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc review <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -427,6 +428,13 @@ fn parse_driver_request() -> driver_request {
             return invalid_request(usage_text());
         }
         return make_driver_request(driver_prove_selfhost, option_text(arg_get(0)), "", ".", "", "");
+    }
+
+    if command == "prove-corpus" {
+        if argc != 2 {
+            return invalid_request(usage_text());
+        }
+        return make_driver_request(driver_prove_corpus, option_text(arg_get(0)), "", ".", "", "");
     }
 
     if command == "" {
@@ -777,6 +785,9 @@ fn main() -> i32 {
         },
         driver_prove_selfhost => {
             return run_selfhost_proof(request.entry_path);
+        },
+        driver_prove_corpus => {
+            return run_example_corpus(request.entry_path);
         },
         driver_invalid => {
             print_line(request.error_message);

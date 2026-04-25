@@ -35,7 +35,7 @@ Current trustworthy selfhost slice:
 - stage1 borrow checking now runs on the structured checked handoff
 - stage1 IR lowering now runs on the structured checked handoff
 - stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` / `build` / `run` driver workflow
+- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` / `build` / `run` / `prove-selfhost` / `prove-corpus` driver workflow
 
 Current semantic near-parity milestone:
 
@@ -131,9 +131,9 @@ Minimum collection goal:
 
 ## Immediate Remaining Gap
 
-Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
+Stage1 has crossed the first copied-selfhost self-build proof and now owns the first active proof/corpus runner gates. The next work is beyond semantic near parity:
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
-- finish replacing the active Python proof/corpus orchestration with a Nauqtype-owned runner; `prove-selfhost` now covers the copied-selfhost proof gate, and the locked example corpus runner remains next
+- retire the remaining active Python proof/corpus orchestration now that `prove-selfhost` covers the copied-selfhost proof gate and `prove-corpus` covers the locked example corpus gate
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

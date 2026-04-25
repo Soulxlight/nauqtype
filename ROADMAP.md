@@ -193,10 +193,11 @@ Status:
 
 Status:
 
-- in progress
+- done for the active proof/corpus runner slice
 - the stage1 driver now owns the copied-selfhost proof gate as `prove-selfhost`
-- the locked example corpus runner remains the next runner slice
-- the current Python proof/corpus harness remains the frozen reference path until the corpus runner lands
+- the stage1 driver now owns the locked example corpus gate as `prove-corpus`
+- `prove-corpus` runs the locked examples through `emit-c`, `build`, and `run`, compares normalized structural C across driver paths, and checks smoke behavior
+- the current Python proof/corpus harness remains only as frozen bootstrap/reference coverage until a later archival cleanup pass
 
 ## Feature Ordering
 
