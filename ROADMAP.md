@@ -194,6 +194,8 @@ Status:
 Status:
 
 - done for the active proof/corpus runner slice
+- the Nauqtype-only transition loop is closed for active driver and proof/corpus orchestration
+- the stage1 driver now owns the combined transition gate as `prove`
 - the stage1 driver now owns the copied-selfhost proof gate as `prove-selfhost`
 - the stage1 driver now owns the locked example corpus gate as `prove-corpus`
 - `prove-corpus` runs the locked examples through `emit-c`, `build`, and `run`, compares normalized structural C across driver paths, and checks smoke behavior

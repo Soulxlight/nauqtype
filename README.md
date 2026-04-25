@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `review`, `build`, `run`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
 ## Quick Start
 
@@ -67,15 +67,16 @@ Use the active Nauqtype-owned driver for `run`:
 selfhost\build\main.exe run examples\hello.nq
 ```
 
-Run the first Nauqtype-owned selfhost proof gate:
+Run the active Nauqtype-owned transition gate:
+
+```powershell
+selfhost\build\main.exe prove
+```
+
+Run the individual proof gates when you need to isolate a failure:
 
 ```powershell
 selfhost\build\main.exe prove-selfhost
-```
-
-Run the Nauqtype-owned locked example corpus gate:
-
-```powershell
 selfhost\build\main.exe prove-corpus
 ```
 
@@ -131,7 +132,7 @@ Current semantic near-parity milestone:
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 - the first copied-selfhost stage1-to-stage2 comparison proof is now complete
-- the stage1 executable now owns the active `check`, `emit-c`, `review`, `build`, `run`, `prove-selfhost`, and `prove-corpus` workflow while preserving the no-arg copied-selfhost proof path
+- the stage1 executable now owns the active `check`, `emit-c`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus` workflow while preserving the no-arg copied-selfhost proof path
 
 Architecture checkpoint:
 
@@ -147,7 +148,7 @@ Current remaining gaps:
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
-- retire the remaining active Python proof/corpus orchestration now that the stage1 executable owns both `prove-selfhost` and the locked `prove-corpus` example gate
+- Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
 
 Current AI-first compiler output:
 
@@ -173,5 +174,5 @@ Current AI-first compiler output:
 ## Repository Notes
 
 - Nauqtype is now the active implementation language for the project.
-- The Python compiler remains in-repo only as a frozen bootstrap/reference path during the toolchain cutover.
+- The Python compiler remains in-repo only as a frozen bootstrap/reference path.
 - The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

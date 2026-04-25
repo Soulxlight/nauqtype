@@ -42,28 +42,16 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertNotIn("stage1 limitation", combined)
         self.assertTrue((self.driver_workspace / "build" / "main.c").exists())
 
-    def test_stage1_driver_prove_selfhost_runs_owned_proof_gate(self) -> None:
+    def test_stage1_driver_prove_runs_owned_transition_gate(self) -> None:
         result = subprocess.run(
-            [str(self.driver_exe), "prove-selfhost"],
+            [str(self.driver_exe), "prove"],
             cwd=self.root,
             capture_output=True,
             text=True,
-            timeout=900,
+            timeout=1200,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout, "selfhost proof ok\n")
-        self.assertEqual(result.stderr, "")
-
-    def test_stage1_driver_prove_corpus_runs_owned_example_gate(self) -> None:
-        result = subprocess.run(
-            [str(self.driver_exe), "prove-corpus"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            timeout=900,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout, "example corpus ok\n")
+        self.assertEqual(result.stdout, "selfhost proof ok\nexample corpus ok\nnauqtype proof ok\n")
         self.assertEqual(result.stderr, "")
 
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:

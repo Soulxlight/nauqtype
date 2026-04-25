@@ -146,4 +146,4 @@
 - [x] Cut over the stage1 executable driver for `run`
 - [x] Add a Nauqtype-owned `prove-selfhost` gate for the copied selfhost proof
 - [x] Add the Nauqtype-owned locked example corpus runner
-- [ ] Retire the active Python proof/corpus orchestration after the Nauqtype runner covers both selfhost proof and corpus checks
+- [x] Retire the active Python proof/corpus orchestration after the Nauqtype runner covers both selfhost proof and corpus checks

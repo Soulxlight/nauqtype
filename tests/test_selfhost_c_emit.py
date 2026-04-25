@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tests.test_support import (
     ROOT,
+    SELFHOST_REFERENCE_TIMEOUT,
     compile_and_run_c,
     copy_selfhost_workspace,
     ensure_bootstrap_deps,
@@ -521,7 +522,7 @@ class SelfhostCEmitTests(unittest.TestCase):
 
     def test_copied_selfhost_emits_and_runs_generated_c(self) -> None:
         ensure_bootstrap_deps()
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             tmp = Path(tmp_dir)
             copy_selfhost_workspace(tmp)
             result = subprocess.run(
@@ -529,7 +530,7 @@ class SelfhostCEmitTests(unittest.TestCase):
                 cwd=self.root,
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=SELFHOST_REFERENCE_TIMEOUT,
             )
             combined = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, combined)
