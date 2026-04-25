@@ -144,4 +144,6 @@
 - [x] Add the remaining minimal tooling runtime surface needed for `build` / `run`
 - [x] Cut over the stage1 executable driver for `build`
 - [x] Cut over the stage1 executable driver for `run`
-- [ ] Replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
+- [x] Add a Nauqtype-owned `prove-selfhost` gate for the copied selfhost proof
+- [ ] Add the Nauqtype-owned locked example corpus runner
+- [ ] Retire the active Python proof/corpus orchestration after the Nauqtype runner covers both selfhost proof and corpus checks

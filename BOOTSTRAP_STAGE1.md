@@ -134,6 +134,6 @@ Minimum collection goal:
 Stage1 is not genuinely self-hosting yet. The next work is beyond semantic near parity:
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
-- replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
+- finish replacing the active Python proof/corpus orchestration with a Nauqtype-owned runner; `prove-selfhost` now covers the copied-selfhost proof gate, and the locked example corpus runner remains next
 - `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
 - retained explicit limitation boundary today: non-name callees and member-call syntax

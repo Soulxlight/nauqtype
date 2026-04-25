@@ -42,6 +42,18 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertNotIn("stage1 limitation", combined)
         self.assertTrue((self.driver_workspace / "build" / "main.c").exists())
 
+    def test_stage1_driver_prove_selfhost_runs_owned_proof_gate(self) -> None:
+        result = subprocess.run(
+            [str(self.driver_exe), "prove-selfhost"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "selfhost proof ok\n")
+        self.assertEqual(result.stderr, "")
+
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -210,6 +222,53 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             payload = json.loads(result.stdout)
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["print"])
+
+    def test_stage1_driver_review_rejects_borrow_errors_before_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    type Bucket {
+                        items: list<i32>,
+                    }
+
+                    fn take(bucket: Bucket) -> i32 {
+                        return 0;
+                    }
+
+                    fn inspect(bucket: ref Bucket) -> i32 {
+                        return 0;
+                    }
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Reject unsafe review input");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket = Bucket { items: items };
+                        take(bucket);
+                        return inspect(ref bucket);
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("cannot borrow moved value `bucket`", combined)
+            self.assertNotIn('"functions"', result.stdout)
 
     def test_stage1_driver_build_creates_default_c_and_exe_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

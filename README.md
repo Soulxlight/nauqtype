@@ -67,6 +67,12 @@ Use the active Nauqtype-owned driver for `run`:
 selfhost\build\main.exe run examples\hello.nq
 ```
 
+Run the first Nauqtype-owned selfhost proof gate:
+
+```powershell
+selfhost\build\main.exe prove-selfhost
+```
+
 Current cutover note: invoke stage1 `build` / `run` from the repo root for now, because that slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 
 Frozen bootstrap/reference workflows that still exist during the cutover:
@@ -135,7 +141,7 @@ Current remaining gaps:
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
-- replace the active Python proof/corpus orchestration with a Nauqtype-owned runner
+- finish replacing the active Python proof/corpus orchestration with a Nauqtype-owned runner; the selfhost proof gate now exists as `prove-selfhost`, and the locked example corpus runner remains next
 
 Current AI-first compiler output:
 
@@ -162,4 +168,4 @@ Current AI-first compiler output:
 
 - Nauqtype is now the active implementation language for the project.
 - The Python compiler remains in-repo only as a frozen bootstrap/reference path during the toolchain cutover.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, and the minimal text file output builtin `write_file(path: str, text: str) -> result<unit, io_err>`.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

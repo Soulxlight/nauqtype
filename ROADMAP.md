@@ -193,8 +193,10 @@ Status:
 
 Status:
 
-- not started
-- the current Python proof/corpus harness remains the frozen reference path until this runner lands
+- in progress
+- the stage1 driver now owns the copied-selfhost proof gate as `prove-selfhost`
+- the locked example corpus runner remains the next runner slice
+- the current Python proof/corpus harness remains the frozen reference path until the corpus runner lands
 
 ## Feature Ordering
 

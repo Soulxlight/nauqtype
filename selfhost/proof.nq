@@ -1,0 +1,523 @@
+use files;
+
+type norm_mapping {
+    original: str,
+    replacement: str,
+}
+
+type norm_token {
+    text: str,
+    next_index: i32,
+}
+
+fn make_norm_mapping(original: str, replacement: str) -> norm_mapping {
+    return norm_mapping {
+        original: original,
+        replacement: replacement,
+    };
+}
+
+fn make_norm_token(text: str, next_index: i32) -> norm_token {
+    return norm_token {
+        text: text,
+        next_index: next_index,
+    };
+}
+
+fn no_norm_token() -> norm_token {
+    return make_norm_token("", -1);
+}
+
+fn concat3(a: str, b: str, c: str) -> str {
+    return str_concat(str_concat(a, b), c);
+}
+
+fn concat4(a: str, b: str, c: str, d: str) -> str {
+    return str_concat(str_concat(a, b), str_concat(c, d));
+}
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+fn i32_to_str(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
+}
+
+fn slice_text(text: str, start: i32, end: i32) -> str {
+    let entry = str_slice(text, start, end);
+    match entry {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn char_at(text: str, index: i32) -> i32 {
+    let entry = str_get(text, index);
+    match entry {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+fn is_ws(ch: i32) -> bool {
+    return ch == 32 or ch == 9 or ch == 10 or ch == 13;
+}
+
+fn is_digit(ch: i32) -> bool {
+    return ch >= 48 and ch <= 57;
+}
+
+fn is_ident_char(ch: i32) -> bool {
+    if ch >= 48 and ch <= 57 {
+        return true;
+    }
+    if ch >= 65 and ch <= 90 {
+        return true;
+    }
+    if ch >= 97 and ch <= 122 {
+        return true;
+    }
+    return ch == 95;
+}
+
+fn starts_with_at(text: str, index: i32, pattern: str) -> bool {
+    if index < 0 {
+        return false;
+    }
+    if index + str_len(pattern) > str_len(text) {
+        return false;
+    }
+    let mut offset = 0;
+    while offset < str_len(pattern) {
+        if char_at(text, index + offset) != char_at(pattern, offset) {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+fn trim_slice(text: str, start: i32, end: i32) -> str {
+    let mut left = start;
+    let mut right = end;
+    while left < right and is_ws(char_at(text, left)) {
+        left = left + 1;
+    }
+    while right > left and is_ws(char_at(text, right - 1)) {
+        right = right - 1;
+    }
+    return slice_text(text, left, right);
+}
+
+fn mapping_lookup(mappings: ref list<norm_mapping>, original: str) -> option<str> {
+    let mut index = 0;
+    while index < list_len(ref mappings) {
+        let entry = list_get(ref mappings, index);
+        match entry {
+            Some(value) => {
+                if value.original == original {
+                    return Some(value.replacement);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn mapping_get_or_add(mappings: mutref list<norm_mapping>, original: str) -> str {
+    let found = mapping_lookup(ref mappings, original);
+    match found {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            let replacement = i32_to_str(list_len(ref mappings) + 1);
+            list_push(mutref mappings, make_norm_mapping(original, replacement));
+            return replacement;
+        },
+    }
+}
+
+fn scan_digits(text: str, index: i32) -> i32 {
+    let mut cursor = index;
+    while cursor < str_len(text) and is_digit(char_at(text, cursor)) {
+        cursor = cursor + 1;
+    }
+    return cursor;
+}
+
+fn scan_ident(text: str, index: i32) -> i32 {
+    let mut cursor = index;
+    while cursor < str_len(text) and is_ident_char(char_at(text, cursor)) {
+        cursor = cursor + 1;
+    }
+    return cursor;
+}
+
+fn normalize_binding_at(line: str, index: i32, mappings: mutref list<norm_mapping>) -> norm_token {
+    if not starts_with_at(line, index, "nqv_") {
+        return no_norm_token();
+    }
+    let digit_start = index + 4;
+    let digit_end = scan_digits(line, digit_start);
+    if digit_end == digit_start {
+        return no_norm_token();
+    }
+    if digit_end >= str_len(line) or char_at(line, digit_end) != 95 {
+        return no_norm_token();
+    }
+    let name_start = digit_end + 1;
+    let name_end = scan_ident(line, name_start);
+    if name_end == name_start {
+        return no_norm_token();
+    }
+    let original = slice_text(line, digit_start, digit_end);
+    let replacement = mapping_get_or_add(mutref mappings, original);
+    let name = slice_text(line, name_start, name_end);
+    return make_norm_token(concat4("nqv_", replacement, "_", name), name_end);
+}
+
+fn normalize_tmp_at(line: str, index: i32, mappings: mutref list<norm_mapping>) -> norm_token {
+    if not starts_with_at(line, index, "nq_tmp_") {
+        return no_norm_token();
+    }
+    let digit_start = index + 7;
+    let digit_end = scan_digits(line, digit_start);
+    if digit_end == digit_start {
+        return no_norm_token();
+    }
+    let original = slice_text(line, digit_start, digit_end);
+    let replacement = mapping_get_or_add(mutref mappings, original);
+    return make_norm_token(str_concat("nq_tmp_", replacement), digit_end);
+}
+
+fn normalize_line(line: str, binding_mappings: mutref list<norm_mapping>, tmp_mappings: mutref list<norm_mapping>) -> str {
+    let mut out = "";
+    let mut index = 0;
+    while index < str_len(line) {
+        let mut matched = false;
+        let binding = normalize_binding_at(line, index, mutref binding_mappings);
+        if binding.next_index >= 0 {
+            out = str_concat(out, binding.text);
+            index = binding.next_index;
+            matched = true;
+        }
+        if not matched {
+            let tmp = normalize_tmp_at(line, index, mutref tmp_mappings);
+            if tmp.next_index >= 0 {
+                out = str_concat(out, tmp.text);
+                index = tmp.next_index;
+                matched = true;
+            }
+        }
+        if not matched {
+            out = str_concat(out, slice_text(line, index, index + 1));
+            index = index + 1;
+        }
+    }
+    return out;
+}
+
+fn normalize_structural_c(text: str) -> str {
+    let mut binding_mappings: list<norm_mapping> = list();
+    let mut tmp_mappings: list<norm_mapping> = list();
+    let mut out = "";
+    let mut start = 0;
+    let mut index = 0;
+    while index < str_len(text) {
+        if char_at(text, index) == 10 {
+            let line = trim_slice(text, start, index);
+            if line != "" {
+                let normalized = normalize_line(line, mutref binding_mappings, mutref tmp_mappings);
+                if out == "" {
+                    out = normalized;
+                } else {
+                    out = concat3(out, "\n", normalized);
+                }
+            }
+            start = index + 1;
+        }
+        index = index + 1;
+    }
+    if start < str_len(text) {
+        let line = trim_slice(text, start, str_len(text));
+        if line != "" {
+            let normalized = normalize_line(line, mutref binding_mappings, mutref tmp_mappings);
+            if out == "" {
+                out = normalized;
+            } else {
+                out = concat3(out, "\n", normalized);
+            }
+        }
+    }
+    return out;
+}
+
+fn copy_file_text(source_path: str, dest_path: str) -> result<unit, io_err> {
+    let ensure_result = ensure_parent_dir(dest_path);
+    match ensure_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            return Err(err);
+        },
+    }
+    let data = read_file(source_path);
+    match data {
+        Ok(text) => {
+            return write_file(dest_path, text);
+        },
+        Err(err) => {
+            return Err(err);
+        },
+    }
+}
+
+fn copy_selfhost_module(proof_dir: str, module_name: str) -> result<unit, io_err> {
+    let file_name = str_concat(module_name, ".nq");
+    return copy_file_text(join_path("selfhost", file_name), join_path(proof_dir, file_name));
+}
+
+fn push_selfhost_modules(modules: mutref list<str>) -> unit {
+    list_push(mutref modules, "ast");
+    list_push(mutref modules, "borrow");
+    list_push(mutref modules, "c_emit");
+    list_push(mutref modules, "diag");
+    list_push(mutref modules, "files");
+    list_push(mutref modules, "handoff");
+    list_push(mutref modules, "ir");
+    list_push(mutref modules, "lexer");
+    list_push(mutref modules, "main");
+    list_push(mutref modules, "parser");
+    list_push(mutref modules, "proof");
+    list_push(mutref modules, "resolve");
+    list_push(mutref modules, "review");
+    list_push(mutref modules, "source");
+    list_push(mutref modules, "token");
+    list_push(mutref modules, "typecheck");
+    return;
+}
+
+fn copy_selfhost_workspace(proof_dir: str) -> result<unit, io_err> {
+    let dir_result = create_dir_all(proof_dir);
+    match dir_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            return Err(err);
+        },
+    }
+    let mut modules: list<str> = list();
+    push_selfhost_modules(mutref modules);
+    let mut index = 0;
+    while index < list_len(ref modules) {
+        let entry = list_get(ref modules, index);
+        match entry {
+            Some(name) => {
+                let copied = copy_selfhost_module(proof_dir, name);
+                match copied {
+                    Ok(_) => {
+                    },
+                    Err(err) => {
+                        return Err(err);
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return create_dir_all(proof_dir);
+}
+
+fn emit_process_output(result: process_result) -> unit {
+    if result.stdout != "" {
+        print_line(result.stdout);
+    }
+    if result.stderr != "" {
+        eprint_line(result.stderr);
+    }
+    return;
+}
+
+fn stage1_ok_output(text: str) -> bool {
+    if text == "stage1 front-end ok\n" {
+        return true;
+    }
+    let expected = "stage1 front-end ok";
+    if str_len(text) == str_len(expected) + 2 {
+        if slice_text(text, 0, str_len(expected)) == expected and char_at(text, str_len(expected)) == 13 and char_at(text, str_len(expected) + 1) == 10 {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn run_driver_build(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "build");
+    list_push(mutref args, entry_path);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_stage2(stage2_path: str, proof_dir: str) -> result<process_result, io_err> {
+    let args: list<str> = list();
+    return run_process(stage2_path, ref args, proof_dir);
+}
+
+pub fn run_selfhost_proof(driver_path: str) -> i32
+audit {
+    intent("Run the stage1-owned copied-selfhost proof gate");
+    mutates();
+    effects(print);
+}
+{
+    let proof_dir = "build/proof/selfhost";
+    let copied = copy_selfhost_workspace(proof_dir);
+    match copied {
+        Ok(_) => {
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    let entry_path = join_path(proof_dir, "main.nq");
+    let stage1_result = run_driver_build(driver_path, entry_path);
+    match stage1_result {
+        Ok(status) => {
+            if status.exit_code != 0 {
+                emit_process_output(status);
+                return status.exit_code;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    let c_path = join_path(join_path(proof_dir, "build"), "main.c");
+    let stage1_c_result = read_file(c_path);
+    let mut stage1_c = "";
+    match stage1_c_result {
+        Ok(text) => {
+            stage1_c = text;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    let stage2_path = join_path(join_path(proof_dir, "build"), "main.exe");
+    let stage2_result = run_stage2(stage2_path, proof_dir);
+    match stage2_result {
+        Ok(status) => {
+            if status.exit_code != 0 {
+                emit_process_output(status);
+                return status.exit_code;
+            }
+            if not stage1_ok_output(status.stdout) or status.stderr != "" {
+                emit_process_output(status);
+                eprint_line("selfhost proof failed: stage2 smoke output changed");
+                return 1;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    let stage2_c_result = read_file(c_path);
+    match stage2_c_result {
+        Ok(stage2_c) => {
+            let normalized_stage1 = normalize_structural_c(stage1_c);
+            let normalized_stage2 = normalize_structural_c(stage2_c);
+            if normalized_stage1 != normalized_stage2 {
+                eprint_line("selfhost proof failed: normalized structural C changed between stage1 and stage2");
+                return 1;
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+
+    print_line("selfhost proof ok");
+    return 0;
+}
