@@ -223,6 +223,154 @@ class Stage1DriverTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["print"])
 
+    def test_stage1_driver_review_v2_exports_semantic_identities(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    use helper;
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Run helper");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        helper();
+                        return 0;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub fn helper() -> unit
+                    audit {
+                        intent("Print a line");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        print_line("hi");
+                        return;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq", "--format", "v2"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["version"], 2)
+            self.assertEqual(payload["identity_scheme"], "nauqtype.semantic.v1")
+            function_ids = {entry["id"] for entry in payload["functions"]}
+            self.assertIn("fn:main::main", function_ids)
+            self.assertIn("fn:helper::helper", function_ids)
+            self.assertTrue(
+                any(
+                    entry["kind"] == "call"
+                    and entry["from"] == "fn:main::main"
+                    and entry["target_id"] == "fn:helper::helper"
+                    for entry in payload["references"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    edge["caller"] == "fn:main::main"
+                    and edge["callee"] == "fn:helper::helper"
+                    for edge in payload["call_graph"]
+                )
+            )
+
+    def test_stage1_driver_review_diff_reports_semantic_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            before.mkdir()
+            after.mkdir()
+            self._write_project(
+                before,
+                {
+                    "main.nq": """
+                    pub fn helper() -> unit
+                    audit {
+                        intent("Return without output");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return;
+                    }
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Return zero");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            self._write_project(
+                after,
+                {
+                    "main.nq": """
+                    pub fn helper() -> unit
+                    audit {
+                        intent("Print helper");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        print_line("hi");
+                        return;
+                    }
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Call helper");
+                        mutates();
+                        effects(print);
+                    }
+                    {
+                        helper();
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review-diff", str(before / "main.nq"), str(after / "main.nq")],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["version"], 1)
+            self.assertEqual(payload["command"], "review-diff")
+            self.assertEqual(payload["identity_scheme"], "nauqtype.semantic.v1")
+            self.assertEqual(payload["summary"]["added_functions"], 0)
+            self.assertEqual(payload["summary"]["removed_functions"], 0)
+            self.assertEqual(payload["summary"]["changed_functions"], 2)
+            self.assertEqual(payload["changes"]["changed_functions"], ["fn:main::helper", "fn:main::main"])
+            self.assertEqual(
+                payload["changes"]["added_call_edges"],
+                ["fn:main::helper -> builtin:print_line", "fn:main::main -> fn:main::helper"],
+            )
+
     def test_stage1_driver_review_rejects_borrow_errors_before_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

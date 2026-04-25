@@ -142,11 +142,89 @@ fn function_internal_name(module: str, name: str) -> str {
     return concat3(module, "::", name);
 }
 
+fn function_identity(module: str, name: str) -> str {
+    return concat4("fn:", module, "::", name);
+}
+
+fn builtin_identity(name: str) -> str {
+    return str_concat("builtin:", name);
+}
+
+fn call_identity(module: str, function_name: str, at: i32) -> str {
+    return concat6("call:", module, "::", function_name, "@", i32_to_str(at));
+}
+
 fn bool_text(value: bool) -> str {
     if value {
         return "true";
     }
     return "false";
+}
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+fn i32_to_str(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
 }
 
 fn json_escape(text: str) -> str {
@@ -280,6 +358,15 @@ fn append_named_string_array(lines: mutref list<str>, indent: str, name: str, va
         index = index + 1;
     }
     list_push(mutref lines, concat3(indent, "]", suffix));
+    return;
+}
+
+fn append_span(lines: mutref list<str>, indent: str, at: i32, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, concat5(indent, "\"span\": { \"start\": ", i32_to_str(at), " }", suffix));
     return;
 }
 
@@ -1203,6 +1290,45 @@ fn module_function_count(functions: ref list<review_function_fact>, module: str)
     return count;
 }
 
+fn function_call_count(calls: ref list<call_fact>, module: str, function_name: str) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn target_kind_for_origin(origin: str) -> str {
+    if origin == "__builtin__" {
+        return "builtin";
+    }
+    if origin == "" {
+        return "unknown";
+    }
+    return "function";
+}
+
+fn target_id_for_call(origin: str, name: str) -> str {
+    if origin == "__builtin__" {
+        return builtin_identity(name);
+    }
+    if origin == "" {
+        return "";
+    }
+    return function_identity(origin, name);
+}
+
 fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let total_functions = module_function_count(ref functions, entry_module);
@@ -1262,6 +1388,490 @@ fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref
     return;
 }
 
+fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, trailing_comma: bool) -> unit {
+    let total_calls = function_call_count(ref calls, module, function_name);
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    if total_calls == 0 {
+        list_push(mutref lines, concat5(indent, "\"calls\": []", suffix, "", ""));
+        return;
+    }
+
+    list_push(mutref lines, concat3(indent, "\"calls\": [", ""));
+    let mut emitted_calls = 0;
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
+                    let target_kind = target_kind_for_origin(origin);
+                    let target_id = target_id_for_call(origin, value.name);
+                    list_push(mutref lines, concat3(indent, "  {", ""));
+                    list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"target_kind\": ", json_quote(target_kind), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"target_id\": ", json_quote(target_id), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"target_module\": ", json_quote(origin), ",", ""));
+                    append_span(mutref lines, concat3(indent, "    ", ""), value.at, false);
+                    emitted_calls = emitted_calls + 1;
+                    if emitted_calls < total_calls {
+                        list_push(mutref lines, concat3(indent, "  },", ""));
+                    } else {
+                        list_push(mutref lines, concat3(indent, "  }", ""));
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, concat3(indent, "]", suffix));
+    return;
+}
+
+fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let total_functions = list_len(ref functions);
+    list_push(mutref lines, "  \"functions\": [");
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                let declared_mutates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_mutates);
+                let declared_effects = decl_entries_for_function(ref decls, value.module, value.name, review_decl_effects);
+                let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                let mut inferred_effect_names: list<str> = list();
+                if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
+                    list_push(mutref inferred_effect_names, "print");
+                }
+
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"id\": ", json_quote(function_identity(value.module, value.name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"kind\": ", json_quote("function"), ",", "", ""));
+                list_push(mutref lines, concat5("      \"qualified_name\": ", json_quote(function_internal_name(value.module, value.name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"module\": ", json_quote(value.module), ",", "", ""));
+                list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
+                list_push(mutref lines, concat3("      \"public\": ", bool_text(value.is_public), ","));
+                append_span(mutref lines, "      ", value.at, true);
+                if value.has_audit {
+                    list_push(mutref lines, "      \"audit\": {");
+                    list_push(mutref lines, concat3("        \"intent\": ", json_quote(value.intent), ","));
+                    append_named_string_array(mutref lines, "        ", "mutates", ref declared_mutates, true);
+                    append_named_string_array(mutref lines, "        ", "effects", ref declared_effects, false);
+                    list_push(mutref lines, "      },");
+                } else {
+                    list_push(mutref lines, "      \"audit\": null,");
+                }
+                list_push(mutref lines, "      \"inferred\": {");
+                append_named_string_array(mutref lines, "        ", "mutates", ref inferred_mutate_names, true);
+                append_named_string_array(mutref lines, "        ", "effects", ref inferred_effect_names, false);
+                list_push(mutref lines, "      },");
+                list_push(mutref lines, "      \"evidence\": {");
+                list_push(mutref lines, "        \"audit\": \"declared\",");
+                list_push(mutref lines, "        \"inferred\": \"checked\"");
+                list_push(mutref lines, "      },");
+                append_review_v2_calls(mutref lines, "      ", ref functions, ref calls, ref uses, value.module, value.name, false);
+                if index + 1 < total_functions {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_review_v2_references(lines: mutref list<str>, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+    let total_calls = list_len(ref calls);
+    if total_calls == 0 {
+        list_push(mutref lines, "  \"references\": [],");
+        return;
+    }
+    list_push(mutref lines, "  \"references\": [");
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
+                let target_kind = target_kind_for_origin(origin);
+                let target_id = target_id_for_call(origin, value.name);
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
+                list_push(mutref lines, "      \"kind\": \"call\",");
+                list_push(mutref lines, concat5("      \"from\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
+                list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
+                append_span(mutref lines, "      ", value.at, false);
+                if index + 1 < total_calls {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+    let total_calls = list_len(ref calls);
+    if total_calls == 0 {
+        list_push(mutref lines, "  \"call_graph\": []");
+        return;
+    }
+    list_push(mutref lines, "  \"call_graph\": [");
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
+                let target_id = target_id_for_call(origin, value.name);
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
+                list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value.module, value.function_name, value.at)), "", "", ""));
+                if index + 1 < total_calls {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ]");
+    return;
+}
+
+fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 2,");
+    list_push(mutref lines, "  \"command\": \"review\",");
+    list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    append_review_v2_references(mutref lines, ref functions, ref calls, ref uses);
+    append_review_v2_call_graph(mutref lines, ref functions, ref calls, ref uses);
+    list_push(mutref lines, "}");
+    return;
+}
+
+fn collect_review_fact_lists(sources: ref list<source_file>, functions_out: mutref list<review_function_fact>, decls_out: mutref list<review_decl_entry>) -> unit {
+    let mut source_index = 0;
+    while source_index < list_len(ref sources) {
+        let entry = list_get(ref sources, source_index);
+        match entry {
+            Some(file) => {
+                let tokens = lex(file.text);
+                collect_review_facts(file.name, ref tokens, mutref functions_out, mutref decls_out);
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return;
+}
+
+fn join_strings(values: ref list<str>) -> str {
+    let mut text = "";
+    let mut index = 0;
+    while index < list_len(ref values) {
+        let entry = list_get(ref values, index);
+        match entry {
+            Some(value) => {
+                if index > 0 {
+                    text = str_concat(text, "|");
+                }
+                text = str_concat(text, value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return text;
+}
+
+fn function_identity_exists(functions: ref list<review_function_fact>, id: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if function_identity(value.module, value.name) == id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn call_edge_key(functions: ref list<review_function_fact>, uses: ref list<module_use>, call: call_fact) -> str {
+    let caller = function_identity(call.module, call.function_name);
+    let origin = visible_function_origin(ref functions, ref uses, call.module, call.name);
+    let mut target = target_id_for_call(origin, call.name);
+    if target == "" {
+        target = concat5("unknown:", call.module, "::", call.name, "");
+    }
+    return concat3(caller, " -> ", target);
+}
+
+fn collect_call_edges(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, edges_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                push_if_missing(mutref edges_out, call_edge_key(ref functions, ref uses, value));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn collect_call_edges_for_function(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, edges_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    push_if_missing(mutref edges_out, call_edge_key(ref functions, ref uses, value));
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> str {
+    let declared_mutates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_mutates);
+    let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
+    let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let mut inferred_effect_names: list<str> = list();
+    if list_contains(ref print_effects, function_internal_name(entry.module, entry.name)) {
+        list_push(mutref inferred_effect_names, "print");
+    }
+    let mut call_edges: list<str> = list();
+    collect_call_edges_for_function(ref functions, ref calls, ref uses, entry.module, entry.name, mutref call_edges);
+
+    let mut signature = concat3("public=", bool_text(entry.is_public), "|");
+    signature = concat3(signature, "audit=", bool_text(entry.has_audit));
+    signature = concat3(signature, "|intent=", entry.intent);
+    signature = concat3(signature, "|params=", param_signature(ref function_params, entry.module, entry.name));
+    signature = concat3(signature, "|decl_mutates=", join_strings(ref declared_mutates));
+    signature = concat3(signature, "|decl_effects=", join_strings(ref declared_effects));
+    signature = concat3(signature, "|inferred_mutates=", join_strings(ref inferred_mutate_names));
+    signature = concat3(signature, "|inferred_effects=", join_strings(ref inferred_effect_names));
+    signature = concat3(signature, "|calls=", join_strings(ref call_edges));
+    return signature;
+}
+
+fn review_function_signature_by_id(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, id: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if function_identity(value.module, value.name) == id {
+                    return review_function_signature(value, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn param_signature_part(param: function_param_fact) -> str {
+    let mut part = concat5(i32_to_str(param.index), ":", param.name, ":", param.type_name);
+    if param.type_arg1_name != "" {
+        part = concat3(part, "<", param.type_arg1_name);
+        if param.type_arg2_name != "" {
+            part = concat3(part, ",", param.type_arg2_name);
+        }
+        part = str_concat(part, ">");
+    }
+    part = concat3(part, ":borrow=", bool_text(param.is_borrow));
+    part = concat3(part, ":mutable=", bool_text(param.borrow_mutable));
+    return part;
+}
+
+fn param_signature(function_params: ref list<function_param_fact>, module: str, function_name: str) -> str {
+    let mut parts: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref parts, param_signature_part(value));
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return join_strings(ref parts);
+}
+
+fn collect_added_functions(before_functions: ref list<review_function_fact>, after_functions: ref list<review_function_fact>, added_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref after_functions) {
+        let entry = list_get(ref after_functions, index);
+        match entry {
+            Some(value) => {
+                let id = function_identity(value.module, value.name);
+                if not function_identity_exists(ref before_functions, id) {
+                    list_push(mutref added_out, id);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn collect_removed_functions(before_functions: ref list<review_function_fact>, after_functions: ref list<review_function_fact>, removed_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref before_functions) {
+        let entry = list_get(ref before_functions, index);
+        match entry {
+            Some(value) => {
+                let id = function_identity(value.module, value.name);
+                if not function_identity_exists(ref after_functions, id) {
+                    list_push(mutref removed_out, id);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn collect_changed_functions(before_functions: ref list<review_function_fact>, before_decls: ref list<review_decl_entry>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_uses: ref list<module_use>, after_functions: ref list<review_function_fact>, after_decls: ref list<review_decl_entry>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_uses: ref list<module_use>, changed_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref after_functions) {
+        let entry = list_get(ref after_functions, index);
+        match entry {
+            Some(value) => {
+                let id = function_identity(value.module, value.name);
+                if function_identity_exists(ref before_functions, id) {
+                    let before_signature = review_function_signature_by_id(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, id);
+                    let after_signature = review_function_signature(value, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+                    if before_signature != after_signature {
+                        list_push(mutref changed_out, id);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn collect_added_strings(before_values: ref list<str>, after_values: ref list<str>, added_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref after_values) {
+        let entry = list_get(ref after_values, index);
+        match entry {
+            Some(value) => {
+                if not list_contains(ref before_values, value) {
+                    list_push(mutref added_out, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn collect_removed_strings(before_values: ref list<str>, after_values: ref list<str>, removed_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref before_values) {
+        let entry = list_get(ref before_values, index);
+        match entry {
+            Some(value) => {
+                if not list_contains(ref after_values, value) {
+                    list_push(mutref removed_out, value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_review_diff_json(lines: mutref list<str>, before_module: str, after_module: str, added_functions: ref list<str>, removed_functions: ref list<str>, changed_functions: ref list<str>, added_call_edges: ref list<str>, removed_call_edges: ref list<str>) -> unit {
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"review-diff\",");
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    list_push(mutref lines, concat3("  \"before\": { \"module\": ", json_quote(before_module), " },"));
+    list_push(mutref lines, concat3("  \"after\": { \"module\": ", json_quote(after_module), " },"));
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"added_functions\": ", i32_to_str(list_len(ref added_functions)), ","));
+    list_push(mutref lines, concat3("    \"removed_functions\": ", i32_to_str(list_len(ref removed_functions)), ","));
+    list_push(mutref lines, concat3("    \"changed_functions\": ", i32_to_str(list_len(ref changed_functions)), ","));
+    list_push(mutref lines, concat3("    \"added_call_edges\": ", i32_to_str(list_len(ref added_call_edges)), ","));
+    list_push(mutref lines, concat3("    \"removed_call_edges\": ", i32_to_str(list_len(ref removed_call_edges)), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"changes\": {");
+    append_named_string_array(mutref lines, "    ", "added_functions", ref added_functions, true);
+    append_named_string_array(mutref lines, "    ", "removed_functions", ref removed_functions, true);
+    append_named_string_array(mutref lines, "    ", "changed_functions", ref changed_functions, true);
+    append_named_string_array(mutref lines, "    ", "added_call_edges", ref added_call_edges, true);
+    append_named_string_array(mutref lines, "    ", "removed_call_edges", ref removed_call_edges, false);
+    list_push(mutref lines, "  }");
+    list_push(mutref lines, "}");
+    return;
+}
+
 pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review JSON from selfhost facts and audit blocks");
@@ -1271,19 +1881,7 @@ audit {
 {
     let mut functions: list<review_function_fact> = list();
     let mut decls: list<review_decl_entry> = list();
-    let mut source_index = 0;
-    while source_index < list_len(ref sources) {
-        let entry = list_get(ref sources, source_index);
-        match entry {
-            Some(file) => {
-                let tokens = lex(file.text);
-                collect_review_facts(file.name, ref tokens, mutref functions, mutref decls);
-            },
-            None => {
-            },
-        }
-        source_index = source_index + 1;
-    }
+    collect_review_fact_lists(ref sources, mutref functions, mutref decls);
 
     let summary = validate_contracts(ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
     if summary.error_count > 0 {
@@ -1294,4 +1892,69 @@ audit {
     append_review_json(mutref lines, entry_module, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
     emit_lines(ref lines);
     return summary;
+}
+
+pub fn emit_review_v2(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
+audit {
+    intent("Emit deterministic stage1 review v2 JSON with semantic identities and evidence fields");
+    mutates();
+    effects(print);
+}
+{
+    let mut functions: list<review_function_fact> = list();
+    let mut decls: list<review_decl_entry> = list();
+    collect_review_fact_lists(ref sources, mutref functions, mutref decls);
+
+    let summary = validate_contracts(ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    if summary.error_count > 0 {
+        return summary;
+    }
+
+    let mut lines: list<str> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    emit_lines(ref lines);
+    return summary;
+}
+
+pub fn emit_review_diff(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>) -> review_summary
+audit {
+    intent("Emit deterministic semantic review diffs from two checked stage1 review inputs");
+    mutates();
+    effects(print);
+}
+{
+    let mut before_functions: list<review_function_fact> = list();
+    let mut before_decls: list<review_decl_entry> = list();
+    collect_review_fact_lists(ref before_sources, mutref before_functions, mutref before_decls);
+
+    let mut after_functions: list<review_function_fact> = list();
+    let mut after_decls: list<review_decl_entry> = list();
+    collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
+
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+    if before_summary.error_count > 0 or after_summary.error_count > 0 {
+        return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, before_summary.error_count + after_summary.error_count);
+    }
+
+    let mut added_functions: list<str> = list();
+    let mut removed_functions: list<str> = list();
+    let mut changed_functions: list<str> = list();
+    collect_added_functions(ref before_functions, ref after_functions, mutref added_functions);
+    collect_removed_functions(ref before_functions, ref after_functions, mutref removed_functions);
+    collect_changed_functions(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses, mutref changed_functions);
+
+    let mut before_call_edges: list<str> = list();
+    let mut after_call_edges: list<str> = list();
+    let mut added_call_edges: list<str> = list();
+    let mut removed_call_edges: list<str> = list();
+    collect_call_edges(ref before_functions, ref before_calls, ref before_uses, mutref before_call_edges);
+    collect_call_edges(ref after_functions, ref after_calls, ref after_uses, mutref after_call_edges);
+    collect_added_strings(ref before_call_edges, ref after_call_edges, mutref added_call_edges);
+    collect_removed_strings(ref before_call_edges, ref after_call_edges, mutref removed_call_edges);
+
+    let mut lines: list<str> = list();
+    append_review_diff_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges);
+    emit_lines(ref lines);
+    return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, 0);
 }

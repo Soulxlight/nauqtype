@@ -53,6 +53,13 @@ Use the active Nauqtype-owned driver for `review`:
 
 ```powershell
 selfhost\build\main.exe review examples\review_contracts.nq
+selfhost\build\main.exe review examples\review_contracts.nq --format v2
+```
+
+Compare two checked review surfaces with stable semantic identities:
+
+```powershell
+selfhost\build\main.exe review-diff before\main.nq after\main.nq
 ```
 
 Use the active Nauqtype-owned driver for `build`:
@@ -153,8 +160,9 @@ Current remaining gaps:
 Current AI-first compiler output:
 
 - `review` JSON for function-level contract summaries
+- `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
+- `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `check --diagnostics json` for deterministic compiler diagnostics
-- `review` v2 and `review-diff` are intentionally deferred
 
 ## Key Docs
 

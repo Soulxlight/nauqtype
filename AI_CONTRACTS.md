@@ -49,9 +49,23 @@ audit {
 - declared audit data
 - compiler-inferred mutation/effect facts
 
+`nauqc review <file> --format v2` keeps the same contract validation behavior and emits the first richer AI-first review surface:
+
+- stable function identities
+- stable call-site identities
+- call references with resolved target identity where available
+- call graph edges
+- evidence fields that distinguish declared audit data from checked compiler inference
+
+`nauqc review-diff <before> <after>` consumes the same checked review facts and emits deterministic JSON for semantic changes:
+
+- added, removed, and changed functions by stable `fn:<module>::<name>` identity
+- added and removed call graph edges by caller-to-callee identity
+- summary counts suitable for agent-pair review triage and human supervision
+
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `review` is now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, and `run`. The frozen stage0 path remains in-repo only as bootstrap/reference code while the Nauqtype-owned proof/corpus runner is still being cut over.
+During the current Nauqtype-only toolchain transition, `review` and `review-diff` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
 
 ## Explicit Non-Goals For Alpha
 

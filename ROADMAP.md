@@ -201,6 +201,21 @@ Status:
 - `prove-corpus` runs the locked examples through `emit-c`, `build`, and `run`, compares normalized structural C across driver paths, and checks smoke behavior
 - the current Python proof/corpus harness remains only as frozen bootstrap/reference coverage until a later archival cleanup pass
 
+### M17: AI-First Review Surfaces
+
+- extend `review` without breaking v1 consumers
+- add stable semantic identities for functions and call sites
+- expose call references and call graph edges for agent-pair workflows
+- distinguish declared audit data from checked compiler inference
+- add `review-diff` after the v2 identity surface is stable
+
+Status:
+
+- in progress
+- `review --format v2` now emits stable function/call identities, references, call graph edges, and evidence fields
+- `review-diff` now emits deterministic semantic changes over stable function identities and call graph edges
+- next AI-first review slices are richer defs/refs graph exports and compiler-mediated semantic refactors
+
 ## Feature Ordering
 
 Features required before first success:

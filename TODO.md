@@ -123,8 +123,8 @@
 - [x] Add `check --diagnostics json`
 - [x] Add versioned diagnostics JSON schema
 - [x] Add diagnostics JSON golden tests
-- [ ] Add richer `review` v2 output
-- [ ] Add `review-diff`
+- [x] Add richer `review` v2 output
+- [x] Add `review-diff`
 
 ## Genuine Parity Next
 
