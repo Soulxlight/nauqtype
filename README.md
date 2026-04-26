@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
 ## Quick Start
 
@@ -47,6 +47,12 @@ Use the active Nauqtype-owned driver for `emit-c`:
 
 ```powershell
 selfhost\build\main.exe emit-c examples\hello.nq -o build\hello.c
+```
+
+Export deterministic semantic facts for agent-pair supervision:
+
+```powershell
+selfhost\build\main.exe facts examples\hello.nq
 ```
 
 Use the active Nauqtype-owned driver for `review`:
@@ -160,6 +166,7 @@ Current remaining gaps:
 Current AI-first compiler output:
 
 - `review` JSON for function-level contract summaries
+- `facts` JSON for stable definitions, references, and call graph edges
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `check --diagnostics json` for deterministic compiler diagnostics

@@ -123,6 +123,7 @@
 - [x] Add `check --diagnostics json`
 - [x] Add versioned diagnostics JSON schema
 - [x] Add diagnostics JSON golden tests
+- [x] Add stable semantic defs/refs/call graph export
 - [x] Add richer `review` v2 output
 - [x] Add `review-diff`
 

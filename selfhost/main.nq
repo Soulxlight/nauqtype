@@ -5,6 +5,7 @@ use files;
 use handoff;
 use ir;
 use diag;
+use facts;
 use lexer;
 use parser;
 use proof;
@@ -17,6 +18,7 @@ enum driver_mode {
     driver_legacy,
     driver_check,
     driver_emit_c,
+    driver_facts,
     driver_review,
     driver_review_v2,
     driver_review_diff,
@@ -310,7 +312,7 @@ fn str_ends_with(text: str, suffix: str) -> bool {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -386,6 +388,18 @@ fn parse_driver_request() -> driver_request {
             }
         }
         return make_driver_request(driver_emit_c, source_path, entry_module, path_dir(source_path), build_emit_output_path(source_path, explicit_output), "");
+    }
+
+    if command == "facts" {
+        if argc != 3 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `facts`");
+        }
+        return make_driver_request(driver_facts, source_path, entry_module, path_dir(source_path), "", "");
     }
 
     if command == "review" {
@@ -622,6 +636,81 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
 
     if success_message != "" {
         print_line(success_message);
+    }
+    return 0;
+}
+
+fn run_facts(workspace_root: str, entry_module: str, entry_path: str) -> i32 {
+    let mut seen: list<str> = list();
+    let mut loaded: list<str> = list();
+    let mut sources: list<source_file> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut match_arms: list<match_arm_fact> = list();
+    let mut local_inits: list<local_init_fact> = list();
+    let mut return_facts: list<return_expr_fact> = list();
+    let mut condition_facts: list<condition_fact> = list();
+    let mut assignment_facts: list<assignment_fact> = list();
+    let mut stmt_facts: list<stmt_fact> = list();
+    let mut resolved_bindings: list<typed_binding_fact> = list();
+    let mut pattern_bindings: list<pattern_binding_fact> = list();
+    let mut checked_modules: list<checked_module> = list();
+    let mut checked_functions: list<checked_function> = list();
+    let mut checked_bindings: list<checked_binding> = list();
+    let mut checked_params: list<checked_param> = list();
+    let mut checked_type_shapes: list<checked_type_shape> = list();
+    let mut checked_type_decls: list<checked_type_decl> = list();
+    let mut checked_field_decls: list<checked_field_decl> = list();
+    let mut checked_enum_decls: list<checked_enum_decl> = list();
+    let mut checked_variant_decls: list<checked_variant_decl> = list();
+    let mut checked_variant_payload_decls: list<checked_variant_payload_decl> = list();
+    let mut checked_blocks: list<checked_block> = list();
+    let mut checked_statements: list<checked_stmt> = list();
+    let mut checked_match_arms: list<checked_match_arm> = list();
+    let mut checked_patterns: list<checked_pattern> = list();
+    let mut checked_pattern_children: list<checked_pattern_child> = list();
+    let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
+    let mut checked_expressions: list<checked_expr> = list();
+    let mut checked_expr_children: list<checked_expr_child> = list();
+    let mut checked_struct_fields: list<checked_struct_field_init> = list();
+    let mut diags: list<diag> = list();
+
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+
+    resolve_modules(ref loaded, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+
+    if list_len(ref diags) > 0 {
+        emit_all(ref diags);
+        return 1;
+    }
+    if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {
+        eprint_line("stage1 internal error: facts safety pass skipped checked functions");
+        return 1;
+    }
+
+    let summary = emit_facts(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts);
+    if summary.module_count < 1 {
+        eprint_line("stage1 internal error: facts output has no modules");
+        return 1;
     }
     return 0;
 }
@@ -915,6 +1004,9 @@ fn main() -> i32 {
         },
         driver_emit_c => {
             return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "");
+        },
+        driver_facts => {
+            return run_facts(request.workspace_root, request.entry_module, request.entry_path);
         },
         driver_review => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, false);

@@ -65,7 +65,9 @@ audit {
 
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `review` and `review-diff` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
+During the current Nauqtype-only toolchain transition, `facts`, `review`, and `review-diff` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
+
+The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 
 ## Explicit Non-Goals For Alpha
 

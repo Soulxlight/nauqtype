@@ -206,6 +206,7 @@ Status:
 - extend `review` without breaking v1 consumers
 - add stable semantic identities for functions and call sites
 - expose call references and call graph edges for agent-pair workflows
+- add a standalone semantic facts export for definitions, references, and call graph edges
 - distinguish declared audit data from checked compiler inference
 - add `review-diff` after the v2 identity surface is stable
 
@@ -214,7 +215,8 @@ Status:
 - in progress
 - `review --format v2` now emits stable function/call identities, references, call graph edges, and evidence fields
 - `review-diff` now emits deterministic semantic changes over stable function identities and call graph edges
-- next AI-first review slices are richer defs/refs graph exports and compiler-mediated semantic refactors
+- `facts` now emits stable definitions, references, and call graph edges for checked programs
+- next AI-first review slices are compiler-mediated semantic refactors and policy / ownership metadata
 
 ## Feature Ordering
 

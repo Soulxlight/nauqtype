@@ -1,0 +1,1051 @@
+use ast;
+
+pub type facts_summary {
+    module_count: i32,
+    definition_count: i32,
+    reference_count: i32,
+    call_edge_count: i32,
+}
+
+pub fn make_facts_summary(module_count: i32, definition_count: i32, reference_count: i32, call_edge_count: i32) -> facts_summary
+audit {
+    intent("Build a summary record for deterministic stage1 semantic facts output");
+    mutates();
+    effects();
+}
+{
+    return facts_summary {
+        module_count: module_count,
+        definition_count: definition_count,
+        reference_count: reference_count,
+        call_edge_count: call_edge_count,
+    };
+}
+
+fn concat3(a: str, b: str, c: str) -> str {
+    return str_concat(a, str_concat(b, c));
+}
+
+fn concat4(a: str, b: str, c: str, d: str) -> str {
+    return str_concat(a, concat3(b, c, d));
+}
+
+fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
+    return str_concat(a, concat4(b, c, d, e));
+}
+
+fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
+    return str_concat(a, concat5(b, c, d, e, f));
+}
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+fn i32_to_str(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
+}
+
+fn bool_text(value: bool) -> str {
+    if value {
+        return "true";
+    }
+    return "false";
+}
+
+fn json_escape(text: str) -> str {
+    let mut escaped = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let ch = str_get(text, index);
+        match ch {
+            Some(value) => {
+                if value == 92 {
+                    escaped = str_concat(escaped, "\\\\");
+                } else {
+                    if value == 34 {
+                        escaped = str_concat(escaped, "\\\"");
+                    } else {
+                        if value == 10 {
+                            escaped = str_concat(escaped, "\\n");
+                        } else {
+                            if value == 9 {
+                                escaped = str_concat(escaped, "\\t");
+                            } else {
+                                let slice = str_slice(text, index, index + 1);
+                                match slice {
+                                    Some(chunk) => {
+                                        escaped = str_concat(escaped, chunk);
+                                    },
+                                    None => {
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return escaped;
+}
+
+fn json_quote(text: str) -> str {
+    return concat3("\"", json_escape(text), "\"");
+}
+
+fn emit_lines(lines: ref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                print_line(value);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn append_span(lines: mutref list<str>, indent: str, at: i32, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, concat5(indent, "\"span\": { \"start\": ", i32_to_str(at), " }", suffix));
+    return;
+}
+
+fn module_identity(name: str) -> str {
+    return str_concat("module:", name);
+}
+
+fn function_identity(module: str, name: str) -> str {
+    return concat4("fn:", module, "::", name);
+}
+
+fn type_identity(module: str, name: str) -> str {
+    return concat4("type:", module, "::", name);
+}
+
+fn enum_identity(module: str, name: str) -> str {
+    return concat4("enum:", module, "::", name);
+}
+
+fn variant_identity(module: str, enum_name: str, name: str) -> str {
+    return concat6("variant:", module, "::", enum_name, "::", name);
+}
+
+fn field_identity(module: str, type_name: str, name: str) -> str {
+    return concat6("field:", module, "::", type_name, "::", name);
+}
+
+fn binding_identity(binding: body_binding) -> str {
+    let owner = function_identity(binding.module, binding.function_name);
+    return concat6("binding:", owner, ":", i32_to_str(binding.scope_id), ":", concat3(binding.name, "@", i32_to_str(binding.at)));
+}
+
+fn call_identity(call: call_fact) -> str {
+    return concat6("call:", call.module, "::", call.function_name, "@", i32_to_str(call.at));
+}
+
+fn use_identity(entry: module_use) -> str {
+    return concat6("use:", entry.module, "->", entry.name, "@", i32_to_str(entry.at));
+}
+
+fn type_ref_identity(entry: type_ref) -> str {
+    return concat6("typeref:", entry.module, "::", entry.context_name, "@", i32_to_str(entry.at));
+}
+
+fn name_ref_identity(entry: name_ref) -> str {
+    return concat6("nameref:", entry.module, "::", entry.function_name, "@", i32_to_str(entry.at));
+}
+
+fn list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn is_builtin_function(name: str) -> bool {
+    if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
+        return true;
+    }
+    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" {
+        return true;
+    }
+    if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
+        return true;
+    }
+    return false;
+}
+
+fn is_builtin_type(name: str) -> bool {
+    if name == "bool" or name == "i32" or name == "str" or name == "unit" or name == "io_err" {
+        return true;
+    }
+    if name == "list" or name == "option" or name == "result" or name == "ref" {
+        return true;
+    }
+    return false;
+}
+
+fn is_builtin_variant(name: str) -> bool {
+    if name == "Some" or name == "None" or name == "Ok" or name == "Err" {
+        return true;
+    }
+    return false;
+}
+
+fn item_kind_text(kind: top_item_kind) -> str {
+    match kind {
+        item_fn => {
+            return "function";
+        },
+        item_type => {
+            return "type";
+        },
+        item_enum => {
+            return "enum";
+        },
+        item_variant => {
+            return "variant";
+        },
+    }
+}
+
+fn binding_kind_text(kind: body_binding_kind) -> str {
+    match kind {
+        bind_param => {
+            return "param";
+        },
+        bind_let => {
+            return "local";
+        },
+        bind_pattern => {
+            return "pattern";
+        },
+    }
+}
+
+fn name_ref_kind_text(kind: name_ref_kind) -> str {
+    match kind {
+        ref_value => {
+            return "value";
+        },
+        ref_call => {
+            return "call";
+        },
+        ref_assign_target => {
+            return "assign_target";
+        },
+        ref_borrow_target => {
+            return "borrow_target";
+        },
+        ref_struct_type => {
+            return "struct_type";
+        },
+        ref_pattern_ctor => {
+            return "pattern_ctor";
+        },
+    }
+}
+
+fn type_ref_kind_text(kind: type_ref_kind) -> str {
+    match kind {
+        type_return => {
+            return "return_type";
+        },
+        type_param => {
+            return "param_type";
+        },
+        type_local_annotation => {
+            return "local_annotation";
+        },
+        type_field => {
+            return "field_type";
+        },
+        type_enum_payload => {
+            return "enum_payload_type";
+        },
+    }
+}
+
+fn variant_enum_name(variants: ref list<variant_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.enum_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn item_identity(item: top_item, variants: ref list<variant_fact>) -> str {
+    match item.kind {
+        item_fn => {
+            return function_identity(item.module, item.name);
+        },
+        item_type => {
+            return type_identity(item.module, item.name);
+        },
+        item_enum => {
+            return enum_identity(item.module, item.name);
+        },
+        item_variant => {
+            let enum_name = variant_enum_name(ref variants, item.module, item.name);
+            return variant_identity(item.module, enum_name, item.name);
+        },
+    }
+}
+
+fn top_item_visible(items: ref list<top_item>, module: str, name: str, kind: top_item_kind) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    match value.kind {
+                        item_fn => {
+                            match kind {
+                                item_fn => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_type => {
+                            match kind {
+                                item_type => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_enum => {
+                            match kind {
+                                item_enum => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_variant => {
+                            match kind {
+                                item_variant => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_exports_item(items: ref list<top_item>, module: str, name: str, kind: top_item_kind) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.is_public {
+                    match value.kind {
+                        item_fn => {
+                            match kind {
+                                item_fn => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_type => {
+                            match kind {
+                                item_type => {
+                                    return true;
+                                },
+                                item_enum => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_enum => {
+                            match kind {
+                                item_type => {
+                                    return true;
+                                },
+                                item_enum => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_variant => {
+                            match kind {
+                                item_variant => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn visible_item_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str, kind: top_item_kind) -> str {
+    if top_item_visible(ref items, module, name, kind) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_item(ref items, value.name, name, kind) {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn visible_function_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if is_builtin_function(name) {
+        return "__builtin__";
+    }
+    return visible_item_origin(ref items, ref uses, module, name, item_fn);
+}
+
+fn visible_type_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if is_builtin_type(name) {
+        return "__builtin__";
+    }
+    let origin = visible_item_origin(ref items, ref uses, module, name, item_type);
+    if origin != "" {
+        return origin;
+    }
+    return visible_item_origin(ref items, ref uses, module, name, item_enum);
+}
+
+fn visible_variant_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if is_builtin_variant(name) {
+        return "__builtin__";
+    }
+    return visible_item_origin(ref items, ref uses, module, name, item_variant);
+}
+
+fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
+    let mut index = list_len(ref scopes) - 1;
+    while index >= 0 {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.scope_id == scope_id {
+                    return value.parent_scope_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return -1;
+}
+
+fn scope_is_visible(scopes: ref list<body_scope>, module: str, function_name: str, current_scope_id: i32, candidate_scope_id: i32) -> bool {
+    let mut scope_cursor = current_scope_id;
+    while scope_cursor >= 0 {
+        if scope_cursor == candidate_scope_id {
+            return true;
+        }
+        scope_cursor = parent_scope_id(ref scopes, module, function_name, scope_cursor);
+    }
+    return false;
+}
+
+fn binding_creates_local(binding: body_binding, items: ref list<top_item>, uses: ref list<module_use>) -> bool {
+    match binding.kind {
+        bind_pattern => {
+            if visible_variant_origin(ref items, ref uses, binding.module, binding.name) != "" {
+                return false;
+            }
+        },
+        _ => {
+        },
+    }
+    return true;
+}
+
+fn resolve_binding_identity(bindings: ref list<body_binding>, scopes: ref list<body_scope>, items: ref list<top_item>, uses: ref list<module_use>, reference: name_ref) -> str {
+    let mut index = list_len(ref bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and value.module == reference.module and value.function_name == reference.function_name and value.name == reference.name and value.at < reference.at {
+                    if scope_is_visible(ref scopes, reference.module, reference.function_name, reference.scope_id, value.scope_id) {
+                        return binding_identity(value);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return "";
+}
+
+fn target_id_for_type_ref(items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref) -> str {
+    let origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+    if origin == "__builtin__" {
+        return str_concat("builtin-type:", entry.name);
+    }
+    if origin == "" {
+        return "";
+    }
+    if top_item_visible(ref items, origin, entry.name, item_enum) {
+        return enum_identity(origin, entry.name);
+    }
+    return type_identity(origin, entry.name);
+}
+
+fn target_kind_for_type_ref(items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref) -> str {
+    let origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+    if origin == "__builtin__" {
+        return "builtin_type";
+    }
+    if origin == "" {
+        return "unknown";
+    }
+    if top_item_visible(ref items, origin, entry.name, item_enum) {
+        return "enum";
+    }
+    return "type";
+}
+
+fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref) -> str {
+    let binding_id = resolve_binding_identity(ref bindings, ref scopes, ref items, ref uses, entry);
+    if binding_id != "" {
+        return binding_id;
+    }
+    match entry.kind {
+        ref_call => {
+            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return str_concat("builtin:", entry.name);
+            }
+            if origin != "" {
+                return function_identity(origin, entry.name);
+            }
+            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if variant_origin == "__builtin__" {
+                return str_concat("builtin-variant:", entry.name);
+            }
+            if variant_origin != "" {
+                return variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name);
+            }
+        },
+        ref_struct_type => {
+            let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+            if type_origin == "__builtin__" {
+                return str_concat("builtin-type:", entry.name);
+            }
+            if type_origin != "" {
+                return type_identity(type_origin, entry.name);
+            }
+        },
+        ref_pattern_ctor => {
+            let origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return str_concat("builtin-variant:", entry.name);
+            }
+            if origin != "" {
+                return variant_identity(origin, variant_enum_name(ref variants, origin, entry.name), entry.name);
+            }
+        },
+        _ => {
+        },
+    }
+    return "";
+}
+
+fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, entry: name_ref) -> str {
+    let binding_id = resolve_binding_identity(ref bindings, ref scopes, ref items, ref uses, entry);
+    if binding_id != "" {
+        return "binding";
+    }
+    match entry.kind {
+        ref_call => {
+            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return "builtin";
+            }
+            if origin != "" {
+                return "function";
+            }
+            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if variant_origin == "__builtin__" {
+                return "builtin_variant";
+            }
+            if variant_origin != "" {
+                return "variant";
+            }
+        },
+        ref_struct_type => {
+            let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+            if type_origin == "__builtin__" {
+                return "builtin_type";
+            }
+            if type_origin != "" {
+                return "type";
+            }
+        },
+        ref_pattern_ctor => {
+            let origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return "builtin_variant";
+            }
+            if origin != "" {
+                return "variant";
+            }
+        },
+        _ => {
+        },
+    }
+    return "unknown";
+}
+
+fn call_target_id(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, entry: call_fact) -> str {
+    let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
+    if origin == "__builtin__" {
+        return str_concat("builtin:", entry.name);
+    }
+    if origin != "" {
+        return function_identity(origin, entry.name);
+    }
+    let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+    if variant_origin == "__builtin__" {
+        return str_concat("builtin-variant:", entry.name);
+    }
+    if variant_origin != "" {
+        return variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name);
+    }
+    return "";
+}
+
+fn binding_definition_count(items: ref list<top_item>, uses: ref list<module_use>, bindings: ref list<body_binding>) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn definition_count(items: ref list<top_item>, uses: ref list<module_use>, fields: ref list<field_fact>, bindings: ref list<body_binding>) -> i32 {
+    return list_len(ref items) + list_len(ref fields) + binding_definition_count(ref items, ref uses, ref bindings);
+}
+
+fn reference_count(uses: ref list<module_use>, type_refs: ref list<type_ref>, refs: ref list<name_ref>) -> i32 {
+    return list_len(ref uses) + list_len(ref type_refs) + list_len(ref refs);
+}
+
+fn append_modules(lines: mutref list<str>, modules: ref list<str>) -> unit {
+    list_push(mutref lines, "  \"modules\": [");
+    let mut index = 0;
+    while index < list_len(ref modules) {
+        let entry = list_get(ref modules, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"id\": ", json_quote(module_identity(value)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"name\": ", json_quote(value), "", "", ""));
+                if index + 1 < list_len(ref modules) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_top_item_definition(lines: mutref list<str>, item: top_item, variants: ref list<variant_fact>, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(item_identity(item, ref variants)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(item_kind_text(item.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(item.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(item.name), ",", "", ""));
+    list_push(mutref lines, concat3("      \"public\": ", bool_text(item.is_public), ","));
+    append_span(mutref lines, "      ", item.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_field_definition(lines: mutref list<str>, field: field_fact, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(field_identity(field.module, field.type_name, field.name)), ",", "", ""));
+    list_push(mutref lines, "      \"kind\": \"field\",");
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(field.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"owner\": ", json_quote(type_identity(field.module, field.type_name)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(field.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"type\": ", json_quote(field.field_type_name), ",", "", ""));
+    append_span(mutref lines, "      ", field.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_binding_definition(lines: mutref list<str>, binding: body_binding, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(binding_identity(binding)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(binding_kind_text(binding.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(binding.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"owner\": ", json_quote(function_identity(binding.module, binding.function_name)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(binding.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"scope_id\": ", i32_to_str(binding.scope_id), ",", "", ""));
+    append_span(mutref lines, "      ", binding.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_definitions(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>) -> unit {
+    let total = definition_count(ref items, ref uses, ref fields, ref bindings);
+    let mut emitted = 0;
+    list_push(mutref lines, "  \"definitions\": [");
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_top_item_definition(mutref lines, value, ref variants, emitted < total);
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_field_definition(mutref lines, value, emitted < total);
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) {
+                    emitted = emitted + 1;
+                    append_binding_definition(mutref lines, value, emitted < total);
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_use_reference(lines: mutref list<str>, entry: module_use, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(use_identity(entry)), ",", "", ""));
+    list_push(mutref lines, "      \"kind\": \"import\",");
+    list_push(mutref lines, concat5("      \"from\": ", json_quote(module_identity(entry.module)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(entry.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote("module"), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(module_identity(entry.name)), ",", "", ""));
+    append_span(mutref lines, "      ", entry.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_type_reference(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(type_ref_identity(entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(type_ref_kind_text(entry.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"from\": ", json_quote(entry.context_name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(entry.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind_for_type_ref(ref items, ref uses, entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id_for_type_ref(ref items, ref uses, entry)), ",", "", ""));
+    append_span(mutref lines, "      ", entry.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(name_ref_identity(entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(name_ref_kind_text(entry.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"from\": ", json_quote(function_identity(entry.module, entry.function_name)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(entry.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind_for_name_ref(ref items, ref uses, ref scopes, ref bindings, entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id_for_name_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, entry)), ",", "", ""));
+    append_span(mutref lines, "      ", entry.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_references(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>) -> unit {
+    let total = reference_count(ref uses, ref type_refs, ref refs);
+    let mut emitted = 0;
+    list_push(mutref lines, "  \"references\": [");
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_use_reference(mutref lines, value, emitted < total);
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    let mut type_index = 0;
+    while type_index < list_len(ref type_refs) {
+        let entry = list_get(ref type_refs, type_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_type_reference(mutref lines, ref items, ref uses, value, emitted < total);
+            },
+            None => {
+            },
+        }
+        type_index = type_index + 1;
+    }
+    let mut ref_index = 0;
+    while ref_index < list_len(ref refs) {
+        let entry = list_get(ref refs, ref_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_name_reference(mutref lines, ref items, ref uses, ref scopes, ref bindings, ref variants, value, emitted < total);
+            },
+            None => {
+            },
+        }
+        ref_index = ref_index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_call_graph(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, calls: ref list<call_fact>) -> unit {
+    list_push(mutref lines, "  \"call_graph\": [");
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"callee\": ", json_quote(call_target_id(ref items, ref uses, ref variants, value)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value)), "", "", ""));
+                if index + 1 < list_len(ref calls) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ]");
+    return;
+}
+
+pub fn emit_facts(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>) -> facts_summary
+audit {
+    intent("Emit deterministic stage1 semantic facts for agent-pair supervision and tooling");
+    mutates();
+    effects(print);
+}
+{
+    let def_count = definition_count(ref items, ref uses, ref fields, ref bindings);
+    let ref_count = reference_count(ref uses, ref type_refs, ref refs);
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"facts\",");
+    list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"modules\": ", i32_to_str(list_len(ref modules)), ","));
+    list_push(mutref lines, concat3("    \"definitions\": ", i32_to_str(def_count), ","));
+    list_push(mutref lines, concat3("    \"references\": ", i32_to_str(ref_count), ","));
+    list_push(mutref lines, concat3("    \"call_edges\": ", i32_to_str(list_len(ref calls)), ""));
+    list_push(mutref lines, "  },");
+    append_modules(mutref lines, ref modules);
+    append_definitions(mutref lines, ref items, ref uses, ref variants, ref fields, ref bindings);
+    append_references(mutref lines, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants);
+    append_call_graph(mutref lines, ref items, ref uses, ref variants, ref calls);
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return make_facts_summary(list_len(ref modules), def_count, ref_count, list_len(ref calls));
+}
