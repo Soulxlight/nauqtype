@@ -19,9 +19,13 @@ enum driver_mode {
     driver_check,
     driver_emit_c,
     driver_facts,
+    driver_facts_v2,
     driver_review,
     driver_review_v2,
     driver_review_diff,
+    driver_review_diff_v2,
+    driver_refactor_rename,
+    driver_policy_check,
     driver_build,
     driver_run,
     driver_prove,
@@ -36,16 +40,18 @@ type driver_request {
     entry_module: str,
     workspace_root: str,
     output_path: str,
+    extra_text: str,
     error_message: str,
 }
 
-fn make_driver_request(mode: driver_mode, entry_path: str, entry_module: str, workspace_root: str, output_path: str, error_message: str) -> driver_request {
+fn make_driver_request(mode: driver_mode, entry_path: str, entry_module: str, workspace_root: str, output_path: str, extra_text: str, error_message: str) -> driver_request {
     return driver_request {
         mode: mode,
         entry_path: entry_path,
         entry_module: entry_module,
         workspace_root: workspace_root,
         output_path: output_path,
+        extra_text: extra_text,
         error_message: error_message,
     };
 }
@@ -263,7 +269,7 @@ fn option_text(value: option<str>) -> str {
 }
 
 fn invalid_request(message: str) -> driver_request {
-    return make_driver_request(driver_invalid, "", "", ".", "", message);
+    return make_driver_request(driver_invalid, "", "", ".", "", "", message);
 }
 
 fn slice_text(text: str, start: i32, end: i32) -> str {
@@ -312,7 +318,7 @@ fn str_ends_with(text: str, suffix: str) -> bool {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -351,7 +357,7 @@ fn build_exe_output_path(source_path: str, explicit_output: str) -> str {
 fn parse_driver_request() -> driver_request {
     let argc = arg_count();
     if argc <= 1 {
-        return make_driver_request(driver_legacy, "main.nq", "main", ".", "build/main.c", "");
+        return make_driver_request(driver_legacy, "main.nq", "main", ".", "build/main.c", "", "");
     }
 
     let command = option_text(arg_get(1));
@@ -364,7 +370,7 @@ fn parse_driver_request() -> driver_request {
         if source_path == "" or entry_module == "" {
             return invalid_request("missing source path for `check`");
         }
-        return make_driver_request(driver_check, source_path, entry_module, path_dir(source_path), "", "");
+        return make_driver_request(driver_check, source_path, entry_module, path_dir(source_path), "", "", "");
     }
 
     if command == "emit-c" {
@@ -387,11 +393,11 @@ fn parse_driver_request() -> driver_request {
                 return invalid_request("missing output path for `emit-c`");
             }
         }
-        return make_driver_request(driver_emit_c, source_path, entry_module, path_dir(source_path), build_emit_output_path(source_path, explicit_output), "");
+        return make_driver_request(driver_emit_c, source_path, entry_module, path_dir(source_path), build_emit_output_path(source_path, explicit_output), "", "");
     }
 
     if command == "facts" {
-        if argc != 3 {
+        if argc != 3 and argc != 5 {
             return invalid_request(usage_text());
         }
         let source_path = option_text(arg_get(2));
@@ -399,7 +405,21 @@ fn parse_driver_request() -> driver_request {
         if source_path == "" or entry_module == "" {
             return invalid_request("missing source path for `facts`");
         }
-        return make_driver_request(driver_facts, source_path, entry_module, path_dir(source_path), "", "");
+        if argc == 5 {
+            let flag = option_text(arg_get(3));
+            if flag != "--format" {
+                return invalid_request("expected `--format` after the facts source path");
+            }
+            let format = option_text(arg_get(4));
+            if format == "v1" {
+                return make_driver_request(driver_facts, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            if format == "v2" {
+                return make_driver_request(driver_facts_v2, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            return invalid_request("expected facts format `v1` or `v2`");
+        }
+        return make_driver_request(driver_facts, source_path, entry_module, path_dir(source_path), "", "", "");
     }
 
     if command == "review" {
@@ -418,18 +438,18 @@ fn parse_driver_request() -> driver_request {
             }
             let format = option_text(arg_get(4));
             if format == "v1" {
-                return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "");
+                return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "", "");
             }
             if format == "v2" {
-                return make_driver_request(driver_review_v2, source_path, entry_module, path_dir(source_path), "", "");
+                return make_driver_request(driver_review_v2, source_path, entry_module, path_dir(source_path), "", "", "");
             }
             return invalid_request("expected review format `v1` or `v2`");
         }
-        return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "");
+        return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "", "");
     }
 
     if command == "review-diff" {
-        if argc != 4 {
+        if argc != 4 and argc != 6 {
             return invalid_request(usage_text());
         }
         let before_path = option_text(arg_get(2));
@@ -442,7 +462,57 @@ fn parse_driver_request() -> driver_request {
         if after_path == "" or after_module == "" {
             return invalid_request("missing after source path for `review-diff`");
         }
-        return make_driver_request(driver_review_diff, before_path, before_module, path_dir(before_path), after_path, "");
+        if argc == 6 {
+            let flag = option_text(arg_get(4));
+            if flag != "--format" {
+                return invalid_request("expected `--format` after the review-diff paths");
+            }
+            let format = option_text(arg_get(5));
+            if format == "v1" {
+                return make_driver_request(driver_review_diff, before_path, before_module, path_dir(before_path), after_path, "", "");
+            }
+            if format == "v2" {
+                return make_driver_request(driver_review_diff_v2, before_path, before_module, path_dir(before_path), after_path, "", "");
+            }
+            return invalid_request("expected review-diff format `v1` or `v2`");
+        }
+        return make_driver_request(driver_review_diff, before_path, before_module, path_dir(before_path), after_path, "", "");
+    }
+
+    if command == "refactor-rename" {
+        if argc != 5 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        let stable_id = option_text(arg_get(3));
+        let new_name = option_text(arg_get(4));
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `refactor-rename`");
+        }
+        if stable_id == "" {
+            return invalid_request("missing stable id for `refactor-rename`");
+        }
+        if new_name == "" {
+            return invalid_request("missing new name for `refactor-rename`");
+        }
+        return make_driver_request(driver_refactor_rename, source_path, entry_module, path_dir(source_path), stable_id, new_name, "");
+    }
+
+    if command == "policy-check" {
+        if argc != 4 {
+            return invalid_request(usage_text());
+        }
+        let source_path = option_text(arg_get(2));
+        let entry_module = path_stem(source_path);
+        let policy_path = option_text(arg_get(3));
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `policy-check`");
+        }
+        if policy_path == "" {
+            return invalid_request("missing policy path for `policy-check`");
+        }
+        return make_driver_request(driver_policy_check, source_path, entry_module, path_dir(source_path), policy_path, "", "");
     }
 
     if command == "build" or command == "run" {
@@ -466,30 +536,30 @@ fn parse_driver_request() -> driver_request {
             }
         }
         if command == "build" {
-            return make_driver_request(driver_build, source_path, entry_module, path_dir(source_path), explicit_output, "");
+            return make_driver_request(driver_build, source_path, entry_module, path_dir(source_path), explicit_output, "", "");
         }
-        return make_driver_request(driver_run, source_path, entry_module, path_dir(source_path), explicit_output, "");
+        return make_driver_request(driver_run, source_path, entry_module, path_dir(source_path), explicit_output, "", "");
     }
 
     if command == "prove-selfhost" {
         if argc != 2 {
             return invalid_request(usage_text());
         }
-        return make_driver_request(driver_prove_selfhost, option_text(arg_get(0)), "", ".", "", "");
+        return make_driver_request(driver_prove_selfhost, option_text(arg_get(0)), "", ".", "", "", "");
     }
 
     if command == "prove-corpus" {
         if argc != 2 {
             return invalid_request(usage_text());
         }
-        return make_driver_request(driver_prove_corpus, option_text(arg_get(0)), "", ".", "", "");
+        return make_driver_request(driver_prove_corpus, option_text(arg_get(0)), "", ".", "", "", "");
     }
 
     if command == "prove" {
         if argc != 2 {
             return invalid_request(usage_text());
         }
-        return make_driver_request(driver_prove, option_text(arg_get(0)), "", ".", "", "");
+        return make_driver_request(driver_prove, option_text(arg_get(0)), "", ".", "", "", "");
     }
 
     if command == "" {
@@ -640,7 +710,7 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     return 0;
 }
 
-fn run_facts(workspace_root: str, entry_module: str, entry_path: str) -> i32 {
+fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_version: i32) -> i32 {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut sources: list<source_file> = list();
@@ -707,12 +777,108 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str) -> i32 {
         return 1;
     }
 
-    let summary = emit_facts(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts);
+    let summary = emit_facts_format(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts, format_version);
     if summary.module_count < 1 {
         eprint_line("stage1 internal error: facts output has no modules");
         return 1;
     }
     return 0;
+}
+
+fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_path: str, loaded: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, variant_facts: mutref list<variant_fact>, field_facts: mutref list<field_fact>, call_facts: mutref list<call_fact>, diags: mutref list<diag>) -> bool {
+    let mut seen: list<str> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut match_arms: list<match_arm_fact> = list();
+    let mut local_inits: list<local_init_fact> = list();
+    let mut return_facts: list<return_expr_fact> = list();
+    let mut condition_facts: list<condition_fact> = list();
+    let mut assignment_facts: list<assignment_fact> = list();
+    let mut stmt_facts: list<stmt_fact> = list();
+    let mut resolved_bindings: list<typed_binding_fact> = list();
+    let mut pattern_bindings: list<pattern_binding_fact> = list();
+    let mut checked_modules: list<checked_module> = list();
+    let mut checked_functions: list<checked_function> = list();
+    let mut checked_bindings: list<checked_binding> = list();
+    let mut checked_params: list<checked_param> = list();
+    let mut checked_type_shapes: list<checked_type_shape> = list();
+    let mut checked_type_decls: list<checked_type_decl> = list();
+    let mut checked_field_decls: list<checked_field_decl> = list();
+    let mut checked_enum_decls: list<checked_enum_decl> = list();
+    let mut checked_variant_decls: list<checked_variant_decl> = list();
+    let mut checked_variant_payload_decls: list<checked_variant_payload_decl> = list();
+    let mut checked_blocks: list<checked_block> = list();
+    let mut checked_statements: list<checked_stmt> = list();
+    let mut checked_match_arms: list<checked_match_arm> = list();
+    let mut checked_patterns: list<checked_pattern> = list();
+    let mut checked_pattern_children: list<checked_pattern_child> = list();
+    let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
+    let mut checked_expressions: list<checked_expr> = list();
+    let mut checked_expr_children: list<checked_expr_child> = list();
+    let mut checked_struct_fields: list<checked_struct_field_init> = list();
+
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+
+    resolve_modules(ref loaded, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+
+    if list_len(ref diags) > 0 {
+        return false;
+    }
+    if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {
+        list_push(mutref diags, make_diag(entry_module, 0, "stage1 internal error: tooling facts safety pass skipped checked functions"));
+        return false;
+    }
+    return true;
+}
+
+fn run_refactor_rename(workspace_root: str, entry_module: str, entry_path: str, target_id: str, new_name: str) -> i32 {
+    let mut loaded: list<str> = list();
+    let mut sources: list<source_file> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut diags: list<diag> = list();
+    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref diags) {
+        emit_all(ref diags);
+        return 1;
+    }
+    return emit_refactor_rename_plan(workspace_root, entry_module, entry_path, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, target_id, new_name);
+}
+
+fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, policy_path: str) -> i32 {
+    let mut loaded: list<str> = list();
+    let mut sources: list<source_file> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut diags: list<diag> = list();
+    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref diags) {
+        emit_all(ref diags);
+        return 1;
+    }
+    return emit_policy_check(entry_module, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
 }
 
 fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, diags: mutref list<diag>) -> bool {
@@ -855,7 +1021,7 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
     return 0;
 }
 
-fn run_review_diff(before_path: str, after_path: str) -> i32 {
+fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     let before_module = path_stem(before_path);
     let before_workspace = path_dir(before_path);
     let after_module = path_stem(after_path);
@@ -882,7 +1048,7 @@ fn run_review_diff(before_path: str, after_path: str) -> i32 {
         return 1;
     }
 
-    let summary = emit_review_diff(before_module, ref before_sources, ref before_uses, ref before_params, ref before_assignments, ref before_calls, after_module, ref after_sources, ref after_uses, ref after_params, ref after_assignments, ref after_calls);
+    let summary = emit_review_diff_format(before_module, ref before_sources, ref before_uses, ref before_params, ref before_assignments, ref before_calls, after_module, ref after_sources, ref after_uses, ref after_params, ref after_assignments, ref after_calls, use_v2);
     if summary.error_count > 0 {
         return 1;
     }
@@ -1006,7 +1172,10 @@ fn main() -> i32 {
             return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "");
         },
         driver_facts => {
-            return run_facts(request.workspace_root, request.entry_module, request.entry_path);
+            return run_facts(request.workspace_root, request.entry_module, request.entry_path, 1);
+        },
+        driver_facts_v2 => {
+            return run_facts(request.workspace_root, request.entry_module, request.entry_path, 2);
         },
         driver_review => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, false);
@@ -1015,7 +1184,16 @@ fn main() -> i32 {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, true);
         },
         driver_review_diff => {
-            return run_review_diff(request.entry_path, request.output_path);
+            return run_review_diff(request.entry_path, request.output_path, false);
+        },
+        driver_review_diff_v2 => {
+            return run_review_diff(request.entry_path, request.output_path, true);
+        },
+        driver_refactor_rename => {
+            return run_refactor_rename(request.workspace_root, request.entry_module, request.entry_path, request.output_path, request.extra_text);
+        },
+        driver_policy_check => {
+            return run_policy_check(request.workspace_root, request.entry_module, request.entry_path, request.output_path);
         },
         driver_build => {
             return run_build_command(request, false);

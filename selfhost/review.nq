@@ -1329,6 +1329,16 @@ fn target_id_for_call(origin: str, name: str) -> str {
     return function_identity(origin, name);
 }
 
+fn evidence_for_origin(origin: str) -> str {
+    if origin == "__builtin__" {
+        return "builtin";
+    }
+    if origin == "" {
+        return "unresolved";
+    }
+    return "checked";
+}
+
 fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let total_functions = module_function_count(ref functions, entry_module);
@@ -1410,12 +1420,14 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
                     let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
                     let target_kind = target_kind_for_origin(origin);
                     let target_id = target_id_for_call(origin, value.name);
+                    let evidence = evidence_for_origin(origin);
                     list_push(mutref lines, concat3(indent, "  {", ""));
                     list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_kind\": ", json_quote(target_kind), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_id\": ", json_quote(target_id), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_module\": ", json_quote(origin), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"evidence\": ", json_quote(evidence), ",", ""));
                     append_span(mutref lines, concat3(indent, "    ", ""), value.at, false);
                     emitted_calls = emitted_calls + 1;
                     if emitted_calls < total_calls {
@@ -1507,6 +1519,7 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
                 let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
                 let target_kind = target_kind_for_origin(origin);
                 let target_id = target_id_for_call(origin, value.name);
+                let evidence = evidence_for_origin(origin);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 list_push(mutref lines, "      \"kind\": \"call\",");
@@ -1514,6 +1527,7 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
                 list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
                 list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
                 list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
+                list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
                 append_span(mutref lines, "      ", value.at, false);
                 if index + 1 < total_calls {
                     list_push(mutref lines, "    },");
@@ -1544,10 +1558,12 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
             Some(value) => {
                 let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
                 let target_id = target_id_for_call(origin, value.name);
+                let evidence = evidence_for_origin(origin);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
                 list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
-                list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value.module, value.function_name, value.at)), "", "", ""));
+                list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), "", "", ""));
                 if index + 1 < total_calls {
                     list_push(mutref lines, "    },");
                 } else {
@@ -1872,6 +1888,36 @@ fn append_review_diff_json(lines: mutref list<str>, before_module: str, after_mo
     return;
 }
 
+fn append_review_diff_v2_json(lines: mutref list<str>, before_module: str, after_module: str, added_functions: ref list<str>, removed_functions: ref list<str>, changed_functions: ref list<str>, added_call_edges: ref list<str>, removed_call_edges: ref list<str>) -> unit {
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 2,");
+    list_push(mutref lines, "  \"command\": \"review-diff\",");
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    list_push(mutref lines, concat3("  \"before\": { \"module\": ", json_quote(before_module), ", \"evidence\": \"checked\" },"));
+    list_push(mutref lines, concat3("  \"after\": { \"module\": ", json_quote(after_module), ", \"evidence\": \"checked\" },"));
+    list_push(mutref lines, "  \"evidence\": {");
+    list_push(mutref lines, "    \"before\": \"checked\",");
+    list_push(mutref lines, "    \"after\": \"checked\",");
+    list_push(mutref lines, "    \"comparison\": \"semantic-identities\"");
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"added_functions\": ", i32_to_str(list_len(ref added_functions)), ","));
+    list_push(mutref lines, concat3("    \"removed_functions\": ", i32_to_str(list_len(ref removed_functions)), ","));
+    list_push(mutref lines, concat3("    \"changed_functions\": ", i32_to_str(list_len(ref changed_functions)), ","));
+    list_push(mutref lines, concat3("    \"added_call_edges\": ", i32_to_str(list_len(ref added_call_edges)), ","));
+    list_push(mutref lines, concat3("    \"removed_call_edges\": ", i32_to_str(list_len(ref removed_call_edges)), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"changes\": {");
+    append_named_string_array(mutref lines, "    ", "added_functions", ref added_functions, true);
+    append_named_string_array(mutref lines, "    ", "removed_functions", ref removed_functions, true);
+    append_named_string_array(mutref lines, "    ", "changed_functions", ref changed_functions, true);
+    append_named_string_array(mutref lines, "    ", "added_call_edges", ref added_call_edges, true);
+    append_named_string_array(mutref lines, "    ", "removed_call_edges", ref removed_call_edges, false);
+    list_push(mutref lines, "  }");
+    list_push(mutref lines, "}");
+    return;
+}
+
 pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review JSON from selfhost facts and audit blocks");
@@ -1923,6 +1969,16 @@ audit {
     effects(print);
 }
 {
+    return emit_review_diff_format(before_module, ref before_sources, ref before_uses, ref before_params, ref before_assignments, ref before_calls, after_module, ref after_sources, ref after_uses, ref after_params, ref after_assignments, ref after_calls, false);
+}
+
+pub fn emit_review_diff_format(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, use_v2: bool) -> review_summary
+audit {
+    intent("Emit deterministic semantic review diffs with optional v2 evidence metadata");
+    mutates();
+    effects(print);
+}
+{
     let mut before_functions: list<review_function_fact> = list();
     let mut before_decls: list<review_decl_entry> = list();
     collect_review_fact_lists(ref before_sources, mutref before_functions, mutref before_decls);
@@ -1954,7 +2010,11 @@ audit {
     collect_removed_strings(ref before_call_edges, ref after_call_edges, mutref removed_call_edges);
 
     let mut lines: list<str> = list();
-    append_review_diff_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges);
+    if use_v2 {
+        append_review_diff_v2_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges);
+    } else {
+        append_review_diff_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges);
+    }
     emit_lines(ref lines);
     return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, 0);
 }

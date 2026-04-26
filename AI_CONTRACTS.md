@@ -63,9 +63,11 @@ audit {
 - added and removed call graph edges by caller-to-callee identity
 - summary counts suitable for agent-pair review triage and human supervision
 
+`nauqc review-diff <before> <after> --format v2` preserves the v1 change shape and adds evidence metadata for the checked before/after inputs and the semantic-identity comparison basis.
+
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `facts`, `review`, and `review-diff` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
+During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `refactor-rename`, and `policy-check` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
 
 The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 
@@ -79,6 +81,20 @@ The broader AI-first compiler surface now also includes `nauqc facts <file>`, wh
 - Call graph entries use stable caller/callee identities plus a call-site id.
 - The command runs only after the checked stage1 front-end and borrow safety path succeeds, so agents can distinguish checked facts from unchecked text.
 
+## Semantic Facts v2 Contract
+
+`facts <file> --format v2` preserves the v1 shape and adds explicit evidence fields.
+
+- Definitions use `declared` for source declarations and `checked` for compiler-confirmed binding identities.
+- References and call edges use `checked` for resolved semantic targets, `builtin` for builtin targets, `declared` for imports, and `unresolved` when a retained boundary prevents target proof.
+- Full-tree `facts selfhost/main.nq` is a standing bounded-performance gate on Windows.
+
+## Plan-Only Refactors And Policy Sidecars
+
+`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, and local/param/pattern binding identities. It never mutates files. Field IDs are rejected until the facts surface includes checked field-use references.
+
+`policy-check <source> <policy-path>` validates `nauqtype.policy.json` v1 sidecars against checked facts. The sidecar is advisory metadata for owners and review expectations; `check`, `build`, and `run` do not enforce it yet.
+
 ## Explicit Non-Goals For Alpha
 
 - NLP validation of `intent(...)`
@@ -86,5 +102,6 @@ The broader AI-first compiler surface now also includes `nauqc facts <file>`, wh
 - Cross-file contract propagation
 - Typed holes or repair obligations
 - Strong transitive mutation inference
+- Semantic language-feature expansion inside the AI tooling spine
 
 Those remain future work until the alpha proves its value.

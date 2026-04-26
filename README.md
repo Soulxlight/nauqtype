@@ -15,7 +15,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `refactor-rename`, `policy-check`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
 ## Quick Start
 
@@ -53,6 +53,7 @@ Export deterministic semantic facts for agent-pair supervision:
 
 ```powershell
 selfhost\build\main.exe facts examples\hello.nq
+selfhost\build\main.exe facts examples\hello.nq --format v2
 ```
 
 Use the active Nauqtype-owned driver for `review`:
@@ -66,6 +67,19 @@ Compare two checked review surfaces with stable semantic identities:
 
 ```powershell
 selfhost\build\main.exe review-diff before\main.nq after\main.nq
+selfhost\build\main.exe review-diff before\main.nq after\main.nq --format v2
+```
+
+Plan a semantic rename without mutating files:
+
+```powershell
+selfhost\build\main.exe refactor-rename examples\hello.nq fn:hello::main renamed_main
+```
+
+Validate sidecar ownership/review metadata against checked facts:
+
+```powershell
+selfhost\build\main.exe policy-check selfhost\main.nq nauqtype.policy.json
 ```
 
 Use the active Nauqtype-owned driver for `build`:
@@ -162,13 +176,18 @@ Current remaining gaps:
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
+- semantic language-feature work, starting with the first live-in-the-language ergonomics batch, resumes after this completed AI tooling spine and must stay attached to concrete examples and differential coverage
 
 Current AI-first compiler output:
 
 - `review` JSON for function-level contract summaries
 - `facts` JSON for stable definitions, references, and call graph edges, locked by `schemas/facts-v1.schema.json`
+- `facts --format v2` JSON with explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields, locked by `schemas/facts-v2.schema.json`
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
+- `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
+- `refactor-rename` JSON edit plans for supported semantic renames; it never mutates files, and field IDs are rejected until checked field-use refs are exported
+- `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
 
 ## Key Docs

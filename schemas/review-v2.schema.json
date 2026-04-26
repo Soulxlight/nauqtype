@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/review-v2.schema.json",
+  "title": "Nauqtype Review v2",
+  "type": "object",
+  "required": ["version", "command", "module", "identity_scheme", "functions", "references", "call_graph"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 2 },
+    "command": { "const": "review" },
+    "module": { "type": "string" },
+    "identity_scheme": { "const": "nauqtype.semantic.v1" },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "qualified_name", "module", "name", "public", "span", "audit", "inferred", "evidence", "calls"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "function" },
+          "qualified_name": { "type": "string" },
+          "module": { "type": "string" },
+          "name": { "type": "string" },
+          "public": { "type": "boolean" },
+          "span": { "$ref": "#/$defs/span" },
+          "audit": { "type": ["object", "null"] },
+          "inferred": { "type": "object", "required": ["mutates", "effects"] },
+          "evidence": {
+            "type": "object",
+            "required": ["audit", "inferred"],
+            "additionalProperties": false,
+            "properties": {
+              "audit": { "const": "declared" },
+              "inferred": { "const": "checked" }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/call_ref" }
+          }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reference" }
+    },
+    "call_graph": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["caller", "callee", "call_site", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "caller": { "type": "string" },
+          "callee": { "type": "string" },
+          "call_site": { "type": "string" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "evidence": { "enum": ["checked", "builtin", "unresolved"] },
+    "span": {
+      "type": "object",
+      "required": ["start"],
+      "additionalProperties": false,
+      "properties": { "start": { "type": "integer", "minimum": 0 } }
+    },
+    "call_ref": {
+      "type": "object",
+      "required": ["id", "name", "target_kind", "target_id", "target_module", "evidence", "span"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "target_kind": { "type": "string" },
+        "target_id": { "type": "string" },
+        "target_module": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "span": { "$ref": "#/$defs/span" }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["id", "kind", "from", "name", "target_kind", "target_id", "evidence", "span"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "const": "call" },
+        "from": { "type": "string" },
+        "name": { "type": "string" },
+        "target_kind": { "type": "string" },
+        "target_id": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "span": { "$ref": "#/$defs/span" }
+      }
+    }
+  }
+}

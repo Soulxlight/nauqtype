@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/facts-v2.schema.json",
+  "title": "Nauqtype Semantic Facts v2",
+  "type": "object",
+  "required": ["version", "command", "module", "identity_scheme", "summary", "modules", "definitions", "references", "call_graph"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 2 },
+    "command": { "const": "facts" },
+    "module": { "type": "string" },
+    "identity_scheme": { "const": "nauqtype.semantic.v1" },
+    "summary": {
+      "type": "object",
+      "required": ["modules", "definitions", "references", "call_edges"],
+      "additionalProperties": false,
+      "properties": {
+        "modules": { "type": "integer", "minimum": 0 },
+        "definitions": { "type": "integer", "minimum": 0 },
+        "references": { "type": "integer", "minimum": 0 },
+        "call_edges": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "modules": { "type": "array", "items": { "type": "object" } },
+    "definitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "module", "name", "evidence", "span"],
+        "properties": {
+          "evidence": { "$ref": "#/$defs/evidence" },
+          "span": { "$ref": "#/$defs/span" }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "from", "name", "target_kind", "target_id", "evidence", "span"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "from": { "type": "string" },
+          "name": { "type": "string" },
+          "target_kind": { "type": "string" },
+          "target_id": { "type": "string" },
+          "evidence": { "$ref": "#/$defs/evidence" },
+          "span": { "$ref": "#/$defs/span" }
+        }
+      }
+    },
+    "call_graph": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["caller", "callee", "call_site", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "caller": { "type": "string" },
+          "callee": { "type": "string" },
+          "call_site": { "type": "string" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "evidence": { "enum": ["declared", "checked", "builtin", "unresolved"] },
+    "span": {
+      "type": "object",
+      "required": ["start"],
+      "additionalProperties": false,
+      "properties": { "start": { "type": "integer", "minimum": 0 } }
+    }
+  }
+}

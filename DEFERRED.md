@@ -37,6 +37,8 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Time / randomness APIs
 - Process and environment APIs
 
+The current stage1 driver has a deliberately narrow toolchain-only runtime surface for arguments, directory creation, and subprocess execution. Broad process/environment APIs remain deferred.
+
 ## Compiler / Tooling
 
 - REPL
@@ -47,6 +49,8 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Formatter
 - Language server
 - Package manager
+
+Near-term language ergonomics such as top-level `const`, list literals, `match` expressions, and `let-else` are not part of the AI tooling spine. They resume only as explicit language milestones with examples and differential coverage.
 
 ## Why These Are Deferred
 

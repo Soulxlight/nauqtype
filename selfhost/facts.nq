@@ -1,10 +1,54 @@
 use ast;
+use files;
+use source;
 
 pub type facts_summary {
     module_count: i32,
     definition_count: i32,
     reference_count: i32,
     call_edge_count: i32,
+}
+
+type fact_target {
+    kind: str,
+    id: str,
+    evidence: str,
+}
+
+type fact_reference {
+    id: str,
+    kind: str,
+    module: str,
+    from: str,
+    name: str,
+    target_kind: str,
+    target_id: str,
+    at: i32,
+    evidence: str,
+}
+
+type fact_call_edge {
+    caller: str,
+    callee: str,
+    call_site: str,
+    evidence: str,
+}
+
+type refactor_target {
+    ok: bool,
+    id: str,
+    kind: str,
+    module: str,
+    owner: str,
+    name: str,
+    at: i32,
+    path: str,
+}
+
+type policy_entry {
+    target_id: str,
+    owner: str,
+    review: str,
 }
 
 pub fn make_facts_summary(module_count: i32, definition_count: i32, reference_count: i32, call_edge_count: i32) -> facts_summary
@@ -19,6 +63,58 @@ audit {
         definition_count: definition_count,
         reference_count: reference_count,
         call_edge_count: call_edge_count,
+    };
+}
+
+fn make_fact_target(kind: str, id: str, evidence: str) -> fact_target {
+    return fact_target {
+        kind: kind,
+        id: id,
+        evidence: evidence,
+    };
+}
+
+fn make_fact_reference(id: str, kind: str, module: str, from: str, name: str, target_kind: str, target_id: str, at: i32, evidence: str) -> fact_reference {
+    return fact_reference {
+        id: id,
+        kind: kind,
+        module: module,
+        from: from,
+        name: name,
+        target_kind: target_kind,
+        target_id: target_id,
+        at: at,
+        evidence: evidence,
+    };
+}
+
+fn make_fact_call_edge(caller: str, callee: str, call_site: str, evidence: str) -> fact_call_edge {
+    return fact_call_edge {
+        caller: caller,
+        callee: callee,
+        call_site: call_site,
+        evidence: evidence,
+    };
+}
+
+fn make_refactor_target(ok: bool, id: str, kind: str, module: str, owner: str, name: str, at: i32, path: str) -> refactor_target {
+    return refactor_target {
+        ok: ok,
+        id: id,
+        kind: kind,
+        module: module,
+        owner: owner,
+        name: name,
+        at: at,
+        path: path,
+    };
+}
+
+fn make_policy_entry(target_id: str, owner: str, review: str) -> policy_entry {
+    return policy_entry {
+        target_id: target_id,
+        owner: owner,
+        review: review,
     };
 }
 
@@ -223,6 +319,45 @@ fn type_ref_identity(entry: type_ref) -> str {
 
 fn name_ref_identity(entry: name_ref) -> str {
     return concat6("nameref:", entry.module, "::", entry.function_name, "@", i32_to_str(entry.at));
+}
+
+fn slice_text(text: str, start: i32, end: i32) -> str {
+    let value = str_slice(text, start, end);
+    match value {
+        Some(part) => {
+            return part;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn str_starts_with(text: str, prefix: str) -> bool {
+    if str_len(prefix) > str_len(text) {
+        return false;
+    }
+    let value = str_slice(text, 0, str_len(prefix));
+    match value {
+        Some(part) => {
+            return part == prefix;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn char_at(text: str, index: i32) -> i32 {
+    let value = str_get(text, index);
+    match value {
+        Some(ch) => {
+            return ch;
+        },
+        None => {
+            return -1;
+        },
+    }
 }
 
 fn list_contains(items: ref list<str>, target: str) -> bool {
@@ -607,6 +742,156 @@ fn resolve_binding_identity(bindings: ref list<body_binding>, scopes: ref list<b
     return "";
 }
 
+fn first_binding_index_for_function(bindings: ref list<body_binding>, module: str, function_name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    return index;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return 0;
+}
+
+fn last_binding_index_for_function(bindings: ref list<body_binding>, module: str, function_name: str) -> i32 {
+    let mut index = list_len(ref bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    return index;
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return -1;
+}
+
+fn resolve_binding_identity_in_range(bindings: ref list<body_binding>, scopes: ref list<body_scope>, items: ref list<top_item>, uses: ref list<module_use>, reference: name_ref, start_index: i32, end_index: i32) -> str {
+    if end_index < start_index {
+        return "";
+    }
+    let mut index = end_index;
+    while index >= start_index {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and value.module == reference.module and value.function_name == reference.function_name and value.name == reference.name and value.at < reference.at {
+                    if scope_is_visible(ref scopes, reference.module, reference.function_name, reference.scope_id, value.scope_id) {
+                        return binding_identity(value);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return "";
+}
+
+fn evidence_for_target(target_kind: str, target_id: str) -> str {
+    if target_kind == "unknown" or target_id == "" {
+        return "unresolved";
+    }
+    if target_kind == "builtin" or target_kind == "builtin_type" or target_kind == "builtin_variant" {
+        return "builtin";
+    }
+    if target_kind == "module" {
+        return "declared";
+    }
+    return "checked";
+}
+
+fn type_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref) -> fact_target {
+    let origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+    if origin == "__builtin__" {
+        return make_fact_target("builtin_type", str_concat("builtin-type:", entry.name), "builtin");
+    }
+    if origin == "" {
+        return make_fact_target("unknown", "", "unresolved");
+    }
+    if top_item_visible(ref items, origin, entry.name, item_enum) {
+        return make_fact_target("enum", enum_identity(origin, entry.name), "checked");
+    }
+    return make_fact_target("type", type_identity(origin, entry.name), "checked");
+}
+
+fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref, start_index: i32, end_index: i32) -> fact_target {
+    let binding_id = resolve_binding_identity_in_range(ref bindings, ref scopes, ref items, ref uses, entry, start_index, end_index);
+    if binding_id != "" {
+        return make_fact_target("binding", binding_id, "checked");
+    }
+    match entry.kind {
+        ref_call => {
+            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return make_fact_target("builtin", str_concat("builtin:", entry.name), "builtin");
+            }
+            if origin != "" {
+                return make_fact_target("function", function_identity(origin, entry.name), "checked");
+            }
+            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if variant_origin == "__builtin__" {
+                return make_fact_target("builtin_variant", str_concat("builtin-variant:", entry.name), "builtin");
+            }
+            if variant_origin != "" {
+                return make_fact_target("variant", variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name), "checked");
+            }
+        },
+        ref_struct_type => {
+            let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
+            if type_origin == "__builtin__" {
+                return make_fact_target("builtin_type", str_concat("builtin-type:", entry.name), "builtin");
+            }
+            if type_origin != "" {
+                return make_fact_target("type", type_identity(type_origin, entry.name), "checked");
+            }
+        },
+        ref_pattern_ctor => {
+            let origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+            if origin == "__builtin__" {
+                return make_fact_target("builtin_variant", str_concat("builtin-variant:", entry.name), "builtin");
+            }
+            if origin != "" {
+                return make_fact_target("variant", variant_identity(origin, variant_enum_name(ref variants, origin, entry.name), entry.name), "checked");
+            }
+        },
+        _ => {
+        },
+    }
+    return make_fact_target("unknown", "", "unresolved");
+}
+
+fn call_target(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, entry: call_fact) -> fact_target {
+    let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
+    if origin == "__builtin__" {
+        return make_fact_target("builtin", str_concat("builtin:", entry.name), "builtin");
+    }
+    if origin != "" {
+        return make_fact_target("function", function_identity(origin, entry.name), "checked");
+    }
+    let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
+    if variant_origin == "__builtin__" {
+        return make_fact_target("builtin_variant", str_concat("builtin-variant:", entry.name), "builtin");
+    }
+    if variant_origin != "" {
+        return make_fact_target("variant", variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name), "checked");
+    }
+    return make_fact_target("unknown", "", "unresolved");
+}
+
 fn target_id_for_type_ref(items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref) -> str {
     let origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
     if origin == "__builtin__" {
@@ -896,6 +1181,108 @@ fn append_definitions(lines: mutref list<str>, items: ref list<top_item>, uses: 
     return;
 }
 
+fn append_top_item_definition_v2(lines: mutref list<str>, item: top_item, variants: ref list<variant_fact>, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(item_identity(item, ref variants)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(item_kind_text(item.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(item.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(item.name), ",", "", ""));
+    list_push(mutref lines, concat3("      \"public\": ", bool_text(item.is_public), ","));
+    list_push(mutref lines, "      \"evidence\": \"declared\",");
+    append_span(mutref lines, "      ", item.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_field_definition_v2(lines: mutref list<str>, field: field_fact, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(field_identity(field.module, field.type_name, field.name)), ",", "", ""));
+    list_push(mutref lines, "      \"kind\": \"field\",");
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(field.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"owner\": ", json_quote(type_identity(field.module, field.type_name)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(field.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"type\": ", json_quote(field.field_type_name), ",", "", ""));
+    list_push(mutref lines, "      \"evidence\": \"declared\",");
+    append_span(mutref lines, "      ", field.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_binding_definition_v2(lines: mutref list<str>, binding: body_binding, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(binding_identity(binding)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(binding_kind_text(binding.kind)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(binding.module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"owner\": ", json_quote(function_identity(binding.module, binding.function_name)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(binding.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"scope_id\": ", i32_to_str(binding.scope_id), ",", "", ""));
+    list_push(mutref lines, "      \"evidence\": \"checked\",");
+    append_span(mutref lines, "      ", binding.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_definitions_v2(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>) -> unit {
+    let total = definition_count(ref items, ref uses, ref fields, ref bindings);
+    let mut emitted = 0;
+    list_push(mutref lines, "  \"definitions\": [");
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_top_item_definition_v2(mutref lines, value, ref variants, emitted < total);
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                emitted = emitted + 1;
+                append_field_definition_v2(mutref lines, value, emitted < total);
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) {
+                    emitted = emitted + 1;
+                    append_binding_definition_v2(mutref lines, value, emitted < total);
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
 fn append_use_reference(lines: mutref list<str>, entry: module_use, trailing_comma: bool) -> unit {
     let mut suffix = "";
     if trailing_comma {
@@ -947,50 +1334,112 @@ fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, use
     return;
 }
 
-fn append_references(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>) -> unit {
-    let total = reference_count(ref uses, ref type_refs, ref refs);
-    let mut emitted = 0;
-    list_push(mutref lines, "  \"references\": [");
+fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, resolved_out: mutref list<fact_reference>) -> unit {
     let mut use_index = 0;
     while use_index < list_len(ref uses) {
         let entry = list_get(ref uses, use_index);
         match entry {
             Some(value) => {
-                emitted = emitted + 1;
-                append_use_reference(mutref lines, value, emitted < total);
+                list_push(mutref resolved_out, make_fact_reference(use_identity(value), "import", value.module, module_identity(value.module), value.name, "module", module_identity(value.name), value.at, "declared"));
             },
             None => {
             },
         }
         use_index = use_index + 1;
     }
+
     let mut type_index = 0;
     while type_index < list_len(ref type_refs) {
         let entry = list_get(ref type_refs, type_index);
         match entry {
             Some(value) => {
-                emitted = emitted + 1;
-                append_type_reference(mutref lines, ref items, ref uses, value, emitted < total);
+                let target = type_target_for_ref(ref items, ref uses, value);
+                list_push(mutref resolved_out, make_fact_reference(type_ref_identity(value), type_ref_kind_text(value.kind), value.module, value.context_name, value.name, target.kind, target.id, value.at, target.evidence));
             },
             None => {
             },
         }
         type_index = type_index + 1;
     }
+
+    let mut current_module = "";
+    let mut current_function = "";
+    let mut bind_start = 0;
+    let mut bind_end = -1;
     let mut ref_index = 0;
     while ref_index < list_len(ref refs) {
         let entry = list_get(ref refs, ref_index);
         match entry {
             Some(value) => {
-                emitted = emitted + 1;
-                append_name_reference(mutref lines, ref items, ref uses, ref scopes, ref bindings, ref variants, value, emitted < total);
+                if value.module != current_module or value.function_name != current_function {
+                    current_module = value.module;
+                    current_function = value.function_name;
+                    bind_start = first_binding_index_for_function(ref bindings, value.module, value.function_name);
+                    bind_end = last_binding_index_for_function(ref bindings, value.module, value.function_name);
+                }
+                let target = name_target_for_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, value, bind_start, bind_end);
+                list_push(mutref resolved_out, make_fact_reference(name_ref_identity(value), name_ref_kind_text(value.kind), value.module, function_identity(value.module, value.function_name), value.name, target.kind, target.id, value.at, target.evidence));
             },
             None => {
             },
         }
         ref_index = ref_index + 1;
     }
+    return;
+}
+
+fn append_fact_reference(lines: mutref list<str>, entry: fact_reference, include_evidence: bool, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": ", json_quote(entry.id), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(entry.kind), ",", "", ""));
+    list_push(mutref lines, concat5("      \"from\": ", json_quote(entry.from), ",", "", ""));
+    list_push(mutref lines, concat5("      \"name\": ", json_quote(entry.name), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(entry.target_kind), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(entry.target_id), ",", "", ""));
+    if include_evidence {
+        list_push(mutref lines, concat5("      \"evidence\": ", json_quote(entry.evidence), ",", "", ""));
+    }
+    append_span(mutref lines, "      ", entry.at, false);
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_resolved_references(lines: mutref list<str>, resolved: ref list<fact_reference>, include_evidence: bool) -> unit {
+    list_push(mutref lines, "  \"references\": [");
+    let mut index = 0;
+    while index < list_len(ref resolved) {
+        let entry = list_get(ref resolved, index);
+        match entry {
+            Some(value) => {
+                append_fact_reference(mutref lines, value, include_evidence, index + 1 < list_len(ref resolved));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
     list_push(mutref lines, "  ],");
+    return;
+}
+
+fn build_resolved_call_edges(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, calls: ref list<call_fact>, edges_out: mutref list<fact_call_edge>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                let target = call_target(ref items, ref uses, ref variants, value);
+                list_push(mutref edges_out, make_fact_call_edge(function_identity(value.module, value.function_name), target.id, call_identity(value), target.evidence));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
     return;
 }
 
@@ -1020,6 +1469,710 @@ fn append_call_graph(lines: mutref list<str>, items: ref list<top_item>, uses: r
     return;
 }
 
+fn append_resolved_call_graph(lines: mutref list<str>, edges: ref list<fact_call_edge>, include_evidence: bool) -> unit {
+    list_push(mutref lines, "  \"call_graph\": [");
+    let mut index = 0;
+    while index < list_len(ref edges) {
+        let entry = list_get(ref edges, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"caller\": ", json_quote(value.caller), ",", "", ""));
+                list_push(mutref lines, concat5("      \"callee\": ", json_quote(value.callee), ",", "", ""));
+                if include_evidence {
+                    list_push(mutref lines, concat5("      \"call_site\": ", json_quote(value.call_site), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(value.evidence), "", "", ""));
+                } else {
+                    list_push(mutref lines, concat5("      \"call_site\": ", json_quote(value.call_site), "", "", ""));
+                }
+                if index + 1 < list_len(ref edges) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ]");
+    return;
+}
+
+fn source_path_for_module(workspace_root: str, entry_module: str, entry_path: str, module: str) -> str {
+    if module == entry_module and entry_path != "" {
+        return entry_path;
+    }
+    return join_path(workspace_root, str_concat(module, ".nq"));
+}
+
+fn is_ident_start(ch: i32) -> bool {
+    if ch >= 65 and ch <= 90 {
+        return true;
+    }
+    if ch >= 97 and ch <= 122 {
+        return true;
+    }
+    return ch == 95;
+}
+
+fn is_ident_continue(ch: i32) -> bool {
+    if is_ident_start(ch) {
+        return true;
+    }
+    return ch >= 48 and ch <= 57;
+}
+
+fn is_reserved_word(name: str) -> bool {
+    if name == "fn" or name == "type" or name == "enum" or name == "use" or name == "pub" {
+        return true;
+    }
+    if name == "let" or name == "mut" or name == "return" or name == "if" or name == "else" or name == "while" or name == "match" {
+        return true;
+    }
+    if name == "true" or name == "false" or name == "ref" or name == "mutref" or name == "audit" or name == "intent" or name == "mutates" or name == "effects" {
+        return true;
+    }
+    return false;
+}
+
+fn is_plain_identifier(name: str) -> bool {
+    if str_len(name) == 0 {
+        return false;
+    }
+    if is_reserved_word(name) {
+        return false;
+    }
+    if not is_ident_start(char_at(name, 0)) {
+        return false;
+    }
+    let mut index = 1;
+    while index < str_len(name) {
+        if not is_ident_continue(char_at(name, index)) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn empty_refactor_target() -> refactor_target {
+    return make_refactor_target(false, "", "", "", "", "", 0, "");
+}
+
+fn find_refactor_target(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target_id: str) -> refactor_target {
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                let id = item_identity(value, ref variants);
+                if id == target_id {
+                    match value.kind {
+                        item_variant => {
+                            return empty_refactor_target();
+                        },
+                        _ => {
+                            return make_refactor_target(true, id, item_kind_text(value.kind), value.module, module_identity(value.module), value.name, value.at, source_path_for_module(workspace_root, entry_module, entry_path, value.module));
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                let id = field_identity(value.module, value.type_name, value.name);
+                if id == target_id {
+                    return empty_refactor_target();
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) {
+                    let id = binding_identity(value);
+                    if id == target_id {
+                        return make_refactor_target(true, id, binding_kind_text(value.kind), value.module, function_identity(value.module, value.function_name), value.name, value.at, source_path_for_module(workspace_root, entry_module, entry_path, value.module));
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return empty_refactor_target();
+}
+
+fn top_level_name_collision(items: ref list<top_item>, variants: ref list<variant_fact>, target: refactor_target, new_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == target.module and value.name == new_name {
+                    let id = item_identity(value, ref variants);
+                    if id != target.id {
+                        match value.kind {
+                            item_fn => {
+                                if target.kind == "function" {
+                                    return true;
+                                }
+                            },
+                            item_type => {
+                                if target.kind == "type" or target.kind == "enum" {
+                                    return true;
+                                }
+                            },
+                            item_enum => {
+                                if target.kind == "type" or target.kind == "enum" {
+                                    return true;
+                                }
+                            },
+                            item_variant => {
+                            },
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn field_name_collision(fields: ref list<field_fact>, target: refactor_target, new_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref fields) {
+        let entry = list_get(ref fields, index);
+        match entry {
+            Some(value) => {
+                let id = field_identity(value.module, value.type_name, value.name);
+                if id != target.id and type_identity(value.module, value.type_name) == target.owner and value.name == new_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn binding_name_collision(items: ref list<top_item>, uses: ref list<module_use>, bindings: ref list<body_binding>, target: refactor_target, new_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) {
+                    let id = binding_identity(value);
+                    if id != target.id and function_identity(value.module, value.function_name) == target.owner and value.name == new_name {
+                        return true;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn refactor_name_collision(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target: refactor_target, new_name: str) -> bool {
+    if target.kind == "function" or target.kind == "type" or target.kind == "enum" {
+        return top_level_name_collision(ref items, ref variants, target, new_name);
+    }
+    if target.kind == "field" {
+        return field_name_collision(ref fields, target, new_name);
+    }
+    return binding_name_collision(ref items, ref uses, ref bindings, target, new_name);
+}
+
+fn append_diagnostic(lines: mutref list<str>, code: str, message: str, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"code\": ", json_quote(code), ",", "", ""));
+    list_push(mutref lines, concat5("      \"message\": ", json_quote(message), "", "", ""));
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn emit_refactor_error(target_id: str, new_name: str, code: str, message: str) -> i32 {
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"refactor-rename\",");
+    list_push(mutref lines, "  \"ok\": false,");
+    list_push(mutref lines, concat5("  \"target_id\": ", json_quote(target_id), ",", "", ""));
+    list_push(mutref lines, concat5("  \"new_name\": ", json_quote(new_name), ",", "", ""));
+    list_push(mutref lines, "  \"edits\": [],");
+    list_push(mutref lines, "  \"diagnostics\": [");
+    append_diagnostic(mutref lines, code, message, false);
+    list_push(mutref lines, "  ]");
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return 1;
+}
+
+fn append_refactor_edit(lines: mutref list<str>, module: str, path: str, start: i32, old_text: str, replacement: str, kind: str, target_id: str, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"module\": ", json_quote(module), ",", "", ""));
+    list_push(mutref lines, concat5("      \"path\": ", json_quote(path), ",", "", ""));
+    list_push(mutref lines, "      \"span\": {");
+    list_push(mutref lines, concat3("        \"start\": ", i32_to_str(start), ","));
+    list_push(mutref lines, concat3("        \"end\": ", i32_to_str(start + str_len(old_text)), ""));
+    list_push(mutref lines, "      },");
+    list_push(mutref lines, concat5("      \"old_text\": ", json_quote(old_text), ",", "", ""));
+    list_push(mutref lines, concat5("      \"replacement\": ", json_quote(replacement), ",", "", ""));
+    list_push(mutref lines, concat5("      \"kind\": ", json_quote(kind), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), "", "", ""));
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, target_id: str, new_name: str) -> i32
+audit {
+    intent("Emit a deterministic plan-only semantic rename edit set without mutating source files");
+    mutates();
+    effects(print);
+}
+{
+    if not is_plain_identifier(new_name) {
+        return emit_refactor_error(target_id, new_name, "NQ-REFACTOR-001", "new name is not a plain identifier");
+    }
+    let target = find_refactor_target(workspace_root, entry_module, entry_path, ref items, ref uses, ref variants, ref fields, ref bindings, target_id);
+    if not target.ok {
+        return emit_refactor_error(target_id, new_name, "NQ-REFACTOR-002", "stable id is not supported by refactor-rename v1");
+    }
+    if refactor_name_collision(ref items, ref uses, ref variants, ref fields, ref bindings, target, new_name) {
+        return emit_refactor_error(target_id, new_name, "NQ-REFACTOR-003", "new name collides with an existing checked definition");
+    }
+
+    let mut resolved_refs: list<fact_reference> = list();
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, mutref resolved_refs);
+    let mut edit_count = 1;
+    if new_name == target.name {
+        edit_count = 0;
+    }
+    let mut ref_index = 0;
+    while ref_index < list_len(ref resolved_refs) {
+        let entry = list_get(ref resolved_refs, ref_index);
+        match entry {
+            Some(value) => {
+                if value.target_id == target.id and value.name != new_name {
+                    edit_count = edit_count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        ref_index = ref_index + 1;
+    }
+
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"refactor-rename\",");
+    list_push(mutref lines, "  \"ok\": true,");
+    list_push(mutref lines, concat5("  \"target_id\": ", json_quote(target.id), ",", "", ""));
+    list_push(mutref lines, concat5("  \"old_name\": ", json_quote(target.name), ",", "", ""));
+    list_push(mutref lines, concat5("  \"new_name\": ", json_quote(new_name), ",", "", ""));
+    list_push(mutref lines, "  \"edits\": [");
+    let mut emitted = 0;
+    if new_name != target.name {
+        emitted = emitted + 1;
+        append_refactor_edit(mutref lines, target.module, target.path, target.at, target.name, new_name, "definition", target.id, emitted < edit_count);
+    }
+    ref_index = 0;
+    while ref_index < list_len(ref resolved_refs) {
+        let entry = list_get(ref resolved_refs, ref_index);
+        match entry {
+            Some(value) => {
+                if value.target_id == target.id and value.name != new_name {
+                    emitted = emitted + 1;
+                    append_refactor_edit(mutref lines, value.module, source_path_for_module(workspace_root, entry_module, entry_path, value.module), value.at, value.name, new_name, "reference", target.id, emitted < edit_count);
+                }
+            },
+            None => {
+            },
+        }
+        ref_index = ref_index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    list_push(mutref lines, "  \"diagnostics\": []");
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return 0;
+}
+
+fn find_text_from(text: str, pattern: str, start: i32) -> i32 {
+    if pattern == "" {
+        return start;
+    }
+    let text_len = str_len(text);
+    let pattern_len = str_len(pattern);
+    if pattern_len > text_len {
+        return -1;
+    }
+    let mut index = start;
+    while index <= text_len - pattern_len {
+        let mut offset = 0;
+        let mut matches = true;
+        while offset < pattern_len {
+            if char_at(text, index + offset) != char_at(pattern, offset) {
+                matches = false;
+            }
+            if not matches {
+                offset = pattern_len;
+            } else {
+                offset = offset + 1;
+            }
+        }
+        if matches {
+            return index;
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn skip_ws(text: str, start: i32) -> i32 {
+    let mut index = start;
+    while index < str_len(text) {
+        let ch = char_at(text, index);
+        if ch == 32 or ch == 10 or ch == 13 or ch == 9 {
+            index = index + 1;
+        } else {
+            return index;
+        }
+    }
+    return index;
+}
+
+fn json_string_value_after_key(text: str, key: str, start: i32) -> str {
+    let key_text = concat3("\"", key, "\"");
+    let key_at = find_text_from(text, key_text, start);
+    if key_at < 0 {
+        return "";
+    }
+    let colon_at = find_text_from(text, ":", key_at + str_len(key_text));
+    if colon_at < 0 {
+        return "";
+    }
+    let quote_at = skip_ws(text, colon_at + 1);
+    if char_at(text, quote_at) != 34 {
+        return "";
+    }
+    let mut end_at = quote_at + 1;
+    while end_at < str_len(text) {
+        if char_at(text, end_at) == 34 {
+            return slice_text(text, quote_at + 1, end_at);
+        }
+        end_at = end_at + 1;
+    }
+    return "";
+}
+
+fn policy_version_ok(text: str) -> bool {
+    let version_at = find_text_from(text, "\"version\"", 0);
+    if version_at < 0 {
+        return false;
+    }
+    let colon_at = find_text_from(text, ":", version_at);
+    if colon_at < 0 {
+        return false;
+    }
+    let value_at = skip_ws(text, colon_at + 1);
+    if char_at(text, value_at) != 49 {
+        return false;
+    }
+    let next_at = skip_ws(text, value_at + 1);
+    let next = char_at(text, next_at);
+    return next == 44 or next == 125 or next == 93;
+}
+
+fn parse_policy_entries(text: str, entries_out: mutref list<policy_entry>) -> bool {
+    if not policy_version_ok(text) {
+        return false;
+    }
+    if find_text_from(text, "\"targets\"", 0) < 0 {
+        return false;
+    }
+    let mut cursor = 0;
+    while true {
+        let target_key = find_text_from(text, "\"target_id\"", cursor);
+        if target_key < 0 {
+            return true;
+        }
+        let target_id = json_string_value_after_key(text, "target_id", target_key);
+        let owner = json_string_value_after_key(text, "owner", target_key);
+        let review = json_string_value_after_key(text, "review", target_key);
+        if target_id == "" or owner == "" or review == "" {
+            return false;
+        }
+        list_push(mutref entries_out, make_policy_entry(target_id, owner, review));
+        cursor = target_key + 1;
+    }
+    return true;
+}
+
+fn definition_id_exists(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target_id: str) -> bool {
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                if item_identity(value, ref variants) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                if field_identity(value.module, value.type_name, value.name) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and binding_identity(value) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return false;
+}
+
+fn policy_target_duplicate(entries: ref list<policy_entry>, target_id: str, current_index: i32) -> bool {
+    let mut index = 0;
+    while index < current_index {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                if value.target_id == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn policy_owner_ok(owner: str) -> bool {
+    return str_starts_with(owner, "human:") or str_starts_with(owner, "agent:");
+}
+
+fn policy_review_ok(review: str) -> bool {
+    return review == "required" or review == "supervised" or review == "optional";
+}
+
+fn append_policy_target(lines: mutref list<str>, entry: policy_entry, known: bool, owner_ok: bool, review_ok: bool, duplicate: bool, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(entry.target_id), ",", "", ""));
+    list_push(mutref lines, concat5("      \"owner\": ", json_quote(entry.owner), ",", "", ""));
+    list_push(mutref lines, concat5("      \"review\": ", json_quote(entry.review), ",", "", ""));
+    list_push(mutref lines, concat3("      \"known\": ", bool_text(known), ","));
+    list_push(mutref lines, concat3("      \"owner_valid\": ", bool_text(owner_ok), ","));
+    list_push(mutref lines, concat3("      \"review_valid\": ", bool_text(review_ok), ","));
+    list_push(mutref lines, concat3("      \"duplicate\": ", bool_text(duplicate), ""));
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+pub fn emit_policy_check(source_module: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, policy_path: str) -> i32
+audit {
+    intent("Validate sidecar ownership policy metadata against checked semantic facts");
+    mutates();
+    effects(print);
+}
+{
+    let data = read_file(policy_path);
+    let mut text = "";
+    match data {
+        Ok(value) => {
+            text = value;
+        },
+        Err(err) => {
+            let mut lines: list<str> = list();
+            list_push(mutref lines, "{");
+            list_push(mutref lines, "  \"version\": 1,");
+            list_push(mutref lines, "  \"command\": \"policy-check\",");
+            list_push(mutref lines, "  \"ok\": false,");
+            list_push(mutref lines, concat5("  \"source\": ", json_quote(source_module), ",", "", ""));
+            list_push(mutref lines, concat5("  \"policy_path\": ", json_quote(policy_path), ",", "", ""));
+            list_push(mutref lines, "  \"summary\": { \"targets\": 0, \"errors\": 1 },");
+            list_push(mutref lines, "  \"targets\": [],");
+            list_push(mutref lines, "  \"diagnostics\": [");
+            append_diagnostic(mutref lines, "NQ-POLICY-001", io_err_text(err), false);
+            list_push(mutref lines, "  ]");
+            list_push(mutref lines, "}");
+            emit_lines(ref lines);
+            return 1;
+        },
+    }
+
+    let mut entries: list<policy_entry> = list();
+    if not parse_policy_entries(text, mutref entries) {
+        let mut lines: list<str> = list();
+        list_push(mutref lines, "{");
+        list_push(mutref lines, "  \"version\": 1,");
+        list_push(mutref lines, "  \"command\": \"policy-check\",");
+        list_push(mutref lines, "  \"ok\": false,");
+        list_push(mutref lines, concat5("  \"source\": ", json_quote(source_module), ",", "", ""));
+        list_push(mutref lines, concat5("  \"policy_path\": ", json_quote(policy_path), ",", "", ""));
+        list_push(mutref lines, "  \"summary\": { \"targets\": 0, \"errors\": 1 },");
+        list_push(mutref lines, "  \"targets\": [],");
+        list_push(mutref lines, "  \"diagnostics\": [");
+        append_diagnostic(mutref lines, "NQ-POLICY-002", "malformed nauqtype.policy.json v1", false);
+        list_push(mutref lines, "  ]");
+        list_push(mutref lines, "}");
+        emit_lines(ref lines);
+        return 1;
+    }
+
+    let mut error_count = 0;
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                if not definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                    error_count = error_count + 1;
+                }
+                if policy_target_duplicate(ref entries, value.target_id, index) {
+                    error_count = error_count + 1;
+                }
+                if not policy_owner_ok(value.owner) {
+                    error_count = error_count + 1;
+                }
+                if not policy_review_ok(value.review) {
+                    error_count = error_count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"policy-check\",");
+    list_push(mutref lines, concat3("  \"ok\": ", bool_text(error_count == 0), ","));
+    list_push(mutref lines, concat5("  \"source\": ", json_quote(source_module), ",", "", ""));
+    list_push(mutref lines, concat5("  \"policy_path\": ", json_quote(policy_path), ",", "", ""));
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"targets\": ", i32_to_str(list_len(ref entries)), ","));
+    list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(error_count), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"targets\": [");
+    index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                append_policy_target(mutref lines, value, definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id), policy_owner_ok(value.owner), policy_review_ok(value.review), policy_target_duplicate(ref entries, value.target_id, index), index + 1 < list_len(ref entries));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    list_push(mutref lines, "  \"diagnostics\": [");
+    let mut emitted_diags = 0;
+    index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                if not definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                    emitted_diags = emitted_diags + 1;
+                    append_diagnostic(mutref lines, "NQ-POLICY-003", str_concat("unknown policy target: ", value.target_id), emitted_diags < error_count);
+                }
+                if policy_target_duplicate(ref entries, value.target_id, index) {
+                    emitted_diags = emitted_diags + 1;
+                    append_diagnostic(mutref lines, "NQ-POLICY-004", str_concat("duplicate policy target: ", value.target_id), emitted_diags < error_count);
+                }
+                if not policy_owner_ok(value.owner) {
+                    emitted_diags = emitted_diags + 1;
+                    append_diagnostic(mutref lines, "NQ-POLICY-005", str_concat("invalid owner: ", value.owner), emitted_diags < error_count);
+                }
+                if not policy_review_ok(value.review) {
+                    emitted_diags = emitted_diags + 1;
+                    append_diagnostic(mutref lines, "NQ-POLICY-006", str_concat("invalid review: ", value.review), emitted_diags < error_count);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ]");
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    if error_count > 0 {
+        return 1;
+    }
+    return 0;
+}
+
 pub fn emit_facts(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>) -> facts_summary
 audit {
     intent("Emit deterministic stage1 semantic facts for agent-pair supervision and tooling");
@@ -1027,11 +2180,32 @@ audit {
     effects(print);
 }
 {
+    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, 1);
+}
+
+pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, format_version: i32) -> facts_summary
+audit {
+    intent("Emit deterministic stage1 semantic facts with versioned evidence fields when requested");
+    mutates();
+    effects(print);
+}
+{
     let def_count = definition_count(ref items, ref uses, ref fields, ref bindings);
     let ref_count = reference_count(ref uses, ref type_refs, ref refs);
+    let mut resolved_refs: list<fact_reference> = list();
+    let mut resolved_edges: list<fact_call_edge> = list();
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, mutref resolved_refs);
+    build_resolved_call_edges(ref items, ref uses, ref variants, ref calls, mutref resolved_edges);
+
+    let include_evidence = format_version == 2;
+    let mut version_text = "1";
+    if include_evidence {
+        version_text = "2";
+    }
+
     let mut lines: list<str> = list();
     list_push(mutref lines, "{");
-    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, concat3("  \"version\": ", version_text, ","));
     list_push(mutref lines, "  \"command\": \"facts\",");
     list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
@@ -1042,9 +2216,13 @@ audit {
     list_push(mutref lines, concat3("    \"call_edges\": ", i32_to_str(list_len(ref calls)), ""));
     list_push(mutref lines, "  },");
     append_modules(mutref lines, ref modules);
-    append_definitions(mutref lines, ref items, ref uses, ref variants, ref fields, ref bindings);
-    append_references(mutref lines, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants);
-    append_call_graph(mutref lines, ref items, ref uses, ref variants, ref calls);
+    if include_evidence {
+        append_definitions_v2(mutref lines, ref items, ref uses, ref variants, ref fields, ref bindings);
+    } else {
+        append_definitions(mutref lines, ref items, ref uses, ref variants, ref fields, ref bindings);
+    }
+    append_resolved_references(mutref lines, ref resolved_refs, include_evidence);
+    append_resolved_call_graph(mutref lines, ref resolved_edges, include_evidence);
     list_push(mutref lines, "}");
     emit_lines(ref lines);
     return make_facts_summary(list_len(ref modules), def_count, ref_count, list_len(ref calls));

@@ -125,9 +125,15 @@
 - [x] Add diagnostics JSON golden tests
 - [x] Add stable semantic defs/refs/call graph export
 - [x] Lock `facts` v1 with schema, golden fixture, and representative selfhost-module smoke
-- [ ] Bound full-tree `facts` export performance for the complete in-repo selfhost graph
+- [x] Bound full-tree `facts` export performance for the complete in-repo selfhost graph
+- [x] Add `facts --format v2` evidence fields without breaking v1
 - [x] Add richer `review` v2 output
 - [x] Add `review-diff`
+- [x] Add `review-diff --format v2` evidence metadata
+- [x] Add schema/golden coverage for facts v2, review v2, review-diff v1, and review-diff v2
+- [x] Add plan-only `refactor-rename`
+- [x] Add `nauqtype.policy.json` sidecar metadata and `policy-check`
+- [x] Add schemas for refactor plans, policy-check output, and policy sidecars
 
 ## Genuine Parity Next
 
@@ -150,3 +156,11 @@
 - [x] Add a Nauqtype-owned `prove-selfhost` gate for the copied selfhost proof
 - [x] Add the Nauqtype-owned locked example corpus runner
 - [x] Retire the active Python proof/corpus orchestration after the Nauqtype runner covers both selfhost proof and corpus checks
+
+## Next Language Ergonomics Batch
+
+- [ ] Start only after the pre-language AI tooling spine is green
+- [ ] Add top-level `const` with canonical Nauqtype examples
+- [ ] Add list literals with canonical Nauqtype examples
+- [ ] Add `match` as an expression with canonical Nauqtype examples
+- [ ] Add `let-else` for `option` / `result` with canonical Nauqtype examples

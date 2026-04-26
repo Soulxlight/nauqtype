@@ -209,15 +209,34 @@ Status:
 - add a standalone semantic facts export for definitions, references, and call graph edges
 - distinguish declared audit data from checked compiler inference
 - add `review-diff` after the v2 identity surface is stable
+- add plan-only semantic rename refactoring
+- add advisory ownership/review policy sidecars
 
 Status:
 
-- in progress
+- done for the pre-language tooling spine
 - `review --format v2` now emits stable function/call identities, references, call graph edges, and evidence fields
-- `review-diff` now emits deterministic semantic changes over stable function identities and call graph edges
+- `review-diff` now emits deterministic semantic changes over stable function identities and call graph edges, with v2 evidence metadata available without breaking v1
 - `facts` now emits stable definitions, references, and call graph edges for checked programs
 - `facts` v1 is now locked by a versioned schema, golden fixture, and representative selfhost-module smoke check
-- next AI-first review slices are compiler-mediated semantic refactors and policy / ownership metadata
+- `facts --format v2` preserves v1 and adds explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields
+- full-tree `facts selfhost/main.nq` is now bounded under the Windows 240-second gate
+- `refactor-rename` emits deterministic JSON edit plans and never mutates files; field IDs are intentionally rejected until checked field-use references exist
+- `policy-check` validates `nauqtype.policy.json` v1 sidecars against checked semantic facts
+- no semantic language features, Rust-like lifetime expansion, or broader borrow semantics were included in this tooling milestone
+
+### M18: Live-In-The-Language Ergonomics Batch
+
+- add only the language features that make day-to-day Nauqtype authorship materially better
+- keep control flow explicit and avoid hidden failure paths
+- ship canonical Nauqtype examples as future teaching material for each feature
+- differential-test every semantic widening against a concrete blocker
+
+Status:
+
+- next
+- starts after the completed pre-language AI tooling spine
+- first batch remains top-level `const`, list literals, `match` as an expression, and `let-else` for `option` / `result`
 
 ## Feature Ordering
 

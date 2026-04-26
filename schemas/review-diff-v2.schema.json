@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/review-diff-v2.schema.json",
+  "title": "Nauqtype Review Diff v2",
+  "type": "object",
+  "required": ["version", "command", "identity_scheme", "before", "after", "evidence", "summary", "changes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 2 },
+    "command": { "const": "review-diff" },
+    "identity_scheme": { "const": "nauqtype.semantic.v1" },
+    "before": { "$ref": "#/$defs/side" },
+    "after": { "$ref": "#/$defs/side" },
+    "evidence": {
+      "type": "object",
+      "required": ["before", "after", "comparison"],
+      "properties": {
+        "before": { "const": "checked" },
+        "after": { "const": "checked" },
+        "comparison": { "const": "semantic-identities" }
+      }
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "changes": { "$ref": "#/$defs/changes" }
+  },
+  "$defs": {
+    "side": {
+      "type": "object",
+      "required": ["module", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "module": { "type": "string" },
+        "evidence": { "const": "checked" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["added_functions", "removed_functions", "changed_functions", "added_call_edges", "removed_call_edges"],
+      "additionalProperties": false,
+      "properties": {
+        "added_functions": { "type": "integer", "minimum": 0 },
+        "removed_functions": { "type": "integer", "minimum": 0 },
+        "changed_functions": { "type": "integer", "minimum": 0 },
+        "added_call_edges": { "type": "integer", "minimum": 0 },
+        "removed_call_edges": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "required": ["added_functions", "removed_functions", "changed_functions", "added_call_edges", "removed_call_edges"],
+      "additionalProperties": false,
+      "properties": {
+        "added_functions": { "type": "array", "items": { "type": "string" } },
+        "removed_functions": { "type": "array", "items": { "type": "string" } },
+        "changed_functions": { "type": "array", "items": { "type": "string" } },
+        "added_call_edges": { "type": "array", "items": { "type": "string" } },
+        "removed_call_edges": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/refactor-rename-v1.schema.json",
+  "title": "Nauqtype Refactor Rename Plan v1",
+  "type": "object",
+  "required": ["version", "command", "ok", "target_id", "new_name", "edits", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "command": { "const": "refactor-rename" },
+    "ok": { "type": "boolean" },
+    "target_id": { "type": "string" },
+    "old_name": { "type": "string" },
+    "new_name": { "type": "string" },
+    "edits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["module", "path", "span", "old_text", "replacement", "kind", "target_id"],
+        "additionalProperties": false,
+        "properties": {
+          "module": { "type": "string" },
+          "path": { "type": "string" },
+          "span": {
+            "type": "object",
+            "required": ["start", "end"],
+            "additionalProperties": false,
+            "properties": {
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "old_text": { "type": "string" },
+          "replacement": { "type": "string" },
+          "kind": { "enum": ["definition", "reference"] },
+          "target_id": { "type": "string" }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "additionalProperties": false,
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

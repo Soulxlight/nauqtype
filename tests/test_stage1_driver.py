@@ -25,7 +25,48 @@ class Stage1DriverTests(unittest.TestCase):
 
     def _write_project(self, tmp: Path, files: dict[str, str]) -> None:
         for name, content in files.items():
-            (tmp / name).write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
+            target = tmp / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
+
+    def _run_driver(self, args: list[str], *, cwd: Path | None = None, timeout: int = 240) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(self.driver_exe), *args],
+            cwd=cwd if cwd is not None else self.root,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    def _schema_spec(self, schema: dict, spec: dict) -> dict:
+        ref = spec.get("$ref")
+        if not ref:
+            return spec
+        name = ref.removeprefix("#/$defs/")
+        return schema["$defs"][name]
+
+    def _assert_schema_shape(self, payload, schema: dict, spec: dict | None = None) -> None:
+        spec = self._schema_spec(schema, spec if spec is not None else schema)
+        if "const" in spec:
+            self.assertEqual(payload, spec["const"])
+        if "enum" in spec:
+            self.assertIn(payload, spec["enum"])
+        expected_type = spec.get("type")
+        if expected_type == "object" or (isinstance(expected_type, list) and "object" in expected_type and payload is not None):
+            self.assertIsInstance(payload, dict)
+            for key in spec.get("required", []):
+                self.assertIn(key, payload)
+            if spec.get("additionalProperties") is False and "properties" in spec:
+                self.assertLessEqual(set(payload), set(spec["properties"]))
+            for key, child_spec in spec.get("properties", {}).items():
+                if key in payload:
+                    self._assert_schema_shape(payload[key], schema, child_spec)
+        if expected_type == "array":
+            self.assertIsInstance(payload, list)
+            item_spec = spec.get("items")
+            if item_spec is not None:
+                for item in payload:
+                    self._assert_schema_shape(item, schema, item_spec)
 
     def test_stage1_driver_preserves_legacy_no_arg_selfhost_mode(self) -> None:
         result = subprocess.run(
@@ -288,6 +329,19 @@ class Stage1DriverTests(unittest.TestCase):
                 )
             )
 
+    def test_stage1_driver_review_v2_matches_golden_and_schema_contract(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "review_v2.nq"
+        golden = self.root / "tests" / "golden" / "review" / "review_v2.json"
+        result = self._run_driver(["review", str(fixture), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(json.loads(result.stdout), json.loads(golden.read_text(encoding="utf-8")))
+        schema = json.loads((self.root / "schemas" / "review-v2.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/review-v2.schema.json")
+        self.assertEqual(schema["properties"]["version"]["const"], 2)
+        self.assertEqual(schema["properties"]["command"]["const"], "review")
+        self._assert_schema_shape(json.loads(result.stdout), schema)
+
     def test_stage1_driver_facts_exports_defs_refs_and_call_graph(self) -> None:
         fixture = self.root / "tests" / "fixtures" / "facts" / "main.nq"
         golden = self.root / "tests" / "golden" / "facts" / "main.json"
@@ -313,6 +367,31 @@ class Stage1DriverTests(unittest.TestCase):
             schema["required"],
             ["version", "command", "module", "identity_scheme", "summary", "modules", "definitions", "references", "call_graph"],
         )
+
+    def test_stage1_driver_facts_v2_exports_evidence_and_matches_golden(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "facts" / "main.nq"
+        golden = self.root / "tests" / "golden" / "facts" / "main-v2.json"
+        result = self._run_driver(["facts", str(fixture), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
+        self.assertEqual({entry["evidence"] for entry in payload["references"]}, {"declared", "builtin", "checked"})
+        schema = json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/facts-v2.schema.json")
+        self.assertEqual(schema["properties"]["version"]["const"], 2)
+        self._assert_schema_shape(payload, schema)
+
+    def test_stage1_driver_facts_full_selfhost_is_bounded_and_valid(self) -> None:
+        result = self._run_driver(["facts", str(self.root / "selfhost" / "main.nq")], timeout=240)
+        combined = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, combined)
+        self.assertEqual(result.stderr, "")
+        self.assertNotIn("stage1 limitation", combined)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["command"], "facts")
+        self.assertEqual(payload["module"], "main")
+        self.assertGreater(payload["summary"]["definitions"], 100)
 
     def test_stage1_driver_facts_exports_selfhost_module_without_limitations(self) -> None:
         result = subprocess.run(
@@ -416,6 +495,228 @@ class Stage1DriverTests(unittest.TestCase):
                 payload["changes"]["added_call_edges"],
                 ["fn:main::helper -> builtin:print_line", "fn:main::main -> fn:main::helper"],
             )
+
+    def test_stage1_driver_review_diff_goldens_and_v2_evidence(self) -> None:
+        before = self.root / "tests" / "fixtures" / "review_diff" / "before" / "main.nq"
+        after = self.root / "tests" / "fixtures" / "review_diff" / "after" / "main.nq"
+        v1 = self._run_driver(["review-diff", str(before), str(after)])
+        self.assertEqual(v1.returncode, 0, v1.stdout + v1.stderr)
+        self.assertEqual(v1.stderr, "")
+        self.assertEqual(
+            json.loads(v1.stdout),
+            json.loads((self.root / "tests" / "golden" / "review" / "review_diff_v1.json").read_text(encoding="utf-8")),
+        )
+        v2 = self._run_driver(["review-diff", str(before), str(after), "--format", "v2"])
+        self.assertEqual(v2.returncode, 0, v2.stdout + v2.stderr)
+        self.assertEqual(v2.stderr, "")
+        payload = json.loads(v2.stdout)
+        self.assertEqual(
+            payload,
+            json.loads((self.root / "tests" / "golden" / "review" / "review_diff_v2.json").read_text(encoding="utf-8")),
+        )
+        self.assertEqual(payload["evidence"]["comparison"], "semantic-identities")
+        self.assertEqual(
+            json.loads((self.root / "schemas" / "review-diff-v1.schema.json").read_text(encoding="utf-8"))["properties"]["version"]["const"],
+            1,
+        )
+        self.assertEqual(
+            json.loads((self.root / "schemas" / "review-diff-v2.schema.json").read_text(encoding="utf-8"))["properties"]["version"]["const"],
+            2,
+        )
+        self._assert_schema_shape(
+            json.loads(v1.stdout),
+            json.loads((self.root / "schemas" / "review-diff-v1.schema.json").read_text(encoding="utf-8")),
+        )
+        self._assert_schema_shape(
+            payload,
+            json.loads((self.root / "schemas" / "review-diff-v2.schema.json").read_text(encoding="utf-8")),
+        )
+
+    def test_stage1_driver_refactor_rename_plans_imported_function_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    use helper;
+
+                    fn main() -> i32 {
+                        let value = helper();
+                        return value;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub fn helper() -> i32 {
+                        return 7;
+                    }
+                    """,
+                },
+            )
+            before_main = (tmp / "main.nq").read_text(encoding="utf-8")
+            before_helper = (tmp / "helper.nq").read_text(encoding="utf-8")
+            result = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "fn:helper::helper", "renamed_helper"])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual([edit["kind"] for edit in payload["edits"]], ["definition", "reference"])
+            self.assertEqual(payload["edits"][1]["module"], "main")
+            self._assert_schema_shape(
+                payload,
+                json.loads((self.root / "schemas" / "refactor-rename-v1.schema.json").read_text(encoding="utf-8")),
+            )
+            self.assertEqual((tmp / "main.nq").read_text(encoding="utf-8"), before_main)
+            self.assertEqual((tmp / "helper.nq").read_text(encoding="utf-8"), before_helper)
+
+    def test_stage1_driver_refactor_rename_plans_local_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        let value = 1;
+                        return value;
+                    }
+                    """,
+                },
+            )
+            facts = self._run_driver(["facts", str(tmp / "main.nq"), "--format", "v2"])
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            local_id = next(entry["id"] for entry in json.loads(facts.stdout)["definitions"] if entry["kind"] == "local")
+            result = self._run_driver(["refactor-rename", str(tmp / "main.nq"), local_id, "total"])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(len(payload["edits"]), 2)
+            self.assertTrue(all(edit["replacement"] == "total" for edit in payload["edits"]))
+
+    def test_stage1_driver_refactor_rename_rejects_invalid_identifier_and_unknown_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(tmp, {"main.nq": "fn main() -> i32 {\n    return 0;\n}\n"})
+            invalid = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "fn:main::main", "not-valid"])
+            self.assertNotEqual(invalid.returncode, 0, invalid.stdout + invalid.stderr)
+            invalid_payload = json.loads(invalid.stdout)
+            self.assertFalse(invalid_payload["ok"])
+            self.assertEqual(invalid_payload["edits"], [])
+            unknown = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "fn:main::missing", "renamed"])
+            self.assertNotEqual(unknown.returncode, 0, unknown.stdout + unknown.stderr)
+            unknown_payload = json.loads(unknown.stdout)
+            self.assertFalse(unknown_payload["ok"])
+            self.assertEqual(unknown_payload["diagnostics"][0]["code"], "NQ-REFACTOR-002")
+
+    def test_stage1_driver_refactor_rename_rejects_field_ids_until_field_uses_are_exported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    type Box {
+                        value: i32,
+                    }
+
+                    fn main() -> i32 {
+                        let box = Box { value: 1 };
+                        return box.value;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "field:main::Box::value", "amount"])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["edits"], [])
+            self.assertEqual(payload["diagnostics"][0]["code"], "NQ-REFACTOR-002")
+
+    def test_stage1_driver_policy_check_validates_sidecar_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(tmp, {"main.nq": "fn main() -> i32 {\n    return 0;\n}\n"})
+            policy = tmp / "nauqtype.policy.json"
+            policy.write_text(
+                json.dumps({"version": 1, "targets": [{"target_id": "fn:main::main", "owner": "human:lead", "review": "required"}]}),
+                encoding="utf-8",
+            )
+            result = self._run_driver(["policy-check", str(tmp / "main.nq"), str(policy)])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["summary"]["errors"], 0)
+            self._assert_schema_shape(
+                payload,
+                json.loads((self.root / "schemas" / "policy-check-v1.schema.json").read_text(encoding="utf-8")),
+            )
+            self._assert_schema_shape(
+                json.loads(policy.read_text(encoding="utf-8")),
+                json.loads((self.root / "schemas" / "nauqtype.policy-v1.schema.json").read_text(encoding="utf-8")),
+            )
+            self.assertEqual(
+                json.loads((self.root / "schemas" / "policy-check-v1.schema.json").read_text(encoding="utf-8"))["properties"]["command"]["const"],
+                "policy-check",
+            )
+            self.assertEqual(
+                json.loads((self.root / "schemas" / "nauqtype.policy-v1.schema.json").read_text(encoding="utf-8"))["properties"]["version"]["const"],
+                1,
+            )
+
+    def test_stage1_driver_policy_check_reports_unknown_duplicate_and_invalid_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(tmp, {"main.nq": "fn main() -> i32 {\n    return 0;\n}\n"})
+            policy = tmp / "nauqtype.policy.json"
+            policy.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "targets": [
+                            {"target_id": "fn:main::missing", "owner": "human:lead", "review": "required"},
+                            {"target_id": "fn:main::main", "owner": "team", "review": "required"},
+                            {"target_id": "fn:main::main", "owner": "agent:pair", "review": "block"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = self._run_driver(["policy-check", str(tmp / "main.nq"), str(policy)])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            codes = [diag["code"] for diag in payload["diagnostics"]]
+            self.assertIn("NQ-POLICY-003", codes)
+            self.assertIn("NQ-POLICY-004", codes)
+            self.assertIn("NQ-POLICY-005", codes)
+            self.assertIn("NQ-POLICY-006", codes)
+
+    def test_stage1_driver_policy_check_reports_malformed_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(tmp, {"main.nq": "fn main() -> i32 {\n    return 0;\n}\n"})
+            policy = tmp / "nauqtype.policy.json"
+            policy.write_text("{", encoding="utf-8")
+            result = self._run_driver(["policy-check", str(tmp / "main.nq"), str(policy)])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["diagnostics"][0]["code"], "NQ-POLICY-002")
+
+    def test_stage1_driver_policy_check_rejects_non_exact_policy_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(tmp, {"main.nq": "fn main() -> i32 {\n    return 0;\n}\n"})
+            policy = tmp / "nauqtype.policy.json"
+            policy.write_text(
+                json.dumps({"version": 10, "targets": [{"target_id": "fn:main::main", "owner": "human:lead", "review": "required"}]}),
+                encoding="utf-8",
+            )
+            result = self._run_driver(["policy-check", str(tmp / "main.nq"), str(policy)])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["diagnostics"][0]["code"], "NQ-POLICY-002")
 
     def test_stage1_driver_review_rejects_borrow_errors_before_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
