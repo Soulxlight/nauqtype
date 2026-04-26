@@ -124,6 +124,8 @@
 - [x] Add versioned diagnostics JSON schema
 - [x] Add diagnostics JSON golden tests
 - [x] Add stable semantic defs/refs/call graph export
+- [x] Lock `facts` v1 with schema, golden fixture, and representative selfhost-module smoke
+- [ ] Bound full-tree `facts` export performance for the complete in-repo selfhost graph
 - [x] Add richer `review` v2 output
 - [x] Add `review-diff`
 

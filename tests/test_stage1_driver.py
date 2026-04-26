@@ -289,79 +289,50 @@ class Stage1DriverTests(unittest.TestCase):
             )
 
     def test_stage1_driver_facts_exports_defs_refs_and_call_graph(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            self._write_project(
-                tmp,
-                {
-                    "main.nq": """
-                    use helper;
+        fixture = self.root / "tests" / "fixtures" / "facts" / "main.nq"
+        golden = self.root / "tests" / "golden" / "facts" / "main.json"
+        result = subprocess.run(
+            [str(self.driver_exe), "facts", str(fixture)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        expected = json.loads(golden.read_text(encoding="utf-8"))
+        self.assertEqual(payload, expected)
 
-                    fn main() -> i32 {
-                        let box = make_box(42);
-                        return box.value;
-                    }
-                    """,
-                    "helper.nq": """
-                    pub type Box {
-                        value: i32,
-                    }
+        schema = json.loads((self.root / "schemas" / "facts-v1.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/facts-v1.schema.json")
+        self.assertEqual(schema["properties"]["version"]["const"], 1)
+        self.assertEqual(schema["properties"]["command"]["const"], "facts")
+        self.assertEqual(schema["properties"]["identity_scheme"]["const"], "nauqtype.semantic.v1")
+        self.assertEqual(
+            schema["required"],
+            ["version", "command", "module", "identity_scheme", "summary", "modules", "definitions", "references", "call_graph"],
+        )
 
-                    pub fn make_box(value: i32) -> Box
-                    audit {
-                        intent("Build a box");
-                        mutates();
-                        effects();
-                    }
-                    {
-                        return Box { value: value };
-                    }
-                    """,
-                },
-            )
-            result = subprocess.run(
-                [str(self.driver_exe), "facts", "main.nq"],
-                cwd=tmp,
-                capture_output=True,
-                text=True,
-                timeout=240,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(result.stderr, "")
-            payload = json.loads(result.stdout)
-            self.assertEqual(payload["version"], 1)
-            self.assertEqual(payload["command"], "facts")
-            self.assertEqual(payload["identity_scheme"], "nauqtype.semantic.v1")
-            definitions = {entry["id"]: entry for entry in payload["definitions"]}
-            self.assertIn("type:helper::Box", definitions)
-            self.assertIn("field:helper::Box::value", definitions)
-            self.assertIn("fn:helper::make_box", definitions)
-            self.assertIn("fn:main::main", definitions)
-            self.assertTrue(
-                any(
-                    entry["kind"] == "call"
-                    and entry["from"] == "fn:main::main"
-                    and entry["target_id"] == "fn:helper::make_box"
-                    for entry in payload["references"]
-                )
-            )
-            self.assertTrue(
-                any(
-                    entry["kind"] == "value"
-                    and entry["from"] == "fn:main::main"
-                    and entry["target_kind"] == "binding"
-                    and entry["name"] == "box"
-                    for entry in payload["references"]
-                )
-            )
-            self.assertTrue(
-                any(
-                    edge["caller"] == "fn:main::main"
-                    and edge["callee"] == "fn:helper::make_box"
-                    and edge["call_site"].startswith("call:main::main@")
-                    for edge in payload["call_graph"]
-                )
-            )
+    def test_stage1_driver_facts_exports_selfhost_module_without_limitations(self) -> None:
+        result = subprocess.run(
+            [str(self.driver_exe), "facts", str(self.root / "selfhost" / "source.nq")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        combined = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, combined)
+        self.assertEqual(result.stderr, "")
+        self.assertNotIn("stage1 limitation", combined)
+        self.assertNotIn("stage1 c error", combined)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["command"], "facts")
+        self.assertEqual(payload["identity_scheme"], "nauqtype.semantic.v1")
+        self.assertEqual(payload["module"], "source")
+        self.assertGreaterEqual(payload["summary"]["definitions"], 2)
+        self.assertGreaterEqual(payload["summary"]["references"], 1)
 
     def test_stage1_driver_review_diff_reports_semantic_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

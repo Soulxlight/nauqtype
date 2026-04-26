@@ -216,6 +216,7 @@ Status:
 - `review --format v2` now emits stable function/call identities, references, call graph edges, and evidence fields
 - `review-diff` now emits deterministic semantic changes over stable function identities and call graph edges
 - `facts` now emits stable definitions, references, and call graph edges for checked programs
+- `facts` v1 is now locked by a versioned schema, golden fixture, and representative selfhost-module smoke check
 - next AI-first review slices are compiler-mediated semantic refactors and policy / ownership metadata
 
 ## Feature Ordering

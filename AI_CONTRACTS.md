@@ -69,6 +69,16 @@ During the current Nauqtype-only toolchain transition, `facts`, `review`, and `r
 
 The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 
+## Semantic Facts v1 Contract
+
+`facts` output is versioned and locked by `schemas/facts-v1.schema.json`.
+
+- `version` is `1`, and `identity_scheme` is `nauqtype.semantic.v1`.
+- Definitions use stable prefixes such as `module:`, `fn:`, `type:`, `enum:`, `variant:`, `field:`, and `binding:`.
+- References include imports, type references, name references, resolved target kind, resolved target id, and source span.
+- Call graph entries use stable caller/callee identities plus a call-site id.
+- The command runs only after the checked stage1 front-end and borrow safety path succeeds, so agents can distinguish checked facts from unchecked text.
+
 ## Explicit Non-Goals For Alpha
 
 - NLP validation of `intent(...)`

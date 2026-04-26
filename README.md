@@ -166,7 +166,7 @@ Current remaining gaps:
 Current AI-first compiler output:
 
 - `review` JSON for function-level contract summaries
-- `facts` JSON for stable definitions, references, and call graph edges
+- `facts` JSON for stable definitions, references, and call graph edges, locked by `schemas/facts-v1.schema.json`
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `check --diagnostics json` for deterministic compiler diagnostics
