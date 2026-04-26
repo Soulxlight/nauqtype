@@ -6,6 +6,7 @@ use handoff;
 use ir;
 use diag;
 use facts;
+use fmt;
 use lexer;
 use parser;
 use proof;
@@ -26,6 +27,8 @@ enum driver_mode {
     driver_review_diff_v2,
     driver_refactor_rename,
     driver_policy_check,
+    driver_fmt,
+    driver_fmt_check,
     driver_build,
     driver_run,
     driver_prove,
@@ -318,7 +321,7 @@ fn str_ends_with(text: str, suffix: str) -> bool {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -513,6 +516,37 @@ fn parse_driver_request() -> driver_request {
             return invalid_request("missing policy path for `policy-check`");
         }
         return make_driver_request(driver_policy_check, source_path, entry_module, path_dir(source_path), policy_path, "", "");
+    }
+
+    if command == "fmt" {
+        if argc != 3 and argc != 4 {
+            return invalid_request(usage_text());
+        }
+        let mut source_path = option_text(arg_get(2));
+        let mut check_only = false;
+        if argc == 4 {
+            let first = option_text(arg_get(2));
+            let second = option_text(arg_get(3));
+            if first == "--check" {
+                source_path = second;
+                check_only = true;
+            } else {
+                if second == "--check" {
+                    source_path = first;
+                    check_only = true;
+                } else {
+                    return invalid_request("expected `--check` before or after the fmt source path");
+                }
+            }
+        }
+        let entry_module = path_stem(source_path);
+        if source_path == "" or entry_module == "" {
+            return invalid_request("missing source path for `fmt`");
+        }
+        if check_only {
+            return make_driver_request(driver_fmt_check, source_path, entry_module, path_dir(source_path), "", "", "");
+        }
+        return make_driver_request(driver_fmt, source_path, entry_module, path_dir(source_path), "", "", "");
     }
 
     if command == "build" or command == "run" {
@@ -1210,6 +1244,12 @@ fn main() -> i32 {
         },
         driver_policy_check => {
             return run_policy_check(request.workspace_root, request.entry_module, request.entry_path, request.output_path);
+        },
+        driver_fmt => {
+            return run_fmt(request.entry_path, false);
+        },
+        driver_fmt_check => {
+            return run_fmt(request.entry_path, true);
         },
         driver_build => {
             return run_build_command(request, false);

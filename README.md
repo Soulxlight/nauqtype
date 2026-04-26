@@ -18,7 +18,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `refactor-rename`, `policy-check`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
 ## Quick Start
 
@@ -83,6 +83,13 @@ Validate sidecar ownership/review metadata against checked facts:
 
 ```powershell
 selfhost\build\main.exe policy-check selfhost\main.nq nauqtype.policy.json
+```
+
+Format trusted-subset Nauqtype source without mutating files:
+
+```powershell
+selfhost\build\main.exe fmt examples\hello.nq
+selfhost\build\main.exe fmt --check examples\hello.nq
 ```
 
 Use the active Nauqtype-owned driver for `build`:
@@ -181,7 +188,7 @@ Current remaining gaps:
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- semantic language-feature work has resumed with top-level `const`; the rest of the first live-in-the-language ergonomics batch must stay attached to concrete examples and differential or stage1-owned coverage
+- the first live-in-the-language ergonomics batch now covers top-level `const`, list literals, match expressions, narrow `let-else`, and formatter-lite; the next semantic feature batch should stay attached to concrete examples and differential or stage1-owned coverage
 
 Current AI-first compiler output:
 

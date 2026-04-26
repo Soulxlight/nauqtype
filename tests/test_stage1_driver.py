@@ -954,6 +954,78 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stdout, "hello\n")
             self.assertEqual(result.stderr, "")
 
+    def test_stage1_driver_fmt_outputs_canonical_text_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            source = tmp / "main.nq"
+            source.write_text(
+                "fn main() -> i32 {\n"
+                "let value = 1;\n"
+                "if value == 1 {\n"
+                "return 0;\n"
+                "}\n"
+                "return 1;\n"
+                "}\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            original = source.read_text(encoding="utf-8")
+
+            result = self._run_driver(["fmt", str(source)])
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout,
+                "fn main() -> i32 {\n"
+                "    let value = 1;\n"
+                "    if value == 1 {\n"
+                "        return 0;\n"
+                "    }\n"
+                "    return 1;\n"
+                "}\n",
+            )
+            self.assertEqual(result.stderr, "")
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+
+    def test_stage1_driver_fmt_check_and_fail_closed_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            formatted = tmp / "formatted.nq"
+            formatted.write_text(
+                "fn main() -> i32 {\n"
+                "    return 0;\n"
+                "}\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            unformatted = tmp / "unformatted.nq"
+            unformatted.write_text("fn main() -> i32 {\nreturn 0;\n}\n", encoding="utf-8", newline="\n")
+            tabbed = tmp / "tabbed.nq"
+            tabbed.write_text("fn main() -> i32 {\n\treturn 0;\n}\n", encoding="utf-8", newline="\n")
+
+            ok = self._run_driver(["fmt", "--check", str(formatted)])
+            self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+            self.assertEqual(ok.stdout, "")
+            self.assertEqual(ok.stderr, "")
+
+            changed = self._run_driver(["fmt", "--check", str(unformatted)])
+            self.assertNotEqual(changed.returncode, 0)
+            self.assertEqual(changed.stdout, "")
+            self.assertIn("fmt check failed", changed.stderr)
+
+            unsupported = self._run_driver(["fmt", "--check", str(tabbed)])
+            self.assertNotEqual(unsupported.returncode, 0)
+            self.assertEqual(unsupported.stdout, "")
+            self.assertIn("formatter-lite unsupported: tabs", unsupported.stderr)
+
+    def test_stage1_driver_fmt_check_accepts_canonical_examples(self) -> None:
+        for name in ("top_level_const.nq", "list_literals.nq", "match_expr_let_else.nq"):
+            with self.subTest(name=name):
+                result = self._run_driver(["fmt", "--check", str(self.root / "examples" / name)])
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "")
+
 
 if __name__ == "__main__":
     unittest.main()
