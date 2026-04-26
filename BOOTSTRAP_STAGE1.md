@@ -27,7 +27,7 @@ Current trustworthy selfhost slice:
 
 - recursive span-based typing for the current supported expression subset
 - nested field-chain typing over supported base expressions
-- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, and `list()` in the current value-flow contexts
+- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, `list()`, and `[]` in the current value-flow contexts
 - match scrutinee typing and pattern-bound payload typing for the current enum / `option` / `result` subset
 - explicit stage1 limitation diagnostics for unsupported expression shapes
 - differential stage0-vs-stage1 coverage for the trusted subset
@@ -119,8 +119,11 @@ Minimum collection goal:
 
 - one builtin growable sequence type
 - `list()` requires expected `list<T>` context
+- `[]` requires expected `list<T>` context
+- `[a, b, c]` requires homogeneous element types and may infer `list<T>` from the first element
 - `list_push`, `list_len`, and `list_get` are builtin helper functions
 - `list_get` is restricted to copy element types in stage1
+- no spreads, comprehensions, ranges, or const list initializers in list-literal V1
 - no `map`, `set`, or `dict` before `list<T>` proves necessary and stable
 
 ## Relationship To AI Contracts

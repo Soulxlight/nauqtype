@@ -247,3 +247,11 @@
 - Reason chosen: `const` names make configuration and repeated literals easier for humans and agents to supervise, while a pure `i32` / `bool` / `str` subset gives useful value without hidden evaluation, I/O, or dependency-order complexity.
 - Consequences: constants participate in checked facts, refactor plans, policy metadata, checked handoff, IR, and C emission, but const-to-const initializer references, calls, constructors, lists, borrows, and effects remain rejected for now.
 - Reversible later: extensible; the keyword and declaration form should stay stable, while the initializer subset can grow through recorded milestones.
+
+## D032: List literals start contextual and homogeneous
+
+- Decision: add list literals V1 with `[]` and `[a, b, c]` only.
+- Alternatives considered: keep only `list()`, add spreads/ranges/comprehensions immediately, or add broad mixed-element inference.
+- Reason chosen: literals improve readability and proof-corpus coverage while a contextual empty-list rule and homogeneous non-empty rule keep type inference and backend lowering small.
+- Consequences: `[]` requires an expected `list<T>` context; non-empty literals infer or check one element type; const list initializers, spreads, comprehensions, and ranges remain deferred.
+- Reversible later: extensible; the syntax can grow by explicit milestones without changing V1 behavior.

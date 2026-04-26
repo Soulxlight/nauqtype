@@ -23,6 +23,7 @@ pub enum ir_expr_kind {
     ir_expr_variant,
     ir_expr_field,
     ir_expr_struct,
+    ir_expr_list,
     ir_expr_not,
     ir_expr_neg,
     ir_expr_add,
@@ -368,6 +369,9 @@ fn checked_expr_to_ir_kind(expr: checked_expr) -> ir_expr_kind {
         },
         checked_expr_struct => {
             return ir_expr_struct;
+        },
+        checked_expr_list => {
+            return ir_expr_list;
         },
         checked_expr_not => {
             return ir_expr_not;
@@ -1364,6 +1368,78 @@ audit {
                     match value.kind {
                         ir_expr_struct => {
                             return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_list_expr(expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, function_id: i32, element_type_name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a lowered list literal");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_expr_list => {
+                            let type_entry = list_get(ref type_shapes, value.type_id - 1);
+                            match type_entry {
+                                Some(shape) => {
+                                    match shape.kind {
+                                        checked_type_list => {
+                                            if element_type_name == "" {
+                                                return true;
+                                            }
+                                            let element_entry = list_get(ref type_shapes, shape.arg1_id - 1);
+                                            match element_entry {
+                                                Some(element_shape) => {
+                                                    let mut element_matches = false;
+                                                    match element_shape.kind {
+                                                        checked_type_i32 => {
+                                                            element_matches = element_type_name == "i32";
+                                                        },
+                                                        checked_type_bool => {
+                                                            element_matches = element_type_name == "bool";
+                                                        },
+                                                        checked_type_str => {
+                                                            element_matches = element_type_name == "str";
+                                                        },
+                                                        checked_type_named => {
+                                                            element_matches = element_shape.name == element_type_name;
+                                                        },
+                                                        _ => {
+                                                        },
+                                                    }
+                                                    if element_matches {
+                                                        return true;
+                                                    }
+                                                },
+                                                None => {
+                                                },
+                                            }
+                                        },
+                                        _ => {
+                                        },
+                                    }
+                                },
+                                None => {
+                                },
+                            }
                         },
                         _ => {
                         },

@@ -852,6 +852,43 @@ fn is_runtime_native_list(type_shapes: ref list<ir_type_shape>, element_type_id:
     }
 }
 
+fn list_literal_uses_element_type(expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(expr) => {
+                match expr.kind {
+                    ir_expr_list => {
+                        let shape_entry = lookup_type_shape(ref type_shapes, expr.type_id);
+                        match shape_entry {
+                            Some(shape) => {
+                                match shape.kind {
+                                    checked_type_list => {
+                                        if shape.arg1_id == element_type_id {
+                                            return true;
+                                        }
+                                    },
+                                    _ => {
+                                    },
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
 fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> bool {
     let ok_entry = lookup_type_shape(ref type_shapes, ok_type_id);
     let err_entry = lookup_type_shape(ref type_shapes, err_type_id);
@@ -1204,7 +1241,7 @@ fn emit_result_definition(lines: mutref list<str>, type_shapes: ref list<ir_type
     return;
 }
 
-fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> unit {
+fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32, include_from_array: bool) -> unit {
     let type_name = list_type_name(ref type_shapes, element_type_id);
     let helper = list_helper_prefix(ref type_shapes, element_type_id);
     let option_type = option_type_name(ref type_shapes, element_type_id);
@@ -1216,6 +1253,18 @@ fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_s
     append_line(mutref lines, concat5("static inline ", type_name, " ", helper, "_make(void) {"));
     append_line(mutref lines, concat5("    return (", type_name, "){ .data = NULL, .len = 0, .cap = 0 };", "", ""));
     append_line(mutref lines, "}");
+    if include_from_array {
+        append_line(mutref lines, concat7("static inline ", type_name, " ", helper, "_from_array(const ", c_type(ref type_shapes, element_type_id), "* values, int32_t len) {"));
+        append_line(mutref lines, concat5("    ", type_name, " items = ", helper, "_make();"));
+        append_line(mutref lines, "    if (len > 0) {");
+        append_line(mutref lines, concat6("        items.data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(NULL, sizeof(", c_type(ref type_shapes, element_type_id), ") * (size_t)len);", ""));
+        append_line(mutref lines, str_concat("        memcpy(items.data, values, sizeof(", str_concat(c_type(ref type_shapes, element_type_id), ") * (size_t)len);")));
+        append_line(mutref lines, "        items.len = len;");
+        append_line(mutref lines, "        items.cap = len;");
+        append_line(mutref lines, "    }");
+        append_line(mutref lines, "    return items;");
+        append_line(mutref lines, "}");
+    }
     append_line(mutref lines, concat7("static inline NQUnit ", helper, "_push(", type_name, "* items, ", c_type(ref type_shapes, element_type_id), " value) {"));
     append_line(mutref lines, "    if (items->len == items->cap) {");
     append_line(mutref lines, "        int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;");
@@ -1914,6 +1963,47 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     push_c_error(mutref diags, "", expr.at, "missing binary child expression");
                     return "0";
                 },
+                ir_expr_list => {
+                    let list_shape_entry = lookup_type_shape(ref type_shapes, expr.type_id);
+                    match list_shape_entry {
+                        Some(list_shape) => {
+                            match list_shape.kind {
+                                checked_type_list => {
+                                    let helper = list_helper_prefix(ref type_shapes, list_shape.arg1_id);
+                                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                                    if list_len(ref child_ids) == 0 {
+                                        return concat4(helper, "_make(", "", ")");
+                                    }
+                                    let mut items = "";
+                                    let mut child_index = 0;
+                                    while child_index < list_len(ref child_ids) {
+                                        let child_entry = list_get(ref child_ids, child_index);
+                                        match child_entry {
+                                            Some(child_id) => {
+                                                let item_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                                if items == "" {
+                                                    items = item_text;
+                                                } else {
+                                                    items = str_concat(items, str_concat(", ", item_text));
+                                                }
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                        child_index = child_index + 1;
+                                    }
+                                    return concat7(helper, "_from_array((", c_type(ref type_shapes, list_shape.arg1_id), "[]){ ", items, " }, ", str_concat(i32_to_str(list_len(ref child_ids)), ")"));
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing list literal type truth");
+                    return "0";
+                },
                 ir_expr_call => {
                     let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
                     let mut args = "";
@@ -2571,7 +2661,7 @@ audit {
         let entry = list_get(ref list_types, list_index);
         match entry {
             Some(value) => {
-                emit_list_definition(mutref lines_out, ref type_shapes, value);
+                emit_list_definition(mutref lines_out, ref type_shapes, value, list_literal_uses_element_type(ref expressions, ref type_shapes, value));
             },
             None => {
             },

@@ -43,7 +43,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 Punctuation and operators:
 
-- `(` `)` `{` `}`
+- `(` `)` `{` `}` `[` `]`
 - `,` `;` `:` `.`
 - `->` `=>`
 - `=` `==` `!=`
@@ -131,6 +131,7 @@ In the current bootstrap compiler, generic arguments are semantically valid only
 block         = "{" { stmt } "}" ;
 
 stmt          = let_stmt
+              | let_else_stmt
               | assign_stmt
               | if_stmt
               | while_stmt
@@ -139,6 +140,8 @@ stmt          = let_stmt
               | expr_stmt ;
 
 let_stmt      = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr ";" ;
+let_else_stmt = "let" let_else_pattern "=" expr "else" block ";" ;
+let_else_pattern = ( "Some" | "Ok" ) "(" IDENT ")" ;
 assign_stmt   = IDENT "=" expr ";" ;
 return_stmt   = "return" [ expr ] ";" ;
 expr_stmt     = expr ";" ;
@@ -180,17 +183,26 @@ argument_list = expr { "," expr } [ "," ] ;
 primary       = literal
               | IDENT
               | struct_literal
+              | list_literal
+              | match_expr
               | "(" expr ")" ;
 
 struct_literal = IDENT "{" field_init_list? "}" ;
 field_init_list = field_init { "," field_init } [ "," ] ;
 field_init    = IDENT ":" expr ;
+
+list_literal  = "[" [ expr { "," expr } [ "," ] ] "]" ;
+
+match_expr    = "match" expr "{" match_expr_arm { "," match_expr_arm } [ "," ] "}" ;
+match_expr_arm = pattern "=>" expr ;
 ```
 
 Parser note:
 
 - `IDENT "(" ... ")"` may resolve later as either a function call or an enum constructor call.
 - `IDENT "{" ... "}"` is a struct literal when the identifier resolves to a `type`.
+- `[]` requires an expected `list<T>` context. Non-empty list literals infer from the first element unless an expected `list<T>` is available, and all elements must have one homogeneous type. Spreads, comprehensions, ranges, and const list initializers are not part of V1.
+- Statement `match` arms remain block-bodied; only `match_expr` arms are expression-bodied.
 
 ## Pattern Grammar
 
@@ -223,7 +235,7 @@ Pattern meaning is resolved semantically:
 
 - No newline significance
 - No implicit last-expression returns
-- No expression-bodied match arms
+- No general block expressions
 - No loop grammar beyond bootstrap `while` in v0.1
 - AI Contracts use a fixed clause order instead of free-form annotations
 - No literal patterns in v0.1

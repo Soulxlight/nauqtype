@@ -118,6 +118,7 @@ NQUnit nq_eprint_line(NQStr text);
 NQIoErr nq_make_io_err(int32_t code, const char* text);
 NQStr nq_io_err_text(NQIoErr err);
 NQ_List__str nq_list__str_make(void);
+NQ_List__str nq_list__str_from_array(const NQStr* values, int32_t len);
 NQUnit nq_list__str_push(NQ_List__str* items, NQStr value);
 int32_t nq_list__str_len(const NQ_List__str* items);
 NQ_Option__str nq_list__str_get(const NQ_List__str* items, int32_t index);

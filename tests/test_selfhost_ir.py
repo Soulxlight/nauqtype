@@ -191,6 +191,31 @@ class SelfhostIRTests(unittest.TestCase):
             )
             return result.returncode, (result.stdout + result.stderr).strip()
 
+    def test_ir_lowers_list_literals(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let empty: list<i32> = [];
+                let values: list<i32> = [1, 2];
+                return list_len(ref empty) + list_len(ref values);
+            }
+            """,
+        }
+        assertions = [
+            '                let main_id = ir_lookup_function_id(ref ir_functions, "main::main");',
+            "                if main_id < 0 {",
+            '                    print_line("missing main function id");',
+            "                    failures = failures + 1;",
+            '                } else {',
+            '                    if not ir_has_list_expr(ref ir_expressions, ref ir_type_shapes, main_id, "i32") {',
+            '                        print_line("missing ir list literal expression");',
+            "                        failures = failures + 1;",
+            "                    }",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_ir_lowers_control_flow_and_metadata(self) -> None:
         modules = {
             "util": """

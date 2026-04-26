@@ -93,6 +93,7 @@ fn consume_type(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<
 fn skip_until_semi(tokens: ref list<token>, cursor: mutref i32) -> unit {
     let mut paren_depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     while true {
         let current = token_at(ref tokens, cursor);
         match current.kind {
@@ -119,8 +120,18 @@ fn skip_until_semi(tokens: ref list<token>, cursor: mutref i32) -> unit {
                 }
                 advance(mutref cursor);
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                advance(mutref cursor);
+            },
             tk_semi => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     advance(mutref cursor);
                     return;
                 }
@@ -135,6 +146,7 @@ fn skip_until_semi(tokens: ref list<token>, cursor: mutref i32) -> unit {
 
 fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
     let mut paren_depth = 0;
+    let mut bracket_depth = 0;
     while true {
         let current = token_at(ref tokens, cursor);
         match current.kind {
@@ -151,8 +163,18 @@ fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
                 }
                 advance(mutref cursor);
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+                advance(mutref cursor);
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                advance(mutref cursor);
+            },
             tk_lbrace => {
-                if paren_depth == 0 {
+                if paren_depth == 0 and bracket_depth == 0 {
                     return;
                 }
                 advance(mutref cursor);
@@ -969,6 +991,7 @@ fn count_comma_args(tokens: ref list<token>, open_index: i32) -> i32 {
     let mut count = 1;
     let mut paren_depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
 
     while true {
         let current = token_at(ref tokens, index);
@@ -993,8 +1016,16 @@ fn count_comma_args(tokens: ref list<token>, open_index: i32) -> i32 {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_comma => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     count = count + 1;
                 }
             },
@@ -1797,6 +1828,7 @@ fn expr_has_root_compare(tokens: ref list<token>, start: i32, end: i32) -> bool 
     let mut index = start;
     let mut paren_depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -1816,33 +1848,41 @@ fn expr_has_root_compare(tokens: ref list<token>, start: i32, end: i32) -> bool 
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_eqeq => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_noteq => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_lt => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_gt => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_lte => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_gte => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
@@ -1858,6 +1898,7 @@ fn expr_has_root_logic(tokens: ref list<token>, start: i32, end: i32) -> bool {
     let mut index = start;
     let mut paren_depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -1877,13 +1918,21 @@ fn expr_has_root_logic(tokens: ref list<token>, start: i32, end: i32) -> bool {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_kw_and => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_kw_or => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
@@ -1899,6 +1948,7 @@ fn expr_has_root_arithmetic(tokens: ref list<token>, start: i32, end: i32) -> bo
     let mut index = start;
     let mut paren_depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -1918,23 +1968,31 @@ fn expr_has_root_arithmetic(tokens: ref list<token>, start: i32, end: i32) -> bo
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_plus => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_minus => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_star => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
             tk_slash => {
-                if paren_depth == 0 and brace_depth == 0 {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return true;
                 }
             },
@@ -1988,6 +2046,9 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
             if expr_start + 1 == end {
                 return expr_name;
             }
+        },
+        tk_lbracket => {
+            return expr_list;
         },
         _ => {
         },

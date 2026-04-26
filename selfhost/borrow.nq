@@ -218,6 +218,17 @@ fn is_expr_struct(kind: checked_expr_kind) -> bool {
     }
 }
 
+fn is_expr_list(kind: checked_expr_kind) -> bool {
+    match kind {
+        checked_expr_list => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_binary_expr(kind: checked_expr_kind) -> bool {
     match kind {
         checked_expr_add => {
@@ -1203,6 +1214,21 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                         None => {
                         },
                     }
+                    index = index + 1;
+                }
+                return;
+            }
+
+            if is_expr_list(expr.kind) {
+                let child_count = count_expr_children(ref expr_children, expr.id);
+                let mut index = 0;
+                while index < child_count {
+                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, index);
+                    if child_id < 0 {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a child for checked list literal");
+                        return;
+                    }
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, false, emit_diagnostics, mutref diags);
                     index = index + 1;
                 }
                 return;

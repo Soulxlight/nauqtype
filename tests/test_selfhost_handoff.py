@@ -216,6 +216,25 @@ class SelfhostHandoffTests(unittest.TestCase):
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
+    def test_handoff_captures_list_literals(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let empty: list<i32> = [];
+                let values: list<i32> = [1, 2];
+                return list_len(ref empty) + list_len(ref values);
+            }
+            """,
+        }
+        assertions = [
+            '                if not handoff_has_list_expr(ref checked_expressions, "main", "main", "i32") {',
+            '                    print_line("missing list literal expression");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_handoff_captures_control_flow_patterns_and_targets(self) -> None:
         modules = {
             "util": """

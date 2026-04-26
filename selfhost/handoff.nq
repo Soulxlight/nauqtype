@@ -43,6 +43,7 @@ pub enum checked_expr_kind {
     checked_expr_call,
     checked_expr_field,
     checked_expr_struct,
+    checked_expr_list,
     checked_expr_not,
     checked_expr_neg,
     checked_expr_add,
@@ -658,6 +659,16 @@ fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) 
                 },
             }
         },
+        checked_expr_list => {
+            match right {
+                checked_expr_list => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_expr_not => {
             match right {
                 checked_expr_not => {
@@ -824,6 +835,9 @@ fn token_can_end_expr(tok: token) -> bool {
         tk_rbrace => {
             return true;
         },
+        tk_rbracket => {
+            return true;
+        },
         _ => {
             return false;
         },
@@ -883,6 +897,7 @@ fn is_binary_operator_position(tokens: ref list<token>, start: i32, index: i32) 
 fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -903,8 +918,16 @@ fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_kw_or => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
@@ -919,6 +942,7 @@ fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
 fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -939,8 +963,16 @@ fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_kw_and => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
@@ -955,6 +987,7 @@ fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 
 fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -975,33 +1008,41 @@ fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> 
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_eqeq => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
             tk_noteq => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
             tk_lt => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
             tk_gt => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
             tk_lte => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
             tk_gte => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
@@ -1016,6 +1057,7 @@ fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> 
 fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -1036,13 +1078,21 @@ fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) ->
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_plus => {
-                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     return index;
                 }
             },
             tk_minus => {
-                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     return index;
                 }
             },
@@ -1057,6 +1107,7 @@ fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) ->
 fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -1077,13 +1128,21 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_star => {
-                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     return index;
                 }
             },
             tk_slash => {
-                if depth == 0 and brace_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     return index;
                 }
             },
@@ -1098,6 +1157,7 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
 fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     let mut found = -1;
     while index < end {
@@ -1119,8 +1179,16 @@ fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_dot => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     found = index;
                 }
             },
@@ -1216,9 +1284,64 @@ fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
     return false;
 }
 
+fn span_is_list_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 2 {
+        return false;
+    }
+    let first = token_at(ref tokens, start);
+    match first.kind {
+        tk_lbracket => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    let mut paren_depth = 0;
+    let mut brace_depth = 0;
+    let mut bracket_depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+            },
+            tk_rbrace => {
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+            },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
+                    return index + 1 == end;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
 fn next_top_level_comma(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -1239,8 +1362,16 @@ fn next_top_level_comma(tokens: ref list<token>, start: i32, end: i32) -> i32 {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_comma => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
@@ -1255,6 +1386,7 @@ fn next_top_level_comma(tokens: ref list<token>, start: i32, end: i32) -> i32 {
 fn find_top_level_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
+    let mut bracket_depth = 0;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -1275,8 +1407,16 @@ fn find_top_level_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
                     brace_depth = brace_depth - 1;
                 }
             },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+            },
             tk_colon => {
-                if depth == 0 and brace_depth == 0 {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
                     return index;
                 }
             },
@@ -2274,6 +2414,28 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         },
         _ => {
         },
+    }
+
+    if span_is_list_expr(ref tokens, expr_start, expr_end) {
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_list, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let mut item_start = expr_start + 1;
+        let item_end_limit = expr_end - 1;
+        let mut item_index = 0;
+        while item_start < item_end_limit {
+            let segment_end = next_top_level_comma(ref tokens, item_start, item_end_limit);
+            let mut item_expected_ctx = empty_expected_type_ctx();
+            if exported_ctx.head == "list" and exported_ctx.arg1_name != "" {
+                item_expected_ctx = make_expected_type_ctx(exported_ctx.arg1_name, "", "");
+            }
+            let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, item_start, segment_end, at, item_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            if child_id < 0 {
+                return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing child expression for list literal");
+            }
+            push_expr_child(mutref expr_children, expr_id, item_index, child_id);
+            item_index = item_index + 1;
+            item_start = segment_end + 1;
+        }
+        return expr_id;
     }
 
     let dot_index = find_root_field_dot(ref tokens, expr_start, expr_end);
@@ -3790,6 +3952,38 @@ audit {
             },
         }
         expr_index = expr_index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_list_expr(expressions: ref list<checked_expr>, module_name: str, function_name: str, element_type_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a list literal expression");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and value.type_name == "list" {
+                    if element_type_name == "" or value.type_arg1_name == element_type_name {
+                        match value.kind {
+                            checked_expr_list => {
+                                return true;
+                            },
+                            _ => {
+                            },
+                        }
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
     }
     return false;
 }

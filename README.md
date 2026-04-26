@@ -10,8 +10,10 @@ Current bootstrap status:
 - top-level `const` for small compile-time configuration values
 - nominal `type` and `enum`
 - `option<T>` and `result<T, E>`
-- builtin `io_err` and `list<T>`
+- builtin `io_err` and `list<T>` with narrow list literals
 - explicit `match`
+- match expressions for value-producing exhaustive branches
+- narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - bootstrap file input and string helpers
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
@@ -141,9 +143,9 @@ Current selfhost semantic coverage:
 - first pattern-aware constructor resolution inside `match`
 - body-level imported visibility diagnostics for hidden names, constructors, and struct-literal type heads
 - first selfhost type-checker slice for entry `main` shape plus function/constructor/pattern arity
-- recursive span-based selfhost value typing for the current subset: literals, names, calls, constructors, `base.field`, struct literals, parentheses, unary `not` / unary minus, arithmetic, comparisons, and `and` / `or`
+- recursive span-based selfhost value typing for the current subset: literals, names, calls, constructors, `base.field`, struct literals, list literals, parentheses, unary `not` / unary minus, arithmetic, comparisons, and `and` / `or`
 - nested field-chain typing over the current supported base-expression subset
-- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, and `list()` in annotated locals, assignments, returns, call-argument contexts, constructor-payload contexts, and match-arm bodies
+- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, `list()`, and `[]` in annotated locals, assignments, returns, call-argument contexts, constructor-payload contexts, and match-arm bodies
 - explicit selfhost limitation diagnostics for expression shapes outside that supported recursive subset
 - simple unannotated-local inference for inferable supported expressions
 - assignment compatibility checks when the target type and rhs type are both inferable
@@ -212,4 +214,4 @@ Current AI-first compiler output:
 
 - Nauqtype is now the active implementation language for the project.
 - The Python compiler remains in-repo only as a frozen bootstrap/reference path.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, file input, bootstrap string helpers, builtin `list<T>`, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

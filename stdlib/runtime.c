@@ -111,6 +111,17 @@ NQ_List__str nq_list__str_make(void) {
     };
 }
 
+NQ_List__str nq_list__str_from_array(const NQStr* values, int32_t len) {
+    NQ_List__str items = nq_list__str_make();
+    if (len > 0) {
+        items.data = (NQStr*)nq_realloc(NULL, sizeof(NQStr) * (size_t)len);
+        memcpy(items.data, values, sizeof(NQStr) * (size_t)len);
+        items.len = len;
+        items.cap = len;
+    }
+    return items;
+}
+
 NQUnit nq_list__str_push(NQ_List__str* items, NQStr value) {
     if (items->len == items->cap) {
         int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;

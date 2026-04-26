@@ -127,6 +127,25 @@ let mut count: i32 = 0;
 
 Type annotation on locals is optional when the initializer is sufficient.
 
+Narrow guard binding with `let-else`:
+
+```nauq
+let Some(value) = maybe else {
+    return fallback;
+};
+
+let Ok(parsed) = result else {
+    return fallback;
+};
+```
+
+Rules:
+
+- V1 supports only `Some(name)` for `option<T>` and `Ok(name)` for `result<T, E>`.
+- The success pattern introduces the payload binding after the statement.
+- The `else` block must exit explicitly, such as with `return`.
+- Pattern guards, chained `if let`, hidden propagation, and `?` are not part of V1.
+
 ### Top-Level Constants
 
 Top-level constants are a stage1-owned live-in-the-language feature for small, named configuration values:
@@ -236,6 +255,7 @@ Supported expression forms in v0.1:
 - literals: integer, string, `true`, `false`
 - variable and top-level constant references
 - constructor references such as `Ok(value)` or `User { ... }`
+- list literals: `[]` and `[a, b, c]`
 - function calls
 - field access
 - unary operators: `-`, `not`
@@ -249,6 +269,20 @@ let user = User {
     age: 32,
 };
 ```
+
+### List Literals
+
+```nauq
+let empty: list<i32> = [];
+let values = [1, 2, 3];
+```
+
+Rules:
+
+- `[]` requires an expected `list<T>` context, such as a local annotation, return type, parameter type, or constructor payload type.
+- Non-empty literals infer `list<T>` from their first element when no expected list type is available.
+- All elements must have the same type.
+- Spreads, comprehensions, ranges, and const list initializers are deferred.
 
 ### Function Calls
 
@@ -346,6 +380,23 @@ Rules:
 - each arm body is a block
 - arm patterns are matched top to bottom
 - a `match` must be exhaustive for its scrutinee type
+- statement `match` arms do not produce values
+
+### Match Expressions
+
+```nauq
+let value = match maybe {
+    Some(n) => n + 1,
+    None => 0,
+};
+```
+
+Rules:
+
+- expression arms use `pattern => expr`, separated by commas
+- all arm result types must agree exactly
+- match expressions must be exhaustive for the scrutinee type
+- block expressions, implicit final-expression returns, and fallthrough are not supported
 
 ## Patterns
 
@@ -439,7 +490,7 @@ Rules:
 
 - fallible operations return `result<T, E>`
 - absent values use `option<T>`
-- errors are handled explicitly with `match`
+- errors are handled explicitly with `match` or the narrow `let Ok(value) = result else { return ...; };` guard form
 - there are no exceptions
 - there is no `?` operator in v0.1
 
@@ -485,6 +536,8 @@ fn list_push(items: mutref list<T>, value: T) -> unit;
 fn list_len(items: ref list<T>) -> i32;
 fn list_get(items: ref list<T>, index: i32) -> option<T>;
 ```
+
+`[]` is the literal equivalent of an empty `list<T>` and follows the same expected-context rule as `list()`.
 
 ### Out Of Scope For v0.1
 

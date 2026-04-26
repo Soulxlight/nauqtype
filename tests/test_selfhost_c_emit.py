@@ -245,6 +245,7 @@ class SelfhostCEmitTests(unittest.TestCase):
 
             fn main() -> i32 {
                 let mut items: list<i32> = list();
+                let literal_items: list<i32> = [1, 2];
                 let mut number: i32 = 1;
                 list_push(mutref items, 1);
                 let current = pair { left: 1, right: list_len(ref items) };
@@ -275,6 +276,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("typedef enum NQ_main__wrapped_Tag", emitted)
         self.assertIn("typedef struct NQ_main__pair", emitted)
         self.assertIn("static inline NQ_List__i32", emitted)
+        self.assertIn("nq_list__i32_from_array", emitted)
         self.assertIn("nq_write_file(", emitted)
         self.assertIn("switch (nq_tmp_1.tag)", emitted)
         self.assertIn("const int32_t* nqv_", emitted)
