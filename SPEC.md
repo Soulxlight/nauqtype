@@ -28,7 +28,7 @@ Its source language priorities are:
 - The module name is derived from the file name.
 - `use foo;` resolves to `<workspace-root>/foo.nq`.
 - All `use` declarations must appear before non-`use` items in a file.
-- Imported `pub fn`, `pub type`, and `pub enum` enter the importing module scope unqualified.
+- Imported `pub fn`, `pub type`, `pub enum`, and `pub const` enter the importing module scope unqualified.
 - Imported public enum variants are also visible as constructor/pattern names.
 - Import cycles are rejected.
 - There is no package manager, nested module system, or re-export system in stage1.
@@ -38,8 +38,7 @@ Its source language priorities are:
 These are style expectations, not parser rules:
 
 - types and enum variants: `UpperCamel`
-- functions, locals, fields, modules: `snake_case`
-- constants: future work
+- functions, locals, fields, modules, constants: `snake_case`
 
 This style is recommended because it improves human scanability and reduces type/value confusion.
 
@@ -49,6 +48,7 @@ Reserved keywords in v0.1:
 
 - `and`
 - `audit`
+- `const`
 - `else`
 - `enum`
 - `false`
@@ -109,7 +109,7 @@ These are part of the core language surface in the current bootstrap compiler.
 ### Visibility
 
 - Items are private by default.
-- `pub` may prefix `fn`, `type`, and `enum`.
+- `pub` may prefix `fn`, `type`, `enum`, and `const`.
 
 ### Local Bindings
 
@@ -126,6 +126,25 @@ let mut count: i32 = 0;
 ```
 
 Type annotation on locals is optional when the initializer is sufficient.
+
+### Top-Level Constants
+
+Top-level constants are a stage1-owned live-in-the-language feature for small, named configuration values:
+
+```nauq
+pub const answer: i32 = 40 + 2;
+const greeting: str = "Hello";
+const enabled: bool = true and not false;
+```
+
+Rules:
+
+- constants are private by default
+- `pub const` is visible through flat-root `use`
+- v1 constants support only non-borrow `i32`, `bool`, and `str`
+- v1 initializers support literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or`
+- calls, constructors, lists, borrows, I/O, and const-to-const initializer references are intentionally rejected for now
+- constants can be referenced in function bodies as values, but cannot be called, borrowed, or assigned
 
 ### Functions
 
@@ -215,7 +234,7 @@ Rules:
 Supported expression forms in v0.1:
 
 - literals: integer, string, `true`, `false`
-- variable references
+- variable and top-level constant references
 - constructor references such as `Ok(value)` or `User { ... }`
 - function calls
 - field access
@@ -525,6 +544,7 @@ These are warnings, not hard errors.
 - `continue`
 - field assignment
 - user-defined generics
+- broader constant expressions beyond the v1 pure literal/operator subset
 - exceptions
 - async
 - macros

@@ -234,9 +234,10 @@ Status:
 
 Status:
 
-- next
-- starts after the completed pre-language AI tooling spine
-- first batch remains top-level `const`, list literals, `match` as an expression, and `let-else` for `option` / `result`
+- in progress
+- started after the completed pre-language AI tooling spine
+- top-level `const` is done for the narrow stage1-owned `i32` / `bool` / `str` pure-initializer subset, with canonical example and stage1 driver coverage
+- the remaining first batch is list literals, `match` as an expression, and `let-else` for `option` / `result`
 
 ## Feature Ordering
 

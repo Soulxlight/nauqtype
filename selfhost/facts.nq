@@ -296,6 +296,10 @@ fn variant_identity(module: str, enum_name: str, name: str) -> str {
     return concat6("variant:", module, "::", enum_name, "::", name);
 }
 
+fn const_identity(module: str, name: str) -> str {
+    return concat4("const:", module, "::", name);
+}
+
 fn field_identity(module: str, type_name: str, name: str) -> str {
     return concat6("field:", module, "::", type_name, "::", name);
 }
@@ -422,6 +426,9 @@ fn item_kind_text(kind: top_item_kind) -> str {
         item_variant => {
             return "variant";
         },
+        item_const => {
+            return "const";
+        },
     }
 }
 
@@ -479,6 +486,9 @@ fn type_ref_kind_text(kind: type_ref_kind) -> str {
         type_enum_payload => {
             return "enum_payload_type";
         },
+        type_const_annotation => {
+            return "const_annotation";
+        },
     }
 }
 
@@ -514,6 +524,9 @@ fn item_identity(item: top_item, variants: ref list<variant_fact>) -> str {
         item_variant => {
             let enum_name = variant_enum_name(ref variants, item.module, item.name);
             return variant_identity(item.module, enum_name, item.name);
+        },
+        item_const => {
+            return const_identity(item.module, item.name);
         },
     }
 }
@@ -556,6 +569,15 @@ fn top_item_visible(items: ref list<top_item>, module: str, name: str, kind: top
                         item_variant => {
                             match kind {
                                 item_variant => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        item_const => {
+                            match kind {
+                                item_const => {
                                     return true;
                                 },
                                 _ => {
@@ -623,6 +645,15 @@ fn module_exports_item(items: ref list<top_item>, module: str, name: str, kind: 
                                 },
                             }
                         },
+                        item_const => {
+                            match kind {
+                                item_const => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
                     }
                 }
             },
@@ -678,6 +709,10 @@ fn visible_variant_origin(items: ref list<top_item>, uses: ref list<module_use>,
         return "__builtin__";
     }
     return visible_item_origin(ref items, ref uses, module, name, item_variant);
+}
+
+fn visible_const_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    return visible_item_origin(ref items, ref uses, module, name, item_const);
 }
 
 fn parent_scope_id(scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32) -> i32 {
@@ -833,6 +868,10 @@ fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, sc
     if binding_id != "" {
         return make_fact_target("binding", binding_id, "checked");
     }
+    let const_origin = visible_const_origin(ref items, ref uses, entry.module, entry.name);
+    if const_origin != "" {
+        return make_fact_target("const", const_identity(const_origin, entry.name), "checked");
+    }
     match entry.kind {
         ref_call => {
             let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
@@ -925,6 +964,10 @@ fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>,
     if binding_id != "" {
         return binding_id;
     }
+    let const_origin = visible_const_origin(ref items, ref uses, entry.module, entry.name);
+    if const_origin != "" {
+        return const_identity(const_origin, entry.name);
+    }
     match entry.kind {
         ref_call => {
             let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
@@ -970,6 +1013,10 @@ fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use
     let binding_id = resolve_binding_identity(ref bindings, ref scopes, ref items, ref uses, entry);
     if binding_id != "" {
         return "binding";
+    }
+    let const_origin = visible_const_origin(ref items, ref uses, entry.module, entry.name);
+    if const_origin != "" {
+        return "const";
     }
     match entry.kind {
         ref_call => {
@@ -1525,7 +1572,7 @@ fn is_ident_continue(ch: i32) -> bool {
 }
 
 fn is_reserved_word(name: str) -> bool {
-    if name == "fn" or name == "type" or name == "enum" or name == "use" or name == "pub" {
+    if name == "fn" or name == "type" or name == "enum" or name == "use" or name == "pub" or name == "const" {
         return true;
     }
     if name == "let" or name == "mut" or name == "return" or name == "if" or name == "else" or name == "while" or name == "match" {
@@ -1630,25 +1677,7 @@ fn top_level_name_collision(items: ref list<top_item>, variants: ref list<varian
                 if value.module == target.module and value.name == new_name {
                     let id = item_identity(value, ref variants);
                     if id != target.id {
-                        match value.kind {
-                            item_fn => {
-                                if target.kind == "function" {
-                                    return true;
-                                }
-                            },
-                            item_type => {
-                                if target.kind == "type" or target.kind == "enum" {
-                                    return true;
-                                }
-                            },
-                            item_enum => {
-                                if target.kind == "type" or target.kind == "enum" {
-                                    return true;
-                                }
-                            },
-                            item_variant => {
-                            },
-                        }
+                        return true;
                     }
                 }
             },
@@ -1701,7 +1730,7 @@ fn binding_name_collision(items: ref list<top_item>, uses: ref list<module_use>,
 }
 
 fn refactor_name_collision(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target: refactor_target, new_name: str) -> bool {
-    if target.kind == "function" or target.kind == "type" or target.kind == "enum" {
+    if target.kind == "function" or target.kind == "type" or target.kind == "enum" or target.kind == "const" {
         return top_level_name_collision(ref items, ref variants, target, new_name);
     }
     if target.kind == "field" {

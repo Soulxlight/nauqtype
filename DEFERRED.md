@@ -50,7 +50,7 @@ The current stage1 driver has a deliberately narrow toolchain-only runtime surfa
 - Language server
 - Package manager
 
-Near-term language ergonomics such as top-level `const`, list literals, `match` expressions, and `let-else` are not part of the AI tooling spine. They resume only as explicit language milestones with examples and differential coverage.
+Near-term language ergonomics such as list literals, `match` expressions, and `let-else` are not part of the AI tooling spine. They resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const` has now graduated from this deferred list in a deliberately narrow first form.
 
 ## Why These Are Deferred
 

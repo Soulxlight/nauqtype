@@ -10,6 +10,12 @@ type norm_token {
     next_index: i32,
 }
 
+type norm_line {
+    text: str,
+    next_index: i32,
+    done: bool,
+}
+
 type corpus_case {
     name: str,
     source_path: str,
@@ -37,6 +43,14 @@ fn make_norm_token(text: str, next_index: i32) -> norm_token {
     return norm_token {
         text: text,
         next_index: next_index,
+    };
+}
+
+fn make_norm_line(text: str, next_index: i32, done: bool) -> norm_line {
+    return norm_line {
+        text: text,
+        next_index: next_index,
+        done: done,
     };
 }
 
@@ -358,6 +372,51 @@ fn normalize_structural_c(text: str) -> str {
     return out;
 }
 
+fn next_normalized_line(text: str, start: i32, binding_mappings: mutref list<norm_mapping>, tmp_mappings: mutref list<norm_mapping>) -> norm_line {
+    let mut cursor = start;
+    while cursor < str_len(text) {
+        let mut line_end = cursor;
+        while line_end < str_len(text) and char_at(text, line_end) != 10 {
+            line_end = line_end + 1;
+        }
+        let mut next_index = line_end;
+        if next_index < str_len(text) {
+            next_index = next_index + 1;
+        }
+        let line = trim_slice(text, cursor, line_end);
+        if line != "" {
+            return make_norm_line(normalize_line(line, mutref binding_mappings, mutref tmp_mappings), next_index, false);
+        }
+        cursor = next_index;
+    }
+    return make_norm_line("", cursor, true);
+}
+
+fn structural_c_equal(left: str, right: str) -> bool {
+    let mut left_binding_mappings: list<norm_mapping> = list();
+    let mut left_tmp_mappings: list<norm_mapping> = list();
+    let mut right_binding_mappings: list<norm_mapping> = list();
+    let mut right_tmp_mappings: list<norm_mapping> = list();
+    let mut left_index = 0;
+    let mut right_index = 0;
+    while true {
+        let left_line = next_normalized_line(left, left_index, mutref left_binding_mappings, mutref left_tmp_mappings);
+        let right_line = next_normalized_line(right, right_index, mutref right_binding_mappings, mutref right_tmp_mappings);
+        if left_line.done and right_line.done {
+            return true;
+        }
+        if left_line.done or right_line.done {
+            return false;
+        }
+        if left_line.text != right_line.text {
+            return false;
+        }
+        left_index = left_line.next_index;
+        right_index = right_line.next_index;
+    }
+    return false;
+}
+
 fn normalize_newlines(text: str) -> str {
     let mut out = "";
     let mut index = 0;
@@ -568,6 +627,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("result_handling", "examples/result_handling.nq", 0, ""));
     list_push(mutref cases, make_corpus_case("review_contracts", "examples/review_contracts.nq", 42, "Hello, contracts!\n"));
     list_push(mutref cases, make_corpus_case("simple_add", "examples/simple_add.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("top_level_const", "examples/top_level_const.nq", 0, "Hello from top-level const!\n"));
     list_push(mutref cases, make_corpus_case("user_record", "examples/user_record.nq", 32, ""));
     list_push(mutref cases, make_corpus_case("while_counter", "examples/while_counter.nq", 5, ""));
     return;
@@ -611,7 +671,7 @@ fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
     if not read_text_or_report(build_c_path, str_concat("failed to read build C for ", entry.name), mutref build_c) {
         return false;
     }
-    if normalize_structural_c(emit_c) != normalize_structural_c(build_c) {
+    if not structural_c_equal(emit_c, build_c) {
         eprint_line(str_concat("corpus proof failed: emit/build C changed for ", entry.name));
         return false;
     }
@@ -645,7 +705,7 @@ fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
     if not read_text_or_report(build_c_path, str_concat("failed to read run C for ", entry.name), mutref run_c) {
         return false;
     }
-    if normalize_structural_c(emit_c) != normalize_structural_c(run_c) {
+    if not structural_c_equal(emit_c, run_c) {
         eprint_line(str_concat("corpus proof failed: emit/run C changed for ", entry.name));
         return false;
     }
@@ -749,9 +809,7 @@ audit {
     let stage2_c_result = read_file(c_path);
     match stage2_c_result {
         Ok(stage2_c) => {
-            let normalized_stage1 = normalize_structural_c(stage1_c);
-            let normalized_stage2 = normalize_structural_c(stage2_c);
-            if normalized_stage1 != normalized_stage2 {
+            if not structural_c_equal(stage1_c, stage2_c) {
                 eprint_line("selfhost proof failed: normalized structural C changed between stage1 and stage2");
                 return 1;
             }

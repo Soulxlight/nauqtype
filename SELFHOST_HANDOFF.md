@@ -26,6 +26,7 @@ The implemented handoff currently captures:
 
 - resolved module and function identities
 - stable binding identities for params, locals, and typed pattern payload bindings
+- top-level constant declarations for the narrow trusted const subset
 - typed params, locals, returns, and assignment targets
 - typed expression trees for the trusted subset
 - recursive checked type-shape truth with canonical backend-facing `type_id` values, including origin-module truth for named types and `ref` vs `mutref` shape truth
@@ -34,6 +35,7 @@ The implemented handoff currently captures:
 - recursive checked pattern trees for the trusted pattern subset
 - typed pattern bindings for the current enum / `option` / `result` subset
 - resolved function / constructor / field targets
+- resolved top-level constant targets
 - stable source spans for downstream diagnostics and comparison work
 - fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff
 
@@ -73,6 +75,7 @@ The handoff must include, at minimum:
 - resolved module identities
 - resolved function identities
 - stable binding identities for params, locals, and typed pattern bindings
+- typed top-level constants for the trusted const subset
 - typed parameter declarations with stable parameter ordering carried through binding identity
 - typed local declarations and assignment targets
 - typed return sites
@@ -82,6 +85,7 @@ The handoff must include, at minimum:
 - typed pattern bindings for the current enum / `option` / `result` subset
 - constructor targets with resolved origin
 - function call targets with resolved origin
+- top-level constant references with resolved origin
 - field access nodes with resolved base type and resolved field target
 - stable source spans carried through for downstream diagnostics
 - truthful borrow bits and explicit borrow-node shape for `ref` / `mutref`
@@ -94,6 +98,7 @@ That subset includes:
 
 - literals
 - local and top-level names in supported expression positions
+- top-level constant declarations and references for the narrow `i32` / `bool` / `str` const subset
 - constructor expressions in supported positions
 - supported direct calls
 - field access

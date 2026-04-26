@@ -7,6 +7,7 @@ Current bootstrap status:
 - `stage0`: frozen Python bootstrap/reference compiler in the current workspace
 - flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
+- top-level `const` for small compile-time configuration values
 - nominal `type` and `enum`
 - `option<T>` and `result<T, E>`
 - builtin `io_err` and `list<T>`
@@ -122,6 +123,7 @@ Example programs worth checking first:
 - `examples\hello.nq`: minimal print path
 - `examples\while_counter.nq`: bootstrap-track `while` loop semantics
 - `examples\fibonacci.nq`: functions plus mutable locals and `while`
+- `examples\top_level_const.nq`: stage1-owned top-level constants
 - `examples\review_contracts.nq`: AI Contracts and `review` workflow
 
 Current selfhost semantic coverage:
@@ -148,6 +150,7 @@ Current selfhost semantic coverage:
 - field-access-aware local/return inference including imported type facts in the loaded graph
 - match scrutinee typing plus pattern-bound payload typing for the current enum / `option` / `result` subset
 - full-graph body resolution and current value-flow checking across the loaded selfhost module set
+- top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `bool` / `str` initializer subset
 - differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
 - the in-repo selfhost tree runs with no `stage1 limitation` diagnostics
 
@@ -176,7 +179,7 @@ Current remaining gaps:
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- semantic language-feature work, starting with the first live-in-the-language ergonomics batch, resumes after this completed AI tooling spine and must stay attached to concrete examples and differential coverage
+- semantic language-feature work has resumed with top-level `const`; the rest of the first live-in-the-language ergonomics batch must stay attached to concrete examples and differential or stage1-owned coverage
 
 Current AI-first compiler output:
 
@@ -186,7 +189,7 @@ Current AI-first compiler output:
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
-- `refactor-rename` JSON edit plans for supported semantic renames; it never mutates files, and field IDs are rejected until checked field-use refs are exported
+- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants; it never mutates files, and field IDs are rejected until checked field-use refs are exported
 - `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
 
@@ -209,4 +212,4 @@ Current AI-first compiler output:
 
 - Nauqtype is now the active implementation language for the project.
 - The Python compiler remains in-repo only as a frozen bootstrap/reference path.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, file input, bootstrap string helpers, builtin `list<T>`, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, file input, bootstrap string helpers, builtin `list<T>`, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

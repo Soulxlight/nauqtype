@@ -19,6 +19,7 @@ fn main() -> i32 {
     let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
@@ -37,14 +38,14 @@ fn main() -> i32 {
     list_push(mutref sources, make_source_file("main", text));
 
     parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-    collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+    collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
     collect_value_type_facts("main", ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
 
     resolve_modules(ref modules, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
 
     if list_len(ref diags) == 0 {
         return 1;

@@ -159,8 +159,8 @@
 
 ## Next Language Ergonomics Batch
 
-- [ ] Start only after the pre-language AI tooling spine is green
-- [ ] Add top-level `const` with canonical Nauqtype examples
+- [x] Start only after the pre-language AI tooling spine is green
+- [x] Add top-level `const` with canonical Nauqtype examples
 - [ ] Add list literals with canonical Nauqtype examples
 - [ ] Add `match` as an expression with canonical Nauqtype examples
 - [ ] Add `let-else` for `option` / `result` with canonical Nauqtype examples

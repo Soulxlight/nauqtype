@@ -37,7 +37,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 ### Keywords
 
-`and`, `audit`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
+`and`, `audit`, `const`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
 
 ## Tokens
 
@@ -57,7 +57,8 @@ source_file   = { use_decl } { item_without_use } EOF ;
 
 item_without_use = visibility? function_decl
                  | visibility? type_decl
-                 | visibility? enum_decl ;
+                 | visibility? enum_decl
+                 | visibility? const_decl ;
 
 visibility    = "pub" ;
 
@@ -70,6 +71,8 @@ use_decl      = "use" IDENT ";" ;
 
 ```ebnf
 function_decl = "fn" IDENT "(" param_list? ")" "->" type_expr [ audit_block ] block ;
+
+const_decl    = "const" IDENT ":" type_expr "=" const_expr ";" ;
 
 param_list    = param { "," param } [ "," ] ;
 param         = IDENT ":" type_expr ;
@@ -84,6 +87,8 @@ variant_decl  = IDENT [ "(" type_list? ")" ] ;
 
 type_list     = type_expr { "," type_expr } [ "," ] ;
 ```
+
+`const_expr` is deliberately narrower than general `expr` in the first stage1 implementation: literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or` over non-borrow `i32` / `bool` / `str` constants only. String and boolean equality are intentionally rejected in const initializers until there is an explicit compile-time evaluator.
 
 ## Audit Grammar
 

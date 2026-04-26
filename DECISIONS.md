@@ -239,3 +239,11 @@
 - Reason chosen: the first self-build proof means the project can finally teach, exercise, and harden the language through its own implementation path instead of continuing to invest in a throwaway host-language center of gravity.
 - Consequences: new active workflows should move onto the stage1 executable driver first, while Python is limited to narrow bootstrap/reference fixes until the Nauqtype-owned driver and runner fully replace it.
 - Reversible later: partially; bootstrap reference code may survive for history, but the active toolchain direction should remain Nauqtype-first.
+
+## D031: Top-level `const` starts narrow and pure
+
+- Decision: add top-level `const` as the first live-in-the-language ergonomics feature, with `pub const` visibility through flat-root imports and a deliberately narrow v1 initializer subset.
+- Alternatives considered: defer constants until list literals and match expressions, add broad compile-time evaluation immediately, or use a different declaration word.
+- Reason chosen: `const` names make configuration and repeated literals easier for humans and agents to supervise, while a pure `i32` / `bool` / `str` subset gives useful value without hidden evaluation, I/O, or dependency-order complexity.
+- Consequences: constants participate in checked facts, refactor plans, policy metadata, checked handoff, IR, and C emission, but const-to-const initializer references, calls, constructors, lists, borrows, and effects remain rejected for now.
+- Reversible later: extensible; the keyword and declaration form should stay stable, while the initializer subset can grow through recorded milestones.

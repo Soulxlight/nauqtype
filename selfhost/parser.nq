@@ -559,6 +559,40 @@ fn parse_audit(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<d
     }
 }
 
+fn parse_const_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, items: mutref list<top_item>, type_refs: mutref list<type_ref>, is_public: bool) -> unit {
+    advance(mutref cursor);
+    let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let mut const_name = "";
+    match name.kind {
+        tk_ident => {
+            const_name = name.text;
+            list_push(mutref items, make_top_item(file, const_name, item_const, is_public, name.start));
+        },
+        _ => {
+        },
+    }
+    let colon = token_at(ref tokens, cursor);
+    match colon.kind {
+        tk_colon => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, colon, "expected `:` after const name");
+        },
+    }
+    consume_type(ref tokens, mutref cursor, mutref diags, file, mutref type_refs, const_name, type_const_annotation);
+    let eq = token_at(ref tokens, cursor);
+    match eq.kind {
+        tk_eq => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, eq, "expected `=` after const type");
+        },
+    }
+    skip_until_semi(ref tokens, mutref cursor);
+}
+
 fn parse_type_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, items: mutref list<top_item>, type_refs: mutref list<type_ref>, is_public: bool) -> unit {
     advance(mutref cursor);
     let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -887,8 +921,12 @@ audit {
                         parse_enum_decl(ref tokens, mutref cursor, mutref diags, file, mutref items, mutref type_refs, true);
                         item_count = item_count + 1;
                     },
+                    tk_kw_const => {
+                        parse_const_decl(ref tokens, mutref cursor, mutref diags, file, mutref items, mutref type_refs, true);
+                        item_count = item_count + 1;
+                    },
                     _ => {
-                        push_diag(mutref diags, file, next, "expected fn, type, or enum after pub");
+                        push_diag(mutref diags, file, next, "expected fn, type, enum, or const after pub");
                         advance(mutref cursor);
                     },
                 }
@@ -903,6 +941,10 @@ audit {
             },
             tk_kw_enum => {
                 parse_enum_decl(ref tokens, mutref cursor, mutref diags, file, mutref items, mutref type_refs, false);
+                item_count = item_count + 1;
+            },
+            tk_kw_const => {
+                parse_const_decl(ref tokens, mutref cursor, mutref diags, file, mutref items, mutref type_refs, false);
                 item_count = item_count + 1;
             },
             _ => {
@@ -1466,6 +1508,71 @@ fn collect_enum_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref
     }
 }
 
+fn collect_const_decl_fact(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, consts: mutref list<const_fact>) -> unit {
+    advance(mutref cursor);
+    let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let mut const_name = "";
+    let mut const_at = 0;
+    match name.kind {
+        tk_ident => {
+            const_name = name.text;
+            const_at = name.start;
+        },
+        _ => {
+        },
+    }
+    let colon = token_at(ref tokens, cursor);
+    match colon.kind {
+        tk_colon => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, colon, "expected `:` after const name");
+        },
+    }
+    let type_shape = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+    let eq = token_at(ref tokens, cursor);
+    match eq.kind {
+        tk_eq => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, eq, "expected `=` after const type");
+        },
+    }
+    let expr_start = cursor;
+    skip_until_semi(ref tokens, mutref cursor);
+    let expr_end = cursor - 1;
+    if const_name != "" and type_shape.head != "" {
+        list_push(mutref consts, make_const_fact(file, const_name, const_at, type_shape.head, type_shape.arg1_name, type_shape.arg2_name, type_shape.is_borrow, type_shape.borrow_mutable, expr_start, expr_end));
+    }
+}
+
+fn skip_const_decl(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> unit {
+    advance(mutref cursor);
+    consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let colon = token_at(ref tokens, cursor);
+    match colon.kind {
+        tk_colon => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, colon, "expected `:` after const name");
+        },
+    }
+    consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
+    let eq = token_at(ref tokens, cursor);
+    match eq.kind {
+        tk_eq => {
+            advance(mutref cursor);
+        },
+        _ => {
+            push_diag(mutref diags, file, eq, "expected `=` after const type");
+        },
+    }
+    skip_until_semi(ref tokens, mutref cursor);
+}
+
 fn collect_function_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, functions: mutref list<function_fact>, function_params: mutref list<function_param_fact>, calls: mutref list<call_fact>, patterns: mutref list<pattern_ctor_fact>) -> unit {
     advance(mutref cursor);
     let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -1560,10 +1667,10 @@ fn collect_function_facts(tokens: ref list<token>, cursor: mutref i32, diags: mu
     collect_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, mutref calls, mutref patterns);
 }
 
-pub fn collect_typecheck_facts(file: str, tokens: ref list<token>, functions: mutref list<function_fact>, function_params: mutref list<function_param_fact>, variants: mutref list<variant_fact>, variant_payloads: mutref list<variant_payload_fact>, calls: mutref list<call_fact>, patterns: mutref list<pattern_ctor_fact>, diags: mutref list<diag>) -> typecheck_summary
+pub fn collect_typecheck_facts(file: str, tokens: ref list<token>, functions: mutref list<function_fact>, function_params: mutref list<function_param_fact>, variants: mutref list<variant_fact>, variant_payloads: mutref list<variant_payload_fact>, consts: mutref list<const_fact>, calls: mutref list<call_fact>, patterns: mutref list<pattern_ctor_fact>, diags: mutref list<diag>) -> typecheck_summary
 audit {
     intent("Collect flat function, call, and pattern facts for the first selfhost type-checker slice");
-    mutates(functions, function_params, variants, variant_payloads, calls, patterns, diags);
+    mutates(functions, function_params, variants, variant_payloads, consts, calls, patterns, diags);
     effects();
 }
 {
@@ -1620,8 +1727,11 @@ audit {
                     tk_kw_enum => {
                         collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref variants, mutref variant_payloads);
                     },
+                    tk_kw_const => {
+                        collect_const_decl_fact(ref tokens, mutref cursor, mutref diags, file, mutref consts);
+                    },
                     _ => {
-                        push_diag(mutref diags, file, next, "expected fn, type, or enum after pub");
+                        push_diag(mutref diags, file, next, "expected fn, type, enum, or const after pub");
                         advance(mutref cursor);
                     },
                 }
@@ -1634,6 +1744,9 @@ audit {
             },
             tk_kw_enum => {
                 collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref variants, mutref variant_payloads);
+            },
+            tk_kw_const => {
+                collect_const_decl_fact(ref tokens, mutref cursor, mutref diags, file, mutref consts);
             },
             _ => {
                 push_diag(mutref diags, file, current, "expected top-level item");
@@ -2256,8 +2369,11 @@ audit {
                     tk_kw_enum => {
                         collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants, mutref ignored_payloads);
                     },
+                    tk_kw_const => {
+                        skip_const_decl(ref tokens, mutref cursor, mutref diags, file);
+                    },
                     _ => {
-                        push_diag(mutref diags, file, next, "expected fn, type, or enum after pub");
+                        push_diag(mutref diags, file, next, "expected fn, type, enum, or const after pub");
                         advance(mutref cursor);
                     },
                 }
@@ -2270,6 +2386,9 @@ audit {
             },
             tk_kw_enum => {
                 collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants, mutref ignored_payloads);
+            },
+            tk_kw_const => {
+                skip_const_decl(ref tokens, mutref cursor, mutref diags, file);
             },
             _ => {
                 push_diag(mutref diags, file, current, "expected top-level item");
@@ -2582,8 +2701,11 @@ audit {
                     tk_kw_enum => {
                         collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants, mutref ignored_payloads);
                     },
+                    tk_kw_const => {
+                        skip_const_decl(ref tokens, mutref cursor, mutref diags, file);
+                    },
                     _ => {
-                        push_diag(mutref diags, file, next, "expected fn, type, or enum after pub");
+                        push_diag(mutref diags, file, next, "expected fn, type, enum, or const after pub");
                         advance(mutref cursor);
                     },
                 }
@@ -2596,6 +2718,9 @@ audit {
             },
             tk_kw_enum => {
                 collect_enum_facts(ref tokens, mutref cursor, mutref diags, file, mutref ignored_variants, mutref ignored_payloads);
+            },
+            tk_kw_const => {
+                skip_const_decl(ref tokens, mutref cursor, mutref diags, file);
             },
             _ => {
                 push_diag(mutref diags, file, current, "expected top-level item");

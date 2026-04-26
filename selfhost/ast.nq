@@ -3,6 +3,7 @@ pub enum top_item_kind {
     item_type,
     item_enum,
     item_variant,
+    item_const,
 }
 
 pub type top_item {
@@ -186,6 +187,7 @@ pub enum type_ref_kind {
     type_local_annotation,
     type_field,
     type_enum_payload,
+    type_const_annotation,
 }
 
 pub type type_ref {
@@ -405,6 +407,40 @@ audit {
         type_arg2_name: type_arg2_name,
         is_borrow: is_borrow,
         borrow_mutable: borrow_mutable,
+    };
+}
+
+pub type const_fact {
+    module: str,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+    expr_start: i32,
+    expr_end: i32,
+}
+
+pub fn make_const_fact(module: str, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool, expr_start: i32, expr_end: i32) -> const_fact
+audit {
+    intent("Build a typed top-level constant fact for checked stage1 tooling and backend work");
+    mutates();
+    effects();
+}
+{
+    return const_fact {
+        module: module,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+        expr_start: expr_start,
+        expr_end: expr_end,
     };
 }
 

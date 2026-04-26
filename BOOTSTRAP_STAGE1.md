@@ -135,5 +135,5 @@ Stage1 has crossed the first copied-selfhost self-build proof and now owns the a
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- `review` v2 and richer machine-readable compiler surfaces after the current JSON diagnostics baseline
+- live-in-the-language ergonomics now resume after the completed AI tooling spine; top-level `const` is the first completed item in that batch
 - retained explicit limitation boundary today: non-name callees and member-call syntax

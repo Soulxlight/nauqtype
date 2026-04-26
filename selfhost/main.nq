@@ -212,7 +212,7 @@ fn read_module_source(name: str, workspace_root: str, entry_module: str, entry_p
     return read_workspace_module(workspace_root, name);
 }
 
-fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_path: str, loading_path: str, seen_modules: mutref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, diags: mutref list<diag>) -> unit {
+fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_path: str, loading_path: str, seen_modules: mutref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, const_facts: mutref list<const_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, diags: mutref list<diag>) -> unit {
     if list_contains(ref seen_modules, name) {
         return;
     }
@@ -232,7 +232,7 @@ fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_pa
                 let entry = list_get(ref imports, import_index);
                 match entry {
                     Some(import_name) => {
-                        load_module_graph(import_name, workspace_root, entry_module, entry_path, next_loading_path, mutref seen_modules, mutref loaded_modules, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+                        load_module_graph(import_name, workspace_root, entry_module, entry_path, next_loading_path, mutref seen_modules, mutref loaded_modules, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
                     },
                     None => {
                     },
@@ -246,7 +246,7 @@ fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_pa
             list_push(mutref loaded_modules, name);
             list_push(mutref sources, file);
             parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-            collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+            collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
             collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
             collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref diags);
         },
@@ -604,6 +604,7 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
@@ -620,6 +621,7 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut checked_functions: list<checked_function> = list();
     let mut checked_bindings: list<checked_binding> = list();
     let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
@@ -639,6 +641,7 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut ir_function_sigs: list<ir_function_sig> = list();
     let mut ir_functions: list<ir_function> = list();
     let mut ir_locals: list<ir_local> = list();
+    let mut ir_consts: list<ir_const_decl> = list();
     let mut ir_blocks: list<ir_block> = list();
     let mut ir_statements: list<ir_stmt> = list();
     let mut ir_match_arms: list<ir_match_arm> = list();
@@ -655,19 +658,20 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut ir_variant_payload_decls: list<ir_variant_payload_decl> = list();
     let mut c_lines: list<str> = list();
     let mut diags: list<diag> = list();
-    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, true, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
-    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
 
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
-    let ir_summary = build_ir_program_for_entry(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
-    let c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
+    let ir_summary = build_ir_program_for_entry(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_consts, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+    let c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_consts, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
 
     if list_len(ref diags) == 0 and write_output {
         let rendered_c = render_c_lines(ref c_lines);
@@ -724,6 +728,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
@@ -740,6 +745,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     let mut checked_functions: list<checked_function> = list();
     let mut checked_bindings: list<checked_binding> = list();
     let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
@@ -757,15 +763,16 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
     let mut diags: list<diag> = list();
 
-    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
-    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     if list_len(ref diags) > 0 {
@@ -790,6 +797,7 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     let mut function_facts: list<function_fact> = list();
     let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
     let mut match_arms: list<match_arm_fact> = list();
@@ -804,6 +812,7 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     let mut checked_functions: list<checked_function> = list();
     let mut checked_bindings: list<checked_binding> = list();
     let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
@@ -820,15 +829,16 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     let mut checked_expr_children: list<checked_expr_child> = list();
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
 
-    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
-    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     if list_len(ref diags) > 0 {
@@ -892,6 +902,7 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
     let mut function_facts: list<function_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
     let mut field_facts: list<field_fact> = list();
@@ -906,6 +917,7 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
     let mut checked_functions: list<checked_function> = list();
     let mut checked_bindings: list<checked_binding> = list();
     let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
@@ -922,15 +934,16 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
     let mut checked_expr_children: list<checked_expr_child> = list();
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
 
-    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
-    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     if list_len(ref diags) > 0 {
@@ -957,6 +970,7 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
     let mut function_param_facts: list<function_param_fact> = list();
     let mut variant_facts: list<variant_fact> = list();
     let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut pattern_facts: list<pattern_ctor_fact> = list();
     let mut typed_bindings: list<typed_binding_fact> = list();
@@ -973,6 +987,7 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
     let mut checked_functions: list<checked_function> = list();
     let mut checked_bindings: list<checked_binding> = list();
     let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
@@ -989,15 +1004,16 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
     let mut checked_expr_children: list<checked_expr_child> = list();
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
     let mut diags: list<diag> = list();
-    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+    load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
     resolve_modules(ref loaded, ref uses, ref items, mutref diags);
     resolve_types(ref type_refs, ref uses, ref items, mutref diags);
     resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, false, mutref diags);
-    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
-    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+    collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
     let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     if list_len(ref diags) > 0 {
@@ -1130,8 +1146,8 @@ fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
     let compile_result = compile_emitted_c(c_path, exe_path);
     match compile_result {
         Ok(compile_status) => {
-            emit_process_output(compile_status);
             if compile_status.exit_code != 0 {
+                emit_process_output(compile_status);
                 return compile_status.exit_code;
             }
         },

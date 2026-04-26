@@ -179,6 +179,134 @@ class Stage1DriverTests(unittest.TestCase):
             stage1_c = emitted.read_text(encoding="utf-8")
             self.assertEqual(normalize_structural_c(stage1_c), normalize_structural_c(stage0_c))
 
+    def test_stage1_driver_top_level_const_check_emit_build_and_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    const answer: i32 = 40 + 2;
+                    const greeting: str = "hello const";
+                    const should_print: bool = true and not false;
+
+                    fn main() -> i32 {
+                        if should_print {
+                            print_line(greeting);
+                        }
+                        return answer - 42;
+                    }
+                    """,
+                },
+            )
+
+            checked = self._run_driver(["check", str(tmp / "main.nq")])
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertEqual(checked.stdout, "")
+            self.assertEqual(checked.stderr, "")
+
+            out_c = tmp / "build" / "const_main.c"
+            emitted = self._run_driver(["emit-c", str(tmp / "main.nq"), "-o", str(out_c)])
+            self.assertEqual(emitted.returncode, 0, emitted.stdout + emitted.stderr)
+            c_text = out_c.read_text(encoding="utf-8")
+            self.assertIn("static const int32_t nqc_main__answer", c_text)
+            self.assertIn("static const NQStr nqc_main__greeting", c_text)
+            self.assertIn("static const bool nqc_main__should_print", c_text)
+            self.assertIn("nq_print_line(nqc_main__greeting)", c_text)
+
+            built = self._run_driver(["build", str(tmp / "main.nq")])
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+
+            ran = self._run_driver(["run", str(tmp / "main.nq")])
+            self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+            self.assertEqual(ran.stdout, "hello const\n")
+            self.assertEqual(ran.stderr, "")
+
+    def test_stage1_driver_top_level_const_imports_facts_refactor_and_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    use helper;
+
+                    fn main() -> i32 {
+                        return helper_value;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub const helper_value: i32 = 21 * 2;
+
+                    pub fn read_helper() -> i32 {
+                        return helper_value;
+                    }
+                    """,
+                },
+            )
+            before_main = (tmp / "main.nq").read_text(encoding="utf-8")
+            before_helper = (tmp / "helper.nq").read_text(encoding="utf-8")
+
+            facts = self._run_driver(["facts", str(tmp / "main.nq"), "--format", "v2"])
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            payload = json.loads(facts.stdout)
+            self.assertTrue(any(entry["id"] == "const:helper::helper_value" and entry["kind"] == "const" for entry in payload["definitions"]))
+            self.assertTrue(
+                any(
+                    entry["kind"] == "value"
+                    and entry["target_kind"] == "const"
+                    and entry["target_id"] == "const:helper::helper_value"
+                    and entry["from"] == "fn:main::main"
+                    for entry in payload["references"]
+                )
+            )
+
+            refactor = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "const:helper::helper_value", "renamed_value"])
+            self.assertEqual(refactor.returncode, 0, refactor.stdout + refactor.stderr)
+            plan = json.loads(refactor.stdout)
+            self.assertTrue(plan["ok"])
+            self.assertEqual([edit["kind"] for edit in plan["edits"]], ["definition", "reference", "reference"])
+            self.assertTrue(all(edit["replacement"] == "renamed_value" for edit in plan["edits"]))
+            self.assertEqual((tmp / "main.nq").read_text(encoding="utf-8"), before_main)
+            self.assertEqual((tmp / "helper.nq").read_text(encoding="utf-8"), before_helper)
+
+            policy = tmp / "nauqtype.policy.json"
+            policy.write_text(
+                json.dumps({"version": 1, "targets": [{"target_id": "const:helper::helper_value", "owner": "human:lead", "review": "required"}]}),
+                encoding="utf-8",
+            )
+            policy_result = self._run_driver(["policy-check", str(tmp / "main.nq"), str(policy)])
+            self.assertEqual(policy_result.returncode, 0, policy_result.stdout + policy_result.stderr)
+            policy_payload = json.loads(policy_result.stdout)
+            self.assertTrue(policy_payload["ok"])
+            self.assertTrue(policy_payload["targets"][0]["known"])
+
+    def test_stage1_driver_top_level_const_rejects_unsupported_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    const wrong_type: bool = 1 + 2;
+                    const bad_initializer: i32 = print_line("nope");
+                    const bad_shape: list<i32> = list();
+                    const bad_string_compare: bool = "a" == "a";
+
+                    fn main() -> i32 {
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("const initializer does not match declared type", combined)
+            self.assertIn("stage1 limitation: unsupported const initializer expression", combined)
+            self.assertIn("top-level const supports only non-borrow i32, bool, or str in v1", combined)
+            self.assertIn("const comparison operand must have integer type", combined)
+
     def test_stage1_driver_review_matches_stage0_golden(self) -> None:
         example = self.root / "examples" / "review_contracts.nq"
         golden = self.root / "tests" / "golden" / "review" / "review_contracts.json"

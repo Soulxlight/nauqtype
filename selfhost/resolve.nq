@@ -154,6 +154,57 @@ fn is_variant_item(item: top_item) -> bool {
     }
 }
 
+fn is_const_item(item: top_item) -> bool {
+    match item.kind {
+        item_const => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn module_exports_const(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.is_public and value.name == name and is_const_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_contains_const(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and is_const_item(value) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn module_has_local_const_name(items: ref list<top_item>, module: str, name: str) -> bool {
+    return module_contains_const(ref items, module, name);
+}
+
 fn module_exports_variant(items: ref list<top_item>, module: str, name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref items) {
@@ -361,6 +412,45 @@ fn module_has_hidden_imported_variant_name(items: ref list<top_item>, uses: ref 
         match entry {
             Some(value) => {
                 if value.module == module and module_contains_variant(ref items, value.name, name) and not module_exports_variant(ref items, value.name, name) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn module_has_visible_const_name(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> bool {
+    if module_has_local_const_name(ref items, module, name) {
+        return true;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_const(ref items, value.name, name) {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn module_has_hidden_imported_const_name(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> bool {
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_contains_const(ref items, value.name, name) and not module_exports_const(ref items, value.name, name) {
                     return true;
                 }
             },
@@ -756,13 +846,16 @@ fn resolve_function_refs(scopes: ref list<body_scope>, bindings: ref list<body_b
                         if not has_local {
                             if module_has_visible_variant_name(ref items, ref uses, current.module, current.name) {
                             } else {
-                                if module_has_visible_function_name(ref items, ref uses, current.module, current.name) {
-                                    push_diag(mutref diags, current.module, current.at, "function name cannot be used as a plain value in function body");
+                                if module_has_visible_const_name(ref items, ref uses, current.module, current.name) {
                                 } else {
-                                    if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) {
-                                        push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
+                                    if module_has_visible_function_name(ref items, ref uses, current.module, current.name) {
+                                        push_diag(mutref diags, current.module, current.at, "function name cannot be used as a plain value in function body");
                                     } else {
-                                        push_diag(mutref diags, current.module, current.at, "unknown name in function body");
+                                        if module_has_hidden_imported_expression_name(ref items, ref uses, current.module, current.name) or module_has_hidden_imported_const_name(ref items, ref uses, current.module, current.name) {
+                                            push_diag(mutref diags, current.module, current.at, "name exists in an imported module but is not `pub`");
+                                        } else {
+                                            push_diag(mutref diags, current.module, current.at, "unknown name in function body");
+                                        }
                                     }
                                 }
                             }

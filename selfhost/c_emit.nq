@@ -663,6 +663,10 @@ fn binding_name(local: ir_local) -> str {
     return concat5("nqv_", i32_to_str(local.binding_id), "_", local.name, "");
 }
 
+fn const_name(module_name: str, name: str) -> str {
+    return concat3("nqc_", sanitize_name(named_type_full_name(module_name, name)), "");
+}
+
 fn function_name(internal_name: str) -> str {
     return concat3("nq_fn_", sanitize_name(internal_name), "");
 }
@@ -1329,6 +1333,28 @@ fn emit_user_struct(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
     return;
 }
 
+fn emit_const_decl(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, const_decl: ir_const_decl, diags: mutref list<diag>) -> unit {
+    let expr_entry = lookup_expression(ref expressions, const_decl.expr_id);
+    match expr_entry {
+        Some(expr) => {
+            let c_name = const_name(const_decl.module_name, const_decl.name);
+            let mut value_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, const_decl.expr_id, mutref diags);
+            match expr.kind {
+                ir_expr_str => {
+                    value_text = concat6("{ .data = \"", escape_c_string(expr.name), "\", .len = ", i32_to_str(str_len(expr.name)), " }", "");
+                },
+                _ => {
+                },
+            }
+            append_line(mutref lines, concat6("static const ", c_type(ref type_shapes, const_decl.type_id), " ", c_name, " = ", str_concat(value_text, ";")));
+        },
+        None => {
+            push_c_error(mutref diags, const_decl.module_name, const_decl.at, str_concat("missing const initializer expression during C emission: ", const_decl.name));
+        },
+    }
+    return;
+}
+
 fn lookup_param_local(locals: ref list<ir_local>, function_id: i32, param_index: i32) -> option<ir_local> {
     let mut index = 0;
     while index < list_len(ref locals) {
@@ -1543,6 +1569,9 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                             return "0";
                         },
                     }
+                },
+                ir_expr_const => {
+                    return const_name(expr.target_origin_module, expr.name);
                 },
                 ir_expr_borrow => {
                     let local_entry = lookup_local(ref locals, expr.local_id);
@@ -2132,7 +2161,7 @@ fn validate_type_shapes(type_shapes: ref list<ir_type_shape>, diags: mutref list
     return;
 }
 
-fn validate_c_emit_inputs(function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> unit {
+fn validate_c_emit_inputs(function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, consts: ref list<ir_const_decl>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> unit {
     validate_type_shapes(ref type_shapes, mutref diags);
 
     let mut sig_index = 0;
@@ -2172,6 +2201,19 @@ fn validate_c_emit_inputs(function_sigs: ref list<ir_function_sig>, functions: r
             },
         }
         local_index = local_index + 1;
+    }
+
+    let mut const_index = 0;
+    while const_index < list_len(ref consts) {
+        let entry = list_get(ref consts, const_index);
+        match entry {
+            Some(value) => {
+                require_type_shape(mutref diags, value.module_name, value.at, str_concat("missing const type truth during C emission: ", value.name), ref type_shapes, value.type_id);
+            },
+            None => {
+            },
+        }
+        const_index = const_index + 1;
     }
 
     let mut field_index = 0;
@@ -2445,7 +2487,7 @@ fn emit_block(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loc
     return;
 }
 
-pub fn emit_c_program(programs: ref list<ir_program>, function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, lines_out: mutref list<str>, diags: mutref list<diag>) -> c_emit_summary
+pub fn emit_c_program(programs: ref list<ir_program>, function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, consts: ref list<ir_const_decl>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, lines_out: mutref list<str>, diags: mutref list<diag>) -> c_emit_summary
 audit {
     intent("Emit deterministic stage1 C from backend-ready IR");
     mutates(lines_out, diags);
@@ -2458,7 +2500,7 @@ audit {
       let mut list_types: list<i32> = list();
       let mut temp_index = 0;
 
-      validate_c_emit_inputs(ref function_sigs, ref functions, ref locals, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref diags);
+      validate_c_emit_inputs(ref function_sigs, ref functions, ref locals, ref consts, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref diags);
       if list_len(ref diags) > start_diag_count {
           return make_c_emit_summary(
               list_len(ref lines_out),
@@ -2535,6 +2577,22 @@ audit {
             },
         }
         list_index = list_index + 1;
+    }
+
+    let mut const_index = 0;
+    while const_index < list_len(ref consts) {
+        let entry = list_get(ref consts, const_index);
+        match entry {
+            Some(value) => {
+                emit_const_decl(mutref lines_out, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, mutref diags);
+            },
+            None => {
+            },
+        }
+        const_index = const_index + 1;
+    }
+    if list_len(ref consts) > 0 {
+        append_line(mutref lines_out, "");
     }
 
     let mut function_index = 0;
