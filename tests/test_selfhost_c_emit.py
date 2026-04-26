@@ -283,6 +283,176 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("int main(int argc, char** argv)", emitted)
         self.assertIn("nq_init_process_args(argc, argv);", emitted)
 
+    def test_stage1_c_emit_lowers_match_expression_and_let_else(self) -> None:
+        modules = {
+            "main": """
+            fn choose(maybe: option<i32>) -> i32 {
+                let picked = match maybe {
+                    Some(value) => value + 2,
+                    None => 5,
+                };
+                return picked;
+            }
+
+            fn choose_return(maybe: option<i32>) -> i32 {
+                return match maybe {
+                    Some(value) => value,
+                    None => 0,
+                };
+            }
+
+            fn unwrap_option(maybe: option<i32>) -> i32 {
+                let Some(value) = maybe else {
+                    return 7;
+                };
+                return value + 1;
+            }
+
+            fn unwrap_result(parsed: result<i32, i32>) -> i32 {
+                let Ok(value) = parsed else {
+                    return 9;
+                };
+                return value + 1;
+            }
+
+            fn main() -> i32 {
+                let a = choose(Some(40));
+                let b = unwrap_option(None);
+                let c = unwrap_result(Ok(2));
+                let d = unwrap_result(Err(0));
+                let e = choose_return(Some(6));
+                if a == 42 and b == 7 and c == 3 and d == 9 and e == 6 {
+                    return 0;
+                }
+                return 1;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertEqual(returncode, 0, output)
+        self.assertIn("switch (nq_tmp_", emitted)
+        self.assertIn("if (nq_tmp_", emitted)
+        self.assertIn("nq_match_result_", emitted)
+        self.assertNotIn("({", emitted)
+
+    def test_stage1_rejects_match_expression_arm_type_mismatch(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let maybe: option<i32> = None;
+                let picked = match maybe {
+                    Some(value) => value,
+                    None => "fallback",
+                };
+                return picked;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("match expression arm result types must match exactly", output)
+
+    def test_stage1_rejects_non_exhaustive_match_expression(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let maybe: option<i32> = Some(1);
+                let picked = match maybe {
+                    Some(value) => value,
+                };
+                return picked;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("match expression must be exhaustive", output)
+
+    def test_stage1_rejects_match_expression_on_non_sum_scrutinee(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let picked = match 1 {
+                    _ => 2,
+                };
+                return picked;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("match expression scrutinee must be option, result, or enum", output)
+
+    def test_stage1_rejects_let_else_binding_in_else_block(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let maybe: option<i32> = None;
+                let Some(value) = maybe else {
+                    return value;
+                };
+                return value;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("unknown name in function body", output)
+
+    def test_stage1_borrow_checks_match_expression_arm_results(self) -> None:
+        modules = {
+            "main": """
+            type box {
+                items: list<i32>,
+            }
+
+            fn take(value: box) -> i32 {
+                return 1;
+            }
+
+            fn main() -> i32 {
+                let maybe: option<box> = Some(box { items: [1] });
+                let picked = match maybe {
+                    Some(value) => take(value) + take(value),
+                    None => 0,
+                };
+                return picked;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("use of moved value `value`", output)
+
+    def test_stage1_rejects_let_else_without_explicit_exit(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let maybe: option<i32> = None;
+                let Some(value) = maybe else {
+                    print_line("missing");
+                };
+                return value;
+            }
+            """,
+        }
+
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(emitted, "")
+        self.assertIn("let-else `else` block must exit explicitly with `return` in V1", output)
+
     def test_stage1_c_emit_matches_stage0_structurally_on_locked_corpus(self) -> None:
         cases = {
             "hello_print": {

@@ -28,6 +28,7 @@ pub enum checked_stmt_kind {
     checked_stmt_if,
     checked_stmt_while,
     checked_stmt_match,
+    checked_stmt_let_else,
 }
 
 pub enum checked_expr_kind {
@@ -58,6 +59,7 @@ pub enum checked_expr_kind {
     checked_expr_gte,
     checked_expr_and,
     checked_expr_or,
+    checked_expr_match,
 }
 
 pub enum checked_type_shape_kind {
@@ -197,6 +199,7 @@ pub type checked_match_arm {
     constructor_enum_name: str,
     is_wildcard: bool,
     pattern_id: i32,
+    result_expr_id: i32,
 }
 
 pub type checked_pattern_binding {
@@ -492,6 +495,16 @@ fn checked_stmt_kind_matches(left: checked_stmt_kind, right: checked_stmt_kind) 
         checked_stmt_match => {
             match right {
                 checked_stmt_match => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_let_else => {
+            match right {
+                checked_stmt_let_else => {
                     return true;
                 },
                 _ => {
@@ -809,6 +822,16 @@ fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) 
                 },
             }
         },
+        checked_expr_match => {
+            match right {
+                checked_expr_match => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
     }
 }
 
@@ -841,6 +864,48 @@ fn token_can_end_expr(tok: token) -> bool {
         _ => {
             return false;
         },
+    }
+}
+
+fn skip_until_match_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    let mut bracket_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbrace => {
+                if paren_depth == 0 and bracket_depth == 0 {
+                    return;
+                }
+                cursor = cursor + 1;
+            },
+            _ => {
+                cursor = cursor + 1;
+            },
+        }
     }
 }
 
@@ -2302,6 +2367,23 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         return build_literal_expr(function_id, module_name, function_name, scope_id, at, start, end, checked_expr_unit, "unit", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
     }
 
+    let expr_head = token_at(ref tokens, expr_start);
+    match expr_head.kind {
+        tk_kw_match => {
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_match, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+            let mut scrutinee_end = expr_start + 1;
+            skip_until_match_block(ref tokens, mutref scrutinee_end);
+            let scrutinee_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, scrutinee_end, expr_head.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+            if scrutinee_id < 0 {
+                return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing match-expression scrutinee");
+            }
+            push_expr_child(mutref expr_children, expr_id, 0, scrutinee_id);
+            return expr_id;
+        },
+        _ => {
+        },
+    }
+
     let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
     if or_index >= 0 {
         let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_or, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
@@ -2942,6 +3024,15 @@ fn lookup_predicted_stmt_id(predicted: ref list<predicted_stmt_id>, module_name:
                                 },
                             }
                         },
+                        stmt_let_else => {
+                            match kind {
+                                stmt_let_else => {
+                                    return value.id;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
                     }
                 }
             },
@@ -3012,49 +3103,56 @@ fn append_bindings(function_params: ref list<function_param_fact>, stmt_facts: r
         let stmt_entry = list_get(ref stmt_facts, stmt_index);
         match stmt_entry {
             Some(current) => {
+                let mut is_local_binding_stmt = false;
                 match current.kind {
                     stmt_local => {
-                        let function_id = lookup_function_id(ref functions, current.module, current.function_name);
-                        if function_id >= 0 {
-                            let mut ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
-                            if ctx.head == "" and current.name != "" {
-                                ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
-                            }
-                            if ctx.head == "" {
-                                push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing resolved local binding type for checked handoff: ", current.name));
-                            }
-                            let mut binding_is_borrow = exact_resolved_binding_is_borrow(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
-                            if not binding_is_borrow and current.name != "" {
-                                binding_is_borrow = visible_resolved_binding_is_borrow(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
-                            }
-                            let mut binding_borrow_mutable = exact_resolved_binding_borrow_mutable(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
-                            if not binding_borrow_mutable and current.name != "" {
-                                binding_borrow_mutable = visible_resolved_binding_borrow_mutable(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
-                            }
-                            let type_id = intern_checked_type_id(ctx.head, ctx.arg1_name, ctx.arg2_name, binding_is_borrow, binding_borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
-                            list_push(mutref bindings, checked_binding {
-                                id: list_len(ref bindings) + 1,
-                                function_id: function_id,
-                                module_name: current.module,
-                                function_name: current.function_name,
-                                scope_id: current.scope_id,
-                                name: current.name,
-                                at: current.at,
-                                kind: checked_binding_local,
-                                type_name: ctx.head,
-                                type_arg1_name: ctx.arg1_name,
-                                type_arg2_name: ctx.arg2_name,
-                                is_borrow: binding_is_borrow,
-                                borrow_mutable: binding_borrow_mutable,
-                                type_id: type_id,
-                                origin_stmt_id: lookup_predicted_stmt_id(ref predicted_stmt_ids, current.module, current.function_name, current.scope_id, current.at, current.kind, current.name),
-                                origin_arm_id: -1,
-                                param_index: -1,
-                            });
-                        }
+                        is_local_binding_stmt = true;
+                    },
+                    stmt_let_else => {
+                        is_local_binding_stmt = true;
                     },
                     _ => {
                     },
+                }
+                if is_local_binding_stmt {
+                    let function_id = lookup_function_id(ref functions, current.module, current.function_name);
+                    if function_id >= 0 {
+                        let mut ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
+                        if ctx.head == "" and current.name != "" {
+                            ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                        }
+                        if ctx.head == "" {
+                            push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing resolved local binding type for checked handoff: ", current.name));
+                        }
+                        let mut binding_is_borrow = exact_resolved_binding_is_borrow(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                        if not binding_is_borrow and current.name != "" {
+                            binding_is_borrow = visible_resolved_binding_is_borrow(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                        }
+                        let mut binding_borrow_mutable = exact_resolved_binding_borrow_mutable(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                        if not binding_borrow_mutable and current.name != "" {
+                            binding_borrow_mutable = visible_resolved_binding_borrow_mutable(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                        }
+                        let type_id = intern_checked_type_id(ctx.head, ctx.arg1_name, ctx.arg2_name, binding_is_borrow, binding_borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
+                        list_push(mutref bindings, checked_binding {
+                            id: list_len(ref bindings) + 1,
+                            function_id: function_id,
+                            module_name: current.module,
+                            function_name: current.function_name,
+                            scope_id: current.scope_id,
+                            name: current.name,
+                            at: current.at,
+                            kind: checked_binding_local,
+                            type_name: ctx.head,
+                            type_arg1_name: ctx.arg1_name,
+                            type_arg2_name: ctx.arg2_name,
+                            is_borrow: binding_is_borrow,
+                            borrow_mutable: binding_borrow_mutable,
+                            type_id: type_id,
+                            origin_stmt_id: lookup_predicted_stmt_id(ref predicted_stmt_ids, current.module, current.function_name, current.scope_id, current.at, current.kind, current.name),
+                            origin_arm_id: -1,
+                            param_index: -1,
+                        });
+                    }
                 }
             },
             None => {
@@ -3208,6 +3306,15 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                             stmt_is_borrow = lookup_binding_is_borrow(ref checked_bindings, target_binding_id);
                             stmt_borrow_mutable = lookup_binding_borrow_mutable(ref checked_bindings, target_binding_id);
                         },
+                        stmt_let_else => {
+                            stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
+                            if stmt_type_ctx.head == "" and current.name != "" {
+                                stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
+                            }
+                            target_binding_id = exact_binding_id(ref checked_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                            stmt_is_borrow = lookup_binding_is_borrow(ref checked_bindings, target_binding_id);
+                            stmt_borrow_mutable = lookup_binding_borrow_mutable(ref checked_bindings, target_binding_id);
+                        },
                         stmt_assign => {
                             stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
                             target_binding_id = visible_binding_id(ref checked_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
@@ -3240,6 +3347,14 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         stmt_local => {
                             if target_binding_id < 0 {
                                 push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing local target binding id in checked handoff: ", current.name));
+                            }
+                        },
+                        stmt_let_else => {
+                            if target_binding_id < 0 {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing let-else target binding id in checked handoff: ", current.name));
+                            }
+                            if lookup_block_id(ref blocks, current.module, current.function_name, current.child_scope_id) < 0 {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing else block id for checked let-else statement");
                             }
                         },
                         stmt_assign => {
@@ -3293,6 +3408,9 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         },
                         stmt_match => {
                             checked_kind = checked_stmt_match;
+                        },
+                        stmt_let_else => {
+                            checked_kind = checked_stmt_let_else;
                         },
                     }
                     list_push(mutref statements, checked_stmt {
@@ -3463,14 +3581,13 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
     return consume_handoff_limitation_detail(mutref diags, module_name, current.start, "unsupported checked pattern shape");
 }
 
-fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, module_name: str, tokens: ref list<token>, statements: ref list<checked_stmt>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, checked_match_arms: mutref list<checked_match_arm>, checked_pattern_bindings: mutref list<checked_pattern_binding>, checked_patterns: mutref list<checked_pattern>, checked_pattern_children: mutref list<checked_pattern_child>, diags: mutref list<diag>) -> unit {
+fn append_match_arms_for_source(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, pattern_bindings: ref list<pattern_binding_fact>, checked_bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, module_name: str, tokens: ref list<token>, statements: ref list<checked_stmt>, checked_functions: ref list<checked_function>, blocks: ref list<checked_block>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, checked_match_arms: mutref list<checked_match_arm>, checked_pattern_bindings: mutref list<checked_pattern_binding>, checked_patterns: mutref list<checked_pattern>, checked_pattern_children: mutref list<checked_pattern_child>, diags: mutref list<diag>) -> unit {
     let mut arm_index = 0;
     while arm_index < list_len(ref match_arms) {
         let arm_entry = list_get(ref match_arms, arm_index);
         match arm_entry {
             Some(current) => {
                 if current.module == module_name {
-                    let stmt_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
                     let mut owner_stmt_id = -1;
                     let mut statement_index = 0;
                     while statement_index < list_len(ref statements) {
@@ -3479,6 +3596,19 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                             Some(value) => {
                                 if value.module_name == current.module and value.function_name == current.function_name and checked_stmt_kind_matches(value.kind, checked_stmt_match) and value.at == current.match_at {
                                     owner_stmt_id = value.id;
+                                }
+                                if current.is_expression and value.module_name == current.module and value.function_name == current.function_name and value.expr_id > 0 {
+                                    let expr_entry = list_get(ref expressions, value.expr_id - 1);
+                                    match expr_entry {
+                                        Some(expr_value) => {
+                                            let expr_token = token_at(ref tokens, expr_value.start);
+                                            if checked_expr_kind_matches(expr_value.kind, checked_expr_match) and expr_token.start == current.match_at {
+                                                owner_stmt_id = value.id;
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
                                 }
                             },
                             None => {
@@ -3513,9 +3643,31 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                     }
                     let function_id = lookup_function_id(ref checked_functions, current.module, current.function_name);
                     let block_id = lookup_block_id(ref blocks, current.module, current.function_name, current.scope_id);
+                    let mut result_expr_id = -1;
+                    if current.is_expression {
+                        let mut result_expected_ctx = empty_expected_type_ctx();
+                        let mut owner_lookup_index = 0;
+                        while owner_lookup_index < list_len(ref statements) {
+                            let owner_entry = list_get(ref statements, owner_lookup_index);
+                            match owner_entry {
+                                Some(owner_stmt) => {
+                                    if owner_stmt.id == owner_stmt_id {
+                                        result_expected_ctx = make_expected_type_ctx(owner_stmt.type_name, owner_stmt.type_arg1_name, owner_stmt.type_arg2_name);
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            owner_lookup_index = owner_lookup_index + 1;
+                        }
+                        result_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref checked_bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, current.module, current.function_name, current.scope_id, ref tokens, current.body_start, current.body_end, current.at, result_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                    }
                     let pattern_id = build_checked_pattern_tree(ref variants, ref uses, ref items, ref checked_bindings, list_len(ref checked_match_arms) + 1, function_id, current.module, current.function_name, current.scope_id, ref tokens, current.pattern_start, current.pattern_end, mutref checked_patterns, mutref checked_pattern_children, mutref diags);
                     if owner_stmt_id < 0 or function_id < 0 or block_id < 0 {
                         push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing checked match arm owner ids");
+                    }
+                    if current.is_expression and result_expr_id < 0 {
+                        push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing match-expression arm result expression");
                     }
                     list_push(mutref checked_match_arms, checked_match_arm {
                         id: list_len(ref checked_match_arms) + 1,
@@ -3531,6 +3683,7 @@ fn append_match_arms_for_source(variants: ref list<variant_fact>, uses: ref list
                         constructor_enum_name: constructor_enum_name,
                         is_wildcard: is_wildcard,
                         pattern_id: pattern_id,
+                        result_expr_id: result_expr_id,
                     });
                     let new_arm_id = list_len(ref checked_match_arms);
                     let mut binding_index = 0;
@@ -3601,7 +3754,7 @@ audit {
             Some(current_source) => {
                 let tokens = lex(current_source.text);
                 append_statements_for_source(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings_out, ref resolved_bindings, ref field_facts, ref stmt_facts, ref uses, ref items, current_source.name, ref tokens, ref functions_out, ref blocks_out, mutref type_shapes_out, mutref statements_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref diags);
-                append_match_arms_for_source(ref variants, ref uses, ref items, ref match_arms, ref pattern_bindings, ref bindings_out, ref resolved_bindings, current_source.name, ref tokens, ref statements_out, ref functions_out, ref blocks_out, mutref match_arms_out, mutref pattern_bindings_out, mutref patterns_out, mutref pattern_children_out, mutref diags);
+                append_match_arms_for_source(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref field_facts, ref uses, ref items, ref match_arms, ref pattern_bindings, ref bindings_out, ref resolved_bindings, current_source.name, ref tokens, ref statements_out, ref functions_out, ref blocks_out, mutref type_shapes_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref match_arms_out, mutref pattern_bindings_out, mutref patterns_out, mutref pattern_children_out, mutref diags);
             },
             None => {
             },
@@ -4184,7 +4337,10 @@ audit {
         let arm_entry = list_get(ref match_arms, arm_index);
         match arm_entry {
             Some(value) => {
-                if value.stmt_id <= 0 or value.block_id <= 0 {
+                if value.stmt_id <= 0 {
+                    return false;
+                }
+                if value.block_id <= 0 and value.result_expr_id <= 0 {
                     return false;
                 }
             },

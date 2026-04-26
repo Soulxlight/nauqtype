@@ -1963,6 +1963,10 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     push_c_error(mutref diags, "", expr.at, "missing binary child expression");
                     return "0";
                 },
+                ir_expr_match => {
+                    push_c_error(mutref diags, "", expr.at, "match expression requires statement lowering before C expression emission");
+                    return "0";
+                },
                 ir_expr_list => {
                     let list_shape_entry = lookup_type_shape(ref type_shapes, expr.type_id);
                     match list_shape_entry {
@@ -2500,6 +2504,297 @@ fn emit_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>
     return;
 }
 
+fn ir_expr_id_is_match(expressions: ref list<ir_expr>, expr_id: i32) -> bool {
+    let entry = lookup_expression(ref expressions, expr_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                ir_expr_match => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn let_else_success_variant(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
+    let shape_entry = lookup_type_shape(ref type_shapes, type_id);
+    match shape_entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_option => {
+                    return "Some";
+                },
+                checked_type_result => {
+                    return "Ok";
+                },
+                _ => {
+                    return "";
+                },
+            }
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+fn pattern_is_default(pattern: ir_pattern) -> bool {
+    match pattern.kind {
+        ir_pattern_wildcard => {
+            return true;
+        },
+        ir_pattern_bind => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn match_arms_have_default(arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref arms) {
+        let arm_entry = list_get(ref arms, index);
+        match arm_entry {
+            Some(arm) => {
+                let pattern_entry = lookup_pattern(ref patterns, arm.pattern_id);
+                match pattern_entry {
+                    Some(pattern) => {
+                        if pattern_is_default(pattern) {
+                            return true;
+                        }
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn match_arms_include_variant(arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, variant_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref arms) {
+        let arm_entry = list_get(ref arms, index);
+        match arm_entry {
+            Some(arm) => {
+                let pattern_entry = lookup_pattern(ref patterns, arm.pattern_id);
+                match pattern_entry {
+                    Some(pattern) => {
+                        match pattern.kind {
+                            ir_pattern_variant => {
+                                if pattern.name == variant_name {
+                                    return true;
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn match_arms_exhaust_type(type_shapes: ref list<ir_type_shape>, variant_decls: ref list<ir_variant_decl>, arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, type_id: i32) -> bool {
+    let shape_entry = lookup_type_shape(ref type_shapes, type_id);
+    match shape_entry {
+        Some(shape) => {
+            match shape.kind {
+                checked_type_option => {
+                    if match_arms_have_default(ref arms, ref patterns) {
+                        return true;
+                    }
+                    return match_arms_include_variant(ref arms, ref patterns, "Some") and match_arms_include_variant(ref arms, ref patterns, "None");
+                },
+                checked_type_result => {
+                    if match_arms_have_default(ref arms, ref patterns) {
+                        return true;
+                    }
+                    return match_arms_include_variant(ref arms, ref patterns, "Ok") and match_arms_include_variant(ref arms, ref patterns, "Err");
+                },
+                checked_type_named => {
+                    let mut required = 0;
+                    let mut covered = 0;
+                    let mut index = 0;
+                    while index < list_len(ref variant_decls) {
+                        let entry = list_get(ref variant_decls, index);
+                        match entry {
+                            Some(variant) => {
+                                if variant.module_name == shape.origin_module and variant.enum_name == shape.name {
+                                    required = required + 1;
+                                    if match_arms_include_variant(ref arms, ref patterns, variant.name) {
+                                        covered = covered + 1;
+                                    }
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                    if required > 0 and match_arms_have_default(ref arms, ref patterns) {
+                        return true;
+                    }
+                    return required > 0 and required == covered;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn emit_match_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt_id: i32, match_expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let expr_entry = lookup_expression(ref expressions, match_expr_id);
+    match expr_entry {
+        Some(match_expr) => {
+            let child_ids = lookup_expr_child_ids(ref expr_children, match_expr.id);
+            let scrutinee_entry = list_get(ref child_ids, 0);
+            match scrutinee_entry {
+                Some(scrutinee_id) => {
+                    let scrutinee_expr_entry = lookup_expression(ref expressions, scrutinee_id);
+                    match scrutinee_expr_entry {
+                        Some(scrutinee_expr) => {
+                            temp_index = temp_index + 1;
+                            let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
+                            let arms = lookup_match_arms_for_stmt(ref match_arms, stmt_id);
+                            if not match_arms_exhaust_type(ref type_shapes, ref variant_decls, ref arms, ref patterns, scrutinee_expr.type_id) {
+                                push_c_error(mutref diags, "", match_expr.at, "match expression must be exhaustive");
+                                return;
+                            }
+                            append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, scrutinee_id, mutref diags), ";")));
+                            append_line(mutref lines, concat4(indent(level), "switch (", temp_name, ".tag) {"));
+                            let mut default_arm_id = -1;
+                            let mut arm_index = 0;
+                            while arm_index < list_len(ref arms) {
+                                let arm_entry = list_get(ref arms, arm_index);
+                                match arm_entry {
+                                    Some(arm) => {
+                                        let pattern_entry = lookup_pattern(ref patterns, arm.pattern_id);
+                                        match pattern_entry {
+                                            Some(pattern) => {
+                                                match pattern.kind {
+                                                    ir_pattern_wildcard => {
+                                                        default_arm_id = arm.id;
+                                                    },
+                                                    ir_pattern_bind => {
+                                                        default_arm_id = arm.id;
+                                                    },
+                                                    ir_pattern_variant => {
+                                                        let tag = tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, pattern.name);
+                                                        append_line(mutref lines, concat6(indent(level + 1), "case ", tag, ": {", "", ""));
+                                                        emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_expr.type_id, temp_name, level + 2, mutref diags);
+                                                        append_line(mutref lines, concat5(indent(level + 2), target_expr, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.result_expr_id, mutref diags), ";"));
+                                                        append_line(mutref lines, concat3(indent(level + 2), "break;", ""));
+                                                        append_line(mutref lines, concat3(indent(level + 1), "}", ""));
+                                                    },
+                                                }
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                arm_index = arm_index + 1;
+                            }
+                            if default_arm_id > 0 {
+                                let mut lookup_index = 0;
+                                while lookup_index < list_len(ref arms) {
+                                    let arm_entry = list_get(ref arms, lookup_index);
+                                    match arm_entry {
+                                        Some(arm) => {
+                                            if arm.id == default_arm_id {
+                                                append_line(mutref lines, concat3(indent(level + 1), "default: {", ""));
+                                                emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_expr.type_id, temp_name, level + 2, mutref diags);
+                                                append_line(mutref lines, concat5(indent(level + 2), target_expr, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.result_expr_id, mutref diags), ";"));
+                                                append_line(mutref lines, concat3(indent(level + 2), "break;", ""));
+                                                append_line(mutref lines, concat3(indent(level + 1), "}", ""));
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    lookup_index = lookup_index + 1;
+                                }
+                            }
+                            append_line(mutref lines, concat3(indent(level), "}", ""));
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", match_expr.at, "missing match-expression scrutinee expression");
+                        },
+                    }
+                },
+                None => {
+                    push_c_error(mutref diags, "", match_expr.at, "missing match-expression scrutinee child");
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", 0, "missing match expression for lowering");
+        },
+    }
+    return;
+}
+
+fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let local_entry = lookup_local(ref locals, stmt.target_local_id);
+    let scrutinee_entry = lookup_expression(ref expressions, stmt.expr_id);
+    match local_entry {
+        Some(local_value) => {
+            match scrutinee_entry {
+                Some(scrutinee_expr) => {
+                    let success_variant = let_else_success_variant(ref type_shapes, scrutinee_expr.type_id);
+                    if success_variant == "" {
+                        push_c_error(mutref diags, "", stmt.at, "let-else scrutinee must be option or result");
+                        return;
+                    }
+                    temp_index = temp_index + 1;
+                    let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
+                    append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                    append_line(mutref lines, concat6(indent(level), "if (", temp_name, ".tag != ", tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, success_variant), ") {"));
+                    emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+                    append_line(mutref lines, concat3(indent(level), "}", ""));
+                    let payload_expr = concat5(temp_name, ".data.", success_variant, "._0", "");
+                    append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(payload_expr, ";")));
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing let-else scrutinee expression");
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", stmt.at, "missing local identity for let-else statement");
+        },
+    }
+    return;
+}
+
 fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let prefix = indent(level);
     match stmt.kind {
@@ -2507,7 +2802,12 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
             let local_entry = lookup_local(ref locals, stmt.target_local_id);
             match local_entry {
                 Some(local_value) => {
-                    append_line(mutref lines, concat6(prefix, c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                    if ir_expr_id_is_match(ref expressions, stmt.expr_id) {
+                        append_line(mutref lines, concat5(prefix, c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), ";"));
+                        emit_match_expr_assignment(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.id, stmt.expr_id, binding_name(local_value), level, mutref temp_index, mutref diags);
+                    } else {
+                        append_line(mutref lines, concat6(prefix, c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                    }
                 },
                 None => {
                     push_c_error(mutref diags, "", stmt.at, "missing local identity for let statement");
@@ -2522,7 +2822,11 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                     if local_value.is_ref_param {
                         target = concat3("*", target, "");
                     }
-                    append_line(mutref lines, concat5(prefix, target, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+                    if ir_expr_id_is_match(ref expressions, stmt.expr_id) {
+                        emit_match_expr_assignment(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.id, stmt.expr_id, target, level, mutref temp_index, mutref diags);
+                    } else {
+                        append_line(mutref lines, concat5(prefix, target, " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+                    }
                 },
                 None => {
                     push_c_error(mutref diags, "", stmt.at, "missing local identity for assignment");
@@ -2546,9 +2850,28 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
         ir_stmt_match => {
             emit_match_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
         },
+        ir_stmt_let_else => {
+            emit_let_else_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
+        },
         ir_stmt_return => {
             if stmt.expr_id > 0 {
-                append_line(mutref lines, concat4(prefix, "return ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+                if ir_expr_id_is_match(ref expressions, stmt.expr_id) {
+                    let expr_entry = lookup_expression(ref expressions, stmt.expr_id);
+                    match expr_entry {
+                        Some(expr_value) => {
+                            temp_index = temp_index + 1;
+                            let result_temp = concat3("nq_match_result_", i32_to_str(temp_index), "");
+                            append_line(mutref lines, concat5(prefix, c_type(ref type_shapes, expr_value.type_id), " ", result_temp, ";"));
+                            emit_match_expr_assignment(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.id, stmt.expr_id, result_temp, level, mutref temp_index, mutref diags);
+                            append_line(mutref lines, concat4(prefix, "return ", result_temp, ";"));
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", stmt.at, "missing match expression for return lowering");
+                        },
+                    }
+                } else {
+                    append_line(mutref lines, concat4(prefix, "return ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"));
+                }
             } else {
                 append_line(mutref lines, concat3(prefix, "return NQ_UNIT;", ""));
             }

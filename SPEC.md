@@ -395,7 +395,8 @@ Rules:
 
 - expression arms use `pattern => expr`, separated by commas
 - all arm result types must agree exactly
-- match expressions must be exhaustive for the scrutinee type
+- the scrutinee must be `option<T>`, `result<T, E>`, or a user enum
+- match expression arms do not fall through; V1 requires either a wildcard/binding fallback arm or coverage of every visible variant for the scrutinee type
 - block expressions, implicit final-expression returns, and fallthrough are not supported
 
 ## Patterns

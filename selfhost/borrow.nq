@@ -350,6 +350,17 @@ fn is_stmt_match(kind: checked_stmt_kind) -> bool {
     }
 }
 
+fn is_stmt_let_else(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_let_else => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_target_function(kind: checked_target_kind) -> bool {
     match kind {
         checked_target_function => {
@@ -534,6 +545,22 @@ fn set_moved_or_limit(state: mutref list<move_binding_state>, binding_id: i32, m
         None => {
             push_borrow_limitation(mutref diags, file, at, "could not update binding move state");
         },
+    }
+    return;
+}
+
+fn apply_move_state(state: mutref list<move_binding_state>, next: ref list<move_binding_state>, file: str, at: i32, diags: mutref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref next) {
+        let entry = list_get(ref next, index);
+        match entry {
+            Some(value) => {
+                set_moved_or_limit(mutref state, value.binding_id, value.moved, file, at, mutref diags);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
     }
     return;
 }
@@ -1065,7 +1092,25 @@ fn is_copy_type(module_name: str, type_name: str, type_arg1_name: str, type_arg2
     return enum_result;
 }
 
-fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
+fn lookup_owner_stmt_id_for_expr(statements: ref list<checked_stmt>, function_id: i32, expr_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.expr_id == expr_id {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expr(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -1131,7 +1176,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                         push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a child for unary not");
                         return;
                     }
-                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, false, emit_diagnostics, mutref diags);
                     return;
                 },
                 checked_expr_neg => {
@@ -1140,7 +1185,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                         push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a child for unary negation");
                         return;
                     }
-                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, false, emit_diagnostics, mutref diags);
                     return;
                 },
                 checked_expr_add => {
@@ -1167,6 +1212,49 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                 },
                 checked_expr_or => {
                 },
+                checked_expr_match => {
+                    let scrutinee_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
+                    if scrutinee_id < 0 {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a scrutinee child for checked match expression");
+                        return;
+                    }
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, scrutinee_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                    let owner_stmt_id = lookup_owner_stmt_id_for_expr(ref statements, function.id, expr.id);
+                    if owner_stmt_id < 0 {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing an owning statement for checked match expression");
+                        return;
+                    }
+                    let mut merged = clone_move_state(ref state);
+                    let mut arm_found = false;
+                    let mut arm_index = 0;
+                    while arm_index < list_len(ref match_arms) {
+                        let arm_entry = list_get(ref match_arms, arm_index);
+                        match arm_entry {
+                            Some(arm) => {
+                                if arm.stmt_id == owner_stmt_id {
+                                    arm_found = true;
+                                    let mut arm_state = clone_move_state(ref state);
+                                    reset_match_arm_bindings(ref pattern_bindings, arm.id, mutref arm_state, arm.module_name, arm.at, mutref diags);
+                                    if arm.result_expr_id <= 0 {
+                                        push_borrow_limitation(mutref diags, arm.module_name, arm.at, "is missing a checked match-expression arm result");
+                                    } else {
+                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, arm.result_expr_id, mutref arm_state, consume, false, emit_diagnostics, mutref diags);
+                                    }
+                                    merged = merge_two_states(ref merged, ref arm_state);
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        arm_index = arm_index + 1;
+                    }
+                    if not arm_found {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing checked match-expression arms");
+                        return;
+                    }
+                    apply_move_state(mutref state, ref merged, expr.module_name, expr.at, mutref diags);
+                    return;
+                },
                 _ => {
                 },
             }
@@ -1178,8 +1266,8 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                     push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a child for a checked binary expression");
                     return;
                 }
-                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, left_id, mutref state, false, false, emit_diagnostics, mutref diags);
-                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, right_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, left_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, right_id, mutref state, false, false, emit_diagnostics, mutref diags);
                 return;
             }
 
@@ -1189,7 +1277,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                     push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a base expression for checked field access");
                     return;
                 }
-                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, base_id, mutref state, false, false, emit_diagnostics, mutref diags);
+                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, base_id, mutref state, false, false, emit_diagnostics, mutref diags);
                 if consume and expr.type_name != "" {
                     let visiting: list<str> = list();
                     if not is_copy_type(expr.module_name, expr.type_name, expr.type_arg1_name, expr.type_arg2_name, expr.is_borrow, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, expr.module_name, expr.at, mutref diags) {
@@ -1208,7 +1296,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                     match entry {
                         Some(value) => {
                             if value.expr_id == expr.id {
-                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, value.value_expr_id, mutref state, true, false, emit_diagnostics, mutref diags);
+                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, value.value_expr_id, mutref state, true, false, emit_diagnostics, mutref diags);
                             }
                         },
                         None => {
@@ -1228,7 +1316,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                         push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a child for checked list literal");
                         return;
                     }
-                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, false, emit_diagnostics, mutref diags);
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, false, emit_diagnostics, mutref diags);
                     index = index + 1;
                 }
                 return;
@@ -1296,7 +1384,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                                                 let name = lookup_binding_name(ref bindings, child_expr.binding_id, child_expr.name);
                                                 push_diag(mutref diags, child_expr.module_name, child_expr.at, str_concat("cannot both move and borrow `", str_concat(name, "` in one call")));
                                             }
-                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, true, emit_diagnostics, mutref diags);
+                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, true, emit_diagnostics, mutref diags);
                                         }
                                     } else {
                                         let symbol_id = expr_name_binding_id(child_expr);
@@ -1309,7 +1397,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                                                 list_push(mutref consumed, symbol_id);
                                             }
                                         }
-                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, true, emit_diagnostics, mutref diags);
+                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, true, emit_diagnostics, mutref diags);
                                     }
                                 },
                                 None => {
@@ -1332,7 +1420,7 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                             push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a constructor payload expression");
                             return;
                         }
-                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, true, emit_diagnostics, mutref diags);
+                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, true, emit_diagnostics, mutref diags);
                         arg_index = arg_index + 1;
                     }
                     return;
@@ -1383,15 +1471,28 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                         push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked statement expression");
                     }
                     if is_stmt_local(stmt.kind) {
-                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
+                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
                         if stmt.target_binding_id > 0 {
                             set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
                         } else {
                             push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked local target binding");
                         }
                     } else {
+                        if is_stmt_let_else(stmt.kind) {
+                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                            if stmt.child_block_id > 0 {
+                                let ignored_else_state = check_block(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref current, emit_diagnostics, mutref diags);
+                            } else {
+                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked let-else block");
+                            }
+                            if stmt.target_binding_id > 0 {
+                                set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                            } else {
+                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked let-else target binding");
+                            }
+                        } else {
                         if is_stmt_assign(stmt.kind) {
-                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
+                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
                             if stmt.target_binding_id > 0 {
                                 set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
                             } else {
@@ -1399,7 +1500,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                             }
                         } else {
                             if is_stmt_if(stmt.kind) {
-                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
                                 if stmt.child_block_id <= 0 {
                                     push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked if block");
                                 } else {
@@ -1419,7 +1520,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                         let mut stable = false;
                                         while not stable {
                                             let mut after_condition = clone_move_state(ref condition_entry);
-                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, false, mutref diags);
+                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, false, mutref diags);
                                             let body_end = check_block(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, false, mutref diags);
                                             let next_entry = merge_visible_states(ref current, ref body_end);
                                             if state_equals(ref next_entry, ref condition_entry) {
@@ -1429,13 +1530,13 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                             }
                                         }
                                         let mut after_condition = clone_move_state(ref condition_entry);
-                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, emit_diagnostics, mutref diags);
+                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, emit_diagnostics, mutref diags);
                                         let ignored_loop_state = check_block(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, emit_diagnostics, mutref diags);
                                         current = project_state(ref current, ref after_condition);
                                     }
                                 } else {
                                     if is_stmt_match(stmt.kind) {
-                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                                        walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
                                         let scrutinee_entry = lookup_expr(ref expressions, stmt.expr_id);
                                         let mut merged = clone_move_state(ref current);
                                         match scrutinee_entry {
@@ -1486,15 +1587,16 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                         current = merged;
                                     } else {
                                         if is_stmt_return(stmt.kind) {
-                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
+                                            walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
                                         } else {
                                             if is_stmt_expr(stmt.kind) {
-                                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }

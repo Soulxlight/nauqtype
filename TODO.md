@@ -161,6 +161,7 @@
 
 - [x] Start only after the pre-language AI tooling spine is green
 - [x] Add top-level `const` with canonical Nauqtype examples
-- [ ] Add list literals with canonical Nauqtype examples
-- [ ] Add `match` as an expression with canonical Nauqtype examples
-- [ ] Add `let-else` for `option` / `result` with canonical Nauqtype examples
+- [x] Add list literals with canonical Nauqtype examples
+- [x] Add `match` as an expression with canonical Nauqtype examples (selfhost stage1)
+- [x] Add `let-else` for `option` / `result` with canonical Nauqtype examples (selfhost stage1)
+- [ ] Add formatter-lite for the trusted teaching subset

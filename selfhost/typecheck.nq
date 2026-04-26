@@ -1604,6 +1604,135 @@ fn expr_content_start(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     return cursor;
 }
 
+fn skip_until_match_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    let mut bracket_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbrace => {
+                if paren_depth == 0 and bracket_depth == 0 {
+                    return;
+                }
+                cursor = cursor + 1;
+            },
+            _ => {
+                cursor = cursor + 1;
+            },
+        }
+    }
+}
+
+fn skip_pattern_until_arrow(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_fat_arrow => {
+                if paren_depth == 0 {
+                    return;
+                }
+                cursor = cursor + 1;
+            },
+            _ => {
+                cursor = cursor + 1;
+            },
+        }
+    }
+}
+
+fn skip_match_arm_value_expr(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut paren_depth = 0;
+    let mut brace_depth = 0;
+    let mut bracket_depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lparen => {
+                paren_depth = paren_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rparen => {
+                if paren_depth > 0 {
+                    paren_depth = paren_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbrace => {
+                brace_depth = brace_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rbrace => {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
+                    return;
+                }
+                if brace_depth > 0 {
+                    brace_depth = brace_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_lbracket => {
+                bracket_depth = bracket_depth + 1;
+                cursor = cursor + 1;
+            },
+            tk_rbracket => {
+                if bracket_depth > 0 {
+                    bracket_depth = bracket_depth - 1;
+                }
+                cursor = cursor + 1;
+            },
+            tk_comma => {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
+                    return;
+                }
+                cursor = cursor + 1;
+            },
+            _ => {
+                cursor = cursor + 1;
+            },
+        }
+    }
+}
+
 fn token_can_end_expr(tok: token) -> bool {
     match tok.kind {
         tk_ident => {
@@ -2497,6 +2626,359 @@ fn infer_list_expr_type_ctx(functions: ref list<function_fact>, function_params:
     return make_expected_type_ctx("list", "", "");
 }
 
+fn match_pattern_is_default(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut pattern_start = start;
+    let mut pattern_end = end;
+    while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
+        pattern_start = pattern_start + 1;
+        pattern_end = pattern_end - 1;
+    }
+    if pattern_start + 1 != pattern_end {
+        return false;
+    }
+    let current = token_at(ref tokens, pattern_start);
+    match current.kind {
+        tk_ident => {
+            if current.text == "_" {
+                return true;
+            }
+            if builtin_variant_enum_name(current.text) != "" {
+                return false;
+            }
+            if visible_variant_enum_name(ref variants, ref uses, ref items, module, current.text) != "" {
+                return false;
+            }
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn match_pattern_variant_name(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let mut pattern_start = start;
+    let mut pattern_end = end;
+    while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
+        pattern_start = pattern_start + 1;
+        pattern_end = pattern_end - 1;
+    }
+    if pattern_start >= pattern_end {
+        return "";
+    }
+    let current = token_at(ref tokens, pattern_start);
+    match current.kind {
+        tk_ident => {
+            return current.text;
+        },
+        _ => {
+            return "";
+        },
+    }
+}
+
+fn match_expr_patterns_have_default(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut cursor = start;
+    let match_token = token_at(ref tokens, cursor);
+    match match_token.kind {
+        tk_kw_match => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    skip_until_match_block(ref tokens, mutref cursor);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    while cursor < end {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                return false;
+            },
+            tk_eof => {
+                return false;
+            },
+            _ => {
+                let pattern_start = cursor;
+                skip_pattern_until_arrow(ref tokens, mutref cursor);
+                if match_pattern_is_default(ref variants, ref uses, ref items, module, ref tokens, pattern_start, cursor) {
+                    return true;
+                }
+                let arrow = token_at(ref tokens, cursor);
+                match arrow.kind {
+                    tk_fat_arrow => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                        return false;
+                    },
+                }
+                skip_match_arm_value_expr(ref tokens, mutref cursor);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+    return false;
+}
+
+fn match_expr_patterns_include_variant(tokens: ref list<token>, start: i32, end: i32, variant_name: str) -> bool {
+    let mut cursor = start;
+    let match_token = token_at(ref tokens, cursor);
+    match match_token.kind {
+        tk_kw_match => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    skip_until_match_block(ref tokens, mutref cursor);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    while cursor < end {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                return false;
+            },
+            tk_eof => {
+                return false;
+            },
+            _ => {
+                let pattern_start = cursor;
+                skip_pattern_until_arrow(ref tokens, mutref cursor);
+                if match_pattern_variant_name(ref tokens, pattern_start, cursor) == variant_name {
+                    return true;
+                }
+                let arrow = token_at(ref tokens, cursor);
+                match arrow.kind {
+                    tk_fat_arrow => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                        return false;
+                    },
+                }
+                skip_match_arm_value_expr(ref tokens, mutref cursor);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+    return false;
+}
+
+fn match_expr_is_exhaustive(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, tokens: ref list<token>, start: i32, end: i32, scrutinee_ctx: expected_type_ctx) -> bool {
+    if scrutinee_ctx.head == "option" {
+        if match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end) {
+            return true;
+        }
+        return match_expr_patterns_include_variant(ref tokens, start, end, "Some") and match_expr_patterns_include_variant(ref tokens, start, end, "None");
+    }
+    if scrutinee_ctx.head == "result" {
+        if match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end) {
+            return true;
+        }
+        return match_expr_patterns_include_variant(ref tokens, start, end, "Ok") and match_expr_patterns_include_variant(ref tokens, start, end, "Err");
+    }
+    let mut required = 0;
+    let mut covered = 0;
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if visible_variant_enum_name(ref variants, ref uses, ref items, module, value.name) == scrutinee_ctx.head {
+                    required = required + 1;
+                    if match_expr_patterns_include_variant(ref tokens, start, end, value.name) {
+                        covered = covered + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if required > 0 and match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end) {
+        return true;
+    }
+    return required > 0 and required == covered;
+}
+
+fn match_expr_scrutinee_is_supported(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, scrutinee_ctx: expected_type_ctx) -> bool {
+    if scrutinee_ctx.head == "option" or scrutinee_ctx.head == "result" {
+        return true;
+    }
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if visible_variant_enum_name(ref variants, ref uses, ref items, module, value.name) == scrutinee_ctx.head {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn infer_match_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
+    let mut cursor = start;
+    let match_token = token_at(ref tokens, cursor);
+    match match_token.kind {
+        tk_kw_match => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            push_stage1_limitation(mutref diags, module, at);
+            return unsupported_type_ctx();
+        },
+    }
+    let scrutinee_start = cursor;
+    skip_until_match_block(ref tokens, mutref cursor);
+    let scrutinee_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, scrutinee_start, cursor, at, empty_expected_type_ctx(), mutref diags);
+    if is_unsupported_type_ctx(scrutinee_ctx) {
+        return scrutinee_ctx;
+    }
+    if has_known_type_ctx(scrutinee_ctx) and not match_expr_scrutinee_is_supported(ref variants, ref uses, ref items, module, scrutinee_ctx) {
+        push_diag(mutref diags, module, match_token.start, "match expression scrutinee must be option, result, or enum");
+        return unsupported_type_ctx();
+    }
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            push_diag(mutref diags, module, open.start, "expected `{` after match expression");
+            return unsupported_type_ctx();
+        },
+    }
+    let mut arm_index = 0;
+    let mut result_ctx = empty_expected_type_ctx();
+    while cursor < end {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                if arm_index == 0 {
+                    push_diag(mutref diags, module, current.start, "match expression must have at least one arm");
+                    return unsupported_type_ctx();
+                }
+                if not match_expr_is_exhaustive(ref variants, ref uses, ref items, module, ref tokens, start, end, scrutinee_ctx) {
+                    push_diag(mutref diags, module, match_token.start, "match expression must be exhaustive");
+                    return unsupported_type_ctx();
+                }
+                if expected_ctx.head != "" {
+                    return expected_ctx;
+                }
+                return result_ctx;
+            },
+            tk_eof => {
+                push_diag(mutref diags, module, current.start, "unterminated match expression");
+                return unsupported_type_ctx();
+            },
+            _ => {
+                let pattern_start = cursor;
+                skip_pattern_until_arrow(ref tokens, mutref cursor);
+                let pattern_end = cursor;
+                let arrow = token_at(ref tokens, cursor);
+                match arrow.kind {
+                    tk_fat_arrow => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                        push_diag(mutref diags, module, arrow.start, "expected `=>` in match arm");
+                        return unsupported_type_ctx();
+                    },
+                }
+                let body_start = cursor;
+                skip_match_arm_value_expr(ref tokens, mutref cursor);
+                let body_end = cursor;
+
+                let mut arm_bindings = clone_typed_bindings_for_function(ref typed_bindings, module, function_name);
+                let mut ignored_pattern_bindings: list<pattern_binding_fact> = list();
+                typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, scope_id, ref tokens, pattern_start, pattern_end, scrutinee_ctx, mutref arm_bindings, mutref ignored_pattern_bindings, mutref diags);
+
+                let mut arm_expected_ctx = expected_ctx;
+                if arm_expected_ctx.head == "" and result_ctx.head != "" {
+                    arm_expected_ctx = result_ctx;
+                }
+                let arm_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref arm_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, body_start, body_end, current.start, arm_expected_ctx, mutref diags);
+                if not is_unsupported_type_ctx(arm_ctx) and has_known_type_ctx(arm_ctx) {
+                    if arm_index == 0 and expected_ctx.head == "" {
+                        result_ctx = arm_ctx;
+                    } else {
+                        if expected_ctx.head != "" {
+                            if not type_ctx_matches(expected_ctx, arm_ctx) {
+                                push_diag(mutref diags, module, current.start, "match expression arm result does not match expected type");
+                            }
+                        } else {
+                            if result_ctx.head != "" and not type_ctx_matches(result_ctx, arm_ctx) {
+                                push_diag(mutref diags, module, current.start, "match expression arm result types must match exactly");
+                            }
+                        }
+                    }
+                }
+                arm_index = arm_index + 1;
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+    if arm_index == 0 {
+        push_diag(mutref diags, module, at, "match expression must have at least one arm");
+        return unsupported_type_ctx();
+    }
+    if not match_expr_is_exhaustive(ref variants, ref uses, ref items, module, ref tokens, start, end, scrutinee_ctx) {
+        push_diag(mutref diags, module, match_token.start, "match expression must be exhaustive");
+        return unsupported_type_ctx();
+    }
+    if expected_ctx.head != "" {
+        return expected_ctx;
+    }
+    return result_ctx;
+}
+
 pub fn infer_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx
 audit {
     intent("Infer the type context of a trusted-subset expression for selfhost semantic checks");
@@ -2582,6 +3064,9 @@ audit {
 
     let current = token_at(ref tokens, expr_start);
     match current.kind {
+        tk_kw_match => {
+            return infer_match_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, at, expected_ctx, mutref diags);
+        },
         tk_kw_ref => {
             return infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
         },
@@ -2966,6 +3451,35 @@ fn typecheck_match_arm(variants: ref list<variant_fact>, variant_payloads: ref l
     return;
 }
 
+fn let_else_payload_ctx(variant_name: str, scrutinee_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
+    if variant_name == "Some" {
+        if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "option" {
+            push_diag(mutref diags, module, at, "let-else `Some` pattern requires an option scrutinee");
+            return empty_expected_type_ctx();
+        }
+        if scrutinee_ctx.head == "option" {
+            return make_expected_type_ctx(scrutinee_ctx.arg1_name, "", "");
+        }
+        return empty_expected_type_ctx();
+    }
+    if variant_name == "Ok" {
+        if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "result" {
+            push_diag(mutref diags, module, at, "let-else `Ok` pattern requires a result scrutinee");
+            return empty_expected_type_ctx();
+        }
+        if scrutinee_ctx.head == "result" {
+            return make_expected_type_ctx(scrutinee_ctx.arg1_name, "", "");
+        }
+        return empty_expected_type_ctx();
+    }
+    push_diag(mutref diags, module, at, "let-else V1 only supports `Some(name)` and `Ok(name)` patterns");
+    return empty_expected_type_ctx();
+}
+
+fn local_init_is_let_else(local: local_init_fact) -> bool {
+    return local.expr_member_name == "let_else";
+}
+
 pub fn typecheck_value_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
     intent("Run the next selfhost type-checker slice over local initializers, return expressions, condition types, and assignment compatibility");
@@ -3043,15 +3557,22 @@ audit {
                                                     expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                                                 }
                                                 let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
-                                                if current.expected_type_name != "" {
-                                                    if not current.expected_is_borrow {
-                                                        if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
-                                                            push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
-                                                        }
+                                                if local_init_is_let_else(current) {
+                                                    let payload_ctx = let_else_payload_ctx(current.expr_name, actual_ctx, current.module, current.at, mutref diags);
+                                                    if current.name != "" and has_known_type_ctx(payload_ctx) {
+                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
                                                     }
                                                 } else {
-                                                    if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                    if current.expected_type_name != "" {
+                                                        if not current.expected_is_borrow {
+                                                            if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
+                                                                push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                                            }
+                                                        }
+                                                    } else {
+                                                        if current.name != "" and has_known_type_ctx(actual_ctx) {
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                        }
                                                     }
                                                 }
                                             },
@@ -3223,9 +3744,16 @@ audit {
                                                     expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                                                 }
                                                 let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
-                                                if current.expected_type_name == "" {
-                                                    if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                if local_init_is_let_else(current) {
+                                                    let payload_ctx = let_else_payload_ctx(current.expr_name, actual_ctx, current.module, current.at, mutref diags);
+                                                    if current.name != "" and has_known_type_ctx(payload_ctx) {
+                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                    }
+                                                } else {
+                                                    if current.expected_type_name == "" {
+                                                        if current.name != "" and has_known_type_ctx(actual_ctx) {
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                        }
                                                     }
                                                 }
                                             },

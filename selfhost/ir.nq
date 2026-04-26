@@ -7,6 +7,7 @@ pub enum ir_stmt_kind {
     ir_stmt_if,
     ir_stmt_while,
     ir_stmt_match,
+    ir_stmt_let_else,
     ir_stmt_return,
     ir_stmt_expr,
 }
@@ -38,6 +39,7 @@ pub enum ir_expr_kind {
     ir_expr_gte,
     ir_expr_and,
     ir_expr_or,
+    ir_expr_match,
 }
 
 pub enum ir_pattern_kind {
@@ -116,6 +118,7 @@ pub type ir_match_arm {
     stmt_id: i32,
     block_id: i32,
     pattern_id: i32,
+    result_expr_id: i32,
     at: i32,
 }
 
@@ -299,6 +302,9 @@ fn checked_stmt_to_ir_kind(kind: checked_stmt_kind) -> ir_stmt_kind {
         checked_stmt_match => {
             return ir_stmt_match;
         },
+        checked_stmt_let_else => {
+            return ir_stmt_let_else;
+        },
         checked_stmt_return => {
             return ir_stmt_return;
         },
@@ -414,6 +420,9 @@ fn checked_expr_to_ir_kind(expr: checked_expr) -> ir_expr_kind {
         },
         checked_expr_or => {
             return ir_expr_or;
+        },
+        checked_expr_match => {
+            return ir_expr_match;
         },
     }
 }
@@ -815,6 +824,7 @@ audit {
                     stmt_id: value.stmt_id,
                     block_id: value.block_id,
                     pattern_id: value.pattern_id,
+                    result_expr_id: value.result_expr_id,
                     at: value.at,
                 });
             },
@@ -993,6 +1003,15 @@ audit {
                         ir_stmt_match => {
                             match kind {
                                 ir_stmt_match => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_let_else => {
+                            match kind {
+                                ir_stmt_let_else => {
                                     return true;
                                 },
                                 _ => {

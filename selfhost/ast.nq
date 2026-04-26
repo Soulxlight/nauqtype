@@ -536,9 +536,12 @@ pub type match_arm_fact {
     scrutinee_end: i32,
     pattern_start: i32,
     pattern_end: i32,
+    body_start: i32,
+    body_end: i32,
+    is_expression: bool,
 }
 
-pub fn make_match_arm_fact(module: str, function_name: str, scope_id: i32, at: i32, match_at: i32, scrutinee_start: i32, scrutinee_end: i32, pattern_start: i32, pattern_end: i32) -> match_arm_fact
+pub fn make_match_arm_fact(module: str, function_name: str, scope_id: i32, at: i32, match_at: i32, scrutinee_start: i32, scrutinee_end: i32, pattern_start: i32, pattern_end: i32, body_start: i32, body_end: i32, is_expression: bool) -> match_arm_fact
 audit {
     intent("Build a flat match-arm fact record for selfhost pattern typing");
     mutates();
@@ -555,6 +558,9 @@ audit {
         scrutinee_end: scrutinee_end,
         pattern_start: pattern_start,
         pattern_end: pattern_end,
+        body_start: body_start,
+        body_end: body_end,
+        is_expression: is_expression,
     };
 }
 
@@ -566,6 +572,7 @@ pub enum stmt_fact_kind {
     stmt_if,
     stmt_while,
     stmt_match,
+    stmt_let_else,
 }
 
 pub type stmt_fact {
@@ -653,6 +660,7 @@ pub enum expr_fact_kind {
     expr_call,
     expr_struct,
     expr_list,
+    expr_match,
 }
 
 pub type local_init_fact {
