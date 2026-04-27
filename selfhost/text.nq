@@ -1,0 +1,103 @@
+pub fn concat3(a: str, b: str, c: str) -> str
+audit {
+    intent("Concatenate three strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(str_concat(a, b), c);
+}
+
+pub fn concat4(a: str, b: str, c: str, d: str) -> str
+audit {
+    intent("Concatenate four strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(str_concat(a, b), str_concat(c, d));
+}
+
+pub fn slice_text(text: str, start: i32, end: i32) -> str
+audit {
+    intent("Return a string slice or an empty string when the slice is invalid");
+    mutates();
+    effects();
+}
+{
+    let value = str_slice(text, start, end);
+    match value {
+        Some(part) => {
+            return part;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+pub fn char_at(text: str, index: i32) -> i32
+audit {
+    intent("Return a string codepoint or -1 when the index is invalid");
+    mutates();
+    effects();
+}
+{
+    let value = str_get(text, index);
+    match value {
+        Some(ch) => {
+            return ch;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+pub fn starts_with_at(text: str, index: i32, pattern: str) -> bool
+audit {
+    intent("Check whether text contains pattern at a specific byte/codepoint index");
+    mutates();
+    effects();
+}
+{
+    if index < 0 {
+        return false;
+    }
+    if index + str_len(pattern) > str_len(text) {
+        return false;
+    }
+    let mut offset = 0;
+    while offset < str_len(pattern) {
+        if char_at(text, index + offset) != char_at(pattern, offset) {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+pub fn text_contains(text: str, pattern: str) -> bool
+audit {
+    intent("Check whether text contains a literal substring");
+    mutates();
+    effects();
+}
+{
+    if pattern == "" {
+        return true;
+    }
+    let text_len = str_len(text);
+    let pattern_len = str_len(pattern);
+    if pattern_len > text_len {
+        return false;
+    }
+    let mut start = 0;
+    while start <= text_len - pattern_len {
+        if starts_with_at(text, start, pattern) {
+            return true;
+        }
+        start = start + 1;
+    }
+    return false;
+}

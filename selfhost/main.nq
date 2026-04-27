@@ -13,6 +13,7 @@ use proof;
 use review;
 use resolve;
 use source;
+use text;
 use typecheck;
 
 enum driver_mode {
@@ -86,53 +87,6 @@ fn queue_if_missing(pending: mutref list<str>, seen: ref list<str>, name: str) -
     }
     list_push(mutref pending, name);
     return;
-}
-
-fn str_contains(text: str, pattern: str) -> bool {
-    if pattern == "" {
-        return true;
-    }
-    let text_len = str_len(text);
-    let pattern_len = str_len(pattern);
-    if pattern_len > text_len {
-        return false;
-    }
-    let mut start = 0;
-    while start <= text_len - pattern_len {
-        let mut offset = 0;
-        let mut matches = true;
-        while offset < pattern_len {
-            let left = str_get(text, start + offset);
-            let right = str_get(pattern, offset);
-            match left {
-                Some(left_ch) => {
-                    match right {
-                        Some(right_ch) => {
-                            if left_ch != right_ch {
-                                matches = false;
-                            }
-                        },
-                        None => {
-                            matches = false;
-                        },
-                    }
-                },
-                None => {
-                    matches = false;
-                },
-            }
-            if not matches {
-                offset = pattern_len;
-            } else {
-                offset = offset + 1;
-            }
-        }
-        if matches {
-            return true;
-        }
-        start = start + 1;
-    }
-    return false;
 }
 
 fn module_reaches_start(start: str, uses: ref list<module_use>) -> bool {
@@ -220,7 +174,7 @@ fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_pa
         return;
     }
     let stack_key = str_concat(str_concat("|", name), "|");
-    if str_contains(loading_path, stack_key) {
+    if text_contains(loading_path, stack_key) {
         list_push(mutref diags, make_diag(name, 0, "import cycle detected"));
         return;
     }
@@ -273,18 +227,6 @@ fn option_text(value: option<str>) -> str {
 
 fn invalid_request(message: str) -> driver_request {
     return make_driver_request(driver_invalid, "", "", ".", "", "", message);
-}
-
-fn slice_text(text: str, start: i32, end: i32) -> str {
-    let entry = str_slice(text, start, end);
-    match entry {
-        Some(value) => {
-            return value;
-        },
-        None => {
-            return "";
-        },
-    }
 }
 
 fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
