@@ -237,7 +237,11 @@ Status:
 - in progress
 - started after the completed pre-language AI tooling spine
 - top-level `const` is done for the narrow stage1-owned `i32` / `bool` / `str` pure-initializer subset, with canonical example and stage1 driver coverage
-- the remaining first batch is list literals, `match` as an expression, and `let-else` for `option` / `result`
+- list literals are done for the narrow stage1-owned homogeneous `list<T>` subset, including empty literals in expected `list<T>` contexts
+- `match` as an expression is done for exhaustive value-producing arms with exact arm-result agreement
+- narrow `let-else` is done for `Some(name)` and `Ok(name)` guard bindings with explicit-return `else` blocks
+- formatter-lite is done as an output-only / `--check` trusted-subset formatter, not a full AST-preserving formatter
+- the next ergonomics slice is Batch B: named arguments, direct module-qualified calls, and minimal `break` / `continue`
 
 ## Feature Ordering
 

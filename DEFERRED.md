@@ -31,7 +31,7 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 ## Standard Library
 
 - Collections beyond builtin `list<T>`, such as `map` and `set`
-- Formatting machinery
+- Formatting machinery beyond formatter-lite
 - Mutable strings
 - Networking
 - Time / randomness APIs
@@ -46,11 +46,11 @@ The current stage1 driver has a deliberately narrow toolchain-only runtime surfa
 - Bytecode backend
 - LLVM backend
 - Optimizer pipeline
-- Formatter
+- Full AST-preserving formatter and formatter write mode
 - Language server
 - Package manager
 
-Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const` and list literals have now graduated from this deferred list in deliberately narrow first forms.
+Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, and formatter-lite have now graduated from this deferred list in deliberately narrow first forms. Minimal `break` / `continue` stay deferred until the Batch B design checkpoint records their exact control-flow rules.
 
 ## Why These Are Deferred
 

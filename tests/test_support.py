@@ -14,6 +14,7 @@ from compiler.main import compile_c, compile_source
 
 ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_READY = False
+_COPIED_SELFHOST_CACHE: dict[int, subprocess.CompletedProcess[str]] = {}
 SELFHOST_REFERENCE_TIMEOUT = 360
 
 
@@ -32,6 +33,22 @@ def ensure_bootstrap_deps() -> None:
     global _BOOTSTRAP_READY
     if _BOOTSTRAP_READY:
         return
+    zig = ROOT / ".deps" / "ziglang" / "zig.exe"
+    zig_dist = ROOT / ".deps" / "ziglang-0.16.0.dist-info"
+    tiktoken_package = ROOT / ".deps" / "tiktoken"
+    tiktoken_dist = ROOT / ".deps" / "tiktoken-0.12.0.dist-info"
+    deps_path = str(ROOT / ".deps")
+    if zig.exists() and zig_dist.exists() and tiktoken_package.exists() and tiktoken_dist.exists():
+        if deps_path not in sys.path:
+            sys.path.insert(0, deps_path)
+        try:
+            import tiktoken  # pylint: disable=import-outside-toplevel
+
+            if tiktoken.__version__ == "0.12.0":
+                _BOOTSTRAP_READY = True
+                return
+        except ImportError:
+            pass
     result = subprocess.run(
         [sys.executable, "scripts/setup_deps.py"],
         cwd=ROOT,
@@ -130,8 +147,14 @@ def compile_and_run_c(c_path: Path, *, cwd: Path | None = None) -> subprocess.Co
 
 
 def run_copied_selfhost(timeout: int = SELFHOST_REFERENCE_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    # Several trust tests only inspect the process result; avoid rerunning the same copied selfhost build.
+    cached = _COPIED_SELFHOST_CACHE.get(timeout)
+    if cached is not None:
+        return cached
     with copied_selfhost_workspace() as tmp:
-        return run_stage0_selfhost(tmp, timeout=timeout)
+        result = run_stage0_selfhost(tmp, timeout=timeout)
+    _COPIED_SELFHOST_CACHE[timeout] = result
+    return result
 
 
 @contextmanager
