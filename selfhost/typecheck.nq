@@ -1434,6 +1434,195 @@ audit {
     return empty_expected_type_ctx();
 }
 
+fn builtin_function_param_name(function_name: str, index: i32) -> str {
+    if function_name == "print_line" or function_name == "eprint_line" {
+        if index == 0 {
+            return "text";
+        }
+    }
+    if function_name == "read_file" or function_name == "create_dir_all" {
+        if index == 0 {
+            return "path";
+        }
+    }
+    if function_name == "arg_get" {
+        if index == 0 {
+            return "index";
+        }
+    }
+    if function_name == "write_file" {
+        if index == 0 {
+            return "path";
+        }
+        if index == 1 {
+            return "text";
+        }
+    }
+    if function_name == "io_err_text" {
+        if index == 0 {
+            return "err";
+        }
+    }
+    if function_name == "run_process" {
+        if index == 0 {
+            return "program";
+        }
+        if index == 1 {
+            return "args";
+        }
+        if index == 2 {
+            return "cwd";
+        }
+    }
+    if function_name == "str_len" {
+        if index == 0 {
+            return "text";
+        }
+    }
+    if function_name == "str_concat" {
+        if index == 0 {
+            return "left";
+        }
+        if index == 1 {
+            return "right";
+        }
+    }
+    if function_name == "str_get" {
+        if index == 0 {
+            return "text";
+        }
+        if index == 1 {
+            return "index";
+        }
+    }
+    if function_name == "str_slice" {
+        if index == 0 {
+            return "text";
+        }
+        if index == 1 {
+            return "start";
+        }
+        if index == 2 {
+            return "end";
+        }
+    }
+    if function_name == "list_push" {
+        if index == 0 {
+            return "items";
+        }
+        if index == 1 {
+            return "value";
+        }
+    }
+    if function_name == "list_len" {
+        if index == 0 {
+            return "items";
+        }
+    }
+    if function_name == "list_get" {
+        if index == 0 {
+            return "items";
+        }
+        if index == 1 {
+            return "index";
+        }
+    }
+    return "";
+}
+
+fn lookup_function_param_name(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> str {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        let entry = list_get(ref function_params, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return "";
+}
+
+fn visible_function_param_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> str {
+    let builtin = builtin_function_param_name(function_name, index);
+    if builtin != "" {
+        return builtin;
+    }
+    if module_has_local_function_name(ref items, module, function_name) {
+        return lookup_function_param_name(ref function_params, module, function_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, function_name) {
+                    return lookup_function_param_name(ref function_params, value.name, function_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn module_directly_imports(uses: ref list<module_use>, module: str, imported: str) -> bool {
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == imported {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn qualified_function_return_ctx(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str) -> expected_type_ctx {
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
+        return make_expected_type_ctx(
+            lookup_function_fact_return_name(ref functions, qualifier, function_name),
+            lookup_function_fact_return_arg1_name(ref functions, qualifier, function_name),
+            lookup_function_fact_return_arg2_name(ref functions, qualifier, function_name)
+        );
+    }
+    return empty_expected_type_ctx();
+}
+
+fn qualified_function_param_ctx(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> expected_type_ctx {
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
+        return lookup_function_param_ctx(ref function_params, qualifier, function_name, index);
+    }
+    return empty_expected_type_ctx();
+}
+
+fn qualified_function_param_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> str {
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
+        return lookup_function_param_name(ref function_params, qualifier, function_name, index);
+    }
+    return "";
+}
+
+fn qualified_function_arity(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str) -> i32 {
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
+        return lookup_function_fact_arity(ref functions, qualifier, function_name);
+    }
+    return -1;
+}
+
 fn lookup_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, module: str, variant_name: str, index: i32) -> str {
     let mut cursor = 0;
     while cursor < list_len(ref variant_payloads) {
@@ -2121,19 +2310,88 @@ fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     return found;
 }
 
-fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
-    if end - start < 3 {
-        return false;
-    }
+fn span_call_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let head = token_at(ref tokens, start);
-    let open = token_at(ref tokens, start + 1);
     match head.kind {
         tk_ident => {
         },
         _ => {
-            return false;
+            return -1;
         },
     }
+    if end - start >= 3 {
+        let open = token_at(ref tokens, start + 1);
+        match open.kind {
+            tk_lparen => {
+                return start + 1;
+            },
+            _ => {
+            },
+        }
+    }
+    if end - start >= 5 {
+        let first_colon = token_at(ref tokens, start + 1);
+        let second_colon = token_at(ref tokens, start + 2);
+        let name = token_at(ref tokens, start + 3);
+        let open = token_at(ref tokens, start + 4);
+        match first_colon.kind {
+            tk_colon => {
+                match second_colon.kind {
+                    tk_colon => {
+                        match name.kind {
+                            tk_ident => {
+                                match open.kind {
+                                    tk_lparen => {
+                                        return start + 4;
+                                    },
+                                    _ => {
+                                    },
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            _ => {
+            },
+        }
+    }
+    return -1;
+}
+
+fn span_call_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let open_index = span_call_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        return start + 3;
+    }
+    if open_index == start + 1 {
+        return start;
+    }
+    return -1;
+}
+
+fn span_call_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let open_index = span_call_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        let module_token = token_at(ref tokens, start);
+        return module_token.text;
+    }
+    return "";
+}
+
+fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 3 {
+        return false;
+    }
+    let open_index = span_call_open_index(ref tokens, start, end);
+    if open_index < 0 {
+        return false;
+    }
+    let open = token_at(ref tokens, open_index);
     match open.kind {
         tk_lparen => {
         },
@@ -2142,7 +2400,7 @@ fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
         },
     }
     let mut depth = 0;
-    let mut index = start + 1;
+    let mut index = open_index;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -2201,6 +2459,76 @@ fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
             },
         }
         index = index + 1;
+    }
+    return false;
+}
+
+fn segment_label_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    if start + 2 > end {
+        return -1;
+    }
+    let label = token_at(ref tokens, start);
+    let colon = token_at(ref tokens, start + 1);
+    match label.kind {
+        tk_ident => {
+            match colon.kind {
+                tk_colon => {
+                    return start + 1;
+                },
+                _ => {
+                },
+            }
+        },
+        _ => {
+        },
+    }
+    return -1;
+}
+
+fn segment_label_name(tokens: ref list<token>, start: i32, end: i32) -> str {
+    if segment_label_colon(ref tokens, start, end) >= 0 {
+        let label = token_at(ref tokens, start);
+        return label.text;
+    }
+    return "";
+}
+
+fn segment_value_start(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let colon = segment_label_colon(ref tokens, start, end);
+    if colon >= 0 {
+        return colon + 1;
+    }
+    return start;
+}
+
+fn call_args_are_named(tokens: ref list<token>, arg_start: i32, arg_end_limit: i32) -> bool {
+    if arg_start >= arg_end_limit {
+        return false;
+    }
+    let first_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
+    return segment_label_colon(ref tokens, arg_start, first_end) >= 0;
+}
+
+fn find_named_arg_segment_start(tokens: ref list<token>, arg_start: i32, arg_end_limit: i32, label: str) -> i32 {
+    let mut current_start = arg_start;
+    while current_start < arg_end_limit {
+        let segment_end = next_top_level_comma(ref tokens, current_start, arg_end_limit);
+        if segment_label_name(ref tokens, current_start, segment_end) == label {
+            return current_start;
+        }
+        current_start = segment_end + 1;
+    }
+    return -1;
+}
+
+fn named_arg_label_seen_before(tokens: ref list<token>, arg_start: i32, segment_start: i32, label: str) -> bool {
+    let mut current_start = arg_start;
+    while current_start < segment_start {
+        let segment_end = next_top_level_comma(ref tokens, current_start, segment_start);
+        if segment_label_name(ref tokens, current_start, segment_end) == label {
+            return true;
+        }
+        current_start = segment_end + 1;
     }
     return false;
 }
@@ -2424,10 +2752,22 @@ fn builtin_variant_payload_ctx(call_name: str, return_ctx: expected_type_ctx, in
 }
 
 fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
-    let head = token_at(ref tokens, start);
+    let name_index = span_call_name_index(ref tokens, start, end);
+    let open_index = span_call_open_index(ref tokens, start, end);
+    let head = token_at(ref tokens, name_index);
     let call_name = head.text;
-    let function_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, module, call_name);
-    let variant_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, call_name);
+    let qualifier = span_call_qualifier(ref tokens, start, end);
+    let mut function_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, module, call_name);
+    if qualifier != "" {
+        function_return_ctx = qualified_function_return_ctx(ref functions, ref uses, ref items, module, qualifier, call_name);
+        if function_return_ctx.head == "" {
+            push_diag(mutref diags, module, head.start, "unknown qualified function call target");
+        }
+    }
+    let mut variant_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, call_name);
+    if qualifier != "" {
+        variant_enum_name = "";
+    }
     let mut call_return_ctx = function_return_ctx;
     if function_return_ctx.head != "" {
         if call_name == "list" and expected_ctx.head != "" and type_names_match(expected_ctx.head, "list") {
@@ -2442,15 +2782,53 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
             }
         }
     }
-    let mut arg_start = start + 2;
+    let mut arg_start = open_index + 1;
     let arg_end_limit = end - 1;
     let mut arg_index = 0;
     let mut first_arg_ctx = empty_expected_type_ctx();
+    let named_args = call_args_are_named(ref tokens, arg_start, arg_end_limit);
 
-    while arg_start < arg_end_limit {
-        let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
-        let mut expected_arg_ctx = empty_expected_type_ctx();
-        if function_return_ctx.head != "" {
+    if named_args and variant_enum_name != "" {
+        push_diag(mutref diags, module, head.start, "named arguments are only supported for function calls");
+    }
+
+    if named_args and function_return_ctx.head != "" {
+        let mut fn_arity = visible_function_arity(ref functions, ref uses, ref items, module, call_name);
+        if qualifier != "" {
+            fn_arity = qualified_function_arity(ref functions, ref uses, ref items, module, qualifier, call_name);
+        }
+        let mut scan_start = arg_start;
+        while scan_start < arg_end_limit {
+            let scan_end = next_top_level_comma(ref tokens, scan_start, arg_end_limit);
+            let label = segment_label_name(ref tokens, scan_start, scan_end);
+            if label == "" {
+                push_diag(mutref diags, module, head.start, "cannot mix positional and named arguments");
+            } else {
+                if named_arg_label_seen_before(ref tokens, arg_start, scan_start, label) {
+                    push_diag(mutref diags, module, head.start, "duplicate named argument");
+                }
+                let mut label_known = false;
+                let mut param_scan = 0;
+                while param_scan < fn_arity {
+                    let mut candidate_name = "";
+                    if qualifier != "" {
+                        candidate_name = qualified_function_param_name(ref function_params, ref uses, ref items, module, qualifier, call_name, param_scan);
+                    } else {
+                        candidate_name = visible_function_param_name(ref function_params, ref uses, ref items, module, call_name, param_scan);
+                    }
+                    if candidate_name == label {
+                        label_known = true;
+                    }
+                    param_scan = param_scan + 1;
+                }
+                if not label_known {
+                    push_diag(mutref diags, module, head.start, "unknown named argument");
+                }
+            }
+            scan_start = scan_end + 1;
+        }
+        while arg_index < fn_arity {
+            let mut expected_arg_ctx = empty_expected_type_ctx();
             if call_name == "list_push" {
                 if arg_index == 0 {
                     expected_arg_ctx = make_expected_type_ctx("list", "", "");
@@ -2469,35 +2847,94 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                         expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
                     }
                 } else {
-                    expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+                    if qualifier != "" {
+                        expected_arg_ctx = qualified_function_param_ctx(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index);
+                    } else {
+                        expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+                    }
                 }
             }
-        } else {
-            if variant_enum_name != "" {
-                if builtin_variant_enum_name(call_name) != "" {
-                    expected_arg_ctx = builtin_variant_payload_ctx(call_name, call_return_ctx, arg_index);
-                } else {
-                    expected_arg_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+            let mut param_name = "";
+            if qualifier != "" {
+                param_name = qualified_function_param_name(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index);
+            } else {
+                param_name = visible_function_param_name(ref function_params, ref uses, ref items, module, call_name, arg_index);
+            }
+            let segment_start = find_named_arg_segment_start(ref tokens, arg_start, arg_end_limit, param_name);
+            if segment_start < 0 {
+                push_diag(mutref diags, module, head.start, "missing named argument for parameter");
+            } else {
+                let segment_end = next_top_level_comma(ref tokens, segment_start, arg_end_limit);
+                let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, segment_value_start(ref tokens, segment_start, segment_end), segment_end, head.start, expected_arg_ctx, mutref diags);
+                if arg_index == 0 {
+                    first_arg_ctx = actual_arg_ctx;
                 }
-            }
-        }
-        let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, head.start, expected_arg_ctx, mutref diags);
-        if arg_index == 0 {
-            first_arg_ctx = actual_arg_ctx;
-        }
-        if function_return_ctx.head != "" {
-            if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
-                push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
-            }
-        } else {
-            if variant_enum_name != "" {
                 if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
-                    push_diag(mutref diags, module, head.start, "constructor payload type does not match variant payload type");
+                    push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
                 }
             }
+            arg_index = arg_index + 1;
         }
-        arg_index = arg_index + 1;
-        arg_start = segment_end + 1;
+    } else {
+        while arg_start < arg_end_limit {
+            let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
+            if segment_label_colon(ref tokens, arg_start, segment_end) >= 0 {
+                push_diag(mutref diags, module, head.start, "cannot mix positional and named arguments");
+            }
+            let mut expected_arg_ctx = empty_expected_type_ctx();
+            if function_return_ctx.head != "" {
+                if call_name == "list_push" {
+                    if arg_index == 0 {
+                        expected_arg_ctx = make_expected_type_ctx("list", "", "");
+                    } else {
+                        if arg_index == 1 and first_arg_ctx.head == "list" and first_arg_ctx.arg1_name != "" {
+                            expected_arg_ctx = make_expected_type_ctx(first_arg_ctx.arg1_name, "", "");
+                        } else {
+                            expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+                        }
+                    }
+                } else {
+                    if call_name == "list_get" {
+                        if arg_index == 0 {
+                            expected_arg_ctx = make_expected_type_ctx("list", "", "");
+                        } else {
+                            expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+                        }
+                    } else {
+                        if qualifier != "" {
+                            expected_arg_ctx = qualified_function_param_ctx(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index);
+                        } else {
+                            expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
+                        }
+                    }
+                }
+            } else {
+                if variant_enum_name != "" {
+                    if builtin_variant_enum_name(call_name) != "" {
+                        expected_arg_ctx = builtin_variant_payload_ctx(call_name, call_return_ctx, arg_index);
+                    } else {
+                        expected_arg_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+                    }
+                }
+            }
+            let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, segment_value_start(ref tokens, arg_start, segment_end), segment_end, head.start, expected_arg_ctx, mutref diags);
+            if arg_index == 0 {
+                first_arg_ctx = actual_arg_ctx;
+            }
+            if function_return_ctx.head != "" {
+                if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
+                    push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
+                }
+            } else {
+                if variant_enum_name != "" {
+                    if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
+                        push_diag(mutref diags, module, head.start, "constructor payload type does not match variant payload type");
+                    }
+                }
+            }
+            arg_index = arg_index + 1;
+            arg_start = segment_end + 1;
+        }
     }
 
     if call_return_ctx.head != "" {

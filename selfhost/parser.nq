@@ -689,7 +689,7 @@ fn is_let_else_pattern_start(tokens: ref list<token>, cursor: i32) -> bool {
     return false;
 }
 
-fn parse_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
+fn parse_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
     let ctor = consume_ident(ref tokens, mutref cursor, mutref diags, file);
     if ctor.text != "Some" and ctor.text != "Ok" {
         push_diag(mutref diags, file, ctor, "let-else V1 only supports `Some(name)` and `Ok(name)` patterns");
@@ -750,7 +750,7 @@ fn parse_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutre
         push_diag(mutref diags, file, else_token, "let-else `else` block must exit explicitly with `return` in V1");
     }
     let else_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
-    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, loop_depth, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
     let semi = token_at(ref tokens, cursor);
     match semi.kind {
         tk_semi => {
@@ -766,7 +766,7 @@ fn parse_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutre
     return;
 }
 
-fn parse_match(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
+fn parse_match(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
     advance(mutref cursor);
     let expr_start = cursor;
     skip_until_block(ref tokens, mutref cursor);
@@ -807,7 +807,7 @@ fn parse_match(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<d
                         return;
                     },
                 }
-                parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, arm_scope_id, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+                parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, arm_scope_id, loop_depth, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
                 let maybe_comma = token_at(ref tokens, cursor);
                 match maybe_comma.kind {
                     tk_comma => {
@@ -821,7 +821,7 @@ fn parse_match(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<d
     }
 }
 
-fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
+fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
     let current = token_at(ref tokens, cursor);
     match current.kind {
         tk_kw_let => {
@@ -835,7 +835,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
                 },
             }
             if is_let_else_pattern_start(ref tokens, cursor) {
-                parse_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+                parse_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
                 return;
             }
             let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -865,13 +865,13 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             skip_until_block(ref tokens, mutref cursor);
             scan_value_expr_names(ref tokens, condition_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let then_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
-            parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, loop_depth, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let maybe_else = token_at(ref tokens, cursor);
             match maybe_else.kind {
                 tk_kw_else => {
                     advance(mutref cursor);
                     let else_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
-                    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+                    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, loop_depth, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
                 },
                 _ => {
                 },
@@ -883,16 +883,46 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             skip_until_block(ref tokens, mutref cursor);
             scan_value_expr_names(ref tokens, condition_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
-            parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
         tk_kw_match => {
-            parse_match(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            parse_match(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
         tk_kw_return => {
             advance(mutref cursor);
             let expr_start = cursor;
             skip_until_semi(ref tokens, mutref cursor);
             scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+        },
+        tk_kw_break => {
+            if loop_depth <= 0 {
+                push_diag(mutref diags, file, current, "`break` is only valid inside `while`");
+            }
+            advance(mutref cursor);
+            let semi = token_at(ref tokens, cursor);
+            match semi.kind {
+                tk_semi => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, semi, "expected `;` after `break`");
+                },
+            }
+        },
+        tk_kw_continue => {
+            if loop_depth <= 0 {
+                push_diag(mutref diags, file, current, "`continue` is only valid inside `while`");
+            }
+            advance(mutref cursor);
+            let semi = token_at(ref tokens, cursor);
+            match semi.kind {
+                tk_semi => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, semi, "expected `;` after `continue`");
+                },
+            }
         },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
@@ -910,7 +940,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
     }
 }
 
-fn parse_block(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
+fn parse_block(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, depth: i32, next_scope_id: mutref i32, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>) -> unit {
     let open = token_at(ref tokens, cursor);
     match open.kind {
         tk_lbrace => {
@@ -933,7 +963,7 @@ fn parse_block(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<d
                 return;
             },
             _ => {
-                parse_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+                parse_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             },
         }
     }
@@ -1224,7 +1254,7 @@ fn parse_function(tokens: ref list<token>, cursor: mutref i32, diags: mutref lis
     }
     consume_type(ref tokens, mutref cursor, mutref diags, file, mutref type_refs, function_name, type_return);
     parse_audit(ref tokens, mutref cursor, mutref diags, file);
-    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, root_scope_id, 0, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+    parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, root_scope_id, 0, 0, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
 }
 
 pub fn extract_uses(tokens: ref list<token>) -> list<str>
@@ -1515,11 +1545,21 @@ fn scan_expr_calls(tokens: ref list<token>, start: i32, end: i32, module: str, f
             tk_ident => {
                 let previous = token_at(ref tokens, index - 1);
                 let next = token_at(ref tokens, index + 1);
-                if is_dot_token(previous) or is_colon_token(next) {
+                if is_colon_token(next) {
+                    let second_colon = token_at(ref tokens, index + 2);
+                    let callee = token_at(ref tokens, index + 3);
+                    let open = token_at(ref tokens, index + 4);
+                    if is_colon_token(second_colon) and is_ident_token(callee) and is_lparen_token(open) {
+                        let arg_count = count_comma_args(ref tokens, index + 4);
+                        list_push(mutref calls, make_call_fact(module, function_name, callee.text, callee.start, arg_count));
+                    }
                 } else {
-                    if is_lparen_token(next) {
-                        let arg_count = count_comma_args(ref tokens, index + 1);
-                        list_push(mutref calls, make_call_fact(module, function_name, current.text, current.start, arg_count));
+                    if is_dot_token(previous) or is_colon_token(previous) {
+                    } else {
+                        if is_lparen_token(next) {
+                            let arg_count = count_comma_args(ref tokens, index + 1);
+                            list_push(mutref calls, make_call_fact(module, function_name, current.text, current.start, arg_count));
+                        }
                     }
                 }
             },
@@ -1529,6 +1569,28 @@ fn scan_expr_calls(tokens: ref list<token>, start: i32, end: i32, module: str, f
         index = index + 1;
     }
     return;
+}
+
+fn expr_starts_qualified_call(tokens: ref list<token>, expr_start: i32, end: i32) -> bool {
+    if expr_start + 4 >= end {
+        return false;
+    }
+    let first_colon = token_at(ref tokens, expr_start + 1);
+    let second_colon = token_at(ref tokens, expr_start + 2);
+    let callee = token_at(ref tokens, expr_start + 3);
+    let open = token_at(ref tokens, expr_start + 4);
+    if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(callee) and is_lparen_token(open) {
+        return true;
+    }
+    return false;
+}
+
+fn qualified_call_name(tokens: ref list<token>, expr_start: i32, end: i32) -> str {
+    if expr_starts_qualified_call(ref tokens, expr_start, end) {
+        let callee = token_at(ref tokens, expr_start + 3);
+        return callee.text;
+    }
+    return "";
 }
 
 fn scan_pattern_ctor_facts(tokens: ref list<token>, start: i32, end: i32, module: str, function_name: str, patterns: mutref list<pattern_ctor_fact>) -> unit {
@@ -2555,6 +2617,9 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
         },
         tk_ident => {
             let next = token_at(ref tokens, expr_start + 1);
+            if expr_starts_qualified_call(ref tokens, expr_start, end) {
+                return expr_call;
+            }
             if is_dot_token(next) {
                 let member = token_at(ref tokens, expr_start + 2);
                 if is_ident_token(member) and expr_start + 3 == end {
@@ -2591,6 +2656,10 @@ fn classify_expr_name(tokens: ref list<token>, start: i32, end: i32) -> str {
     let current = token_at(ref tokens, expr_start);
     match current.kind {
         tk_ident => {
+            let qualified_name = qualified_call_name(ref tokens, expr_start, end);
+            if qualified_name != "" {
+                return qualified_name;
+            }
             return current.text;
         },
         _ => {
@@ -2906,6 +2975,12 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             collect_value_match_expr_facts(ref tokens, expr_start, cursor - 1, mutref diags, file, function_name, scope_id, mutref next_scope_id, mutref match_arms);
             list_push(mutref returns, make_return_expr_fact(file, function_name, scope_id, current.start, expr_start, cursor - 1, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1)));
         },
+        tk_kw_break => {
+            skip_until_semi(ref tokens, mutref cursor);
+        },
+        tk_kw_continue => {
+            skip_until_semi(ref tokens, mutref cursor);
+        },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
             if is_ident_token(current) and is_eq_token(next) {
@@ -3193,7 +3268,7 @@ fn collect_stmt_match_expr_scopes(tokens: ref list<token>, start: i32, end: i32,
     return;
 }
 
-fn collect_stmt_match_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, match_at: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
+fn collect_stmt_match_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, match_at: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
     advance(mutref cursor);
     let scrutinee_start = cursor;
     skip_until_block(ref tokens, mutref cursor);
@@ -3233,7 +3308,7 @@ fn collect_stmt_match_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
                     },
                 }
                 let arm_scope_id = next_value_scope_id(mutref next_scope_id);
-                collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, arm_scope_id, mutref next_scope_id, mutref statements);
+                collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, arm_scope_id, loop_depth, mutref next_scope_id, mutref statements);
                 let maybe_comma = token_at(ref tokens, cursor);
                 match maybe_comma.kind {
                     tk_comma => {
@@ -3247,7 +3322,7 @@ fn collect_stmt_match_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
     }
 }
 
-fn collect_stmt_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, let_at: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
+fn collect_stmt_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, let_at: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
     let ctor = consume_ident(ref tokens, mutref cursor, mutref diags, file);
     if ctor.text != "Some" and ctor.text != "Ok" {
         push_diag(mutref diags, file, ctor, "let-else V1 only supports `Some(name)` and `Ok(name)` patterns");
@@ -3309,7 +3384,7 @@ fn collect_stmt_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags
         push_diag(mutref diags, file, else_token, "let-else `else` block must exit explicitly with `return` in V1");
     }
     let else_scope_id = next_value_scope_id(mutref next_scope_id);
-    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, mutref next_scope_id, mutref statements);
+    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, loop_depth, mutref next_scope_id, mutref statements);
     let semi = token_at(ref tokens, cursor);
     match semi.kind {
         tk_semi => {
@@ -3323,7 +3398,7 @@ fn collect_stmt_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags
     return;
 }
 
-fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
+fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
     let current = token_at(ref tokens, cursor);
     match current.kind {
         tk_kw_let => {
@@ -3337,7 +3412,7 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
                 },
             }
             if is_let_else_pattern_start(ref tokens, cursor) {
-                collect_stmt_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, current.start, mutref next_scope_id, mutref statements);
+                collect_stmt_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, current.start, mutref next_scope_id, mutref statements);
                 return;
             }
             let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -3369,14 +3444,14 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
             skip_until_block(ref tokens, mutref cursor);
             let condition_end = cursor;
             let then_scope_id = next_value_scope_id(mutref next_scope_id);
-            collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, mutref next_scope_id, mutref statements);
+            collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, loop_depth, mutref next_scope_id, mutref statements);
             let maybe_else = token_at(ref tokens, cursor);
             let mut else_scope_id = -1;
             match maybe_else.kind {
                 tk_kw_else => {
                     advance(mutref cursor);
                     else_scope_id = next_value_scope_id(mutref next_scope_id);
-                    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, mutref next_scope_id, mutref statements);
+                    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, else_scope_id, loop_depth, mutref next_scope_id, mutref statements);
                 },
                 _ => {
                 },
@@ -3389,11 +3464,11 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
             skip_until_block(ref tokens, mutref cursor);
             let condition_end = cursor;
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
-            collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, mutref next_scope_id, mutref statements);
+            collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, mutref next_scope_id, mutref statements);
             list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_while, "", condition_start, condition_end, classify_expr_kind(ref tokens, condition_start, condition_end), classify_expr_name(ref tokens, condition_start, condition_end), classify_expr_member_name(ref tokens, condition_start, condition_end), body_scope_id, -1));
         },
         tk_kw_match => {
-            collect_stmt_match_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, current.start, mutref next_scope_id, mutref statements);
+            collect_stmt_match_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, current.start, mutref next_scope_id, mutref statements);
         },
         tk_kw_return => {
             advance(mutref cursor);
@@ -3401,6 +3476,32 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
             skip_until_semi(ref tokens, mutref cursor);
             collect_stmt_match_expr_scopes(ref tokens, expr_start, cursor - 1, mutref diags, file, function_name, scope_id, mutref next_scope_id);
             list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_return, "", expr_start, cursor - 1, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1), -1, -1));
+        },
+        tk_kw_break => {
+            advance(mutref cursor);
+            let semi = token_at(ref tokens, cursor);
+            match semi.kind {
+                tk_semi => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, semi, "expected `;` after `break`");
+                },
+            }
+            list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_break, "", -1, -1, expr_unit, "", "", -1, -1));
+        },
+        tk_kw_continue => {
+            advance(mutref cursor);
+            let semi = token_at(ref tokens, cursor);
+            match semi.kind {
+                tk_semi => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, semi, "expected `;` after `continue`");
+                },
+            }
+            list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_continue, "", -1, -1, expr_unit, "", "", -1, -1));
         },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
@@ -3419,7 +3520,7 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
     }
 }
 
-fn collect_stmt_block_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
+fn collect_stmt_block_facts(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, loop_depth: i32, next_scope_id: mutref i32, statements: mutref list<stmt_fact>) -> unit {
     let open = token_at(ref tokens, cursor);
     match open.kind {
         tk_lbrace => {
@@ -3442,7 +3543,7 @@ fn collect_stmt_block_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
                 return;
             },
             _ => {
-                collect_stmt_stmt_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, mutref next_scope_id, mutref statements);
+                collect_stmt_stmt_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, mutref next_scope_id, mutref statements);
             },
         }
     }
@@ -3521,7 +3622,7 @@ fn collect_stmt_function_facts(tokens: ref list<token>, cursor: mutref i32, diag
     }
     consume_type_name(ref tokens, mutref cursor, mutref diags, file);
     parse_audit(ref tokens, mutref cursor, mutref diags, file);
-    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, root_scope_id, mutref next_scope_id, mutref statements);
+    collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, root_scope_id, 0, mutref next_scope_id, mutref statements);
 }
 
 pub fn collect_stmt_facts(file: str, tokens: ref list<token>, statements: mutref list<stmt_fact>, diags: mutref list<diag>) -> stmt_fact_summary

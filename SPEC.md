@@ -6,7 +6,7 @@ This document defines the locked Nauqtype v0.1 surface. It is intentionally smal
 
 One controlled bootstrap-track extension is implemented in the current stage0 compiler: statement-form `while` loops. This does not widen v0.1 to broader loop families.
 
-The next live-in-the-language Batch B surface is documented here before implementation: named function arguments, direct module-qualified function calls, and minimal `break;` / `continue;` for `while`.
+The live-in-the-language Batch B surface is now implemented in narrow form: named function arguments, direct module-qualified function calls, and minimal `break;` / `continue;` for `while`.
 
 ## Language Philosophy
 

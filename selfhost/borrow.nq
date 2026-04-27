@@ -361,6 +361,28 @@ fn is_stmt_let_else(kind: checked_stmt_kind) -> bool {
     }
 }
 
+fn is_stmt_break(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_break => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_stmt_continue(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_continue => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_target_function(kind: checked_target_kind) -> bool {
     match kind {
         checked_target_function => {
@@ -1467,7 +1489,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
         match stmt_entry {
             Some(stmt) => {
                 if stmt.function_id == function.id and stmt.block_id == block_id {
-                    if stmt.expr_id <= 0 {
+                    if stmt.expr_id <= 0 and not is_stmt_break(stmt.kind) and not is_stmt_continue(stmt.kind) {
                         push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked statement expression");
                     }
                     if is_stmt_local(stmt.kind) {

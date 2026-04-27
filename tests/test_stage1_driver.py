@@ -954,6 +954,124 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stdout, "hello\n")
             self.assertEqual(result.stderr, "")
 
+    def test_stage1_driver_batch_b_named_arguments_example_runs(self) -> None:
+        result = self._run_driver(["run", str(self.root / "examples" / "named_arguments.nq")])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_batch_b_qualified_calls_example_runs(self) -> None:
+        result = self._run_driver(["run", str(self.root / "examples" / "qualified_calls.nq")])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_batch_b_break_continue_example_runs(self) -> None:
+        result = self._run_driver(["run", str(self.root / "examples" / "break_continue.nq")])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_batch_b_named_argument_validation(self) -> None:
+        invalid_cases = {
+            "mixed": (
+                "return add(1, right: 2);",
+                "cannot mix positional and named arguments",
+            ),
+            "duplicate": (
+                "return add(left: 1, left: 2);",
+                "duplicate named argument",
+            ),
+            "unknown": (
+                "return add(left: 1, extra: 2);",
+                "unknown named argument",
+            ),
+            "missing": (
+                "return add(left: 1);",
+                "missing named argument for parameter",
+            ),
+            "constructor": (
+                "let maybe: option<i32> = Some(value: 1); return 0;",
+                "named arguments are only supported for function calls",
+            ),
+        }
+        for name, (body, expected) in invalid_cases.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tmp = Path(tmp_dir)
+                    self._write_project(
+                        tmp,
+                        {
+                            "main.nq": f"""
+                            fn add(left: i32, right: i32) -> i32 {{
+                                return left + right;
+                            }}
+
+                            fn main() -> i32 {{
+                                {body}
+                            }}
+                            """,
+                        },
+                    )
+                    result = self._run_driver(["check", str(tmp / "main.nq")])
+                    combined = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, combined)
+                    self.assertIn(expected, combined)
+
+    def test_stage1_driver_batch_b_qualified_call_requires_direct_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        return helper::add_pair(left: 40, right: 2);
+                    }
+                    """,
+                    "helper.nq": """
+                    pub fn add_pair(left: i32, right: i32) -> i32 {
+                        return left + right;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("unknown qualified function call target", combined)
+
+    def test_stage1_driver_batch_b_break_continue_restricted_to_while(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        break;
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("`break` is only valid inside `while`", combined)
+
+    def test_stage1_driver_batch_b_facts_see_qualified_call_target(self) -> None:
+        result = self._run_driver(["facts", str(self.root / "examples" / "qualified_calls.nq"), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(
+            any(
+                edge["caller"] == "fn:qualified_calls::main"
+                and edge["callee"] == "fn:batch_b_helper::add_pair"
+                for edge in payload["call_graph"]
+            )
+        )
+
     def test_stage1_driver_fmt_outputs_canonical_text_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

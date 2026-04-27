@@ -165,3 +165,6 @@
 - [x] Add `match` as an expression with canonical Nauqtype examples (selfhost stage1)
 - [x] Add `let-else` for `option` / `result` with canonical Nauqtype examples (selfhost stage1)
 - [x] Add formatter-lite for the trusted teaching subset
+- [x] Add named function arguments with canonical Nauqtype examples
+- [x] Add direct module-qualified function calls with canonical Nauqtype examples
+- [x] Add minimal nearest-`while` `break` / `continue` with canonical Nauqtype examples

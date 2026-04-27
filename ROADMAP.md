@@ -241,8 +241,8 @@ Status:
 - `match` as an expression is done for exhaustive value-producing arms with exact arm-result agreement
 - narrow `let-else` is done for `Some(name)` and `Ok(name)` guard bindings with explicit-return `else` blocks
 - formatter-lite is done as an output-only / `--check` trusted-subset formatter, not a full AST-preserving formatter
-- the next ergonomics slice is Batch B: named arguments, direct module-qualified calls, and minimal `break` / `continue`
-- Batch B decisions are locked before implementation: named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and `break` / `continue` stay nearest-`while` statements
+- Batch B is done for named function arguments, direct module-qualified function calls, and minimal nearest-`while` `break` / `continue`
+- named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and loop control stays statement-only with no labels, values, methods, or package-path expansion
 
 ## Feature Ordering
 
@@ -269,7 +269,7 @@ Features explicitly not required before first success:
 - user-defined generics
 - methods / `impl`
 - `for`
-- `break` / `continue`
+- labeled or valued `break` / `continue`
 - propagation sugar
 - typed holes / repair obligations
 - richer standard library

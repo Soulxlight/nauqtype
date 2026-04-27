@@ -10,6 +10,8 @@ pub enum ir_stmt_kind {
     ir_stmt_let_else,
     ir_stmt_return,
     ir_stmt_expr,
+    ir_stmt_break,
+    ir_stmt_continue,
 }
 
 pub enum ir_expr_kind {
@@ -307,6 +309,12 @@ fn checked_stmt_to_ir_kind(kind: checked_stmt_kind) -> ir_stmt_kind {
         },
         checked_stmt_return => {
             return ir_stmt_return;
+        },
+        checked_stmt_break => {
+            return ir_stmt_break;
+        },
+        checked_stmt_continue => {
+            return ir_stmt_continue;
         },
         _ => {
             return ir_stmt_expr;
@@ -790,7 +798,18 @@ audit {
         let entry = list_get(ref checked_statements, stmt_index);
         match entry {
             Some(value) => {
-                if value.expr_id < 0 {
+                let mut requires_expr = true;
+                match value.kind {
+                    checked_stmt_break => {
+                        requires_expr = false;
+                    },
+                    checked_stmt_continue => {
+                        requires_expr = false;
+                    },
+                    _ => {
+                    },
+                }
+                if requires_expr and value.expr_id < 0 {
                     push_ir_limitation(mutref diags, value.module_name, value.at, "missing statement expression id in checked handoff");
                 }
                 list_push(mutref statements_out, ir_stmt {
@@ -1030,6 +1049,24 @@ audit {
                         ir_stmt_expr => {
                             match kind {
                                 ir_stmt_expr => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_break => {
+                            match kind {
+                                ir_stmt_break => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_continue => {
+                            match kind {
+                                ir_stmt_continue => {
                                     return true;
                                 },
                                 _ => {
