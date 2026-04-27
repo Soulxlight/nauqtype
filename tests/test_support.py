@@ -161,8 +161,26 @@ def run_copied_selfhost(timeout: int = SELFHOST_REFERENCE_TIMEOUT) -> subprocess
 @contextmanager
 def built_stage1_driver(timeout: int = STAGE1_DRIVER_BUILD_TIMEOUT):
     with copied_selfhost_workspace() as tmp:
-        result = run_stage0_selfhost(tmp, timeout=timeout)
+        # Driver tests need an executable; self-build proof tests cover running it over selfhost.
+        ensure_bootstrap_deps()
+        build_dir = tmp / "build"
+        build_dir.mkdir(exist_ok=True)
         emitted_exe = tmp / "build" / "main.exe"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "compiler.main",
+                "build",
+                str(tmp / "main.nq"),
+                "-o",
+                str(emitted_exe),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
         if result.returncode != 0:
             raise AssertionError(result.stdout + result.stderr)
         if not emitted_exe.exists():

@@ -28,7 +28,7 @@ class IntegrationTests(unittest.TestCase):
         return self.run_program(workspace / entry_name)
 
     def copy_selfhost_support(self, workspace: Path) -> None:
-        for module in ("ast.nq", "diag.nq", "files.nq", "lexer.nq", "parser.nq", "source.nq", "token.nq"):
+        for module in ("ast.nq", "diag.nq", "files.nq", "lexer.nq", "parser.nq", "source.nq", "text.nq", "token.nq"):
             shutil.copy(self.root / "selfhost" / module, workspace / module)
 
     def write_workspace_files(self, workspace: Path, files: dict[str, str]) -> None:
