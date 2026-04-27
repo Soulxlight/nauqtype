@@ -8,8 +8,8 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond bootstrap `while`
-- `break`
-- `continue`
+- `break` / `continue` implementation until the Batch B compiler checkpoint
+- labeled or valued `break` / `continue`
 - Field assignment
 - Stored references
 - Reference returns
@@ -50,7 +50,7 @@ The current stage1 driver has a deliberately narrow toolchain-only runtime surfa
 - Language server
 - Package manager
 
-Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, and formatter-lite have now graduated from this deferred list in deliberately narrow first forms. Minimal `break` / `continue` stay deferred until the Batch B design checkpoint records their exact control-flow rules.
+Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, and formatter-lite have now graduated from this deferred list in deliberately narrow first forms. Minimal nearest-`while` `break` / `continue` are designed for Batch B but remain unimplemented until the compiler checkpoint lands.
 
 ## Why These Are Deferred
 

@@ -242,6 +242,7 @@ Status:
 - narrow `let-else` is done for `Some(name)` and `Ok(name)` guard bindings with explicit-return `else` blocks
 - formatter-lite is done as an output-only / `--check` trusted-subset formatter, not a full AST-preserving formatter
 - the next ergonomics slice is Batch B: named arguments, direct module-qualified calls, and minimal `break` / `continue`
+- Batch B decisions are locked before implementation: named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and `break` / `continue` stay nearest-`while` statements
 
 ## Feature Ordering
 

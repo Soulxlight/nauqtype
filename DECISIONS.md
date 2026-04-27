@@ -255,3 +255,27 @@
 - Reason chosen: literals improve readability and proof-corpus coverage while a contextual empty-list rule and homogeneous non-empty rule keep type inference and backend lowering small.
 - Consequences: `[]` requires an expected `list<T>` context; non-empty literals infer or check one element type; const list initializers, spreads, comprehensions, and ranges remain deferred.
 - Reversible later: extensible; the syntax can grow by explicit milestones without changing V1 behavior.
+
+## D033: Named arguments are supervision syntax, not evaluation-order control
+
+- Decision: add named function arguments as `call(name: value)` for direct function calls only.
+- Alternatives considered: `name = value`, defaults, overloading, mixed positional/named calls, and named constructors.
+- Reason chosen: labels make calls easier for humans and agents to review, while parameter-order normalization avoids hidden source-order semantics.
+- Consequences: a call is either all positional or all named; named arguments must exactly match parameter names, may appear in any source order, and are evaluated/lowered in callee parameter order.
+- Reversible later: extensible, but defaults and constructor labels should require separate decisions.
+
+## D034: Qualified calls are direct module provenance, not methods
+
+- Decision: add `module::function(...)` as a direct call to a public function from a directly imported flat-root module.
+- Alternatives considered: member calls, package paths, qualified constructors/types, and broader namespace paths.
+- Reason chosen: explicit provenance helps supervised agent work without introducing receiver lookup, methods, or package-system complexity.
+- Consequences: only one module qualifier is accepted, the left side resolves in the module namespace, and plain imported names keep the existing unqualified visibility rules.
+- Reversible later: yes, broader paths can grow without changing this direct-call meaning.
+
+## D035: `break` and `continue` stay minimal and loop-local
+
+- Decision: add only `break;` and `continue;` for the nearest enclosing `while`.
+- Alternatives considered: labels, valued break, loop expressions, and broader loop families.
+- Reason chosen: simple loop exits improve day-to-day Nauqtype authorship while keeping control flow explicit and non-Rustlike.
+- Consequences: they are valid inside nested `if`, `match`, or `let-else` only when those constructs are inside a `while`; they have no value and do not count as a `let-else` explicit exit in V1.
+- Reversible later: extensible, but labels and valued loop expressions remain separate future decisions.

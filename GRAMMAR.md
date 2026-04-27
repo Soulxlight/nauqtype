@@ -37,7 +37,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 ### Keywords
 
-`and`, `audit`, `const`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
+`and`, `audit`, `break`, `const`, `continue`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
 
 ## Tokens
 
@@ -45,6 +45,7 @@ Punctuation and operators:
 
 - `(` `)` `{` `}` `[` `]`
 - `,` `;` `:` `.`
+- `::`
 - `->` `=>`
 - `=` `==` `!=`
 - `<` `<=` `>` `>=`
@@ -136,6 +137,8 @@ stmt          = let_stmt
               | if_stmt
               | while_stmt
               | match_stmt
+              | break_stmt
+              | continue_stmt
               | return_stmt
               | expr_stmt ;
 
@@ -148,6 +151,8 @@ expr_stmt     = expr ";" ;
 
 if_stmt       = "if" expr block [ "else" block ] ;
 while_stmt    = "while" expr block ;
+break_stmt    = "break" ";" ;
+continue_stmt = "continue" ";" ;
 
 match_stmt    = "match" expr "{" match_arm { "," match_arm } [ "," ] "}" ;
 match_arm     = pattern "=>" block ;
@@ -178,14 +183,20 @@ postfix       = primary { call_suffix | field_suffix } ;
 call_suffix   = "(" argument_list? ")" ;
 field_suffix  = "." IDENT ;
 
-argument_list = expr { "," expr } [ "," ] ;
+argument_list = positional_arguments | named_arguments ;
+positional_arguments = expr { "," expr } [ "," ] ;
+named_arguments = named_argument { "," named_argument } [ "," ] ;
+named_argument = IDENT ":" expr ;
 
 primary       = literal
               | IDENT
+              | qualified_name
               | struct_literal
               | list_literal
               | match_expr
               | "(" expr ")" ;
+
+qualified_name = IDENT "::" IDENT ;
 
 struct_literal = IDENT "{" field_init_list? "}" ;
 field_init_list = field_init { "," field_init } [ "," ] ;
@@ -200,6 +211,8 @@ match_expr_arm = pattern "=>" expr ;
 Parser note:
 
 - `IDENT "(" ... ")"` may resolve later as either a function call or an enum constructor call.
+- `IDENT "::" IDENT "(" ... ")"` is a Batch B direct module-qualified function call only.
+- Named arguments are Batch B function-call labels only; constructor payloads stay positional.
 - `IDENT "{" ... "}"` is a struct literal when the identifier resolves to a `type`.
 - `[]` requires an expected `list<T>` context. Non-empty list literals infer from the first element unless an expected `list<T>` is available, and all elements must have one homogeneous type. Spreads, comprehensions, ranges, and const list initializers are not part of V1.
 - Statement `match` arms remain block-bodied; only `match_expr` arms are expression-bodied.
@@ -230,14 +243,14 @@ Pattern meaning is resolved semantically:
 | 5 | `+`, `-` | left |
 | 6 | `*`, `/` | left |
 | 7 | unary `-`, `not`, `ref`, `mutref` | right |
-| 8 | call, field access | left |
+| 8 | qualified name, call, field access | left |
 
 ## Grammar Simplifications Chosen Intentionally
 
 - No newline significance
 - No implicit last-expression returns
 - No general block expressions
-- No loop grammar beyond bootstrap `while` in v0.1
+- No loop grammar beyond bootstrap `while` and Batch B `break;` / `continue;`
 - AI Contracts use a fixed clause order instead of free-form annotations
 - No literal patterns in v0.1
 - No generic parameter declarations in v0.1

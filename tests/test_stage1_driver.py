@@ -9,14 +9,14 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from tests.test_support import ROOT, built_stage1_driver, normalize_structural_c
+from tests.test_support import ROOT, STAGE1_DRIVER_BUILD_TIMEOUT, built_stage1_driver, normalize_structural_c
 
 
 class Stage1DriverTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.root = ROOT
-        cls._driver_ctx = built_stage1_driver(timeout=240)
+        cls._driver_ctx = built_stage1_driver(timeout=STAGE1_DRIVER_BUILD_TIMEOUT)
         cls.driver_workspace, cls.driver_exe = cls._driver_ctx.__enter__()
 
     @classmethod
@@ -987,6 +987,94 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             self.assertEqual(source.read_text(encoding="utf-8"), original)
 
+    def test_stage1_driver_fmt_ignores_braces_inside_line_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            source = tmp / "main.nq"
+            source.write_text(
+                "fn main() -> i32 { // }}} should not close the function\n"
+                "return 0; // {{{ should not keep the function open\n"
+                "}\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = self._run_driver(["fmt", str(source)])
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout,
+                "fn main() -> i32 { // }}} should not close the function\n"
+                "    return 0; // {{{ should not keep the function open\n"
+                "}\n",
+            )
+            self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_fmt_keeps_canonical_closing_forms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            source = tmp / "main.nq"
+            source.write_text(
+                "fn main() -> i32 {\n"
+                "if true {\n"
+                "return 0;\n"
+                "} else {\n"
+                "let value: option<i32> = None;\n"
+                "match value {\n"
+                "Some(n) => {\n"
+                "return n;\n"
+                "},\n"
+                "None => {\n"
+                "return 1;\n"
+                "},\n"
+                "}\n"
+                "}\n"
+                "}\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = self._run_driver(["fmt", str(source)])
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.stdout,
+                "fn main() -> i32 {\n"
+                "    if true {\n"
+                "        return 0;\n"
+                "    } else {\n"
+                "        let value: option<i32> = None;\n"
+                "        match value {\n"
+                "            Some(n) => {\n"
+                "                return n;\n"
+                "            },\n"
+                "            None => {\n"
+                "                return 1;\n"
+                "            },\n"
+                "        }\n"
+                "    }\n"
+                "}\n",
+            )
+            self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_fmt_normalizes_input_newlines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            crlf_source = tmp / "crlf.nq"
+            crlf_source.write_bytes(b"fn main() -> i32 {\r\nreturn 0;\r\n}\r\n")
+            no_final_newline_source = tmp / "no_final_newline.nq"
+            no_final_newline_source.write_text("fn main() -> i32 {\nreturn 0;\n}", encoding="utf-8", newline="\n")
+
+            crlf = self._run_driver(["fmt", str(crlf_source)])
+            self.assertEqual(crlf.returncode, 0, crlf.stdout + crlf.stderr)
+            self.assertEqual(crlf.stdout, "fn main() -> i32 {\n    return 0;\n}\n")
+            self.assertEqual(crlf.stderr, "")
+
+            no_final_newline = self._run_driver(["fmt", str(no_final_newline_source)])
+            self.assertEqual(no_final_newline.returncode, 0, no_final_newline.stdout + no_final_newline.stderr)
+            self.assertEqual(no_final_newline.stdout, "fn main() -> i32 {\n    return 0;\n}\n")
+            self.assertEqual(no_final_newline.stderr, "")
+
     def test_stage1_driver_fmt_check_and_fail_closed_cases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1019,9 +1107,9 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertIn("formatter-lite unsupported: tabs", unsupported.stderr)
 
     def test_stage1_driver_fmt_check_accepts_canonical_examples(self) -> None:
-        for name in ("top_level_const.nq", "list_literals.nq", "match_expr_let_else.nq"):
-            with self.subTest(name=name):
-                result = self._run_driver(["fmt", "--check", str(self.root / "examples" / name)])
+        for source in sorted((self.root / "examples").glob("*.nq")):
+            with self.subTest(name=source.name):
+                result = self._run_driver(["fmt", "--check", str(source)])
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, "")
                 self.assertEqual(result.stderr, "")

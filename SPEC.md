@@ -6,6 +6,8 @@ This document defines the locked Nauqtype v0.1 surface. It is intentionally smal
 
 One controlled bootstrap-track extension is implemented in the current stage0 compiler: statement-form `while` loops. This does not widen v0.1 to broader loop families.
 
+The next live-in-the-language Batch B surface is documented here before implementation: named function arguments, direct module-qualified function calls, and minimal `break;` / `continue;` for `while`.
+
 ## Language Philosophy
 
 Nauqtype is designed for AI-authored code under human supervision.
@@ -48,7 +50,9 @@ Reserved keywords in v0.1:
 
 - `and`
 - `audit`
+- `break`
 - `const`
+- `continue`
 - `else`
 - `enum`
 - `false`
@@ -288,7 +292,19 @@ Rules:
 
 ```nauq
 let sum = add(1, 2);
+let labeled = add(right: 2, left: 1);
+let imported = math::add(left: 1, right: 2);
 ```
+
+Batch B rules:
+
+- Named arguments use `name: value` and apply only to function calls.
+- A call is either all positional or all named.
+- Named arguments may appear in any source order, but are matched, evaluated, borrow-checked, lowered, and emitted in callee parameter order.
+- Labels must match declared parameter names exactly; missing, duplicate, and unknown labels are rejected.
+- Defaults, overloading, mixed positional/named calls, and named enum constructor payloads are not supported.
+- `module::function(...)` calls a public function from a directly imported flat-root module.
+- Qualified calls are not member calls, methods, package paths, constructors, or qualified type syntax.
 
 ### Borrow Expressions
 
@@ -359,7 +375,9 @@ Rules:
 - `while` is a statement, not an expression
 - condition type must be `bool`
 - loop bodies are explicit blocks
-- `break` and `continue` are not part of the bootstrap surface
+- Batch B adds only `break;` and `continue;` for the nearest enclosing `while`
+- `break;` and `continue;` are valid inside nested `if`, `match`, or `let-else` only when the nested construct is inside a `while`
+- loop exits have no value, no labels, and do not make `while` an expression
 - loop move checking is conservative across iterations; if a non-copy value may be moved on one iteration and reused on a later one, the compiler rejects the loop
 
 ### Match
@@ -594,8 +612,7 @@ These are warnings, not hard errors.
 - methods
 - traits
 - loop families beyond bootstrap `while`
-- `break`
-- `continue`
+- labeled or valued `break` / `continue`
 - field assignment
 - user-defined generics
 - broader constant expressions beyond the v1 pure literal/operator subset

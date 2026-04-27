@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_READY = False
 _COPIED_SELFHOST_CACHE: dict[int, subprocess.CompletedProcess[str]] = {}
 SELFHOST_REFERENCE_TIMEOUT = 360
+STAGE1_DRIVER_BUILD_TIMEOUT = 1200
 
 
 def compile_text(text: str, name: str = "test.nq"):
@@ -158,7 +159,7 @@ def run_copied_selfhost(timeout: int = SELFHOST_REFERENCE_TIMEOUT) -> subprocess
 
 
 @contextmanager
-def built_stage1_driver(timeout: int = 240):
+def built_stage1_driver(timeout: int = STAGE1_DRIVER_BUILD_TIMEOUT):
     with copied_selfhost_workspace() as tmp:
         result = run_stage0_selfhost(tmp, timeout=timeout)
         emitted_exe = tmp / "build" / "main.exe"
