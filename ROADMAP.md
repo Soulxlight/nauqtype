@@ -221,7 +221,7 @@ Status:
 - `facts` v1 is now locked by a versioned schema, golden fixture, and representative selfhost-module smoke check
 - `facts --format v2` preserves v1 and adds explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields
 - full-tree `facts selfhost/main.nq` is now bounded under the Windows 240-second gate
-- `refactor-rename` emits deterministic JSON edit plans and never mutates files; field IDs are intentionally rejected until checked field-use references exist
+- `refactor-rename` emits deterministic JSON edit plans and never mutates files; checked field definitions and field uses are now part of the supported rename surface
 - `policy-check` validates `nauqtype.policy.json` v1 sidecars against checked semantic facts
 - no semantic language features, Rust-like lifetime expansion, or broader borrow semantics were included in this tooling milestone
 

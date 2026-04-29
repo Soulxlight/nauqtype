@@ -1,5 +1,6 @@
 use ast;
 use files;
+use handoff;
 use source;
 
 pub type facts_summary {
@@ -323,6 +324,10 @@ fn type_ref_identity(entry: type_ref) -> str {
 
 fn name_ref_identity(entry: name_ref) -> str {
     return concat6("nameref:", entry.module, "::", entry.function_name, "@", i32_to_str(entry.at));
+}
+
+fn field_ref_identity(kind: str, module: str, function_name: str, at: i32) -> str {
+    return concat6("fieldref:", kind, ":", module, "::", concat3(function_name, "@", i32_to_str(at)));
 }
 
 fn slice_text(text: str, start: i32, end: i32) -> str {
@@ -1381,7 +1386,67 @@ fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, use
     return;
 }
 
-fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, resolved_out: mutref list<fact_reference>) -> unit {
+fn lookup_checked_expr(expressions: ref list<checked_expr>, expr_id: i32) -> option<checked_expr> {
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.id == expr_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn append_checked_field_references(expressions: ref list<checked_expr>, struct_fields: ref list<checked_struct_field_init>, resolved_out: mutref list<fact_reference>) -> unit {
+    let mut expr_index = 0;
+    while expr_index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, expr_index);
+        match entry {
+            Some(value) => {
+                match value.kind {
+                    checked_expr_field => {
+                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        expr_index = expr_index + 1;
+    }
+
+    let mut field_index = 0;
+    while field_index < list_len(ref struct_fields) {
+        let entry = list_get(ref struct_fields, field_index);
+        match entry {
+            Some(value) => {
+                let parent = lookup_checked_expr(ref expressions, value.expr_id);
+                match parent {
+                    Some(expr) => {
+                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_init", expr.module_name, expr.function_name, value.at), "field_init", expr.module_name, function_identity(expr.module_name, expr.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    return;
+}
+
+fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, struct_fields: ref list<checked_struct_field_init>, include_checked_field_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
     let mut use_index = 0;
     while use_index < list_len(ref uses) {
         let entry = list_get(ref uses, use_index);
@@ -1431,6 +1496,9 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
             },
         }
         ref_index = ref_index + 1;
+    }
+    if include_checked_field_refs {
+        append_checked_field_references(ref expressions, ref struct_fields, mutref resolved_out);
     }
     return;
 }
@@ -1639,7 +1707,7 @@ fn find_refactor_target(workspace_root: str, entry_module: str, entry_path: str,
             Some(value) => {
                 let id = field_identity(value.module, value.type_name, value.name);
                 if id == target_id {
-                    return empty_refactor_target();
+                    return make_refactor_target(true, id, "field", value.module, type_identity(value.module, value.type_name), value.name, value.at, source_path_for_module(workspace_root, entry_module, entry_path, value.module));
                 }
             },
             None => {
@@ -1788,7 +1856,7 @@ fn append_refactor_edit(lines: mutref list<str>, module: str, path: str, start: 
     return;
 }
 
-pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, target_id: str, new_name: str) -> i32
+pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, checked_expressions: ref list<checked_expr>, checked_struct_fields: ref list<checked_struct_field_init>, target_id: str, new_name: str) -> i32
 audit {
     intent("Emit a deterministic plan-only semantic rename edit set without mutating source files");
     mutates();
@@ -1807,7 +1875,7 @@ audit {
     }
 
     let mut resolved_refs: list<fact_reference> = list();
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, mutref resolved_refs);
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref checked_expressions, ref checked_struct_fields, true, mutref resolved_refs);
     let mut edit_count = 1;
     if new_name == target.name {
         edit_count = 0;
@@ -2209,10 +2277,12 @@ audit {
     effects(print);
 }
 {
-    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, 1);
+    let empty_expressions: list<checked_expr> = list();
+    let empty_struct_fields: list<checked_struct_field_init> = list();
+    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, ref empty_expressions, ref empty_struct_fields, 1);
 }
 
-pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, format_version: i32) -> facts_summary
+pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, checked_expressions: ref list<checked_expr>, checked_struct_fields: ref list<checked_struct_field_init>, format_version: i32) -> facts_summary
 audit {
     intent("Emit deterministic stage1 semantic facts with versioned evidence fields when requested");
     mutates();
@@ -2220,13 +2290,12 @@ audit {
 }
 {
     let def_count = definition_count(ref items, ref uses, ref fields, ref bindings);
-    let ref_count = reference_count(ref uses, ref type_refs, ref refs);
     let mut resolved_refs: list<fact_reference> = list();
     let mut resolved_edges: list<fact_call_edge> = list();
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, mutref resolved_refs);
-    build_resolved_call_edges(ref items, ref uses, ref variants, ref calls, mutref resolved_edges);
-
     let include_evidence = format_version == 2;
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref checked_expressions, ref checked_struct_fields, include_evidence, mutref resolved_refs);
+    build_resolved_call_edges(ref items, ref uses, ref variants, ref calls, mutref resolved_edges);
+    let ref_count = list_len(ref resolved_refs);
     let mut version_text = "1";
     if include_evidence {
         version_text = "2";

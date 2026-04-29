@@ -278,6 +278,7 @@ pub type checked_expr_child {
 pub type checked_struct_field_init {
     expr_id: i32,
     index: i32,
+    at: i32,
     field_name: str,
     field_owner_module: str,
     field_owner_type: str,
@@ -2953,7 +2954,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
             let base_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let base_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, expr_start, dot_index, field_token.start, empty_expected_type_ctx(), mutref diags);
             let owner_module = visible_type_origin_module(ref uses, ref items, module_name, base_ctx.head);
-            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_field, exported_ctx, lookup_field_is_borrow(ref field_facts, owner_module, base_ctx.head, field_token.text), lookup_field_borrow_mutable(ref field_facts, owner_module, base_ctx.head, field_token.text), -1, "", checked_target_none, "", owner_module, base_ctx.head, field_token.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+            let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, field_token.start, expr_start, expr_end, checked_expr_field, exported_ctx, lookup_field_is_borrow(ref field_facts, owner_module, base_ctx.head, field_token.text), lookup_field_borrow_mutable(ref field_facts, owner_module, base_ctx.head, field_token.text), -1, "", checked_target_none, "", owner_module, base_ctx.head, field_token.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             if base_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, field_token.start, str_concat("missing base expression for field access: ", field_token.text));
             }
@@ -3082,6 +3083,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                     list_push(mutref struct_fields, checked_struct_field_init {
                         expr_id: expr_id,
                         index: field_index,
+                        at: field_token.start,
                         field_name: field_token.text,
                         field_owner_module: type_origin,
                         field_owner_type: type_token.text,

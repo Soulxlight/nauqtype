@@ -91,7 +91,7 @@ The broader AI-first compiler surface now also includes `nauqc facts <file>`, wh
 
 ## Plan-Only Refactors And Policy Sidecars
 
-`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, top-level const, and local/param/pattern binding identities. It never mutates files. Field IDs are rejected until the facts surface includes checked field-use references.
+`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, top-level const, field, and local/param/pattern binding identities. It never mutates files. Field renames are driven by checked field definition and use references in the facts surface.
 
 `policy-check <source> <policy-path>` validates `nauqtype.policy.json` v1 sidecars against checked facts. The sidecar is advisory metadata for owners and review expectations; `check`, `build`, and `run` do not enforce it yet.
 

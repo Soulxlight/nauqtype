@@ -505,6 +505,22 @@ class Stage1DriverTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
         self.assertEqual({entry["evidence"] for entry in payload["references"]}, {"declared", "builtin", "checked"})
+        self.assertTrue(
+            any(
+                entry["kind"] == "field_init"
+                and entry["target_id"] == "field:helper::Box::value"
+                and entry["evidence"] == "checked"
+                for entry in payload["references"]
+            )
+        )
+        self.assertTrue(
+            any(
+                entry["kind"] == "field_access"
+                and entry["target_id"] == "field:helper::Box::value"
+                and entry["evidence"] == "checked"
+                for entry in payload["references"]
+            )
+        )
         schema = json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/facts-v2.schema.json")
         self.assertEqual(schema["properties"]["version"]["const"], 2)
@@ -735,7 +751,7 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertFalse(unknown_payload["ok"])
             self.assertEqual(unknown_payload["diagnostics"][0]["code"], "NQ-REFACTOR-002")
 
-    def test_stage1_driver_refactor_rename_rejects_field_ids_until_field_uses_are_exported(self) -> None:
+    def test_stage1_driver_refactor_rename_plans_field_definition_and_uses(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             self._write_project(
@@ -753,12 +769,16 @@ class Stage1DriverTests(unittest.TestCase):
                     """,
                 },
             )
+            before = (tmp / "main.nq").read_text(encoding="utf-8")
             result = self._run_driver(["refactor-rename", str(tmp / "main.nq"), "field:main::Box::value", "amount"])
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(result.stdout)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["edits"], [])
-            self.assertEqual(payload["diagnostics"][0]["code"], "NQ-REFACTOR-002")
+            self.assertTrue(payload["ok"])
+            self.assertEqual([edit["kind"] for edit in payload["edits"]], ["definition", "reference", "reference"])
+            self.assertEqual([edit["old_text"] for edit in payload["edits"]], ["value", "value", "value"])
+            self.assertTrue(all(edit["replacement"] == "amount" for edit in payload["edits"]))
+            self.assertTrue(all(edit["target_id"] == "field:main::Box::value" for edit in payload["edits"]))
+            self.assertEqual((tmp / "main.nq").read_text(encoding="utf-8"), before)
 
     def test_stage1_driver_policy_check_validates_sidecar_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

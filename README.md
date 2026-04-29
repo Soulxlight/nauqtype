@@ -206,7 +206,7 @@ Current AI-first compiler output:
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
-- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants; it never mutates files, and field IDs are rejected until checked field-use refs are exported
+- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants and checked field definitions/uses; it never mutates files
 - `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
 
