@@ -526,6 +526,27 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["version"]["const"], 2)
         self._assert_schema_shape(payload, schema)
 
+    def test_stage1_driver_facts_v2_exports_named_argument_label_references(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "facts" / "named_args_main.nq"
+        golden = self.root / "tests" / "golden" / "facts" / "named-args-v2.json"
+        result = self._run_driver(["facts", str(fixture), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
+        labels = [entry for entry in payload["references"] if entry["kind"] == "argument_label"]
+        self.assertEqual(len(labels), 5)
+        self.assertTrue(
+            any(
+                entry["name"] == "scale"
+                and entry["target_id"] == "binding:fn:named_args_helper::combine:1:scale@38"
+                and entry["evidence"] == "checked"
+                for entry in labels
+            )
+        )
+        schema = json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(payload, schema)
+
     def test_stage1_driver_facts_full_selfhost_is_bounded_and_valid(self) -> None:
         result = self._run_driver(["facts", str(self.root / "selfhost" / "main.nq")], timeout=240)
         combined = result.stdout + result.stderr
@@ -676,6 +697,56 @@ class Stage1DriverTests(unittest.TestCase):
             json.loads((self.root / "schemas" / "review-diff-v2.schema.json").read_text(encoding="utf-8")),
         )
 
+    def test_stage1_driver_change_report_goldens_policy_and_schema(self) -> None:
+        before = self.root / "tests" / "fixtures" / "review_diff" / "before" / "main.nq"
+        after = self.root / "tests" / "fixtures" / "review_diff" / "after" / "main.nq"
+        schema = json.loads((self.root / "schemas" / "change-report-v1.schema.json").read_text(encoding="utf-8"))
+        result = self._run_driver(["change-report", str(before), str(after), "--format", "v1"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload, json.loads((self.root / "tests" / "golden" / "review" / "change_report_v1.json").read_text(encoding="utf-8")))
+        self.assertEqual(payload["command"], "change-report")
+        self.assertEqual(payload["evidence"]["comparison"], "semantic-identities")
+        self.assertEqual(payload["changes"]["changed_functions"], ["fn:main::helper", "fn:main::main"])
+        self._assert_schema_shape(payload, schema)
+
+        policy_result = self._run_driver(
+            [
+                "change-report",
+                str(before),
+                str(after),
+                "--policy",
+                "tests/fixtures/policy/change_report_policy.json",
+                "--format",
+                "v1",
+            ]
+        )
+        self.assertEqual(policy_result.returncode, 0, policy_result.stdout + policy_result.stderr)
+        self.assertEqual(policy_result.stderr, "")
+        policy_payload = json.loads(policy_result.stdout)
+        self.assertEqual(
+            policy_payload,
+            json.loads((self.root / "tests" / "golden" / "review" / "change_report_policy_v1.json").read_text(encoding="utf-8")),
+        )
+        self.assertEqual(policy_payload["evidence"]["policy"], "checked")
+        self.assertEqual(policy_payload["policy"]["targets"], 1)
+        self._assert_schema_shape(policy_payload, schema)
+
+    def test_stage1_driver_change_report_reports_failing_input_as_json(self) -> None:
+        after = self.root / "tests" / "fixtures" / "review_diff" / "after" / "main.nq"
+        result = self._run_driver(["change-report", str(self.root / "tests" / "fixtures" / "missing_before.nq"), str(after), "--format", "v1"])
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["before"]["evidence"], "unavailable")
+        self.assertEqual(payload["diagnostics"][0]["code"], "NQ-CHANGE-001")
+        self._assert_schema_shape(
+            payload,
+            json.loads((self.root / "schemas" / "change-report-v1.schema.json").read_text(encoding="utf-8")),
+        )
+
     def test_stage1_driver_refactor_rename_plans_imported_function_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -779,6 +850,36 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertTrue(all(edit["replacement"] == "amount" for edit in payload["edits"]))
             self.assertTrue(all(edit["target_id"] == "field:main::Box::value" for edit in payload["edits"]))
             self.assertEqual((tmp / "main.nq").read_text(encoding="utf-8"), before)
+
+    def test_stage1_driver_refactor_rename_updates_named_argument_labels(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "facts" / "named_args_main.nq"
+        before_main = fixture.read_text(encoding="utf-8")
+        before_helper = (self.root / "tests" / "fixtures" / "facts" / "named_args_helper.nq").read_text(encoding="utf-8")
+
+        imported = self._run_driver(
+            ["refactor-rename", str(fixture), "binding:fn:named_args_helper::combine:1:scale@38", "multiplier"]
+        )
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        imported_payload = json.loads(imported.stdout)
+        self.assertTrue(imported_payload["ok"])
+        self.assertEqual([edit["kind"] for edit in imported_payload["edits"]], ["definition", "reference", "reference"])
+        self.assertEqual(imported_payload["edits"][2]["span"]["start"], 176)
+        self.assertEqual(imported_payload["edits"][2]["old_text"], "scale")
+        self.assertEqual(imported_payload["edits"][2]["replacement"], "multiplier")
+
+        local = self._run_driver(
+            ["refactor-rename", str(fixture), "binding:fn:named_args_main::local:1:left@33", "first_value"]
+        )
+        self.assertEqual(local.returncode, 0, local.stdout + local.stderr)
+        local_payload = json.loads(local.stdout)
+        self.assertTrue(local_payload["ok"])
+        self.assertEqual([edit["kind"] for edit in local_payload["edits"]], ["definition", "reference", "reference"])
+        self.assertEqual(local_payload["edits"][2]["span"]["start"], 147)
+        self.assertEqual(local_payload["edits"][2]["old_text"], "left")
+        self.assertEqual(local_payload["edits"][2]["replacement"], "first_value")
+
+        self.assertEqual(fixture.read_text(encoding="utf-8"), before_main)
+        self.assertEqual((self.root / "tests" / "fixtures" / "facts" / "named_args_helper.nq").read_text(encoding="utf-8"), before_helper)
 
     def test_stage1_driver_policy_check_validates_sidecar_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -986,6 +1087,43 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
 
+    def test_stage1_driver_batch_c_qualified_data_names_example_runs(self) -> None:
+        result = self._run_driver(["run", str(self.root / "examples" / "qualified_data_names.nq")])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+        facts = self._run_driver(["facts", str(self.root / "examples" / "qualified_data_names.nq"), "--format", "v2"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        payload = json.loads(facts.stdout)
+        refs = {(entry["kind"], entry["target_id"]) for entry in payload["references"]}
+        self.assertIn(("struct_type", "type:qualified_data_helper::Box"), refs)
+        self.assertIn(("call", "variant:qualified_data_helper::Choice::Score"), refs)
+        self.assertIn(("pattern_ctor", "variant:qualified_data_helper::Choice::Empty"), refs)
+
+    def test_stage1_driver_batch_c_qualified_data_names_require_direct_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn main() -> i32 {
+                        let box = helper::Box { value: 1 };
+                        return box.value;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub type Box {
+                        value: i32,
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("unknown qualified struct literal type", combined)
+
     def test_stage1_driver_batch_b_break_continue_example_runs(self) -> None:
         result = self._run_driver(["run", str(self.root / "examples" / "break_continue.nq")])
         self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
@@ -1059,7 +1197,7 @@ class Stage1DriverTests(unittest.TestCase):
             result = self._run_driver(["check", str(tmp / "main.nq")])
             combined = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, combined)
-            self.assertIn("unknown qualified function call target", combined)
+            self.assertIn("unknown qualified function or data constructor target", combined)
 
     def test_stage1_driver_batch_b_break_continue_restricted_to_while(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

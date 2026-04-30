@@ -1918,6 +1918,143 @@ fn append_review_diff_v2_json(lines: mutref list<str>, before_module: str, after
     return;
 }
 
+fn append_change_report_diagnostic(lines: mutref list<str>, code: str, message: str, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"code\": ", json_quote(code), ",", "", ""));
+    list_push(mutref lines, concat5("      \"message\": ", json_quote(message), "", "", ""));
+    list_push(mutref lines, concat3("    }", suffix, ""));
+    return;
+}
+
+fn append_change_report_json(lines: mutref list<str>, before_module: str, after_module: str, added_functions: ref list<str>, removed_functions: ref list<str>, changed_functions: ref list<str>, added_call_edges: ref list<str>, removed_call_edges: ref list<str>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool, review_errors: i32) -> unit {
+    let ok = review_errors == 0 and policy_errors == 0;
+    let mut policy_evidence = "not-provided";
+    if policy_provided {
+        policy_evidence = "checked";
+        if policy_malformed {
+            policy_evidence = "invalid";
+        }
+    }
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"change-report\",");
+    list_push(mutref lines, concat3("  \"ok\": ", bool_text(ok), ","));
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    list_push(mutref lines, concat3("  \"before\": { \"module\": ", json_quote(before_module), ", \"evidence\": \"checked\" },"));
+    list_push(mutref lines, concat3("  \"after\": { \"module\": ", json_quote(after_module), ", \"evidence\": \"checked\" },"));
+    list_push(mutref lines, "  \"evidence\": {");
+    list_push(mutref lines, "    \"review\": \"checked\",");
+    list_push(mutref lines, "    \"comparison\": \"semantic-identities\",");
+    list_push(mutref lines, concat5("    \"policy\": ", json_quote(policy_evidence), "", "", ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"added_functions\": ", i32_to_str(list_len(ref added_functions)), ","));
+    list_push(mutref lines, concat3("    \"removed_functions\": ", i32_to_str(list_len(ref removed_functions)), ","));
+    list_push(mutref lines, concat3("    \"changed_functions\": ", i32_to_str(list_len(ref changed_functions)), ","));
+    list_push(mutref lines, concat3("    \"added_call_edges\": ", i32_to_str(list_len(ref added_call_edges)), ","));
+    list_push(mutref lines, concat3("    \"removed_call_edges\": ", i32_to_str(list_len(ref removed_call_edges)), ","));
+    list_push(mutref lines, concat3("    \"policy_targets\": ", i32_to_str(policy_targets), ","));
+    list_push(mutref lines, concat3("    \"policy_errors\": ", i32_to_str(policy_errors), ","));
+    list_push(mutref lines, concat3("    \"diagnostics\": ", i32_to_str(review_errors + policy_errors), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"changes\": {");
+    append_named_string_array(mutref lines, "    ", "added_functions", ref added_functions, true);
+    append_named_string_array(mutref lines, "    ", "removed_functions", ref removed_functions, true);
+    append_named_string_array(mutref lines, "    ", "changed_functions", ref changed_functions, true);
+    append_named_string_array(mutref lines, "    ", "added_call_edges", ref added_call_edges, true);
+    append_named_string_array(mutref lines, "    ", "removed_call_edges", ref removed_call_edges, false);
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"policy\": {");
+    list_push(mutref lines, concat3("    \"provided\": ", bool_text(policy_provided), ","));
+    list_push(mutref lines, concat5("    \"path\": ", json_quote(policy_path), ",", "", ""));
+    list_push(mutref lines, concat3("    \"targets\": ", i32_to_str(policy_targets), ","));
+    list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(policy_errors), ","));
+    list_push(mutref lines, concat3("    \"malformed\": ", bool_text(policy_malformed), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"diagnostics\": [");
+    if review_errors > 0 {
+        append_change_report_diagnostic(mutref lines, "NQ-CHANGE-001", "review contract errors prevented a clean report", policy_errors > 0);
+    }
+    if policy_errors > 0 {
+        append_change_report_diagnostic(mutref lines, "NQ-CHANGE-002", "policy metadata has validation errors", false);
+    }
+    list_push(mutref lines, "  ]");
+    list_push(mutref lines, "}");
+    return;
+}
+
+pub fn emit_change_report_load_error(before_module: str, after_module: str, message: str) -> i32
+audit {
+    intent("Emit deterministic change-report JSON when checked inputs cannot be loaded");
+    mutates();
+    effects(print);
+}
+{
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"command\": \"change-report\",");
+    list_push(mutref lines, "  \"ok\": false,");
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    list_push(mutref lines, concat3("  \"before\": { \"module\": ", json_quote(before_module), ", \"evidence\": \"unavailable\" },"));
+    list_push(mutref lines, concat3("  \"after\": { \"module\": ", json_quote(after_module), ", \"evidence\": \"unavailable\" },"));
+    list_push(mutref lines, "  \"evidence\": { \"review\": \"unavailable\", \"comparison\": \"unavailable\", \"policy\": \"not-provided\" },");
+    list_push(mutref lines, "  \"summary\": { \"added_functions\": 0, \"removed_functions\": 0, \"changed_functions\": 0, \"added_call_edges\": 0, \"removed_call_edges\": 0, \"policy_targets\": 0, \"policy_errors\": 0, \"diagnostics\": 1 },");
+    list_push(mutref lines, "  \"changes\": { \"added_functions\": [], \"removed_functions\": [], \"changed_functions\": [], \"added_call_edges\": [], \"removed_call_edges\": [] },");
+    list_push(mutref lines, "  \"policy\": { \"provided\": false, \"path\": \"\", \"targets\": 0, \"errors\": 0, \"malformed\": false },");
+    list_push(mutref lines, "  \"diagnostics\": [");
+    append_change_report_diagnostic(mutref lines, "NQ-CHANGE-001", message, false);
+    list_push(mutref lines, "  ]");
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return 1;
+}
+
+pub fn emit_change_report(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool) -> review_summary
+audit {
+    intent("Emit deterministic supervised change-report JSON from two checked review inputs");
+    mutates();
+    effects(print);
+}
+{
+    let mut before_functions: list<review_function_fact> = list();
+    let mut before_decls: list<review_decl_entry> = list();
+    let mut after_functions: list<review_function_fact> = list();
+    let mut after_decls: list<review_decl_entry> = list();
+    collect_review_fact_lists(ref before_sources, mutref before_functions, mutref before_decls);
+    collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
+
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+    let review_errors = before_summary.error_count + after_summary.error_count;
+
+    let mut added_functions: list<str> = list();
+    let mut removed_functions: list<str> = list();
+    let mut changed_functions: list<str> = list();
+    let mut before_call_edges: list<str> = list();
+    let mut after_call_edges: list<str> = list();
+    let mut added_call_edges: list<str> = list();
+    let mut removed_call_edges: list<str> = list();
+    if review_errors == 0 {
+        collect_added_functions(ref before_functions, ref after_functions, mutref added_functions);
+        collect_removed_functions(ref before_functions, ref after_functions, mutref removed_functions);
+        collect_changed_functions(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses, mutref changed_functions);
+        collect_call_edges(ref before_functions, ref before_calls, ref before_uses, mutref before_call_edges);
+        collect_call_edges(ref after_functions, ref after_calls, ref after_uses, mutref after_call_edges);
+        collect_added_strings(ref before_call_edges, ref after_call_edges, mutref added_call_edges);
+        collect_removed_strings(ref before_call_edges, ref after_call_edges, mutref removed_call_edges);
+    }
+
+    let mut lines: list<str> = list();
+    append_change_report_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges, policy_provided, policy_path, policy_targets, policy_errors, policy_malformed, review_errors);
+    emit_lines(ref lines);
+    return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, review_errors + policy_errors);
+}
+
 pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review JSON from selfhost facts and audit blocks");

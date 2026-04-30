@@ -221,8 +221,11 @@ Status:
 - `facts` v1 is now locked by a versioned schema, golden fixture, and representative selfhost-module smoke check
 - `facts --format v2` preserves v1 and adds explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields
 - full-tree `facts selfhost/main.nq` is now bounded under the Windows 240-second gate
-- `refactor-rename` emits deterministic JSON edit plans and never mutates files; checked field definitions and field uses are now part of the supported rename surface
-- `policy-check` validates `nauqtype.policy.json` v1 sidecars against checked semantic facts
+- named-argument labels now appear in checked facts v2 and participate in parameter `refactor-rename` plans across local and imported calls
+- `change-report --format v1` now combines semantic diff evidence, optional policy status, and diagnostics for supervised review
+- `refactor-rename` emits deterministic JSON edit plans and never mutates files; checked field definitions, field uses, and named-argument labels are now part of the supported rename surface
+- `policy-check` validates `nauqtype.policy.json` v1 sidecars against checked semantic facts, and the root sidecar now covers high-risk selfhost compiler surfaces
+- `prove` now includes the AI tooling confidence fixtures for facts, review, review-diff, change-report, refactor plans, policy-check, and formatter-lite
 - no semantic language features, Rust-like lifetime expansion, or broader borrow semantics were included in this tooling milestone
 
 ### M18: Live-In-The-Language Ergonomics Batch
@@ -243,6 +246,8 @@ Status:
 - formatter-lite is done as an output-only / `--check` trusted-subset formatter, not a full AST-preserving formatter
 - Batch B is done for named function arguments, direct module-qualified function calls, and minimal nearest-`while` `break` / `continue`
 - named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and loop control stays statement-only with no labels, values, methods, or package-path expansion
+- the first tiny Batch C slice is done for direct `module::Type` struct literals and `module::Variant` enum constructors/patterns from directly imported flat-root modules
+- record update syntax remains deferred until provenance/reference tooling stays settled under real use
 
 ## Feature Ordering
 

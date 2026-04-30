@@ -1623,6 +1623,76 @@ fn qualified_function_arity(functions: ref list<function_fact>, uses: ref list<m
     return -1;
 }
 
+pub fn qualified_variant_enum_name(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, variant_name: str) -> str
+audit {
+    intent("Resolve an explicitly module-qualified variant constructor enum name");
+    mutates();
+    effects();
+}
+{
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_variant_name(ref items, qualifier, variant_name) {
+        return lookup_variant_fact_enum_name(ref variants, qualifier, variant_name);
+    }
+    return "";
+}
+
+pub fn qualified_variant_origin_module(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, variant_name: str) -> str
+audit {
+    intent("Resolve the origin module for an explicitly module-qualified variant constructor");
+    mutates();
+    effects();
+}
+{
+    if qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name) != "" {
+        return qualifier;
+    }
+    return "";
+}
+
+pub fn qualified_variant_payload_ctx(variant_payloads: ref list<variant_payload_fact>, variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, variant_name: str, index: i32) -> expected_type_ctx
+audit {
+    intent("Resolve payload type context for an explicitly module-qualified variant constructor");
+    mutates();
+    effects();
+}
+{
+    if qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name) != "" {
+        return lookup_variant_payload_ctx(ref variant_payloads, qualifier, variant_name, index);
+    }
+    return empty_expected_type_ctx();
+}
+
+pub fn qualified_zero_arg_variant_ctx(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, variant_name: str, expected_ctx: expected_type_ctx) -> expected_type_ctx
+audit {
+    intent("Resolve type context for an explicitly module-qualified zero-payload variant");
+    mutates();
+    effects();
+}
+{
+    let enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name);
+    if enum_name == "" {
+        return empty_expected_type_ctx();
+    }
+    let arity = lookup_variant_fact_arity(ref variants, qualifier, variant_name);
+    if arity != 0 {
+        return empty_expected_type_ctx();
+    }
+    return make_expected_type_ctx(enum_name, "", "");
+}
+
+pub fn qualified_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, type_name: str) -> str
+audit {
+    intent("Resolve the origin module for an explicitly module-qualified product type name");
+    mutates();
+    effects();
+}
+{
+    if module_directly_imports(ref uses, module, qualifier) and module_exports_type_name(ref items, qualifier, type_name) {
+        return qualifier;
+    }
+    return "";
+}
+
 fn lookup_variant_payload_type_name(variant_payloads: ref list<variant_payload_fact>, module: str, variant_name: str, index: i32) -> str {
     let mut cursor = 0;
     while cursor < list_len(ref variant_payloads) {
@@ -2383,6 +2453,76 @@ fn span_call_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
     return "";
 }
 
+fn is_ident_token(value: token) -> bool {
+    match value.kind {
+        tk_ident => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_colon_token(value: token) -> bool {
+    match value.kind {
+        tk_colon => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_lbrace_token(value: token) -> bool {
+    match value.kind {
+        tk_lbrace => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn span_is_qualified_data_name(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if start + 4 != end {
+        return false;
+    }
+    let module_token = token_at(ref tokens, start);
+    let first_colon = token_at(ref tokens, start + 1);
+    let second_colon = token_at(ref tokens, start + 2);
+    let name = token_at(ref tokens, start + 3);
+    if is_ident_token(module_token) and is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) {
+        return true;
+    }
+    return false;
+}
+
+fn span_data_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let call_name = span_call_name_index(ref tokens, start, end);
+    if call_name >= 0 {
+        return call_name;
+    }
+    if span_is_qualified_data_name(ref tokens, start, end) {
+        return start + 3;
+    }
+    return start;
+}
+
+fn span_data_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let call_qualifier = span_call_qualifier(ref tokens, start, end);
+    if call_qualifier != "" {
+        return call_qualifier;
+    }
+    if span_is_qualified_data_name(ref tokens, start, end) {
+        let module_token = token_at(ref tokens, start);
+        return module_token.text;
+    }
+    return "";
+}
+
 fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
     if end - start < 3 {
         return false;
@@ -2421,28 +2561,64 @@ fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
     return false;
 }
 
-fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
-    if end - start < 3 {
-        return false;
-    }
+fn span_struct_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let head = token_at(ref tokens, start);
-    let open = token_at(ref tokens, start + 1);
     match head.kind {
         tk_ident => {
         },
         _ => {
-            return false;
+            return -1;
         },
     }
-    match open.kind {
-        tk_lbrace => {
-        },
-        _ => {
-            return false;
-        },
+    if end - start >= 3 {
+        let open = token_at(ref tokens, start + 1);
+        match open.kind {
+            tk_lbrace => {
+                return start + 1;
+            },
+            _ => {
+            },
+        }
+    }
+    if end - start >= 5 {
+        let first_colon = token_at(ref tokens, start + 1);
+        let second_colon = token_at(ref tokens, start + 2);
+        let name = token_at(ref tokens, start + 3);
+        let open = token_at(ref tokens, start + 4);
+        if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) and is_lbrace_token(open) {
+            return start + 4;
+        }
+    }
+    return -1;
+}
+
+fn span_struct_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        return start + 3;
+    }
+    if open_index == start + 1 {
+        return start;
+    }
+    return -1;
+}
+
+fn span_struct_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        let module_token = token_at(ref tokens, start);
+        return module_token.text;
+    }
+    return "";
+}
+
+fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index < 0 {
+        return false;
     }
     let mut depth = 0;
-    let mut index = start + 1;
+    let mut index = open_index;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -2697,7 +2873,11 @@ fn count_expected_fields(field_facts: ref list<field_fact>, module: str, type_na
 }
 
 fn struct_literal_has_field(tokens: ref list<token>, start: i32, end: i32, field_name: str) -> bool {
-    let mut field_start = start + 2;
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index < 0 {
+        return false;
+    }
+    let mut field_start = open_index + 1;
     let field_end_limit = end - 1;
     while field_start < field_end_limit {
         let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
@@ -2760,13 +2940,13 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
     let mut function_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, module, call_name);
     if qualifier != "" {
         function_return_ctx = qualified_function_return_ctx(ref functions, ref uses, ref items, module, qualifier, call_name);
-        if function_return_ctx.head == "" {
-            push_diag(mutref diags, module, head.start, "unknown qualified function call target");
-        }
     }
     let mut variant_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, call_name);
     if qualifier != "" {
-        variant_enum_name = "";
+        variant_enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, call_name);
+        if function_return_ctx.head == "" and variant_enum_name == "" {
+            push_diag(mutref diags, module, head.start, "unknown qualified function or data constructor target");
+        }
     }
     let mut call_return_ctx = function_return_ctx;
     if function_return_ctx.head != "" {
@@ -2913,7 +3093,11 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                     if builtin_variant_enum_name(call_name) != "" {
                         expected_arg_ctx = builtin_variant_payload_ctx(call_name, call_return_ctx, arg_index);
                     } else {
-                        expected_arg_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+                        if qualifier != "" {
+                            expected_arg_ctx = qualified_variant_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module, qualifier, call_name, arg_index);
+                        } else {
+                            expected_arg_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module, call_name, arg_index);
+                        }
                     }
                 }
             }
@@ -2947,14 +3131,23 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
 }
 
 fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> expected_type_ctx {
-    let type_token = token_at(ref tokens, start);
+    let name_index = span_struct_name_index(ref tokens, start, end);
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    let type_token = token_at(ref tokens, name_index);
     let type_name = type_token.text;
-    let origin_module = visible_type_origin_module(ref uses, ref items, module, type_name);
+    let qualifier = span_struct_qualifier(ref tokens, start, end);
+    let mut origin_module = visible_type_origin_module(ref uses, ref items, module, type_name);
+    if qualifier != "" {
+        origin_module = qualified_type_origin_module(ref uses, ref items, module, qualifier, type_name);
+    }
     if origin_module == "" {
+        if qualifier != "" {
+            push_diag(mutref diags, module, type_token.start, "unknown qualified struct literal type");
+        }
         return empty_expected_type_ctx();
     }
 
-    let mut field_start = start + 2;
+    let mut field_start = open_index + 1;
     let field_end_limit = end - 1;
     while field_start < field_end_limit {
         let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
@@ -3551,16 +3744,22 @@ audit {
             if span_is_struct_expr(ref tokens, expr_start, expr_end) {
                 return infer_struct_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, mutref diags);
             }
-            if expr_start + 1 == expr_end {
-                let binding_ctx = visible_typed_binding_ctx(ref typed_bindings, ref scopes, module, function_name, scope_id, current.text, current.start);
-                if binding_ctx.head != "" {
-                    return binding_ctx;
+            if expr_start + 1 == expr_end or span_is_qualified_data_name(ref tokens, expr_start, expr_end) {
+                let name_index = span_data_name_index(ref tokens, expr_start, expr_end);
+                let name_token = token_at(ref tokens, name_index);
+                let qualifier = span_data_qualifier(ref tokens, expr_start, expr_end);
+                if qualifier == "" {
+                    let binding_ctx = visible_typed_binding_ctx(ref typed_bindings, ref scopes, module, function_name, scope_id, name_token.text, name_token.start);
+                    if binding_ctx.head != "" {
+                        return binding_ctx;
+                    }
+                    let const_ctx = visible_const_ctx(ref consts, ref uses, ref items, module, name_token.text);
+                    if const_ctx.head != "" {
+                        return const_ctx;
+                    }
+                    return visible_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, name_token.text, expected_ctx);
                 }
-                let const_ctx = visible_const_ctx(ref consts, ref uses, ref items, module, current.text);
-                if const_ctx.head != "" {
-                    return const_ctx;
-                }
-                return visible_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, current.text, expected_ctx);
+                return qualified_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, qualifier, name_token.text, expected_ctx);
             }
         },
         _ => {
@@ -3837,31 +4036,51 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
                 return;
             }
             if span_is_call_expr(ref tokens, pattern_start, pattern_end) {
-                let ctor_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, current.text);
+                let ctor_index = span_call_name_index(ref tokens, pattern_start, pattern_end);
+                let ctor = token_at(ref tokens, ctor_index);
+                let qualifier = span_call_qualifier(ref tokens, pattern_start, pattern_end);
+                let mut ctor_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module, ctor.text);
+                if qualifier != "" {
+                    ctor_enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, ctor.text);
+                }
                 if ctor_enum_name == "" {
-                    push_stage1_limitation(mutref diags, module, current.start);
+                    push_stage1_limitation(mutref diags, module, ctor.start);
                     return;
                 }
                 if has_known_type_ctx(scrutinee_ctx) and not type_names_match(scrutinee_ctx.head, ctor_enum_name) {
-                    push_diag(mutref diags, module, current.start, "pattern does not match scrutinee type");
+                    push_diag(mutref diags, module, ctor.start, "pattern does not match scrutinee type");
                 }
-                let mut arg_start = pattern_start + 2;
+                let open_index = span_call_open_index(ref tokens, pattern_start, pattern_end);
+                let mut arg_start = open_index + 1;
                 let arg_end_limit = pattern_end - 1;
                 let mut arg_index = 0;
                 while arg_start < arg_end_limit {
                     let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
-                    let payload_ctx = pattern_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module, current.text, scrutinee_ctx, arg_index);
+                    let mut payload_ctx = pattern_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module, ctor.text, scrutinee_ctx, arg_index);
+                    if qualifier != "" {
+                        payload_ctx = qualified_variant_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module, qualifier, ctor.text, arg_index);
+                    }
                     typecheck_pattern_span(ref variants, ref variant_payloads, ref uses, ref items, module, function_name, scope_id, ref tokens, arg_start, segment_end, payload_ctx, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
                     arg_index = arg_index + 1;
                     arg_start = segment_end + 1;
                 }
                 return;
             }
-            if pattern_start + 1 == pattern_end {
-                let zero_arg_ctx = visible_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, current.text, scrutinee_ctx);
+            if pattern_start + 1 == pattern_end or span_is_qualified_data_name(ref tokens, pattern_start, pattern_end) {
+                let name_index = span_data_name_index(ref tokens, pattern_start, pattern_end);
+                let name_token = token_at(ref tokens, name_index);
+                let qualifier = span_data_qualifier(ref tokens, pattern_start, pattern_end);
+                let mut zero_arg_ctx = visible_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, name_token.text, scrutinee_ctx);
+                if qualifier != "" {
+                    zero_arg_ctx = qualified_zero_arg_variant_ctx(ref variants, ref uses, ref items, module, qualifier, name_token.text, scrutinee_ctx);
+                    if zero_arg_ctx.head == "" {
+                        push_stage1_limitation(mutref diags, module, name_token.start);
+                        return;
+                    }
+                }
                 if zero_arg_ctx.head != "" {
                     if has_known_type_ctx(scrutinee_ctx) and not type_ctx_matches(zero_arg_ctx, scrutinee_ctx) {
-                        push_diag(mutref diags, module, current.start, "pattern does not match scrutinee type");
+                        push_diag(mutref diags, module, name_token.start, "pattern does not match scrutinee type");
                     }
                     return;
                 }

@@ -509,12 +509,25 @@ fn scan_pattern_bindings(tokens: ref list<token>, start: i32, end: i32, module: 
         let current = token_at(ref tokens, index);
         match current.kind {
             tk_ident => {
+                let previous = token_at(ref tokens, index - 1);
                 let next = token_at(ref tokens, index + 1);
                 if current.text != "_" {
-                    if is_lparen_token(next) {
-                        push_name_ref(mutref refs, module, function_name, scope_id, current.text, current.start, ref_pattern_ctor);
+                    if is_colon_token(next) {
+                        let second_colon = token_at(ref tokens, index + 2);
+                        let ctor = token_at(ref tokens, index + 3);
+                        if is_colon_token(second_colon) and is_ident_token(ctor) {
+                            push_name_ref(mutref refs, module, function_name, scope_id, ctor.text, ctor.start, ref_pattern_ctor);
+                            index = index + 3;
+                        }
                     } else {
-                        push_binding(mutref bindings, module, function_name, scope_id, current.text, current.start, bind_pattern);
+                        if is_colon_token(previous) {
+                        } else {
+                            if is_lparen_token(next) {
+                                push_name_ref(mutref refs, module, function_name, scope_id, current.text, current.start, ref_pattern_ctor);
+                            } else {
+                                push_binding(mutref bindings, module, function_name, scope_id, current.text, current.start, bind_pattern);
+                            }
+                        }
                     }
                 }
             },
@@ -1585,10 +1598,32 @@ fn expr_starts_qualified_call(tokens: ref list<token>, expr_start: i32, end: i32
     return false;
 }
 
+fn expr_starts_qualified_struct(tokens: ref list<token>, expr_start: i32, end: i32) -> bool {
+    if expr_start + 4 >= end {
+        return false;
+    }
+    let first_colon = token_at(ref tokens, expr_start + 1);
+    let second_colon = token_at(ref tokens, expr_start + 2);
+    let type_name = token_at(ref tokens, expr_start + 3);
+    let open = token_at(ref tokens, expr_start + 4);
+    if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(type_name) and is_lbrace_token(open) {
+        return true;
+    }
+    return false;
+}
+
 fn qualified_call_name(tokens: ref list<token>, expr_start: i32, end: i32) -> str {
     if expr_starts_qualified_call(ref tokens, expr_start, end) {
         let callee = token_at(ref tokens, expr_start + 3);
         return callee.text;
+    }
+    return "";
+}
+
+fn qualified_data_name(tokens: ref list<token>, expr_start: i32, end: i32) -> str {
+    if expr_starts_qualified_call(ref tokens, expr_start, end) or expr_starts_qualified_struct(ref tokens, expr_start, end) {
+        let name = token_at(ref tokens, expr_start + 3);
+        return name.text;
     }
     return "";
 }
@@ -1600,9 +1635,25 @@ fn scan_pattern_ctor_facts(tokens: ref list<token>, start: i32, end: i32, module
         match current.kind {
             tk_ident => {
                 let next = token_at(ref tokens, index + 1);
-                if current.text != "_" and is_lparen_token(next) {
-                    let arg_count = count_comma_args(ref tokens, index + 1);
-                    list_push(mutref patterns, make_pattern_ctor_fact(module, function_name, current.text, current.start, arg_count));
+                if current.text != "_" {
+                    if is_colon_token(next) {
+                        let second_colon = token_at(ref tokens, index + 2);
+                        let ctor = token_at(ref tokens, index + 3);
+                        let open = token_at(ref tokens, index + 4);
+                        if is_colon_token(second_colon) and is_ident_token(ctor) {
+                            let mut arg_count = 0;
+                            if is_lparen_token(open) {
+                                arg_count = count_comma_args(ref tokens, index + 4);
+                            }
+                            list_push(mutref patterns, make_pattern_ctor_fact(module, function_name, ctor.text, ctor.start, arg_count));
+                            index = index + 3;
+                        }
+                    } else {
+                        if is_lparen_token(next) {
+                            let arg_count = count_comma_args(ref tokens, index + 1);
+                            list_push(mutref patterns, make_pattern_ctor_fact(module, function_name, current.text, current.start, arg_count));
+                        }
+                    }
                 }
             },
             _ => {
@@ -2620,6 +2671,9 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
             if expr_starts_qualified_call(ref tokens, expr_start, end) {
                 return expr_call;
             }
+            if expr_starts_qualified_struct(ref tokens, expr_start, end) {
+                return expr_struct;
+            }
             if is_dot_token(next) {
                 let member = token_at(ref tokens, expr_start + 2);
                 if is_ident_token(member) and expr_start + 3 == end {
@@ -2656,7 +2710,7 @@ fn classify_expr_name(tokens: ref list<token>, start: i32, end: i32) -> str {
     let current = token_at(ref tokens, expr_start);
     match current.kind {
         tk_ident => {
-            let qualified_name = qualified_call_name(ref tokens, expr_start, end);
+            let qualified_name = qualified_data_name(ref tokens, expr_start, end);
             if qualified_name != "" {
                 return qualified_name;
             }

@@ -26,6 +26,7 @@ enum driver_mode {
     driver_review_v2,
     driver_review_diff,
     driver_review_diff_v2,
+    driver_change_report,
     driver_refactor_rename,
     driver_policy_check,
     driver_fmt,
@@ -263,7 +264,7 @@ fn str_ends_with(text: str, suffix: str) -> bool {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -422,6 +423,40 @@ fn parse_driver_request() -> driver_request {
             return invalid_request("expected review-diff format `v1` or `v2`");
         }
         return make_driver_request(driver_review_diff, before_path, before_module, path_dir(before_path), after_path, "", "");
+    }
+
+    if command == "change-report" {
+        if argc != 6 and argc != 8 {
+            return invalid_request(usage_text());
+        }
+        let before_path = option_text(arg_get(2));
+        let after_path = option_text(arg_get(3));
+        let before_module = path_stem(before_path);
+        let mut policy_path = "";
+        let mut format_flag_index = 4;
+        if before_path == "" or before_module == "" {
+            return invalid_request("missing before source path for `change-report`");
+        }
+        if after_path == "" or path_stem(after_path) == "" {
+            return invalid_request("missing after source path for `change-report`");
+        }
+        if argc == 8 {
+            let policy_flag = option_text(arg_get(4));
+            if policy_flag != "--policy" {
+                return invalid_request("expected `--policy` before the change-report policy path");
+            }
+            policy_path = option_text(arg_get(5));
+            if policy_path == "" {
+                return invalid_request("missing policy path for `change-report`");
+            }
+            format_flag_index = 6;
+        }
+        let flag = option_text(arg_get(format_flag_index));
+        let format = option_text(arg_get(format_flag_index + 1));
+        if flag != "--format" or format != "v1" {
+            return invalid_request("expected change-report format `v1`");
+        }
+        return make_driver_request(driver_change_report, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
     }
 
     if command == "refactor-rename" {
@@ -765,7 +800,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
         return 1;
     }
 
-    let summary = emit_facts_format(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts, ref checked_expressions, ref checked_struct_fields, format_version);
+    let summary = emit_facts_format(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, format_version);
     if summary.module_count < 1 {
         eprint_line("stage1 internal error: facts output has no modules");
         return 1;
@@ -773,7 +808,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     return 0;
 }
 
-fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_path: str, loaded: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, variant_facts: mutref list<variant_fact>, field_facts: mutref list<field_fact>, call_facts: mutref list<call_fact>, checked_expressions_out: mutref list<checked_expr>, checked_struct_fields_out: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> bool {
+fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_path: str, loaded: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, variant_facts: mutref list<variant_fact>, field_facts: mutref list<field_fact>, call_facts: mutref list<call_fact>, checked_expressions_out: mutref list<checked_expr>, checked_expr_children_out: mutref list<checked_expr_child>, checked_struct_fields_out: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> bool {
     let mut seen: list<str> = list();
     let mut function_facts: list<function_fact> = list();
     let mut function_param_facts: list<function_param_fact> = list();
@@ -806,7 +841,6 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     let mut checked_patterns: list<checked_pattern> = list();
     let mut checked_pattern_children: list<checked_pattern_child> = list();
     let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
-    let mut checked_expr_children: list<checked_expr_child> = list();
 
     load_module_graph(entry_module, workspace_root, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
 
@@ -817,8 +851,8 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     typecheck_const_facts(ref const_facts, ref sources, mutref diags);
     typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
-    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions_out, mutref checked_expr_children, mutref checked_struct_fields_out, mutref diags);
-    let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions_out, ref checked_expr_children, ref checked_struct_fields_out, mutref diags);
+    let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions_out, mutref checked_expr_children_out, mutref checked_struct_fields_out, mutref diags);
+    let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions_out, ref checked_expr_children_out, ref checked_struct_fields_out, mutref diags);
 
     if list_len(ref diags) > 0 {
         return false;
@@ -843,13 +877,14 @@ fn run_refactor_rename(workspace_root: str, entry_module: str, entry_path: str, 
     let mut field_facts: list<field_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut checked_expressions: list<checked_expr> = list();
+    let mut checked_expr_children: list<checked_expr_child> = list();
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
     let mut diags: list<diag> = list();
-    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_struct_fields, mutref diags) {
+    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags) {
         emit_all(ref diags);
         return 1;
     }
-    return emit_refactor_rename_plan(workspace_root, entry_module, entry_path, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref checked_expressions, ref checked_struct_fields, target_id, new_name);
+    return emit_refactor_rename_plan(workspace_root, entry_module, entry_path, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, target_id, new_name);
 }
 
 fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, policy_path: str) -> i32 {
@@ -865,9 +900,10 @@ fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, pol
     let mut field_facts: list<field_fact> = list();
     let mut call_facts: list<call_fact> = list();
     let mut checked_expressions: list<checked_expr> = list();
+    let mut checked_expr_children: list<checked_expr_child> = list();
     let mut checked_struct_fields: list<checked_struct_field_init> = list();
     let mut diags: list<diag> = list();
-    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_struct_fields, mutref diags) {
+    if not collect_facts_ready_project(workspace_root, entry_module, entry_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags) {
         emit_all(ref diags);
         return 1;
     }
@@ -1054,6 +1090,61 @@ fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     return 0;
 }
 
+fn run_change_report(before_path: str, after_path: str, policy_path: str) -> i32 {
+    let before_module = path_stem(before_path);
+    let before_workspace = path_dir(before_path);
+    let after_module = path_stem(after_path);
+    let after_workspace = path_dir(after_path);
+
+    let mut before_sources: list<source_file> = list();
+    let mut before_uses: list<module_use> = list();
+    let mut before_params: list<function_param_fact> = list();
+    let mut before_assignments: list<assignment_fact> = list();
+    let mut before_calls: list<call_fact> = list();
+    let mut before_diags: list<diag> = list();
+    let mut after_sources: list<source_file> = list();
+    let mut after_uses: list<module_use> = list();
+    let mut after_params: list<function_param_fact> = list();
+    let mut after_assignments: list<assignment_fact> = list();
+    let mut after_calls: list<call_fact> = list();
+    let mut after_diags: list<diag> = list();
+
+    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_diags);
+    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_diags);
+    if not before_ok or not after_ok {
+        return emit_change_report_load_error(before_module, after_module, "checked inputs could not be loaded");
+    }
+
+    let mut policy_summary = make_policy_validation_summary(false, 0, 0, false);
+    if policy_path != "" {
+        let mut loaded: list<str> = list();
+        let mut sources: list<source_file> = list();
+        let mut items: list<top_item> = list();
+        let mut uses: list<module_use> = list();
+        let mut scopes: list<body_scope> = list();
+        let mut bindings: list<body_binding> = list();
+        let mut refs: list<name_ref> = list();
+        let mut type_refs: list<type_ref> = list();
+        let mut variant_facts: list<variant_fact> = list();
+        let mut field_facts: list<field_fact> = list();
+        let mut call_facts: list<call_fact> = list();
+        let mut checked_expressions: list<checked_expr> = list();
+        let mut checked_expr_children: list<checked_expr_child> = list();
+        let mut checked_struct_fields: list<checked_struct_field_init> = list();
+        let mut diags: list<diag> = list();
+        if not collect_facts_ready_project(after_workspace, after_module, after_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags) {
+            return emit_change_report_load_error(before_module, after_module, "policy target facts could not be loaded");
+        }
+        policy_summary = validate_policy_summary(ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
+    }
+
+    let summary = emit_change_report(before_module, ref before_sources, ref before_uses, ref before_params, ref before_assignments, ref before_calls, after_module, ref after_sources, ref after_uses, ref after_params, ref after_assignments, ref after_calls, policy_summary.provided, policy_path, policy_summary.target_count, policy_summary.error_count, policy_summary.malformed);
+    if summary.error_count > 0 {
+        return 1;
+    }
+    return 0;
+}
+
 fn emit_text_output(text: str, to_stderr: bool) -> unit {
     let mut start = 0;
     let mut index = 0;
@@ -1187,6 +1278,9 @@ fn main() -> i32 {
         },
         driver_review_diff_v2 => {
             return run_review_diff(request.entry_path, request.output_path, true);
+        },
+        driver_change_report => {
+            return run_change_report(request.entry_path, request.output_path, request.extra_text);
         },
         driver_refactor_rename => {
             return run_refactor_rename(request.workspace_root, request.entry_module, request.entry_path, request.output_path, request.extra_text);

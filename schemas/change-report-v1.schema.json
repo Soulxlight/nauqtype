@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/change-report-v1.schema.json",
+  "title": "Nauqtype Change Report v1",
+  "type": "object",
+  "required": ["version", "command", "ok", "identity_scheme", "before", "after", "evidence", "summary", "changes", "policy", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "command": { "const": "change-report" },
+    "ok": { "type": "boolean" },
+    "identity_scheme": { "const": "nauqtype.semantic.v1" },
+    "before": { "$ref": "#/$defs/side" },
+    "after": { "$ref": "#/$defs/side" },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "changes": { "$ref": "#/$defs/changes" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "side": {
+      "type": "object",
+      "required": ["module", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "module": { "type": "string" },
+        "evidence": { "enum": ["checked", "unavailable"] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["review", "comparison", "policy"],
+      "additionalProperties": false,
+      "properties": {
+        "review": { "enum": ["checked", "unavailable"] },
+        "comparison": { "enum": ["semantic-identities", "unavailable"] },
+        "policy": { "enum": ["not-provided", "checked", "invalid"] }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["added_functions", "removed_functions", "changed_functions", "added_call_edges", "removed_call_edges", "policy_targets", "policy_errors", "diagnostics"],
+      "additionalProperties": false,
+      "properties": {
+        "added_functions": { "type": "integer", "minimum": 0 },
+        "removed_functions": { "type": "integer", "minimum": 0 },
+        "changed_functions": { "type": "integer", "minimum": 0 },
+        "added_call_edges": { "type": "integer", "minimum": 0 },
+        "removed_call_edges": { "type": "integer", "minimum": 0 },
+        "policy_targets": { "type": "integer", "minimum": 0 },
+        "policy_errors": { "type": "integer", "minimum": 0 },
+        "diagnostics": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "required": ["added_functions", "removed_functions", "changed_functions", "added_call_edges", "removed_call_edges"],
+      "additionalProperties": false,
+      "properties": {
+        "added_functions": { "type": "array", "items": { "type": "string" } },
+        "removed_functions": { "type": "array", "items": { "type": "string" } },
+        "changed_functions": { "type": "array", "items": { "type": "string" } },
+        "added_call_edges": { "type": "array", "items": { "type": "string" } },
+        "removed_call_edges": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["provided", "path", "targets", "errors", "malformed"],
+      "additionalProperties": false,
+      "properties": {
+        "provided": { "type": "boolean" },
+        "path": { "type": "string" },
+        "targets": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "malformed": { "type": "boolean" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

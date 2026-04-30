@@ -273,6 +273,8 @@ pub type checked_expr_child {
     parent_expr_id: i32,
     index: i32,
     child_expr_id: i32,
+    label_name: str,
+    label_at: i32,
 }
 
 pub type checked_struct_field_init {
@@ -1426,6 +1428,76 @@ fn span_call_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
     return "";
 }
 
+fn is_ident_token(value: token) -> bool {
+    match value.kind {
+        tk_ident => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_colon_token(value: token) -> bool {
+    match value.kind {
+        tk_colon => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_lbrace_token(value: token) -> bool {
+    match value.kind {
+        tk_lbrace => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn span_is_qualified_data_name(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if start + 4 != end {
+        return false;
+    }
+    let module_token = token_at(ref tokens, start);
+    let first_colon = token_at(ref tokens, start + 1);
+    let second_colon = token_at(ref tokens, start + 2);
+    let name = token_at(ref tokens, start + 3);
+    if is_ident_token(module_token) and is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) {
+        return true;
+    }
+    return false;
+}
+
+fn span_data_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let call_name = span_call_name_index(ref tokens, start, end);
+    if call_name >= 0 {
+        return call_name;
+    }
+    if span_is_qualified_data_name(ref tokens, start, end) {
+        return start + 3;
+    }
+    return start;
+}
+
+fn span_data_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let call_qualifier = span_call_qualifier(ref tokens, start, end);
+    if call_qualifier != "" {
+        return call_qualifier;
+    }
+    if span_is_qualified_data_name(ref tokens, start, end) {
+        let module_token = token_at(ref tokens, start);
+        return module_token.text;
+    }
+    return "";
+}
+
 fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
     if end - start < 3 {
         return false;
@@ -1456,28 +1528,64 @@ fn span_is_call_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
     return false;
 }
 
-fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
-    if end - start < 3 {
-        return false;
-    }
+fn span_struct_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let head = token_at(ref tokens, start);
-    let open = token_at(ref tokens, start + 1);
     match head.kind {
         tk_ident => {
         },
         _ => {
-            return false;
+            return -1;
         },
     }
-    match open.kind {
-        tk_lbrace => {
-        },
-        _ => {
-            return false;
-        },
+    if end - start >= 3 {
+        let open = token_at(ref tokens, start + 1);
+        match open.kind {
+            tk_lbrace => {
+                return start + 1;
+            },
+            _ => {
+            },
+        }
+    }
+    if end - start >= 5 {
+        let first_colon = token_at(ref tokens, start + 1);
+        let second_colon = token_at(ref tokens, start + 2);
+        let name = token_at(ref tokens, start + 3);
+        let open = token_at(ref tokens, start + 4);
+        if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) and is_lbrace_token(open) {
+            return start + 4;
+        }
+    }
+    return -1;
+}
+
+fn span_struct_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        return start + 3;
+    }
+    if open_index == start + 1 {
+        return start;
+    }
+    return -1;
+}
+
+fn span_struct_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index == start + 4 {
+        let module_token = token_at(ref tokens, start);
+        return module_token.text;
+    }
+    return "";
+}
+
+fn span_is_struct_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let open_index = span_struct_open_index(ref tokens, start, end);
+    if open_index < 0 {
+        return false;
     }
     let mut depth = 0;
-    let mut index = start + 1;
+    let mut index = open_index;
     while index < end {
         let current = token_at(ref tokens, index);
         match current.kind {
@@ -2664,6 +2772,19 @@ fn push_expr_child(expr_children: mutref list<checked_expr_child>, parent_expr_i
         parent_expr_id: parent_expr_id,
         index: index,
         child_expr_id: child_expr_id,
+        label_name: "",
+        label_at: -1,
+    });
+    return;
+}
+
+fn push_named_expr_child(expr_children: mutref list<checked_expr_child>, parent_expr_id: i32, index: i32, child_expr_id: i32, label_name: str, label_at: i32) -> unit {
+    list_push(mutref expr_children, checked_expr_child {
+        parent_expr_id: parent_expr_id,
+        index: index,
+        child_expr_id: child_expr_id,
+        label_name: label_name,
+        label_at: label_at,
     });
     return;
 }
@@ -2974,7 +3095,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         }
         let mut variant_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, head.text);
         if qualifier != "" {
-            variant_origin = "";
+            variant_origin = qualified_variant_origin_module(ref variants, ref uses, ref items, module_name, qualifier, head.text);
         }
         let mut target_kind = checked_target_none;
         let mut target_origin = "";
@@ -2986,7 +3107,11 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
             }
             target_origin = function_origin;
         } else {
-            if qualifier == "" and visible_variant_enum_name(ref variants, ref uses, ref items, module_name, head.text) != "" {
+            let mut resolved_variant_enum = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, head.text);
+            if qualifier != "" {
+                resolved_variant_enum = qualified_variant_enum_name(ref variants, ref uses, ref items, module_name, qualifier, head.text);
+            }
+            if resolved_variant_enum != "" {
                 if variant_origin == "__builtin__" {
                     target_kind = checked_target_builtin_constructor;
                 } else {
@@ -2995,8 +3120,8 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 target_origin = variant_origin;
             }
         }
-        if qualifier != "" and function_origin == "" {
-            return consume_handoff_limitation_detail(mutref diags, module_name, head.start, str_concat("unresolved qualified call target: ", head.text));
+        if qualifier != "" and function_origin == "" and variant_origin == "" {
+            return consume_handoff_limitation_detail(mutref diags, module_name, head.start, str_concat("unresolved qualified call or constructor target: ", head.text));
         }
         let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, exported_ctx, function_return_is_borrow_from_origin(ref functions, target_origin, head.text), function_return_borrow_mutable_from_origin(ref functions, target_origin, head.text), -1, head.text, target_kind, target_origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         let mut arg_start = open_index + 1;
@@ -3027,7 +3152,8 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 if child_id < 0 {
                     return consume_handoff_limitation_detail(mutref diags, module_name, head.start, str_concat("missing exported named call argument expression for call: ", head.text));
                 }
-                push_expr_child(mutref expr_children, expr_id, arg_index, child_id);
+                let label_token = token_at(ref tokens, segment_start);
+                push_named_expr_child(mutref expr_children, expr_id, arg_index, child_id, param_name, label_token.start);
                 arg_index = arg_index + 1;
             }
             return expr_id;
@@ -3043,7 +3169,11 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                     arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module_name, head.text, arg_index);
                 },
                 checked_target_constructor => {
-                    arg_expected_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module_name, head.text, arg_index);
+                    if qualifier != "" {
+                        arg_expected_ctx = qualified_variant_payload_ctx(ref variant_payloads, ref variants, ref uses, ref items, module_name, qualifier, head.text, arg_index);
+                    } else {
+                        arg_expected_ctx = visible_variant_payload_ctx(ref variant_payloads, ref uses, ref items, module_name, head.text, arg_index);
+                    }
                 },
                 checked_target_builtin_constructor => {
                     arg_expected_ctx = build_expected_variant_payload_ctx(head.text, expected_ctx, arg_index);
@@ -3063,10 +3193,19 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     }
 
     if span_is_struct_expr(ref tokens, expr_start, expr_end) {
-        let type_token = token_at(ref tokens, expr_start);
-        let type_origin = visible_type_origin_module(ref uses, ref items, module_name, type_token.text);
+        let type_name_index = span_struct_name_index(ref tokens, expr_start, expr_end);
+        let open_index = span_struct_open_index(ref tokens, expr_start, expr_end);
+        let type_token = token_at(ref tokens, type_name_index);
+        let qualifier = span_struct_qualifier(ref tokens, expr_start, expr_end);
+        let mut type_origin = visible_type_origin_module(ref uses, ref items, module_name, type_token.text);
+        if qualifier != "" {
+            type_origin = qualified_type_origin_module(ref uses, ref items, module_name, qualifier, type_token.text);
+        }
+        if type_origin == "" {
+            return consume_handoff_limitation_detail(mutref diags, module_name, type_token.start, str_concat("unresolved qualified struct literal type: ", type_token.text));
+        }
         let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_struct, exported_ctx, false, false, -1, type_token.text, checked_target_none, "", type_origin, type_token.text, "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
-        let mut field_start = expr_start + 2;
+        let mut field_start = open_index + 1;
         let field_end_limit = expr_end - 1;
         let mut field_index = 0;
         while field_start < field_end_limit {
@@ -3111,26 +3250,37 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
             return build_literal_expr(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_str, "str", current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_ident => {
-            if expr_start + 1 == expr_end {
-                let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, current.text, current.start + 1);
-                if binding_id >= 0 {
-                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, current.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+            if expr_start + 1 == expr_end or span_is_qualified_data_name(ref tokens, expr_start, expr_end) {
+                let name_index = span_data_name_index(ref tokens, expr_start, expr_end);
+                let name_token = token_at(ref tokens, name_index);
+                let qualifier = span_data_qualifier(ref tokens, expr_start, expr_end);
+                if qualifier == "" {
+                    let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, name_token.text, name_token.start + 1);
+                    if binding_id >= 0 {
+                        return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, name_token.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                    }
+                    let const_ctx = visible_const_ctx(ref consts, ref uses, ref items, module_name, name_token.text);
+                    if const_ctx.head != "" {
+                        let origin = visible_const_origin_module(ref uses, ref items, module_name, name_token.text);
+                        return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_const, const_ctx, false, false, -1, name_token.text, checked_target_const, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                    }
                 }
-                let const_ctx = visible_const_ctx(ref consts, ref uses, ref items, module_name, current.text);
-                if const_ctx.head != "" {
-                    let origin = visible_const_origin_module(ref uses, ref items, module_name, current.text);
-                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_const, const_ctx, false, false, -1, current.text, checked_target_const, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                let mut zero_enum = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, name_token.text);
+                if qualifier != "" {
+                    zero_enum = qualified_variant_enum_name(ref variants, ref uses, ref items, module_name, qualifier, name_token.text);
                 }
-                let zero_enum = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
                 if zero_enum != "" {
-                    let origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                    let mut origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, name_token.text);
+                    if qualifier != "" {
+                        origin = qualified_variant_origin_module(ref variants, ref uses, ref items, module_name, qualifier, name_token.text);
+                    }
                     let mut target_kind = checked_target_constructor;
                     if origin == "__builtin__" {
                         target_kind = checked_target_builtin_constructor;
                     }
-                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, exported_ctx, false, false, -1, current.text, target_kind, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                    return push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_zero_variant, exported_ctx, false, false, -1, name_token.text, target_kind, origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
                 }
-                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved binding id for checked name expression: ", current.text));
+                return consume_handoff_limitation_detail(mutref diags, module_name, name_token.start, str_concat("missing resolved binding id for checked name expression: ", name_token.text));
             }
         },
         _ => {
@@ -3999,11 +4149,20 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
                 return pattern_id;
             }
             if span_is_call_expr(ref tokens, pattern_start, pattern_end) {
-                let ctor_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
-                if ctor_enum_name == "" {
-                    return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing resolved constructor for checked pattern: ", current.text));
+                let ctor_index = span_call_name_index(ref tokens, pattern_start, pattern_end);
+                let ctor = token_at(ref tokens, ctor_index);
+                let qualifier = span_call_qualifier(ref tokens, pattern_start, pattern_end);
+                let mut ctor_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, ctor.text);
+                if qualifier != "" {
+                    ctor_enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, module_name, qualifier, ctor.text);
                 }
-                let ctor_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                if ctor_enum_name == "" {
+                    return consume_handoff_limitation_detail(mutref diags, module_name, ctor.start, str_concat("missing resolved constructor for checked pattern: ", ctor.text));
+                }
+                let mut ctor_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, ctor.text);
+                if qualifier != "" {
+                    ctor_origin = qualified_variant_origin_module(ref variants, ref uses, ref items, module_name, qualifier, ctor.text);
+                }
                 let pattern_id = next_pattern_id(ref patterns);
                 list_push(mutref patterns, checked_pattern {
                     id: pattern_id,
@@ -4012,23 +4171,24 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
                     module_name: module_name,
                     function_name: function_name,
                     scope_id: scope_id,
-                    at: current.start,
+                    at: ctor.start,
                     start: pattern_start,
                     end: pattern_end,
                     kind: checked_pattern_variant,
                     binding_id: -1,
-                    name: current.text,
+                    name: ctor.text,
                     constructor_origin_module: ctor_origin,
                     constructor_enum_name: ctor_enum_name,
                 });
-                let mut arg_start = pattern_start + 2;
+                let open_index = span_call_open_index(ref tokens, pattern_start, pattern_end);
+                let mut arg_start = open_index + 1;
                 let arg_end_limit = pattern_end - 1;
                 let mut arg_index = 0;
                 while arg_start < arg_end_limit {
                     let segment_end = next_top_level_comma(ref tokens, arg_start, arg_end_limit);
                     let child_id = build_checked_pattern_tree(ref variants, ref uses, ref items, ref checked_bindings, arm_id, function_id, module_name, function_name, scope_id, ref tokens, arg_start, segment_end, mutref patterns, mutref pattern_children, mutref diags);
                     if child_id < 0 {
-                        return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing checked child pattern for constructor: ", current.text));
+                        return consume_handoff_limitation_detail(mutref diags, module_name, ctor.start, str_concat("missing checked child pattern for constructor: ", ctor.text));
                     }
                     push_pattern_child(mutref pattern_children, pattern_id, arg_index, child_id);
                     arg_index = arg_index + 1;
@@ -4036,10 +4196,19 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
                 }
                 return pattern_id;
             }
-            if pattern_start + 1 == pattern_end {
-                let zero_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, current.text);
+            if pattern_start + 1 == pattern_end or span_is_qualified_data_name(ref tokens, pattern_start, pattern_end) {
+                let name_index = span_data_name_index(ref tokens, pattern_start, pattern_end);
+                let name_token = token_at(ref tokens, name_index);
+                let qualifier = span_data_qualifier(ref tokens, pattern_start, pattern_end);
+                let mut zero_enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, module_name, name_token.text);
+                if qualifier != "" {
+                    zero_enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, module_name, qualifier, name_token.text);
+                }
                 if zero_enum_name != "" {
-                    let zero_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, current.text);
+                    let mut zero_origin = visible_variant_origin_module(ref variants, ref uses, ref items, module_name, name_token.text);
+                    if qualifier != "" {
+                        zero_origin = qualified_variant_origin_module(ref variants, ref uses, ref items, module_name, qualifier, name_token.text);
+                    }
                     let pattern_id = next_pattern_id(ref patterns);
                     list_push(mutref patterns, checked_pattern {
                         id: pattern_id,
@@ -4048,16 +4217,19 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
                         module_name: module_name,
                         function_name: function_name,
                         scope_id: scope_id,
-                        at: current.start,
+                        at: name_token.start,
                         start: pattern_start,
                         end: pattern_end,
                         kind: checked_pattern_variant,
                         binding_id: -1,
-                        name: current.text,
+                        name: name_token.text,
                         constructor_origin_module: zero_origin,
                         constructor_enum_name: zero_enum_name,
                     });
                     return pattern_id;
+                }
+                if qualifier != "" {
+                    return consume_handoff_limitation_detail(mutref diags, module_name, name_token.start, str_concat("missing resolved constructor for checked pattern: ", name_token.text));
                 }
                 let binding_id = exact_binding_id(ref checked_bindings, module_name, function_name, scope_id, current.text, current.start);
                 if binding_id < 0 {
@@ -4139,11 +4311,20 @@ fn append_match_arms_for_source(functions: ref list<function_fact>, function_par
                         if head.text == "_" and pattern_start + 1 == pattern_end {
                             is_wildcard = true;
                         } else {
-                            if span_is_call_expr(ref tokens, pattern_start, pattern_end) or pattern_start + 1 == pattern_end {
-                                let enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, current.module, head.text);
+                            if span_is_call_expr(ref tokens, pattern_start, pattern_end) or pattern_start + 1 == pattern_end or span_is_qualified_data_name(ref tokens, pattern_start, pattern_end) {
+                                let name_index = span_data_name_index(ref tokens, pattern_start, pattern_end);
+                                let name_token = token_at(ref tokens, name_index);
+                                let qualifier = span_data_qualifier(ref tokens, pattern_start, pattern_end);
+                                let mut enum_name = visible_variant_enum_name(ref variants, ref uses, ref items, current.module, name_token.text);
+                                if qualifier != "" {
+                                    enum_name = qualified_variant_enum_name(ref variants, ref uses, ref items, current.module, qualifier, name_token.text);
+                                }
                                 if enum_name != "" {
-                                    constructor_name = head.text;
-                                    constructor_origin_module = visible_variant_origin_module(ref variants, ref uses, ref items, current.module, head.text);
+                                    constructor_name = name_token.text;
+                                    constructor_origin_module = visible_variant_origin_module(ref variants, ref uses, ref items, current.module, name_token.text);
+                                    if qualifier != "" {
+                                        constructor_origin_module = qualified_variant_origin_module(ref variants, ref uses, ref items, current.module, qualifier, name_token.text);
+                                    }
                                     constructor_enum_name = enum_name;
                                 }
                             }

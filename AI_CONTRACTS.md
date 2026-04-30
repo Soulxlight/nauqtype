@@ -65,9 +65,11 @@ audit {
 
 `nauqc review-diff <before> <after> --format v2` preserves the v1 change shape and adds evidence metadata for the checked before/after inputs and the semantic-identity comparison basis.
 
+`nauqc change-report <before> <after> --format v1` combines the semantic diff basis with deterministic evidence and diagnostics for supervised change review. With `--policy <path>`, it also reports advisory policy target status without approving, repairing, or mutating code.
+
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `refactor-rename`, and `policy-check` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
+During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, and `policy-check` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
 
 The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 
@@ -91,7 +93,7 @@ The broader AI-first compiler surface now also includes `nauqc facts <file>`, wh
 
 ## Plan-Only Refactors And Policy Sidecars
 
-`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, top-level const, field, and local/param/pattern binding identities. It never mutates files. Field renames are driven by checked field definition and use references in the facts surface.
+`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, top-level const, field, and local/param/pattern binding identities. It never mutates files. Field renames are driven by checked field definition and use references in the facts surface; parameter renames also update checked named-argument labels.
 
 `policy-check <source> <policy-path>` validates `nauqtype.policy.json` v1 sidecars against checked facts. The sidecar is advisory metadata for owners and review expectations; `check`, `build`, and `run` do not enforce it yet.
 

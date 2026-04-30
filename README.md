@@ -14,13 +14,13 @@ Current bootstrap status:
 - explicit `match`
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
-- named function arguments and direct module-qualified function calls
+- named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
 - bootstrap file input and string helpers
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
 ## Quick Start
 
@@ -73,6 +73,13 @@ Compare two checked review surfaces with stable semantic identities:
 ```powershell
 selfhost\build\main.exe review-diff before\main.nq after\main.nq
 selfhost\build\main.exe review-diff before\main.nq after\main.nq --format v2
+```
+
+Produce a supervised semantic change report, optionally linked to policy metadata:
+
+```powershell
+selfhost\build\main.exe change-report before\main.nq after\main.nq --format v1
+selfhost\build\main.exe change-report before\main.nq after\main.nq --policy nauqtype.policy.json --format v1
 ```
 
 Plan a semantic rename without mutating files:
@@ -137,6 +144,7 @@ Example programs worth checking first:
 - `examples\top_level_const.nq`: stage1-owned top-level constants
 - `examples\named_arguments.nq`: Batch B named function arguments
 - `examples\qualified_calls.nq`: direct module-qualified function calls
+- `examples\qualified_data_names.nq`: direct module-qualified struct and enum constructor names
 - `examples\break_continue.nq`: minimal loop control
 - `examples\review_contracts.nq`: AI Contracts and `review` workflow
 
@@ -167,6 +175,7 @@ Current selfhost semantic coverage:
 - top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `bool` / `str` initializer subset
 - named function arguments for direct function calls, including modeled builtins and imported functions; arguments are exported to the backend in callee parameter order
 - direct `module::function(...)` calls for public functions from directly imported flat-root modules
+- direct module-qualified data names for public struct literals and enum variants from directly imported flat-root modules, preserving origin visibility for facts, handoff, IR, and C emission
 - minimal `break;` and `continue;` statements for the nearest enclosing `while`
 - differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
 - the in-repo selfhost tree runs with no `stage1 limitation` diagnostics
@@ -206,7 +215,8 @@ Current AI-first compiler output:
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
-- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants and checked field definitions/uses; it never mutates files
+- `change-report --format v1` JSON that combines semantic diff evidence, optional policy status, and diagnostics for supervised change review
+- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants, checked field definitions/uses, and named-argument labels for parameter renames; it never mutates files
 - `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
 
@@ -229,4 +239,4 @@ Current AI-first compiler output:
 
 - Nauqtype is now the active implementation language for the project.
 - The Python compiler remains in-repo only as a frozen bootstrap/reference path.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, named arguments, direct module-qualified calls, minimal `break` / `continue`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, named arguments, direct module-qualified function and data names, minimal `break` / `continue`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

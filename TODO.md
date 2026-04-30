@@ -131,9 +131,14 @@
 - [x] Add `review-diff`
 - [x] Add `review-diff --format v2` evidence metadata
 - [x] Add schema/golden coverage for facts v2, review v2, review-diff v1, and review-diff v2
+- [x] Add named-argument label references to facts v2 and parameter rename plans
+- [x] Add supervised `change-report --format v1`
+- [x] Add schema/golden coverage for change-report v1
 - [x] Add plan-only `refactor-rename`
 - [x] Add `nauqtype.policy.json` sidecar metadata and `policy-check`
 - [x] Add schemas for refactor plans, policy-check output, and policy sidecars
+- [x] Expand root policy metadata over high-risk selfhost compiler surfaces
+- [x] Harden `prove` as the active AI tooling confidence gate
 
 ## Genuine Parity Next
 
@@ -168,3 +173,4 @@
 - [x] Add named function arguments with canonical Nauqtype examples
 - [x] Add direct module-qualified function calls with canonical Nauqtype examples
 - [x] Add minimal nearest-`while` `break` / `continue` with canonical Nauqtype examples
+- [x] Add direct module-qualified data names with canonical Nauqtype examples

@@ -494,6 +494,79 @@ fn run_driver_run(driver_path: str, entry_path: str) -> result<process_result, i
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_facts(driver_path: str, entry_path: str, format: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "facts");
+    list_push(mutref args, entry_path);
+    if format != "" {
+        list_push(mutref args, "--format");
+        list_push(mutref args, format);
+    }
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_review(driver_path: str, entry_path: str, format: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "review");
+    list_push(mutref args, entry_path);
+    if format != "" {
+        list_push(mutref args, "--format");
+        list_push(mutref args, format);
+    }
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_review_diff(driver_path: str, before_path: str, after_path: str, format: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "review-diff");
+    list_push(mutref args, before_path);
+    list_push(mutref args, after_path);
+    if format != "" {
+        list_push(mutref args, "--format");
+        list_push(mutref args, format);
+    }
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_change_report(driver_path: str, before_path: str, after_path: str, policy_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "change-report");
+    list_push(mutref args, before_path);
+    list_push(mutref args, after_path);
+    if policy_path != "" {
+        list_push(mutref args, "--policy");
+        list_push(mutref args, policy_path);
+    }
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v1");
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_refactor_rename(driver_path: str, entry_path: str, target_id: str, new_name: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "refactor-rename");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, target_id);
+    list_push(mutref args, new_name);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_policy_check(driver_path: str, entry_path: str, policy_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "policy-check");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, policy_path);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_fmt_check(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "fmt");
+    list_push(mutref args, "--check");
+    list_push(mutref args, entry_path);
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_stage2(stage2_path: str, proof_dir: str) -> result<process_result, io_err> {
     let args: list<str> = list();
     return run_process(stage2_path, ref args, proof_dir);
@@ -536,6 +609,25 @@ fn driver_step_ok(step_name: str, status: process_result) -> bool {
     return true;
 }
 
+fn driver_json_step_ok(step_name: str, status: process_result) -> bool {
+    if status.exit_code != 0 {
+        eprint_line(str_concat(step_name, " failed"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(step_name, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if status.stderr != "" {
+        eprint_line(str_concat(step_name, " produced unexpected stderr"));
+        emit_process_output(status);
+        return false;
+    }
+    return true;
+}
+
 fn read_text_or_report(path: str, label: str, output: mutref str) -> bool {
     let data = read_file(path);
     match data {
@@ -548,6 +640,32 @@ fn read_text_or_report(path: str, label: str, output: mutref str) -> bool {
             return false;
         },
     }
+}
+
+fn driver_json_matches_golden(step_name: str, status: process_result, golden_path: str) -> bool {
+    if not driver_json_step_ok(step_name, status) {
+        return false;
+    }
+    let mut expected = "";
+    if not read_text_or_report(golden_path, str_concat("failed to read golden for ", step_name), mutref expected) {
+        return false;
+    }
+    if not output_matches(status.stdout, expected) {
+        eprint_line(str_concat(step_name, " output changed"));
+        return false;
+    }
+    return true;
+}
+
+fn driver_json_contains3(step_name: str, status: process_result, first: str, second: str, third: str) -> bool {
+    if not driver_json_step_ok(step_name, status) {
+        return false;
+    }
+    if not text_contains(status.stdout, first) or not text_contains(status.stdout, second) or not text_contains(status.stdout, third) {
+        eprint_line(str_concat(step_name, " output missing expected checked evidence"));
+        return false;
+    }
+    return true;
 }
 
 fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
@@ -563,6 +681,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("mutate_counter", "examples/mutate_counter.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("named_arguments", "examples/named_arguments.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("qualified_calls", "examples/qualified_calls.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("qualified_data_names", "examples/qualified_data_names.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("read_file_len", "examples/read_file_len.nq", 6, ""));
     list_push(mutref cases, make_corpus_case("result_handling", "examples/result_handling.nq", 0, ""));
     list_push(mutref cases, make_corpus_case("review_contracts", "examples/review_contracts.nq", 42, "Hello, contracts!\n"));
@@ -571,6 +690,105 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("user_record", "examples/user_record.nq", 32, ""));
     list_push(mutref cases, make_corpus_case("while_counter", "examples/while_counter.nq", 5, ""));
     return;
+}
+
+fn run_json_golden_result(label: str, result: result<process_result, io_err>, golden_path: str) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_json_matches_golden(label, status, golden_path);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_json_contains_result(label: str, result: result<process_result, io_err>, first: str, second: str, third: str) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_json_contains3(label, status, first, second, third);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_quiet_result(label: str, result: result<process_result, io_err>) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_step_ok(label, status);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_formatter_tooling_checks(driver_path: str) -> bool {
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let entry = list_get(ref cases, index);
+        match entry {
+            Some(value) => {
+                if not run_quiet_result(str_concat("fmt --check ", value.name), run_driver_fmt_check(driver_path, value.source_path)) {
+                    return false;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn run_tooling_confidence_gate(driver_path: str) -> bool {
+    if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
+        return false;
+    }
+    if not run_json_golden_result("facts v2", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", "v2"), "tests/golden/facts/main-v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("facts named args v2", run_driver_facts(driver_path, "tests/fixtures/facts/named_args_main.nq", "v2"), "tests/golden/facts/named-args-v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("review v2", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("review-diff v1", run_driver_review_diff(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", ""), "tests/golden/review/review_diff_v1.json") {
+        return false;
+    }
+    if not run_json_golden_result("review-diff v2", run_driver_review_diff(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", "v2"), "tests/golden/review/review_diff_v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("change-report v1", run_driver_change_report(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", ""), "tests/golden/review/change_report_v1.json") {
+        return false;
+    }
+    if not run_json_golden_result("change-report policy v1", run_driver_change_report(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", "tests/fixtures/policy/change_report_policy.json"), "tests/golden/review/change_report_policy_v1.json") {
+        return false;
+    }
+    if not run_json_contains_result("refactor-rename field", run_driver_refactor_rename(driver_path, "tests/fixtures/facts/main.nq", "field:helper::Box::value", "renamed_value"), "\"ok\": true", "\"target_id\": \"field:helper::Box::value\"", "\"replacement\": \"renamed_value\"") {
+        return false;
+    }
+    if not run_json_contains_result("refactor-rename named arg", run_driver_refactor_rename(driver_path, "tests/fixtures/facts/named_args_main.nq", "binding:fn:named_args_helper::combine:1:scale@38", "multiplier"), "\"ok\": true", "\"span\": {", "\"replacement\": \"multiplier\"") {
+        return false;
+    }
+    if not run_json_contains_result("policy-check fixture", run_driver_policy_check(driver_path, "tests/fixtures/facts/main.nq", "tests/fixtures/policy/facts_policy.json"), "\"ok\": true", "\"errors\": 0", "\"known\": true") {
+        return false;
+    }
+    if not run_json_contains_result("policy-check selfhost", run_driver_policy_check(driver_path, "selfhost/main.nq", "nauqtype.policy.json"), "\"ok\": true", "\"errors\": 0", "\"target_id\": \"fn:c_emit::emit_c_program\"") {
+        return false;
+    }
+    if not run_formatter_tooling_checks(driver_path) {
+        return false;
+    }
+    return true;
 }
 
 fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
@@ -778,6 +996,9 @@ audit {
     let corpus_result = run_example_corpus(driver_path);
     if corpus_result != 0 {
         return corpus_result;
+    }
+    if not run_tooling_confidence_gate(driver_path) {
+        return 1;
     }
     print_line("nauqtype proof ok");
     return 0;
