@@ -249,6 +249,31 @@ Status:
 - the first tiny Batch C slice is done for direct `module::Type` struct literals and `module::Variant` enum constructors/patterns from directly imported flat-root modules
 - record update syntax remains deferred until provenance/reference tooling stays settled under real use
 
+### M19: Alpha Stabilization And Supervised Workflow
+
+- freeze language growth while the current self-hosted toolchain is made release-shaped
+- treat machine-readable outputs as compatibility contracts: diagnostics JSON, facts v1/v2, review v2, review-diff v1/v2, change-report v1, refactor plans, policy-check, and policy sidecars
+- add a canonical supervised-change fixture pair that exercises `check`, `facts`, `review`, `review-diff`, `change-report`, `policy-check`, and plan-only `refactor-rename`
+- add deterministic goldens for that workflow without adding a new public command
+- include the supervised workflow in the stage1-owned `prove` gate
+
+Status:
+
+- done for the current alpha checkpoint
+- no source-language syntax, runtime helpers, CLI commands, borrow semantics, IR/C changes, or package/module expansion were added
+- `prove` now checks the supervised evidence loop alongside selfhost proof, corpus proof, existing tooling goldens, policy validation, refactor plans, and formatter-lite
+
+### M20: Proof Hardening Before Batch D
+
+- widen proof confidence before the next semantic language batch
+- add deterministic proof summaries and better failure localization where useful
+- expand corpus/proof coverage around stabilized examples and evidence workflows
+- keep stage3/stage4-style proof expansion separate from ordinary language-feature work
+
+Status:
+
+- next likely milestone before any new Batch D syntax
+
 ## Feature Ordering
 
 Features required before first success:

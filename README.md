@@ -82,6 +82,18 @@ selfhost\build\main.exe change-report before\main.nq after\main.nq --format v1
 selfhost\build\main.exe change-report before\main.nq after\main.nq --policy nauqtype.policy.json --format v1
 ```
 
+Canonical supervised workflow for an agent/human review loop:
+
+```powershell
+selfhost\build\main.exe check tests\fixtures\supervised_workflow\after\main.nq
+selfhost\build\main.exe facts tests\fixtures\supervised_workflow\after\main.nq --format v2
+selfhost\build\main.exe review tests\fixtures\supervised_workflow\after\main.nq --format v2
+selfhost\build\main.exe review-diff tests\fixtures\supervised_workflow\before\main.nq tests\fixtures\supervised_workflow\after\main.nq --format v2
+selfhost\build\main.exe change-report tests\fixtures\supervised_workflow\before\main.nq tests\fixtures\supervised_workflow\after\main.nq --policy tests\fixtures\supervised_workflow\policy.json --format v1
+selfhost\build\main.exe policy-check tests\fixtures\supervised_workflow\after\main.nq tests\fixtures\supervised_workflow\policy.json
+selfhost\build\main.exe refactor-rename tests\fixtures\supervised_workflow\after\main.nq binding:fn:main::apply:1:bonus@25 extra
+```
+
 Plan a semantic rename without mutating files:
 
 ```powershell
@@ -219,6 +231,13 @@ Current AI-first compiler output:
 - `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants, checked field definitions/uses, and named-argument labels for parameter renames; it never mutates files
 - `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
+
+Compatibility stance for the alpha checkpoint:
+
+- `facts` v1 remains the default and stays stable
+- v2/evidence formats are additive surfaces, not silent replacements for v1
+- schema versions and `$id` values are part of the machine-readable contract
+- the stage1-owned `prove` gate now includes the canonical supervised workflow so agent-pair review evidence cannot quietly drift
 
 ## Key Docs
 

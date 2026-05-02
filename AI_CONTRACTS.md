@@ -73,6 +73,28 @@ During the current Nauqtype-only toolchain transition, `facts`, `review`, `revie
 
 The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 
+## Supervised Workflow Alpha
+
+The alpha workflow is deliberately command-composed instead of hidden behind a new orchestration command:
+
+1. `check` proves the changed program is accepted.
+2. `facts --format v2` exports checked definitions, references, call graph edges, and evidence.
+3. `review --format v2` exports function-level contract and call evidence.
+4. `review-diff --format v2` compares before/after checked semantic identities.
+5. `change-report --policy --format v1` combines semantic changes with advisory policy status.
+6. `policy-check` validates ownership/review sidecars against checked facts.
+7. `refactor-rename` emits deterministic edit plans only; it does not mutate files.
+
+The canonical fixture for this loop lives under `tests/fixtures/supervised_workflow`, and the stage1-owned `prove` gate checks its goldens. This is the intended human-supervision model: agents can propose and explain, but the review substrate is deterministic compiler evidence.
+
+## Compatibility Rules
+
+- Existing v1 outputs remain stable unless a new version is explicitly introduced.
+- Additive evidence belongs in v2-style surfaces, not by silently changing v1 shapes.
+- Schema `$id`, `version`, `command`, and `identity_scheme` values are compatibility anchors.
+- Policy sidecars are advisory metadata; `check`, `build`, and `run` do not enforce them.
+- Refactor output remains plan-only until an explicit apply/write milestone is accepted.
+
 ## Semantic Facts v1 Contract
 
 `facts` output is versioned and locked by `schemas/facts-v1.schema.json`.

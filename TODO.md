@@ -174,3 +174,18 @@
 - [x] Add direct module-qualified function calls with canonical Nauqtype examples
 - [x] Add minimal nearest-`while` `break` / `continue` with canonical Nauqtype examples
 - [x] Add direct module-qualified data names with canonical Nauqtype examples
+
+## Alpha Stabilization And Supervised Workflow
+
+- [x] Freeze language growth during the alpha stabilization checkpoint
+- [x] Document machine-readable output compatibility as part of the public tool contract
+- [x] Add a canonical supervised-change fixture pair
+- [x] Add deterministic goldens for facts v2, review v2, review-diff v2, change-report v1 with policy, policy-check, and refactor-rename
+- [x] Extend the stage1-owned `prove` gate with the supervised evidence workflow
+- [x] Keep `refactor-rename` plan-only and verify it does not mutate files
+
+## Proof Hardening Next
+
+- [ ] Add deterministic proof summaries or hashes for easier comparison and triage
+- [ ] Improve proof failure localization across selfhost, corpus, tooling, and emitted-C comparison steps
+- [ ] Expand proof/corpus confidence before starting Batch D syntax

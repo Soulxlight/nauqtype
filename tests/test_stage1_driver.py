@@ -747,6 +747,94 @@ class Stage1DriverTests(unittest.TestCase):
             json.loads((self.root / "schemas" / "change-report-v1.schema.json").read_text(encoding="utf-8")),
         )
 
+    def test_stage1_driver_supervised_workflow_goldens_and_schema_contracts(self) -> None:
+        before = "tests/fixtures/supervised_workflow/before/main.nq"
+        after = "tests/fixtures/supervised_workflow/after/main.nq"
+        policy = "tests/fixtures/supervised_workflow/policy.json"
+        golden_root = self.root / "tests" / "golden" / "supervised_workflow"
+
+        check = self._run_driver(["check", after])
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertEqual(check.stdout, "")
+        self.assertEqual(check.stderr, "")
+
+        original_after = (self.root / after).read_text(encoding="utf-8")
+        cases = [
+            (
+                "facts v2",
+                ["facts", after, "--format", "v2"],
+                golden_root / "facts_v2.json",
+                self.root / "schemas" / "facts-v2.schema.json",
+                "https://nauqtype.dev/schemas/facts-v2.schema.json",
+                2,
+                "facts",
+            ),
+            (
+                "review v2",
+                ["review", after, "--format", "v2"],
+                golden_root / "review_v2.json",
+                self.root / "schemas" / "review-v2.schema.json",
+                "https://nauqtype.dev/schemas/review-v2.schema.json",
+                2,
+                "review",
+            ),
+            (
+                "review-diff v2",
+                ["review-diff", before, after, "--format", "v2"],
+                golden_root / "review_diff_v2.json",
+                self.root / "schemas" / "review-diff-v2.schema.json",
+                "https://nauqtype.dev/schemas/review-diff-v2.schema.json",
+                2,
+                "review-diff",
+            ),
+            (
+                "change-report policy v1",
+                ["change-report", before, after, "--policy", policy, "--format", "v1"],
+                golden_root / "change_report_policy_v1.json",
+                self.root / "schemas" / "change-report-v1.schema.json",
+                "https://nauqtype.dev/schemas/change-report-v1.schema.json",
+                1,
+                "change-report",
+            ),
+            (
+                "policy-check v1",
+                ["policy-check", after, policy],
+                golden_root / "policy_check_v1.json",
+                self.root / "schemas" / "policy-check-v1.schema.json",
+                "https://nauqtype.dev/schemas/policy-check-v1.schema.json",
+                1,
+                "policy-check",
+            ),
+            (
+                "refactor-rename v1",
+                ["refactor-rename", after, "binding:fn:main::apply:1:bonus@25", "extra"],
+                golden_root / "refactor_rename_v1.json",
+                self.root / "schemas" / "refactor-rename-v1.schema.json",
+                "https://nauqtype.dev/schemas/refactor-rename-v1.schema.json",
+                1,
+                "refactor-rename",
+            ),
+        ]
+
+        for label, args, golden_path, schema_path, schema_id, version, command in cases:
+            with self.subTest(label=label):
+                result = self._run_driver(args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stderr, "")
+                payload = json.loads(result.stdout)
+                self.assertEqual(payload, json.loads(golden_path.read_text(encoding="utf-8")))
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+                self.assertEqual(schema["$id"], schema_id)
+                self.assertEqual(schema["properties"]["version"]["const"], version)
+                self.assertEqual(schema["properties"]["command"]["const"], command)
+                self._assert_schema_shape(payload, schema)
+
+        policy_schema = json.loads((self.root / "schemas" / "nauqtype.policy-v1.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(policy_schema["$id"], "https://nauqtype.dev/schemas/nauqtype.policy-v1.schema.json")
+        self.assertEqual(policy_schema["properties"]["version"]["const"], 1)
+        self._assert_schema_shape(json.loads((self.root / policy).read_text(encoding="utf-8")), policy_schema)
+        self.assertEqual((self.root / after).read_text(encoding="utf-8"), original_after)
+
     def test_stage1_driver_refactor_rename_plans_imported_function_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

@@ -478,6 +478,13 @@ fn run_driver_build(driver_path: str, entry_path: str) -> result<process_result,
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_check(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "check");
+    list_push(mutref args, entry_path);
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_driver_emit_c(driver_path: str, entry_path: str, output_path: str) -> result<process_result, io_err> {
     let mut args: list<str> = list();
     list_push(mutref args, "emit-c");
@@ -748,6 +755,49 @@ fn run_formatter_tooling_checks(driver_path: str) -> bool {
     return true;
 }
 
+fn run_supervised_workflow_gate(driver_path: str) -> bool {
+    let before_path = "tests/fixtures/supervised_workflow/before/main.nq";
+    let after_path = "tests/fixtures/supervised_workflow/after/main.nq";
+    let policy_path = "tests/fixtures/supervised_workflow/policy.json";
+    let refactor_target = "binding:fn:main::apply:1:bonus@25";
+
+    if not run_quiet_result("supervised workflow check", run_driver_check(driver_path, after_path)) {
+        return false;
+    }
+    if not run_json_golden_result("supervised facts v2", run_driver_facts(driver_path, after_path, "v2"), "tests/golden/supervised_workflow/facts_v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("supervised review v2", run_driver_review(driver_path, after_path, "v2"), "tests/golden/supervised_workflow/review_v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("supervised review-diff v2", run_driver_review_diff(driver_path, before_path, after_path, "v2"), "tests/golden/supervised_workflow/review_diff_v2.json") {
+        return false;
+    }
+    if not run_json_golden_result("supervised change-report policy v1", run_driver_change_report(driver_path, before_path, after_path, policy_path), "tests/golden/supervised_workflow/change_report_policy_v1.json") {
+        return false;
+    }
+    if not run_json_golden_result("supervised policy-check v1", run_driver_policy_check(driver_path, after_path, policy_path), "tests/golden/supervised_workflow/policy_check_v1.json") {
+        return false;
+    }
+
+    let mut before_refactor_text = "";
+    if not read_text_or_report(after_path, "failed to read supervised workflow refactor fixture", mutref before_refactor_text) {
+        return false;
+    }
+    if not run_json_golden_result("supervised refactor-rename v1", run_driver_refactor_rename(driver_path, after_path, refactor_target, "extra"), "tests/golden/supervised_workflow/refactor_rename_v1.json") {
+        return false;
+    }
+    let mut after_refactor_text = "";
+    if not read_text_or_report(after_path, "failed to reread supervised workflow refactor fixture", mutref after_refactor_text) {
+        return false;
+    }
+    if before_refactor_text != after_refactor_text {
+        eprint_line("supervised workflow refactor-rename mutated the fixture");
+        return false;
+    }
+    return true;
+}
+
 fn run_tooling_confidence_gate(driver_path: str) -> bool {
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
         return false;
@@ -783,6 +833,9 @@ fn run_tooling_confidence_gate(driver_path: str) -> bool {
         return false;
     }
     if not run_json_contains_result("policy-check selfhost", run_driver_policy_check(driver_path, "selfhost/main.nq", "nauqtype.policy.json"), "\"ok\": true", "\"errors\": 0", "\"target_id\": \"fn:c_emit::emit_c_program\"") {
+        return false;
+    }
+    if not run_supervised_workflow_gate(driver_path) {
         return false;
     }
     if not run_formatter_tooling_checks(driver_path) {
