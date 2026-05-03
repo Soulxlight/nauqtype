@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,23 @@ class Stage1DriverTests(unittest.TestCase):
 
     def _phase_statuses(self, summary: dict) -> dict[str, str]:
         return {entry["id"]: entry["status"] for entry in summary["phases"]}
+
+    def _locked_corpus_entries(self) -> list[tuple[str, str]]:
+        proof_source = (self.root / "selfhost" / "proof.nq").read_text(encoding="utf-8")
+        entries = re.findall(r'make_corpus_case\("([^"]+)",\s*"([^"]+)",', proof_source)
+        self.assertGreater(len(entries), 0)
+        return entries
+
+    def _locked_corpus_count(self) -> int:
+        return len(self._locked_corpus_entries())
+
+    def _runnable_example_paths(self) -> list[str]:
+        paths: list[str] = []
+        for path in sorted((self.root / "examples").glob("*.nq")):
+            text = path.read_text(encoding="utf-8")
+            if re.search(r"\bfn\s+main\s*\(", text):
+                paths.append(path.relative_to(self.root).as_posix())
+        return paths
 
     def _schema_spec(self, schema: dict, spec: dict) -> dict:
         ref = spec.get("$ref")
@@ -118,7 +136,7 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(summary["selfhost"]["status"], "passed")
         self.assertTrue(summary["selfhost"]["structural_c_equal"])
         self.assertEqual(summary["corpus"]["status"], "passed")
-        self.assertEqual(summary["corpus"]["cases"], 20)
+        self.assertEqual(summary["corpus"]["cases"], self._locked_corpus_count())
         self.assertEqual(summary["tooling"]["status"], "passed")
         self.assertEqual(set(self._phase_statuses(summary).values()), {"passed"})
 
@@ -156,7 +174,7 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(summary["failed_phase"], "")
         self.assertEqual(summary["selfhost"]["status"], "skipped")
         self.assertEqual(summary["corpus"]["status"], "passed")
-        self.assertEqual(summary["corpus"]["cases"], 20)
+        self.assertEqual(summary["corpus"]["cases"], self._locked_corpus_count())
         self.assertEqual(summary["tooling"]["status"], "skipped")
         self.assertEqual(phases["selfhost.copy"], "skipped")
         self.assertEqual(phases["corpus.emit_c"], "passed")
@@ -181,6 +199,16 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(phases["corpus.emit_c"], "failed")
             self.assertEqual(phases["corpus.build"], "skipped")
             self.assertEqual(phases["tooling.golden"], "skipped")
+
+    def test_stage1_driver_locked_corpus_covers_every_runnable_example(self) -> None:
+        entries = self._locked_corpus_entries()
+        names = [name for name, _ in entries]
+        paths = [path for _, path in entries]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(len(paths), len(set(paths)))
+        for name, path in entries:
+            self.assertEqual(name, Path(path).stem)
+        self.assertEqual(paths, self._runnable_example_paths())
 
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

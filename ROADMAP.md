@@ -276,6 +276,7 @@ Status:
 - `prove`, `prove-selfhost`, and `prove-corpus` keep their existing quiet success stdout
 - each proof command now writes `build/proof/summary.json` using stable phase IDs and the versioned `schemas/proof-summary-v1.schema.json`
 - summaries are written on success and failure, with `failed_phase` identifying the first failed proof phase
+- the locked corpus is guarded so every runnable canonical example under `examples/` participates in `prove-corpus`
 - no source-language syntax, runtime helpers, CLI flags, new commands, stage3/stage4 proof chain, or Batch D feature work was added
 
 ## Feature Ordering

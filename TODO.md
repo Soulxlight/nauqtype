@@ -191,4 +191,4 @@
 - [x] Improve proof failure localization across selfhost, corpus, tooling, and emitted-C comparison steps
 - [x] Keep `prove`, `prove-selfhost`, and `prove-corpus` stdout unchanged while writing summary artifacts
 - [x] Add direct coverage for `prove-selfhost`, `prove-corpus`, and failure summary emission
-- [ ] Expand proof/corpus confidence further before starting Batch D syntax
+- [x] Expand proof/corpus confidence further before starting Batch D syntax
