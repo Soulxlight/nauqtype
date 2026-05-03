@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/proof-summary-v1.schema.json",
+  "title": "Nauqtype Proof Summary v1",
+  "type": "object",
+  "required": ["version", "command", "ok", "failed_phase", "phases", "selfhost", "corpus", "tooling"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "command": { "enum": ["prove", "prove-selfhost", "prove-corpus"] },
+    "ok": { "type": "boolean" },
+    "failed_phase": { "type": "string" },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "selfhost.copy",
+              "selfhost.stage1_build",
+              "selfhost.stage2_run",
+              "selfhost.structural_c_compare",
+              "corpus.emit_c",
+              "corpus.build",
+              "corpus.run",
+              "corpus.structural_c_compare",
+              "tooling.golden",
+              "tooling.policy",
+              "tooling.refactor",
+              "tooling.formatter"
+            ]
+          },
+          "status": { "enum": ["passed", "failed", "skipped"] }
+        }
+      }
+    },
+    "selfhost": {
+      "type": "object",
+      "required": ["status", "structural_c_equal"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["passed", "failed", "skipped"] },
+        "structural_c_equal": { "type": "boolean" }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "required": ["status", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["passed", "failed", "skipped"] },
+        "cases": { "type": "integer" }
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["passed", "failed", "skipped"] }
+      }
+    }
+  }
+}

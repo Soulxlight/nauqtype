@@ -272,7 +272,11 @@ Status:
 
 Status:
 
-- next likely milestone before any new Batch D syntax
+- done for proof summary v1
+- `prove`, `prove-selfhost`, and `prove-corpus` keep their existing quiet success stdout
+- each proof command now writes `build/proof/summary.json` using stable phase IDs and the versioned `schemas/proof-summary-v1.schema.json`
+- summaries are written on success and failure, with `failed_phase` identifying the first failed proof phase
+- no source-language syntax, runtime helpers, CLI flags, new commands, stage3/stage4 proof chain, or Batch D feature work was added
 
 ## Feature Ordering
 

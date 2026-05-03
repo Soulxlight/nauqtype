@@ -138,6 +138,8 @@ selfhost\build\main.exe prove-selfhost
 selfhost\build\main.exe prove-corpus
 ```
 
+The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build\proof\summary.json`, locked by `schemas\proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose.
+
 Current cutover note: invoke stage1 `build` / `run` from the repo root for now, because that slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 
 Frozen bootstrap/reference workflows that still exist during the cutover:

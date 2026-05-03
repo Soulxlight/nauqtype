@@ -186,6 +186,9 @@
 
 ## Proof Hardening Next
 
-- [ ] Add deterministic proof summaries or hashes for easier comparison and triage
-- [ ] Improve proof failure localization across selfhost, corpus, tooling, and emitted-C comparison steps
-- [ ] Expand proof/corpus confidence before starting Batch D syntax
+- [x] Add deterministic proof summary v1 for easier comparison and triage
+- [x] Add a versioned proof summary schema
+- [x] Improve proof failure localization across selfhost, corpus, tooling, and emitted-C comparison steps
+- [x] Keep `prove`, `prove-selfhost`, and `prove-corpus` stdout unchanged while writing summary artifacts
+- [x] Add direct coverage for `prove-selfhost`, `prove-corpus`, and failure summary emission
+- [ ] Expand proof/corpus confidence further before starting Batch D syntax

@@ -24,6 +24,225 @@ type corpus_case {
     expected_stdout: str,
 }
 
+fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
+    return str_concat(a, concat4(b, c, d, e));
+}
+
+fn bool_text(value: bool) -> str {
+    if value {
+        return "true";
+    }
+    return "false";
+}
+
+fn lines_to_text(lines: ref list<str>) -> str {
+    let mut out = "";
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(line) => {
+                out = str_concat(out, line);
+                out = str_concat(out, "\n");
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return out;
+}
+
+fn proof_summary_path() -> str {
+    return "build/proof/summary.json";
+}
+
+fn proof_phase_enabled(command: str, id: str) -> bool {
+    if starts_with_at(id, 0, "selfhost.") {
+        return command == "prove" or command == "prove-selfhost";
+    }
+    if starts_with_at(id, 0, "corpus.") {
+        return command == "prove" or command == "prove-corpus";
+    }
+    if starts_with_at(id, 0, "tooling.") {
+        return command == "prove";
+    }
+    return false;
+}
+
+fn proof_phase_rank(id: str) -> i32 {
+    if id == "selfhost.copy" {
+        return 1;
+    }
+    if id == "selfhost.stage1_build" {
+        return 2;
+    }
+    if id == "selfhost.stage2_run" {
+        return 3;
+    }
+    if id == "selfhost.structural_c_compare" {
+        return 4;
+    }
+    if id == "corpus.emit_c" {
+        return 5;
+    }
+    if id == "corpus.build" {
+        return 6;
+    }
+    if id == "corpus.run" {
+        return 7;
+    }
+    if id == "corpus.structural_c_compare" {
+        return 8;
+    }
+    if id == "tooling.golden" {
+        return 9;
+    }
+    if id == "tooling.policy" {
+        return 10;
+    }
+    if id == "tooling.refactor" {
+        return 11;
+    }
+    if id == "tooling.formatter" {
+        return 12;
+    }
+    return 0;
+}
+
+fn proof_phase_status(command: str, ok: bool, failed_phase: str, id: str) -> str {
+    if not proof_phase_enabled(command, id) {
+        return "skipped";
+    }
+    if ok {
+        return "passed";
+    }
+    if id == failed_phase {
+        return "failed";
+    }
+    let failed_rank = proof_phase_rank(failed_phase);
+    let current_rank = proof_phase_rank(id);
+    if failed_rank > 0 and current_rank > 0 and current_rank < failed_rank {
+        return "passed";
+    }
+    return "skipped";
+}
+
+fn proof_group_status(command: str, ok: bool, failed_phase: str, group_name: str) -> str {
+    if group_name == "selfhost" {
+        if command != "prove" and command != "prove-selfhost" {
+            return "skipped";
+        }
+    }
+    if group_name == "corpus" {
+        if command != "prove" and command != "prove-corpus" {
+            return "skipped";
+        }
+    }
+    if group_name == "tooling" {
+        if command != "prove" {
+            return "skipped";
+        }
+    }
+    if ok {
+        return "passed";
+    }
+    if starts_with_at(failed_phase, 0, str_concat(group_name, ".")) {
+        return "failed";
+    }
+    if group_name == "selfhost" {
+        return "passed";
+    }
+    if group_name == "corpus" and starts_with_at(failed_phase, 0, "tooling.") {
+        return "passed";
+    }
+    return "skipped";
+}
+
+fn append_proof_phase(lines: mutref list<str>, command: str, ok: bool, failed_phase: str, id: str, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, concat5("    { \"id\": \"", id, "\", \"status\": \"", proof_phase_status(command, ok, failed_phase, id), str_concat("\" }", suffix)));
+    return;
+}
+
+fn append_proof_phases(lines: mutref list<str>, command: str, ok: bool, failed_phase: str) -> unit {
+    list_push(mutref lines, "  \"phases\": [");
+    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.copy", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.stage1_build", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.stage2_run", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.structural_c_compare", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.emit_c", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.build", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.run", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.structural_c_compare", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.golden", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.policy", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.refactor", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.formatter", false);
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn locked_corpus_case_count() -> i32 {
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    return list_len(ref cases);
+}
+
+fn write_proof_summary(command: str, ok: bool, failed_phase: str) -> bool {
+    let path = proof_summary_path();
+    let dir_result = ensure_parent_dir(path);
+    match dir_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            eprint_line(str_concat("failed to prepare proof summary: ", io_err_text(err)));
+            return false;
+        },
+    }
+
+    let selfhost_status = proof_group_status(command, ok, failed_phase, "selfhost");
+    let corpus_status = proof_group_status(command, ok, failed_phase, "corpus");
+    let tooling_status = proof_group_status(command, ok, failed_phase, "tooling");
+    let mut corpus_cases = 0;
+    if command == "prove" or command == "prove-corpus" {
+        corpus_cases = locked_corpus_case_count();
+    }
+
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, concat3("  \"command\": \"", command, "\","));
+    list_push(mutref lines, concat3("  \"ok\": ", bool_text(ok), ","));
+    list_push(mutref lines, concat3("  \"failed_phase\": \"", failed_phase, "\","));
+    append_proof_phases(mutref lines, command, ok, failed_phase);
+    list_push(mutref lines, "  \"selfhost\": {");
+    list_push(mutref lines, concat3("    \"status\": \"", selfhost_status, "\","));
+    list_push(mutref lines, concat3("    \"structural_c_equal\": ", bool_text(selfhost_status == "passed"), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"corpus\": {");
+    list_push(mutref lines, concat3("    \"status\": \"", corpus_status, "\","));
+    list_push(mutref lines, concat3("    \"cases\": ", i32_to_str(corpus_cases), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"tooling\": {");
+    list_push(mutref lines, concat3("    \"status\": \"", tooling_status, "\""));
+    list_push(mutref lines, "  }");
+    list_push(mutref lines, "}");
+    let write_result = write_file(path, lines_to_text(ref lines));
+    match write_result {
+        Ok(_) => {
+            return true;
+        },
+        Err(err) => {
+            eprint_line(str_concat("failed to write proof summary: ", io_err_text(err)));
+            return false;
+        },
+    }
+}
+
 fn make_norm_mapping(original: str, replacement: str) -> norm_mapping {
     return norm_mapping {
         original: original,
@@ -735,7 +954,7 @@ fn run_quiet_result(label: str, result: result<process_result, io_err>) -> bool 
     }
 }
 
-fn run_formatter_tooling_checks(driver_path: str) -> bool {
+fn run_formatter_tooling_checks(driver_path: str, failed_phase: mutref str) -> bool {
     let mut cases: list<corpus_case> = list();
     push_locked_example_corpus(mutref cases);
     let mut index = 0;
@@ -744,6 +963,7 @@ fn run_formatter_tooling_checks(driver_path: str) -> bool {
         match entry {
             Some(value) => {
                 if not run_quiet_result(str_concat("fmt --check ", value.name), run_driver_fmt_check(driver_path, value.source_path)) {
+                    failed_phase = "tooling.formatter";
                     return false;
                 }
             },
@@ -755,112 +975,137 @@ fn run_formatter_tooling_checks(driver_path: str) -> bool {
     return true;
 }
 
-fn run_supervised_workflow_gate(driver_path: str) -> bool {
+fn run_supervised_workflow_gate(driver_path: str, failed_phase: mutref str) -> bool {
     let before_path = "tests/fixtures/supervised_workflow/before/main.nq";
     let after_path = "tests/fixtures/supervised_workflow/after/main.nq";
     let policy_path = "tests/fixtures/supervised_workflow/policy.json";
     let refactor_target = "binding:fn:main::apply:1:bonus@25";
 
     if not run_quiet_result("supervised workflow check", run_driver_check(driver_path, after_path)) {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("supervised facts v2", run_driver_facts(driver_path, after_path, "v2"), "tests/golden/supervised_workflow/facts_v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("supervised review v2", run_driver_review(driver_path, after_path, "v2"), "tests/golden/supervised_workflow/review_v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("supervised review-diff v2", run_driver_review_diff(driver_path, before_path, after_path, "v2"), "tests/golden/supervised_workflow/review_diff_v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("supervised change-report policy v1", run_driver_change_report(driver_path, before_path, after_path, policy_path), "tests/golden/supervised_workflow/change_report_policy_v1.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("supervised policy-check v1", run_driver_policy_check(driver_path, after_path, policy_path), "tests/golden/supervised_workflow/policy_check_v1.json") {
+        failed_phase = "tooling.policy";
         return false;
     }
 
     let mut before_refactor_text = "";
     if not read_text_or_report(after_path, "failed to read supervised workflow refactor fixture", mutref before_refactor_text) {
+        failed_phase = "tooling.refactor";
         return false;
     }
     if not run_json_golden_result("supervised refactor-rename v1", run_driver_refactor_rename(driver_path, after_path, refactor_target, "extra"), "tests/golden/supervised_workflow/refactor_rename_v1.json") {
+        failed_phase = "tooling.refactor";
         return false;
     }
     let mut after_refactor_text = "";
     if not read_text_or_report(after_path, "failed to reread supervised workflow refactor fixture", mutref after_refactor_text) {
+        failed_phase = "tooling.refactor";
         return false;
     }
     if before_refactor_text != after_refactor_text {
         eprint_line("supervised workflow refactor-rename mutated the fixture");
+        failed_phase = "tooling.refactor";
         return false;
     }
     return true;
 }
 
-fn run_tooling_confidence_gate(driver_path: str) -> bool {
+fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bool {
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("facts v2", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", "v2"), "tests/golden/facts/main-v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("facts named args v2", run_driver_facts(driver_path, "tests/fixtures/facts/named_args_main.nq", "v2"), "tests/golden/facts/named-args-v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("review v2", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("review-diff v1", run_driver_review_diff(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", ""), "tests/golden/review/review_diff_v1.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("review-diff v2", run_driver_review_diff(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", "v2"), "tests/golden/review/review_diff_v2.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("change-report v1", run_driver_change_report(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", ""), "tests/golden/review/change_report_v1.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_golden_result("change-report policy v1", run_driver_change_report(driver_path, "tests/fixtures/review_diff/before/main.nq", "tests/fixtures/review_diff/after/main.nq", "tests/fixtures/policy/change_report_policy.json"), "tests/golden/review/change_report_policy_v1.json") {
+        failed_phase = "tooling.golden";
         return false;
     }
     if not run_json_contains_result("refactor-rename field", run_driver_refactor_rename(driver_path, "tests/fixtures/facts/main.nq", "field:helper::Box::value", "renamed_value"), "\"ok\": true", "\"target_id\": \"field:helper::Box::value\"", "\"replacement\": \"renamed_value\"") {
+        failed_phase = "tooling.refactor";
         return false;
     }
     if not run_json_contains_result("refactor-rename named arg", run_driver_refactor_rename(driver_path, "tests/fixtures/facts/named_args_main.nq", "binding:fn:named_args_helper::combine:1:scale@38", "multiplier"), "\"ok\": true", "\"span\": {", "\"replacement\": \"multiplier\"") {
+        failed_phase = "tooling.refactor";
         return false;
     }
     if not run_json_contains_result("policy-check fixture", run_driver_policy_check(driver_path, "tests/fixtures/facts/main.nq", "tests/fixtures/policy/facts_policy.json"), "\"ok\": true", "\"errors\": 0", "\"known\": true") {
+        failed_phase = "tooling.policy";
         return false;
     }
     if not run_json_contains_result("policy-check selfhost", run_driver_policy_check(driver_path, "selfhost/main.nq", "nauqtype.policy.json"), "\"ok\": true", "\"errors\": 0", "\"target_id\": \"fn:c_emit::emit_c_program\"") {
+        failed_phase = "tooling.policy";
         return false;
     }
-    if not run_supervised_workflow_gate(driver_path) {
+    if not run_supervised_workflow_gate(driver_path, mutref failed_phase) {
         return false;
     }
-    if not run_formatter_tooling_checks(driver_path) {
+    if not run_formatter_tooling_checks(driver_path, mutref failed_phase) {
         return false;
     }
     return true;
 }
 
-fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
+fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref str) -> bool {
     let emit_path = corpus_emit_c_path(entry.name);
     let emit_result = run_driver_emit_c(driver_path, entry.source_path, emit_path);
     match emit_result {
         Ok(status) => {
             if not driver_step_ok(str_concat("emit-c ", entry.name), status) {
+                failed_phase = "corpus.emit_c";
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "corpus.emit_c";
             return false;
         },
     }
 
     let mut emit_c = "";
     if not read_text_or_report(emit_path, str_concat("failed to read emitted C for ", entry.name), mutref emit_c) {
+        failed_phase = "corpus.emit_c";
         return false;
     }
 
@@ -868,11 +1113,13 @@ fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
     match build_result {
         Ok(status) => {
             if not driver_step_ok(str_concat("build ", entry.name), status) {
+                failed_phase = "corpus.build";
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "corpus.build";
             return false;
         },
     }
@@ -880,10 +1127,12 @@ fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
     let build_c_path = default_build_c_path(entry.source_path);
     let mut build_c = "";
     if not read_text_or_report(build_c_path, str_concat("failed to read build C for ", entry.name), mutref build_c) {
+        failed_phase = "corpus.build";
         return false;
     }
     if not structural_c_equal(emit_c, build_c) {
         eprint_line(str_concat("corpus proof failed: emit/build C changed for ", entry.name));
+        failed_phase = "corpus.structural_c_compare";
         return false;
     }
 
@@ -893,35 +1142,61 @@ fn run_corpus_case(driver_path: str, entry: corpus_case) -> bool {
             if status.exit_code != entry.expected_exit_code {
                 eprint_line(str_concat("corpus proof failed: unexpected exit code for ", entry.name));
                 emit_process_output(status);
+                failed_phase = "corpus.run";
                 return false;
             }
             if not output_matches(status.stdout, entry.expected_stdout) or status.stderr != "" {
                 eprint_line(str_concat("corpus proof failed: unexpected stdout/stderr for ", entry.name));
                 emit_process_output(status);
+                failed_phase = "corpus.run";
                 return false;
             }
             if has_stage1_failure_text(status) {
                 eprint_line(str_concat("corpus proof failed: stage1 diagnostic text for ", entry.name));
                 emit_process_output(status);
+                failed_phase = "corpus.run";
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "corpus.run";
             return false;
         },
     }
 
     let mut run_c = "";
     if not read_text_or_report(build_c_path, str_concat("failed to read run C for ", entry.name), mutref run_c) {
+        failed_phase = "corpus.structural_c_compare";
         return false;
     }
     if not structural_c_equal(emit_c, run_c) {
         eprint_line(str_concat("corpus proof failed: emit/run C changed for ", entry.name));
+        failed_phase = "corpus.structural_c_compare";
         return false;
     }
 
     return true;
+}
+
+fn run_example_corpus_inner(driver_path: str, failed_phase: mutref str) -> i32 {
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let entry = list_get(ref cases, index);
+        match entry {
+            Some(value) => {
+                if not run_corpus_case(driver_path, value, mutref failed_phase) {
+                    return 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return 0;
 }
 
 pub fn run_example_corpus(driver_path: str) -> i32
@@ -931,33 +1206,18 @@ audit {
     effects(print);
 }
 {
-    let mut cases: list<corpus_case> = list();
-    push_locked_example_corpus(mutref cases);
-    let mut index = 0;
-    while index < list_len(ref cases) {
-        let entry = list_get(ref cases, index);
-        match entry {
-            Some(value) => {
-                if not run_corpus_case(driver_path, value) {
-                    return 1;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
+    let mut failed_phase = "";
+    let result = run_example_corpus_inner(driver_path, mutref failed_phase);
+    if not write_proof_summary("prove-corpus", result == 0, failed_phase) {
+        return 1;
     }
-    print_line("example corpus ok");
-    return 0;
+    if result == 0 {
+        print_line("example corpus ok");
+    }
+    return result;
 }
 
-pub fn run_selfhost_proof(driver_path: str) -> i32
-audit {
-    intent("Run the stage1-owned copied-selfhost proof gate");
-    mutates();
-    effects(print);
-}
-{
+fn run_selfhost_proof_inner(driver_path: str, failed_phase: mutref str) -> i32 {
     let proof_dir = "build/proof/selfhost";
     let copied = copy_selfhost_workspace(proof_dir);
     match copied {
@@ -965,6 +1225,7 @@ audit {
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "selfhost.copy";
             return 1;
         },
     }
@@ -975,11 +1236,13 @@ audit {
         Ok(status) => {
             if status.exit_code != 0 {
                 emit_process_output(status);
+                failed_phase = "selfhost.stage1_build";
                 return status.exit_code;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "selfhost.stage1_build";
             return 1;
         },
     }
@@ -993,6 +1256,7 @@ audit {
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "selfhost.stage1_build";
             return 1;
         },
     }
@@ -1003,16 +1267,19 @@ audit {
         Ok(status) => {
             if status.exit_code != 0 {
                 emit_process_output(status);
+                failed_phase = "selfhost.stage2_run";
                 return status.exit_code;
             }
             if not stage1_ok_output(status.stdout) or status.stderr != "" {
                 emit_process_output(status);
                 eprint_line("selfhost proof failed: stage2 smoke output changed");
+                failed_phase = "selfhost.stage2_run";
                 return 1;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "selfhost.stage2_run";
             return 1;
         },
     }
@@ -1022,17 +1289,36 @@ audit {
         Ok(stage2_c) => {
             if not structural_c_equal(stage1_c, stage2_c) {
                 eprint_line("selfhost proof failed: normalized structural C changed between stage1 and stage2");
+                failed_phase = "selfhost.structural_c_compare";
                 return 1;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
+            failed_phase = "selfhost.structural_c_compare";
             return 1;
         },
     }
 
-    print_line("selfhost proof ok");
     return 0;
+}
+
+pub fn run_selfhost_proof(driver_path: str) -> i32
+audit {
+    intent("Run the stage1-owned copied-selfhost proof gate");
+    mutates();
+    effects(print);
+}
+{
+    let mut failed_phase = "";
+    let result = run_selfhost_proof_inner(driver_path, mutref failed_phase);
+    if not write_proof_summary("prove-selfhost", result == 0, failed_phase) {
+        return 1;
+    }
+    if result == 0 {
+        print_line("selfhost proof ok");
+    }
+    return result;
 }
 
 pub fn run_all_proofs(driver_path: str) -> i32
@@ -1042,15 +1328,24 @@ audit {
     effects(print);
 }
 {
-    let selfhost_result = run_selfhost_proof(driver_path);
+    let mut failed_phase = "";
+    let selfhost_result = run_selfhost_proof_inner(driver_path, mutref failed_phase);
     if selfhost_result != 0 {
+        write_proof_summary("prove", false, failed_phase);
         return selfhost_result;
     }
-    let corpus_result = run_example_corpus(driver_path);
+    print_line("selfhost proof ok");
+    let corpus_result = run_example_corpus_inner(driver_path, mutref failed_phase);
     if corpus_result != 0 {
+        write_proof_summary("prove", false, failed_phase);
         return corpus_result;
     }
-    if not run_tooling_confidence_gate(driver_path) {
+    print_line("example corpus ok");
+    if not run_tooling_confidence_gate(driver_path, mutref failed_phase) {
+        write_proof_summary("prove", false, failed_phase);
+        return 1;
+    }
+    if not write_proof_summary("prove", true, "") {
         return 1;
     }
     print_line("nauqtype proof ok");

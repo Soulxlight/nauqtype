@@ -38,6 +38,27 @@ class Stage1DriverTests(unittest.TestCase):
             timeout=timeout,
         )
 
+    def _proof_summary_path(self, cwd: Path | None = None) -> Path:
+        return (cwd if cwd is not None else self.root) / "build" / "proof" / "summary.json"
+
+    def _clear_proof_summary(self, cwd: Path | None = None) -> None:
+        path = self._proof_summary_path(cwd)
+        if path.exists():
+            path.unlink()
+
+    def _load_proof_summary(self, cwd: Path | None = None) -> dict:
+        path = self._proof_summary_path(cwd)
+        self.assertTrue(path.exists(), f"missing proof summary at {path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        schema = json.loads((self.root / "schemas" / "proof-summary-v1.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/proof-summary-v1.schema.json")
+        self.assertEqual(schema["properties"]["version"]["const"], 1)
+        self._assert_schema_shape(payload, schema)
+        return payload
+
+    def _phase_statuses(self, summary: dict) -> dict[str, str]:
+        return {entry["id"]: entry["status"] for entry in summary["phases"]}
+
     def _schema_spec(self, schema: dict, spec: dict) -> dict:
         ref = spec.get("$ref")
         if not ref:
@@ -84,16 +105,82 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertTrue((self.driver_workspace / "build" / "main.c").exists())
 
     def test_stage1_driver_prove_runs_owned_transition_gate(self) -> None:
-        result = subprocess.run(
-            [str(self.driver_exe), "prove"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            timeout=1200,
-        )
+        self._clear_proof_summary()
+        result = self._run_driver(["prove"], timeout=1200)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "selfhost proof ok\nexample corpus ok\nnauqtype proof ok\n")
         self.assertEqual(result.stderr, "")
+        summary = self._load_proof_summary()
+        self.assertEqual(summary["version"], 1)
+        self.assertEqual(summary["command"], "prove")
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["failed_phase"], "")
+        self.assertEqual(summary["selfhost"]["status"], "passed")
+        self.assertTrue(summary["selfhost"]["structural_c_equal"])
+        self.assertEqual(summary["corpus"]["status"], "passed")
+        self.assertEqual(summary["corpus"]["cases"], 20)
+        self.assertEqual(summary["tooling"]["status"], "passed")
+        self.assertEqual(set(self._phase_statuses(summary).values()), {"passed"})
+
+    def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
+        self._clear_proof_summary()
+        result = self._run_driver(["prove-selfhost"], timeout=900)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "selfhost proof ok\n")
+        self.assertEqual(result.stderr, "")
+        summary = self._load_proof_summary()
+        phases = self._phase_statuses(summary)
+        self.assertEqual(summary["command"], "prove-selfhost")
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["failed_phase"], "")
+        self.assertEqual(summary["selfhost"]["status"], "passed")
+        self.assertEqual(summary["corpus"]["status"], "skipped")
+        self.assertEqual(summary["tooling"]["status"], "skipped")
+        self.assertEqual(phases["selfhost.copy"], "passed")
+        self.assertEqual(phases["selfhost.stage1_build"], "passed")
+        self.assertEqual(phases["selfhost.stage2_run"], "passed")
+        self.assertEqual(phases["selfhost.structural_c_compare"], "passed")
+        self.assertEqual(phases["corpus.emit_c"], "skipped")
+        self.assertEqual(phases["tooling.golden"], "skipped")
+
+    def test_stage1_driver_prove_corpus_writes_summary_without_changing_stdout(self) -> None:
+        self._clear_proof_summary()
+        result = self._run_driver(["prove-corpus"], timeout=900)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "example corpus ok\n")
+        self.assertEqual(result.stderr, "")
+        summary = self._load_proof_summary()
+        phases = self._phase_statuses(summary)
+        self.assertEqual(summary["command"], "prove-corpus")
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["failed_phase"], "")
+        self.assertEqual(summary["selfhost"]["status"], "skipped")
+        self.assertEqual(summary["corpus"]["status"], "passed")
+        self.assertEqual(summary["corpus"]["cases"], 20)
+        self.assertEqual(summary["tooling"]["status"], "skipped")
+        self.assertEqual(phases["selfhost.copy"], "skipped")
+        self.assertEqual(phases["corpus.emit_c"], "passed")
+        self.assertEqual(phases["corpus.build"], "passed")
+        self.assertEqual(phases["corpus.run"], "passed")
+        self.assertEqual(phases["corpus.structural_c_compare"], "passed")
+
+    def test_stage1_driver_prove_corpus_failure_writes_failed_phase_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._clear_proof_summary(tmp)
+            result = self._run_driver(["prove-corpus"], cwd=tmp, timeout=240)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            summary = self._load_proof_summary(tmp)
+            phases = self._phase_statuses(summary)
+            self.assertEqual(summary["command"], "prove-corpus")
+            self.assertFalse(summary["ok"])
+            self.assertEqual(summary["failed_phase"], "corpus.emit_c")
+            self.assertEqual(summary["selfhost"]["status"], "skipped")
+            self.assertEqual(summary["corpus"]["status"], "failed")
+            self.assertEqual(summary["tooling"]["status"], "skipped")
+            self.assertEqual(phases["corpus.emit_c"], "failed")
+            self.assertEqual(phases["corpus.build"], "skipped")
+            self.assertEqual(phases["tooling.golden"], "skipped")
 
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
