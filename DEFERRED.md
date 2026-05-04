@@ -49,7 +49,7 @@ The current stage1 driver has a deliberately narrow toolchain-only runtime surfa
 - Language server
 - Package manager
 
-Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, formatter-lite, named function arguments, direct module-qualified function calls, direct module-qualified data names, and minimal nearest-`while` `break` / `continue` have now graduated from this deferred list in deliberately narrow first forms.
+Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, formatter-lite, named function arguments, direct module-qualified function calls, direct module-qualified data names, copy-only record update, and minimal nearest-`while` `break` / `continue` have now graduated from this deferred list in deliberately narrow first forms.
 
 ## Why These Are Deferred
 

@@ -16,6 +16,7 @@ Current bootstrap status:
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
+- copy-only record update with explicit `Type { from base, field: value }` provenance
 - bootstrap file input and string helpers
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
@@ -159,6 +160,7 @@ Example programs worth checking first:
 - `examples\named_arguments.nq`: Batch B named function arguments
 - `examples\qualified_calls.nq`: direct module-qualified function calls
 - `examples\qualified_data_names.nq`: direct module-qualified struct and enum constructor names
+- `examples\record_update.nq`: copy-only record update with explicit base provenance
 - `examples\break_continue.nq`: minimal loop control
 - `examples\review_contracts.nq`: AI Contracts and `review` workflow
 
@@ -190,6 +192,7 @@ Current selfhost semantic coverage:
 - named function arguments for direct function calls, including modeled builtins and imported functions; arguments are exported to the backend in callee parameter order
 - direct `module::function(...)` calls for public functions from directly imported flat-root modules
 - direct module-qualified data names for public struct literals and enum variants from directly imported flat-root modules, preserving origin visibility for facts, handoff, IR, and C emission
+- copy-only record update for product types using explicit `Type { from base, field: value }` syntax; inherited non-copy fields keep the existing field-move safety boundary
 - minimal `break;` and `continue;` statements for the nearest enclosing `while`
 - differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
 - the in-repo selfhost tree runs with no `stage1 limitation` diagnostics
@@ -219,7 +222,7 @@ Current remaining gaps:
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- the first live-in-the-language ergonomics batch now covers top-level `const`, list literals, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls, and minimal nearest-`while` loop control; the next semantic feature batch should stay attached to concrete examples and differential or stage1-owned coverage
+- the first live-in-the-language ergonomics batch now covers top-level `const`, list literals, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls, minimal nearest-`while` loop control, direct module-qualified data names, and copy-only record update; the next semantic feature batch should stay attached to concrete examples and differential or stage1-owned coverage
 
 Current AI-first compiler output:
 
@@ -260,4 +263,4 @@ Compatibility stance for the alpha checkpoint:
 
 - Nauqtype is now the active implementation language for the project.
 - The Python compiler remains in-repo only as a frozen bootstrap/reference path.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, named arguments, direct module-qualified function and data names, minimal `break` / `continue`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.
+- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, named arguments, direct module-qualified function and data names, copy-only record update, minimal `break` / `continue`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.

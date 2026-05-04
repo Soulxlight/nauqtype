@@ -420,6 +420,17 @@ fn is_lbrace_token(tok: token) -> bool {
     }
 }
 
+fn is_comma_token(tok: token) -> bool {
+    match tok.kind {
+        tk_comma => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_eq_token(tok: token) -> bool {
     match tok.kind {
         tk_eq => {
@@ -480,6 +491,9 @@ fn scan_expr_names(tokens: ref list<token>, start: i32, end: i32, module: str, f
             tk_ident => {
                 let previous = token_at(ref tokens, index - 1);
                 let next = token_at(ref tokens, index + 1);
+                if current.text == "from" and is_ident_token(next) and (is_lbrace_token(previous) or is_comma_token(previous)) {
+                    index = index + 1;
+                } else {
                 if is_dot_token(previous) or is_colon_token(next) {
                     index = index + 1;
                 } else {
@@ -493,6 +507,7 @@ fn scan_expr_names(tokens: ref list<token>, start: i32, end: i32, module: str, f
                         }
                     }
                     index = index + 1;
+                }
                 }
             },
             _ => {

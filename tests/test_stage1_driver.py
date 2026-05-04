@@ -1327,6 +1327,67 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, combined)
             self.assertIn("unknown qualified struct literal type", combined)
 
+    def test_stage1_driver_batch_d_record_update_example_runs(self) -> None:
+        result = self._run_driver(["run", str(self.root / "examples" / "record_update.nq")])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_batch_d_record_update_rejects_non_name_base(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    type Point {
+                        x: i32,
+                        y: i32,
+                    }
+
+                    fn make_point() -> Point {
+                        return Point { x: 1, y: 2 };
+                    }
+
+                    fn main() -> i32 {
+                        let changed = Point { from make_point(), x: 3 };
+                        return changed.x;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("record update base must be a simple local, parameter, pattern binding, or visible const name", combined)
+
+    def test_stage1_driver_batch_d_record_update_reuses_existing_field_move_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    type Bucket {
+                        items: list<i32>,
+                        count: i32,
+                    }
+
+                    fn main() -> i32 {
+                        let mut items: list<i32> = list();
+                        list_push(mutref items, 1);
+                        let bucket = Bucket { items: items, count: 1 };
+                        let changed = Bucket { from bucket, count: 2 };
+                        return changed.count;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "main.nq")])
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertIn("moving out of fields is not supported in v0.1", combined)
+
     def test_stage1_driver_batch_b_break_continue_example_runs(self) -> None:
         result = self._run_driver(["run", str(self.root / "examples" / "break_continue.nq")])
         self.assertEqual(result.returncode, 42, result.stdout + result.stderr)

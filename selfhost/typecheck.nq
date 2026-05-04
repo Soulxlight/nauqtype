@@ -2677,6 +2677,39 @@ fn segment_value_start(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     return start;
 }
 
+fn segment_is_record_update_base(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if start + 1 >= end {
+        return false;
+    }
+    if find_top_level_colon(ref tokens, start, end) >= 0 {
+        return false;
+    }
+    let head = token_at(ref tokens, start);
+    match head.kind {
+        tk_ident => {
+            return head.text == "from";
+        },
+        _ => {
+        },
+    }
+    return false;
+}
+
+fn record_update_base_is_simple_name(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if start + 1 != end {
+        return false;
+    }
+    let value = token_at(ref tokens, start);
+    match value.kind {
+        tk_ident => {
+            return true;
+        },
+        _ => {
+        },
+    }
+    return false;
+}
+
 fn call_args_are_named(tokens: ref list<token>, arg_start: i32, arg_end_limit: i32) -> bool {
     if arg_start >= arg_end_limit {
         return false;
@@ -3147,10 +3180,31 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
         return empty_expected_type_ctx();
     }
 
+    let struct_ctx = make_expected_type_ctx(type_name, "", "");
+    let mut has_update_base = false;
     let mut field_start = open_index + 1;
     let field_end_limit = end - 1;
     while field_start < field_end_limit {
         let segment_end = next_top_level_comma(ref tokens, field_start, field_end_limit);
+        if segment_is_record_update_base(ref tokens, field_start, segment_end) {
+            if field_start != open_index + 1 {
+                push_diag(mutref diags, module, type_token.start, "record update base must be the first struct literal entry");
+            }
+            if has_update_base {
+                push_diag(mutref diags, module, type_token.start, "record update base appears more than once");
+            }
+            has_update_base = true;
+            let base_start = field_start + 1;
+            if not record_update_base_is_simple_name(ref tokens, base_start, segment_end) {
+                push_diag(mutref diags, module, type_token.start, "record update base must be a simple local, parameter, pattern binding, or visible const name");
+            } else {
+                let base_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, base_start, segment_end, type_token.start, struct_ctx, mutref diags);
+                if has_known_type_ctx(base_ctx) and not type_ctx_matches(struct_ctx, base_ctx) {
+                    push_diag(mutref diags, module, type_token.start, "record update base type does not match struct literal type");
+                }
+            }
+            field_start = segment_end + 1;
+        } else {
         let colon_index = find_top_level_colon(ref tokens, field_start, segment_end);
         if colon_index < 0 {
             push_stage1_limitation(mutref diags, module, type_token.start);
@@ -3176,6 +3230,7 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
             push_diag(mutref diags, module, field_token.start, "struct literal field does not match declared field type");
         }
         field_start = segment_end + 1;
+        }
     }
 
     let mut field_index = 0;
@@ -3184,7 +3239,7 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
         match entry {
             Some(value) => {
                 if value.module == origin_module and value.type_name == type_name {
-                    if not struct_literal_has_field(ref tokens, start, end, value.name) {
+                    if not has_update_base and not struct_literal_has_field(ref tokens, start, end, value.name) {
                         push_diag(mutref diags, module, type_token.start, "struct literal is missing required field");
                     }
                 }
@@ -3194,7 +3249,7 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
         }
         field_index = field_index + 1;
     }
-    return make_expected_type_ctx(type_name, "", "");
+    return struct_ctx;
 }
 
 fn infer_list_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {

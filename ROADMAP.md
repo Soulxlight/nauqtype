@@ -247,7 +247,7 @@ Status:
 - Batch B is done for named function arguments, direct module-qualified function calls, and minimal nearest-`while` `break` / `continue`
 - named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and loop control stays statement-only with no labels, values, methods, or package-path expansion
 - the first tiny Batch C slice is done for direct `module::Type` struct literals and `module::Variant` enum constructors/patterns from directly imported flat-root modules
-- record update syntax remains deferred until provenance/reference tooling stays settled under real use
+- Batch D is done for copy-only record update with explicit `Type { from base, field: value }` provenance; broad field assignment remains deferred
 
 ### M19: Alpha Stabilization And Supervised Workflow
 

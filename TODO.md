@@ -174,6 +174,7 @@
 - [x] Add direct module-qualified function calls with canonical Nauqtype examples
 - [x] Add minimal nearest-`while` `break` / `continue` with canonical Nauqtype examples
 - [x] Add direct module-qualified data names with canonical Nauqtype examples
+- [x] Add copy-only record update with canonical Nauqtype examples
 
 ## Alpha Stabilization And Supervised Workflow
 
