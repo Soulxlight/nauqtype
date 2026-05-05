@@ -279,6 +279,44 @@ Status:
 - the locked corpus is guarded so every runnable canonical example under `examples/` participates in `prove-corpus`
 - no source-language syntax, runtime helpers, CLI flags, new commands, stage3/stage4 proof chain, or Batch D feature work was added
 
+### M21: Formatter And Teaching Corpus Hardening
+
+- harden formatter-lite as a teaching-corpus gate before adding more syntax
+- keep formatter behavior output-only / `--check`; no write mode until comment preservation is safe
+- make every canonical example source participate in stage1-owned proof checks, including helper-only modules that are not runnable corpus entries
+- use this milestone to make future LLM training material boringly consistent instead of merely pretty
+
+Status:
+
+- in progress
+- `prove` now formatter-checks every `examples/*.nq` file, not just runnable corpus entries
+- helper-only modules such as `batch_b_helper`, `multi_file_helper`, and `qualified_data_helper` are part of the active stage1 proof gate
+- no parser, resolver, typechecker, borrow, IR, C emission, runtime, or source-language behavior changed
+
+### M22: Evidence And Refactor Coverage For Recent Syntax
+
+- extend semantic evidence and supervised refactor planning across newer syntax that already exists
+- focus first on direct qualified data names and copy-only record update provenance
+- keep default v1 outputs stable; add new evidence only through existing v2/versioned surfaces
+- do not add mutation/apply mode for refactors
+
+Status:
+
+- planned
+- this is tooling confidence work, not language growth
+
+### M23: Surgical Helpers And Proof Confidence
+
+- centralize duplicated pure-Nauqtype helpers where active tooling or canonical examples already need them
+- prefer ordinary Nauqtype modules over new runtime builtins
+- widen proof confidence without starting a stage3/stage4 self-build chain
+- keep package systems, broad OS APIs, prestige stdlib growth, and Rust-like ownership expansion deferred
+
+Status:
+
+- planned
+- helper additions must be exercised by selfhost, proof tooling, or examples before they count
+
 ## Feature Ordering
 
 Features required before first success:

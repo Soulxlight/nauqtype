@@ -69,6 +69,21 @@ class Stage1DriverTests(unittest.TestCase):
     def _locked_corpus_count(self) -> int:
         return len(self._locked_corpus_entries())
 
+    def _locked_formatter_example_paths(self) -> list[str]:
+        proof_source = (self.root / "selfhost" / "proof.nq").read_text(encoding="utf-8")
+        match = re.search(
+            r"fn push_locked_formatter_examples\(paths: mutref list<str>\) -> unit \{(?P<body>.*?)\n\}",
+            proof_source,
+            re.S,
+        )
+        self.assertIsNotNone(match)
+        paths = re.findall(r'list_push\(mutref paths,\s*"([^"]+)"\)', match.group("body"))
+        self.assertGreater(len(paths), 0)
+        return paths
+
+    def _all_example_paths(self) -> list[str]:
+        return [path.relative_to(self.root).as_posix() for path in sorted((self.root / "examples").glob("*.nq"))]
+
     def _runnable_example_paths(self) -> list[str]:
         paths: list[str] = []
         for path in sorted((self.root / "examples").glob("*.nq")):
@@ -209,6 +224,11 @@ class Stage1DriverTests(unittest.TestCase):
         for name, path in entries:
             self.assertEqual(name, Path(path).stem)
         self.assertEqual(paths, self._runnable_example_paths())
+
+    def test_stage1_driver_locked_formatter_examples_cover_every_example_file(self) -> None:
+        paths = self._locked_formatter_example_paths()
+        self.assertEqual(len(paths), len(set(paths)))
+        self.assertEqual(paths, self._all_example_paths())
 
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

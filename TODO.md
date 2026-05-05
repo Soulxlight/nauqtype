@@ -193,3 +193,24 @@
 - [x] Keep `prove`, `prove-selfhost`, and `prove-corpus` stdout unchanged while writing summary artifacts
 - [x] Add direct coverage for `prove-selfhost`, `prove-corpus`, and failure summary emission
 - [x] Expand proof/corpus confidence further before starting Batch D syntax
+
+## M21 Formatter And Teaching Corpus Hardening
+
+- [x] Guard formatter-lite over every canonical example file, including helper-only modules
+- [ ] Document canonical teaching style expectations around formatter-lite output
+- [ ] Keep formatter-lite output-only / `--check` until comment-preserving write mode is safe
+- [ ] Add any new teaching examples to the formatter guard before they can be considered canonical
+
+## M22 Evidence And Refactor Coverage For Recent Syntax
+
+- [ ] Extend facts/review evidence where useful for direct qualified data names and copy-only record update
+- [ ] Ensure refactor plans handle newer stable references without mutating files
+- [ ] Keep v1 machine-readable surfaces compatible; add evidence only through existing v2/versioned channels
+- [ ] Add goldens for any new evidence surfaces before relying on them in supervised workflows
+
+## M23 Surgical Helpers And Proof Confidence
+
+- [ ] Centralize duplicated pure-Nauqtype string/path/list helpers used by active tooling
+- [ ] Add only helpers exercised by selfhost, proof tooling, or canonical examples
+- [ ] Widen proof confidence without starting a stage3/stage4 chain
+- [ ] Keep broad stdlib, package manager, and OS/runtime growth deferred

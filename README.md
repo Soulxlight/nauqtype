@@ -139,7 +139,7 @@ selfhost\build\main.exe prove-selfhost
 selfhost\build\main.exe prove-corpus
 ```
 
-The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build\proof\summary.json`, locked by `schemas\proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples\` participates in `prove-corpus`.
+The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build\proof\summary.json`, locked by `schemas\proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples\` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
 
 Current cutover note: invoke stage1 `build` / `run` from the repo root for now, because that slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 
@@ -220,9 +220,15 @@ Current remaining gaps:
 
 - richer selfhost value inference beyond the current supported recursive subset
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- broader proof hardening beyond the first copied-selfhost stage1-to-stage2 checkpoint
+- broader proof hardening beyond the current copied-selfhost and locked-corpus checkpoints
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
 - the first live-in-the-language ergonomics batch now covers top-level `const`, list literals, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls, minimal nearest-`while` loop control, direct module-qualified data names, and copy-only record update; the next semantic feature batch should stay attached to concrete examples and differential or stage1-owned coverage
+
+Near-term focus:
+
+- harden formatter-lite and the canonical teaching corpus before adding more syntax
+- extend semantic evidence/refactor surfaces over the newer syntax already shipped
+- add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
 
 Current AI-first compiler output:
 

@@ -919,6 +919,34 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     return;
 }
 
+fn push_locked_formatter_examples(paths: mutref list<str>) -> unit {
+    list_push(mutref paths, "examples/batch_b_helper.nq");
+    list_push(mutref paths, "examples/break_continue.nq");
+    list_push(mutref paths, "examples/enum_match.nq");
+    list_push(mutref paths, "examples/fallible_function.nq");
+    list_push(mutref paths, "examples/fibonacci.nq");
+    list_push(mutref paths, "examples/hello.nq");
+    list_push(mutref paths, "examples/list_literals.nq");
+    list_push(mutref paths, "examples/list_sum.nq");
+    list_push(mutref paths, "examples/match_expr_let_else.nq");
+    list_push(mutref paths, "examples/multi_file_helper.nq");
+    list_push(mutref paths, "examples/multi_file_main.nq");
+    list_push(mutref paths, "examples/mutate_counter.nq");
+    list_push(mutref paths, "examples/named_arguments.nq");
+    list_push(mutref paths, "examples/qualified_calls.nq");
+    list_push(mutref paths, "examples/qualified_data_helper.nq");
+    list_push(mutref paths, "examples/qualified_data_names.nq");
+    list_push(mutref paths, "examples/read_file_len.nq");
+    list_push(mutref paths, "examples/record_update.nq");
+    list_push(mutref paths, "examples/result_handling.nq");
+    list_push(mutref paths, "examples/review_contracts.nq");
+    list_push(mutref paths, "examples/simple_add.nq");
+    list_push(mutref paths, "examples/top_level_const.nq");
+    list_push(mutref paths, "examples/user_record.nq");
+    list_push(mutref paths, "examples/while_counter.nq");
+    return;
+}
+
 fn run_json_golden_result(label: str, result: result<process_result, io_err>, golden_path: str) -> bool {
     match result {
         Ok(status) => {
@@ -956,14 +984,14 @@ fn run_quiet_result(label: str, result: result<process_result, io_err>) -> bool 
 }
 
 fn run_formatter_tooling_checks(driver_path: str, failed_phase: mutref str) -> bool {
-    let mut cases: list<corpus_case> = list();
-    push_locked_example_corpus(mutref cases);
+    let mut paths: list<str> = list();
+    push_locked_formatter_examples(mutref paths);
     let mut index = 0;
-    while index < list_len(ref cases) {
-        let entry = list_get(ref cases, index);
+    while index < list_len(ref paths) {
+        let entry = list_get(ref paths, index);
         match entry {
             Some(value) => {
-                if not run_quiet_result(str_concat("fmt --check ", value.name), run_driver_fmt_check(driver_path, value.source_path)) {
+                if not run_quiet_result(str_concat("fmt --check ", value), run_driver_fmt_check(driver_path, value)) {
                     failed_phase = "tooling.formatter";
                     return false;
                 }
