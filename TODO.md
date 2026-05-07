@@ -203,10 +203,10 @@
 
 ## M22 Evidence And Refactor Coverage For Recent Syntax
 
-- [ ] Extend facts/review evidence where useful for direct qualified data names and copy-only record update
-- [ ] Ensure refactor plans handle newer stable references without mutating files
-- [ ] Keep v1 machine-readable surfaces compatible; add evidence only through existing v2/versioned channels
-- [ ] Add goldens for any new evidence surfaces before relying on them in supervised workflows
+- [x] Extend facts evidence for copy-only record update inheritance and override provenance
+- [x] Ensure refactor plans handle newer stable references without mutating files
+- [x] Keep v1 machine-readable surfaces compatible; add evidence only through existing v2/versioned channels
+- [x] Add goldens for any new evidence surfaces before relying on them in supervised workflows
 
 ## M23 Surgical Helpers And Proof Confidence
 

@@ -1333,6 +1333,28 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertIn(("call", "variant:qualified_data_helper::Choice::Score"), refs)
         self.assertIn(("pattern_ctor", "variant:qualified_data_helper::Choice::Empty"), refs)
 
+    def test_stage1_driver_m22_refactor_rename_plans_qualified_variant_constructor(self) -> None:
+        main_source = self.root / "examples" / "qualified_data_names.nq"
+        helper_source = self.root / "examples" / "qualified_data_helper.nq"
+        before_main = main_source.read_text(encoding="utf-8")
+        before_helper = helper_source.read_text(encoding="utf-8")
+
+        result = self._run_driver(
+            ["refactor-rename", str(main_source), "variant:qualified_data_helper::Choice::Score", "Points"]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([edit["kind"] for edit in payload["edits"]], ["definition", "reference", "reference"])
+        self.assertTrue(all(edit["old_text"] == "Score" for edit in payload["edits"]))
+        self.assertTrue(all(edit["replacement"] == "Points" for edit in payload["edits"]))
+        for edit in payload["edits"]:
+            path = self.root / edit["path"]
+            source_text = path.read_text(encoding="utf-8")
+            self.assertEqual(source_text[edit["span"]["start"]:edit["span"]["end"]], "Score")
+        self.assertEqual(main_source.read_text(encoding="utf-8"), before_main)
+        self.assertEqual(helper_source.read_text(encoding="utf-8"), before_helper)
+
     def test_stage1_driver_batch_c_qualified_data_names_require_direct_import(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1362,6 +1384,73 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_batch_d_record_update_facts_v2_matches_golden(self) -> None:
+        result = self._run_driver(["facts", str(self.root / "examples" / "record_update.nq"), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        golden = json.loads((self.root / "tests" / "golden" / "facts" / "record_update_v2.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload, golden)
+        self._assert_schema_shape(
+            payload,
+            json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8")),
+        )
+
+    def test_stage1_driver_m22_record_update_facts_expose_override_and_inherit(self) -> None:
+        source = self.root / "examples" / "record_update.nq"
+        text = source.read_text(encoding="utf-8")
+        override_at = text.index("x: next_x")
+        base_at = text.index("from point") + len("from ")
+
+        result = self._run_driver(["facts", str(source), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        refs = json.loads(result.stdout)["references"]
+
+        self.assertTrue(
+            any(
+                ref["kind"] == "field_init"
+                and ref["target_id"] == "field:record_update::Point::x"
+                and ref["span"]["start"] == override_at
+                for ref in refs
+            )
+        )
+        self.assertTrue(
+            any(
+                ref["kind"] == "record_update_inherit"
+                and ref["target_id"] == "field:record_update::Point::y"
+                and ref["span"]["start"] == base_at
+                for ref in refs
+            )
+        )
+        self.assertFalse(
+            any(
+                ref["kind"] == "field_access"
+                and ref["from"] == "fn:record_update::shift_x"
+                and ref["target_id"] == "field:record_update::Point::y"
+                for ref in refs
+            )
+        )
+
+    def test_stage1_driver_m22_record_update_refactor_skips_inherited_fields(self) -> None:
+        source = self.root / "examples" / "record_update.nq"
+        original = source.read_text(encoding="utf-8")
+        base_at = original.index("from point") + len("from ")
+
+        result = self._run_driver(["refactor-rename", str(source), "field:record_update::Point::y", "height"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([edit["kind"] for edit in payload["edits"]], ["definition", "reference", "reference"])
+        self.assertNotIn(base_at, [edit["span"]["start"] for edit in payload["edits"]])
+        for edit in payload["edits"]:
+            path = self.root / edit["path"]
+            source_text = path.read_text(encoding="utf-8")
+            start = edit["span"]["start"]
+            end = edit["span"]["end"]
+            self.assertEqual(source_text[start:end], edit["old_text"])
+            self.assertEqual(edit["old_text"], "y")
+            self.assertEqual(edit["replacement"], "height")
+        self.assertEqual(source.read_text(encoding="utf-8"), original)
 
     def test_stage1_driver_batch_d_record_update_rejects_non_name_base(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -228,8 +228,8 @@ Current remaining gaps:
 
 Near-term focus:
 
-- harden formatter-lite and the canonical teaching corpus before adding more syntax
-- extend semantic evidence/refactor surfaces over the newer syntax already shipped
+- keep formatter-lite and the canonical teaching corpus locked as syntax grows
+- keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
 
 Current AI-first compiler output:
@@ -237,11 +237,12 @@ Current AI-first compiler output:
 - `review` JSON for function-level contract summaries
 - `facts` JSON for stable definitions, references, and call graph edges, locked by `schemas/facts-v1.schema.json`
 - `facts --format v2` JSON with explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields, locked by `schemas/facts-v2.schema.json`
+- checked facts for copy-only record-update overrides and inherited field provenance
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
 - `change-report --format v1` JSON that combines semantic diff evidence, optional policy status, and diagnostics for supervised change review
-- `refactor-rename` JSON edit plans for supported semantic renames, including top-level constants, checked field definitions/uses, and named-argument labels for parameter renames; it never mutates files
+- `refactor-rename` JSON edit plans for supported semantic renames, including variant constructors, top-level constants, checked field definitions/uses, and named-argument labels for parameter renames; it never mutates files
 - `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
 - `check --diagnostics json` for deterministic compiler diagnostics
 

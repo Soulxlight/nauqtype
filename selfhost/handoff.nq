@@ -285,6 +285,7 @@ pub type checked_struct_field_init {
     field_owner_module: str,
     field_owner_type: str,
     value_expr_id: i32,
+    is_inherited: bool,
 }
 
 pub type checked_type_decl {
@@ -3256,6 +3257,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_struct, exported_ctx, false, false, -1, type_token.text, checked_target_none, "", type_origin, type_token.text, "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         let field_end_limit = expr_end - 1;
         let mut update_base_expr_id = -1;
+        let mut update_base_at = -1;
         if open_index + 1 < field_end_limit {
             let first_segment_end = next_top_level_comma(ref tokens, open_index + 1, field_end_limit);
             if segment_is_record_update_base(ref tokens, open_index + 1, first_segment_end) {
@@ -3268,6 +3270,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 if update_base_expr_id < 0 {
                     return consume_handoff_limitation_detail(mutref diags, module_name, type_token.start, "missing record update base expression");
                 }
+                update_base_at = token_at(ref tokens, base_start).start;
             }
         }
         if update_base_expr_id >= 0 {
@@ -3280,27 +3283,33 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                         if field_fact.module == type_origin and field_fact.type_name == type_token.text {
                             let override_start = find_struct_field_segment_start(ref tokens, open_index, field_end_limit, field_fact.name);
                             let mut value_expr_id = -1;
+                            let mut field_ref_at = update_base_at;
+                            let mut is_inherited = true;
                             if override_start >= 0 {
+                                let override_field_token = token_at(ref tokens, override_start);
+                                field_ref_at = override_field_token.start;
+                                is_inherited = false;
                                 let override_end = next_top_level_comma(ref tokens, override_start, field_end_limit);
                                 let colon_index = find_top_level_colon(ref tokens, override_start, override_end);
                                 let field_expected_ctx = lookup_field_ctx(ref field_facts, type_origin, type_token.text, field_fact.name);
-                                value_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, colon_index + 1, override_end, field_fact.at, field_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                                value_expr_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, colon_index + 1, override_end, override_field_token.start, field_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
                                 if value_expr_id < 0 {
                                     return consume_handoff_limitation_detail(mutref diags, module_name, field_fact.at, str_concat("missing exported record update field value expression: ", field_fact.name));
                                 }
                             } else {
                                 let field_ctx = lookup_field_ctx(ref field_facts, type_origin, type_token.text, field_fact.name);
-                                value_expr_id = push_expr_record(function_id, module_name, function_name, scope_id, type_token.start, expr_start, expr_end, checked_expr_field, field_ctx, field_fact.field_is_borrow, field_fact.field_borrow_mutable, -1, "", checked_target_none, "", type_origin, type_token.text, field_fact.name, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+                                value_expr_id = push_expr_record(function_id, module_name, function_name, scope_id, -1, expr_start, expr_end, checked_expr_field, field_ctx, field_fact.field_is_borrow, field_fact.field_borrow_mutable, -1, "", checked_target_none, "", type_origin, type_token.text, field_fact.name, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
                                 push_expr_child(mutref expr_children, value_expr_id, 0, update_base_expr_id);
                             }
                             list_push(mutref struct_fields, checked_struct_field_init {
                                 expr_id: expr_id,
                                 index: field_index,
-                                at: field_fact.at,
+                                at: field_ref_at,
                                 field_name: field_fact.name,
                                 field_owner_module: type_origin,
                                 field_owner_type: type_token.text,
                                 value_expr_id: value_expr_id,
+                                is_inherited: is_inherited,
                             });
                             field_index = field_index + 1;
                         }
@@ -3332,6 +3341,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                             field_owner_module: type_origin,
                             field_owner_type: type_token.text,
                             value_expr_id: value_expr_id,
+                            is_inherited: false,
                         });
                     }
                 }

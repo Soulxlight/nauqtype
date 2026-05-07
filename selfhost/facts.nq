@@ -1466,7 +1466,9 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
             Some(value) => {
                 match value.kind {
                     checked_expr_field => {
-                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                        if value.at >= 0 {
+                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                        }
                     },
                     _ => {
                     },
@@ -1486,7 +1488,11 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
                 let parent = lookup_checked_expr(ref expressions, value.expr_id);
                 match parent {
                     Some(expr) => {
-                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_init", expr.module_name, expr.function_name, value.at), "field_init", expr.module_name, function_identity(expr.module_name, expr.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                        let mut ref_kind = "field_init";
+                        if value.is_inherited {
+                            ref_kind = "record_update_inherit";
+                        }
+                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity(ref_kind, expr.module_name, expr.function_name, value.at), ref_kind, expr.module_name, function_identity(expr.module_name, expr.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
                     },
                     None => {
                     },
@@ -1780,7 +1786,7 @@ fn find_refactor_target(workspace_root: str, entry_module: str, entry_path: str,
                 if id == target_id {
                     match value.kind {
                         item_variant => {
-                            return empty_refactor_target();
+                            return make_refactor_target(true, id, "variant", value.module, module_identity(value.module), value.name, value.at, source_path_for_module(workspace_root, entry_module, entry_path, value.module));
                         },
                         _ => {
                             return make_refactor_target(true, id, item_kind_text(value.kind), value.module, module_identity(value.module), value.name, value.at, source_path_for_module(workspace_root, entry_module, entry_path, value.module));
@@ -1892,7 +1898,7 @@ fn binding_name_collision(items: ref list<top_item>, uses: ref list<module_use>,
 }
 
 fn refactor_name_collision(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target: refactor_target, new_name: str) -> bool {
-    if target.kind == "function" or target.kind == "type" or target.kind == "enum" or target.kind == "const" {
+    if target.kind == "function" or target.kind == "type" or target.kind == "enum" or target.kind == "variant" or target.kind == "const" {
         return top_level_name_collision(ref items, ref variants, target, new_name);
     }
     if target.kind == "field" {
@@ -1950,6 +1956,16 @@ fn append_refactor_edit(lines: mutref list<str>, module: str, path: str, start: 
     return;
 }
 
+fn refactor_reference_is_editable(value: fact_reference) -> bool {
+    if value.at < 0 {
+        return false;
+    }
+    if value.kind == "record_update_inherit" {
+        return false;
+    }
+    return true;
+}
+
 pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, target_id: str, new_name: str) -> i32
 audit {
     intent("Emit a deterministic plan-only semantic rename edit set without mutating source files");
@@ -1979,7 +1995,7 @@ audit {
         let entry = list_get(ref resolved_refs, ref_index);
         match entry {
             Some(value) => {
-                if value.target_id == target.id and value.name != new_name {
+                if refactor_reference_is_editable(value) and value.target_id == target.id and value.name != new_name {
                     edit_count = edit_count + 1;
                 }
             },
@@ -2008,7 +2024,7 @@ audit {
         let entry = list_get(ref resolved_refs, ref_index);
         match entry {
             Some(value) => {
-                if value.target_id == target.id and value.name != new_name {
+                if refactor_reference_is_editable(value) and value.target_id == target.id and value.name != new_name {
                     emitted = emitted + 1;
                     append_refactor_edit(mutref lines, value.module, source_path_for_module(workspace_root, entry_module, entry_path, value.module), value.at, value.name, new_name, "reference", target.id, emitted < edit_count);
                 }

@@ -303,8 +303,11 @@ Status:
 
 Status:
 
-- planned
-- this is tooling confidence work, not language growth
+- done for the current recent-syntax evidence checkpoint
+- facts v2 now distinguishes explicit record-update field overrides from inherited fields using checked `field_init` and `record_update_inherit` references
+- inherited record-update fields are evidence-only and are skipped by plan-only refactor edits because no field label exists in source
+- `refactor-rename` now supports stable variant constructor IDs, including direct module-qualified constructor and pattern references
+- facts v1 and existing refactor output shape stayed compatible; no source-language behavior changed
 
 ### M23: Surgical Helpers And Proof Confidence
 

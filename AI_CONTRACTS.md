@@ -111,11 +111,12 @@ The canonical fixture for this loop lives under `tests/fixtures/supervised_workf
 
 - Definitions use `declared` for source declarations and `checked` for compiler-confirmed binding identities.
 - References and call edges use `checked` for resolved semantic targets, `builtin` for builtin targets, `declared` for imports, and `unresolved` when a retained boundary prevents target proof.
+- Copy-only record update uses checked field references for both explicit overrides and inherited fields. `record_update_inherit` is evidence-only: it proves the inherited field target but does not imply there is a source field label to edit.
 - Full-tree `facts selfhost/main.nq` is a standing bounded-performance gate on Windows.
 
 ## Plan-Only Refactors And Policy Sidecars
 
-`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, top-level const, field, and local/param/pattern binding identities. It never mutates files. Field renames are driven by checked field definition and use references in the facts surface; parameter renames also update checked named-argument labels.
+`refactor-rename <source> <stable-id> <new-name>` emits a deterministic JSON edit plan for supported function, type/enum, variant constructor, top-level const, field, and local/param/pattern binding identities. It never mutates files. Field renames are driven by checked editable field definition/use references in the facts surface; inherited record-update evidence is intentionally not editable. Parameter renames also update checked named-argument labels.
 
 `policy-check <source> <policy-path>` validates `nauqtype.policy.json` v1 sidecars against checked facts. The sidecar is advisory metadata for owners and review expectations; `check`, `build`, and `run` do not enforce it yet.
 
