@@ -288,9 +288,10 @@ Status:
 
 Status:
 
-- in progress
+- done for the current formatter-lite teaching-corpus checkpoint
 - `prove` now formatter-checks every `examples/*.nq` file, not just runnable corpus entries
 - helper-only modules such as `batch_b_helper`, `multi_file_helper`, and `qualified_data_helper` are part of the active stage1 proof gate
+- `FORMATTER.md` documents the canonical formatter-lite contract: output-only / `--check`, four-space brace indentation, LF output, no tabs, no file mutation, and fail-closed unsupported cases
 - no parser, resolver, typechecker, borrow, IR, C emission, runtime, or source-language behavior changed
 
 ### M22: Evidence And Refactor Coverage For Recent Syntax

@@ -114,6 +114,8 @@ selfhost\build\main.exe fmt examples\hello.nq
 selfhost\build\main.exe fmt --check examples\hello.nq
 ```
 
+Formatter-lite is output-only / `--check` for now. Its canonical teaching-corpus rules are documented in [FORMATTER.md](FORMATTER.md); write mode remains deferred until comment preservation is safe.
+
 Use the active Nauqtype-owned driver for `build`:
 
 ```powershell
@@ -262,6 +264,7 @@ Compatibility stance for the alpha checkpoint:
 - [DEFERRED.md](DEFERRED.md)
 - [AI_AUDIT.md](AI_AUDIT.md)
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
+- [FORMATTER.md](FORMATTER.md)
 - [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
 - [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md)
 

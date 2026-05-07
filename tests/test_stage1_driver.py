@@ -230,6 +230,16 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(paths, self._all_example_paths())
 
+    def test_stage1_driver_formatter_contract_documents_lite_boundaries(self) -> None:
+        text = (self.root / "FORMATTER.md").read_text(encoding="utf-8")
+        self.assertIn("fmt <source>` writes formatted text to stdout only", text)
+        self.assertIn("fmt --check <source>` exits successfully only when the source is already canonical", text)
+        self.assertIn("Formatter-lite never mutates files", text)
+        self.assertIn("Formatter write mode stays deferred", text)
+        self.assertIn("Do not use tabs", text)
+        self.assertIn("unbalanced closing braces", text)
+        self.assertIn("locked formatter example list in `selfhost/proof.nq` includes it", text)
+
     def test_stage1_driver_check_handles_project_relative_entry_and_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

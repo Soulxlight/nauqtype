@@ -197,9 +197,9 @@
 ## M21 Formatter And Teaching Corpus Hardening
 
 - [x] Guard formatter-lite over every canonical example file, including helper-only modules
-- [ ] Document canonical teaching style expectations around formatter-lite output
-- [ ] Keep formatter-lite output-only / `--check` until comment-preserving write mode is safe
-- [ ] Add any new teaching examples to the formatter guard before they can be considered canonical
+- [x] Document canonical teaching style expectations around formatter-lite output
+- [x] Keep formatter-lite output-only / `--check` until comment-preserving write mode is safe
+- [x] Add any new teaching examples to the formatter guard before they can be considered canonical
 
 ## M22 Evidence And Refactor Coverage For Recent Syntax
 
