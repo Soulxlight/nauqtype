@@ -324,6 +324,31 @@ Status:
 - the new import edges from `borrow`, `c_emit`, `facts`, `resolve`, and `review` are covered by the selfhost run and `prove`
 - M23-B and M23-C remain: widen the locked corpus, then declare the v0.1 stable surface
 
+### M24: `effects(io)` Audit Atom
+
+- add `io` as the second fixed effect atom after `print`
+- cover `read_file`, `write_file`, and `run_process`
+- extend review inference and docs without opening user-defined effect atoms
+- keep this as an audit/tooling milestone before propagation sugar
+
+Status:
+
+- planned
+- this must land before `?` so fallible file/process helpers have clear effect evidence
+
+### M25: Evidence-Backed `?` Propagation
+
+- add statement-boundary `let name = result_expr?;` only
+- require exact `result<T, E>` to `result<U, E>` propagation with no implicit conversion
+- add `propagates(E)` as an audit-contract clause inferred from `?` sites
+- expose checked propagation sites through an explicit versioned facts/review/change-report surface
+- keep expression-position `?`, `option<T>?`, optional context labels, and `try` blocks deferred
+
+Status:
+
+- planned
+- design direction is locked by `PROPAGATION.md` and D036
+
 ## Feature Ordering
 
 Features required before first success:
@@ -350,7 +375,7 @@ Features explicitly not required before first success:
 - methods / `impl`
 - `for`
 - labeled or valued `break` / `continue`
-- propagation sugar
+- propagation sugar beyond statement-boundary evidence-backed `?`
 - typed holes / repair obligations
 - richer standard library
 - stronger borrow analysis

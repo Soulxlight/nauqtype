@@ -95,6 +95,18 @@ The canonical fixture for this loop lives under `tests/fixtures/supervised_workf
 - Policy sidecars are advisory metadata; `check`, `build`, and `run` do not enforce them.
 - Refactor output remains plan-only until an explicit apply/write milestone is accepted.
 
+## Planned Propagation Contract
+
+`?` propagation is planned as an extension of the same compiler-evidence model, not as hidden Rust-style control flow.
+
+- M24 adds `io` as the next fixed effect atom before propagation grows.
+- M25 adds statement-boundary `let name = result_expr?;` only.
+- Accepted `?` sites infer exact error-type propagation into a future `propagates(...)` audit clause.
+- Propagation evidence must use an explicit versioned facts/review/change-report surface instead of silently changing locked schemas.
+- Expression-position `?`, `option<T>?`, implicit error conversion, and custom propagation protocols remain deferred.
+
+See [PROPAGATION.md](PROPAGATION.md) for the locked design direction.
+
 ## Semantic Facts v1 Contract
 
 `facts` output is versioned and locked by `schemas/facts-v1.schema.json`.
@@ -123,7 +135,7 @@ The canonical fixture for this loop lives under `tests/fixtures/supervised_workf
 ## Explicit Non-Goals For Alpha
 
 - NLP validation of `intent(...)`
-- Rich effect taxonomies
+- Rich or user-defined effect taxonomies
 - Cross-file contract propagation
 - Typed holes or repair obligations
 - Strong transitive mutation inference

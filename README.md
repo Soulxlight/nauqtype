@@ -231,6 +231,7 @@ Near-term focus:
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
+- land `effects(io)` before `?`, then implement evidence-backed statement-boundary propagation with `propagates(...)`
 
 Current AI-first compiler output:
 
@@ -265,6 +266,7 @@ Compatibility stance for the alpha checkpoint:
 - [DEFERRED.md](DEFERRED.md)
 - [AI_AUDIT.md](AI_AUDIT.md)
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
+- [PROPAGATION.md](PROPAGATION.md)
 - [FORMATTER.md](FORMATTER.md)
 - [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
 - [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md)

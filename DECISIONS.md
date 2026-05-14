@@ -279,3 +279,11 @@
 - Reason chosen: simple loop exits improve day-to-day Nauqtype authorship while keeping control flow explicit and non-Rustlike.
 - Consequences: they are valid inside nested `if`, `match`, or `let-else` only when those constructs are inside a `while`; they have no value and do not count as a `let-else` explicit exit in V1.
 - Reversible later: extensible, but labels and valued loop expressions remain separate future decisions.
+
+## D036: `?` propagation must be evidence-and-contract, not invisible desugaring
+
+- Decision: when `?` is implemented, start with statement-boundary `let name = result_expr?;` over exact `result<T, E>` propagation, and require the feature to surface checked propagation evidence plus a `propagates(E)` audit contract.
+- Alternatives considered: cloning Rust-style expression `?`, pure desugaring to `let-else`, optional context labels only, or deferring propagation sugar indefinitely.
+- Reason chosen: Nauqtype needs less wordy fallible code, but a hidden early return that does not appear in facts/review/policy surfaces would contradict the language's AI-supervision mission. Treating propagation as evidence and contract makes the source shorter while making failure paths more reviewable.
+- Consequences: the initial form has no implicit error conversion, no traits, no expression-position `?`, no `option<T>?`, and no custom propagation protocols. Machine-readable propagation data must use an explicit versioned surface rather than silently changing locked JSON schemas.
+- Reversible later: extensible; optional context labels, `try` blocks, `option<T>?`, and expression-position `?` can grow through separate decisions once the statement-boundary form is proven.

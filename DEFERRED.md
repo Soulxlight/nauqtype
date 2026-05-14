@@ -15,10 +15,10 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Literal patterns
 - Nested constructor patterns
 - Struct-like enum variants
-- Propagation sugar such as `?`
-- Richer `effects(...)` atoms beyond `print`
+- Broad propagation sugar beyond the planned statement-boundary evidence-backed `?`
+- Richer or user-defined `effects(...)` atoms beyond fixed compiler atoms
 - Typed holes / repair obligations
-- Error or result contracts beyond `effects(...)`
+- Error or result contracts beyond the planned `propagates(...)` propagation evidence path
 - Macros
 - Async / await
 - Operator overloading
@@ -50,6 +50,8 @@ The current stage1 driver has a deliberately narrow toolchain-only runtime surfa
 - Package manager
 
 Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, formatter-lite, named function arguments, direct module-qualified function calls, direct module-qualified data names, copy-only record update, and minimal nearest-`while` `break` / `continue` have now graduated from this deferred list in deliberately narrow first forms.
+
+The planned `?` path is intentionally narrow rather than Rustlike: statement-boundary `let name = result_expr?;`, exact error-type propagation, explicit `propagates(...)` audit evidence, and versioned facts/review/change-report output. Expression-position `?`, `option<T>?`, `try` blocks, implicit conversions, and custom propagation protocols remain deferred.
 
 ## Why These Are Deferred
 

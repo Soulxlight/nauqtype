@@ -214,3 +214,19 @@
 - [x] Add only helpers exercised by selfhost, proof tooling, or canonical examples
 - [ ] Widen proof confidence without starting a stage3/stage4 chain
 - [ ] Keep broad stdlib, package manager, and OS/runtime growth deferred
+
+## M24 `effects(io)` Audit Atom
+
+- [ ] Add `io` as a fixed effect atom alongside `print`
+- [ ] Infer direct and same-file transitive `io` from file/process builtins
+- [ ] Update audit blocks that call `read_file`, `write_file`, or `run_process`
+- [ ] Keep user-defined effect atoms deferred
+
+## M25 Evidence-Backed `?` Propagation
+
+- [x] Lock the design direction in `PROPAGATION.md` and D036
+- [ ] Add statement-boundary `let name = result_expr?;`
+- [ ] Add exact `result<T, E>` propagation typing with no implicit conversion
+- [ ] Add `propagates(E)` audit contract inference and validation
+- [ ] Add versioned propagation evidence to facts/review/change-report surfaces
+- [ ] Add canonical examples comparing `?` with explicit `let-else`
