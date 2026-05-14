@@ -210,7 +210,7 @@
 
 ## M23 Surgical Helpers And Proof Confidence
 
-- [ ] Centralize duplicated pure-Nauqtype string/path/list helpers used by active tooling
-- [ ] Add only helpers exercised by selfhost, proof tooling, or canonical examples
+- [x] Centralize duplicated pure-Nauqtype string/path/list helpers used by active tooling
+- [x] Add only helpers exercised by selfhost, proof tooling, or canonical examples
 - [ ] Widen proof confidence without starting a stage3/stage4 chain
 - [ ] Keep broad stdlib, package manager, and OS/runtime growth deferred

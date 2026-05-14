@@ -318,8 +318,11 @@ Status:
 
 Status:
 
-- planned
-- helper additions must be exercised by selfhost, proof tooling, or examples before they count
+- in progress
+- M23-A is done: shared `text.nq` helpers now own `i32_to_str`, `bool_text`, `str_starts_with`, `str_ends_with`, and string/i32 list containment
+- duplicate private helper definitions were removed from active selfhost modules that needed those helpers
+- the new import edges from `borrow`, `c_emit`, `facts`, `resolve`, and `review` are covered by the selfhost run and `prove`
+- M23-B and M23-C remain: widen the locked corpus, then declare the v0.1 stable surface
 
 ## Feature Ordering
 

@@ -1,6 +1,7 @@
 use diag;
 use handoff;
 use ir;
+use text;
 
 pub type c_emit_summary {
     line_count: i32,
@@ -37,14 +38,6 @@ fn push_c_error(diags: mutref list<diag>, file: str, at: i32, detail: str) -> un
     return;
 }
 
-fn concat3(a: str, b: str, c: str) -> str {
-    return str_concat(str_concat(a, b), c);
-}
-
-fn concat4(a: str, b: str, c: str, d: str) -> str {
-    return str_concat(str_concat(a, b), str_concat(c, d));
-}
-
 fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
     return str_concat(str_concat(str_concat(a, b), str_concat(c, d)), e);
 }
@@ -55,72 +48,6 @@ fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
 
 fn concat7(a: str, b: str, c: str, d: str, e: str, f: str, g: str) -> str {
     return str_concat(concat6(a, b, c, d, e, f), g);
-}
-
-fn digit_text(value: i32) -> str {
-    if value == 0 {
-        return "0";
-    }
-    if value == 1 {
-        return "1";
-    }
-    if value == 2 {
-        return "2";
-    }
-    if value == 3 {
-        return "3";
-    }
-    if value == 4 {
-        return "4";
-    }
-    if value == 5 {
-        return "5";
-    }
-    if value == 6 {
-        return "6";
-    }
-    if value == 7 {
-        return "7";
-    }
-    if value == 8 {
-        return "8";
-    }
-    return "9";
-}
-
-fn i32_to_str(value: i32) -> str {
-    if value == 0 {
-        return "0";
-    }
-    let mut remaining = value;
-    let mut negative = false;
-    if remaining < 0 {
-        negative = true;
-        remaining = 0 - remaining;
-    }
-    let mut reversed: list<str> = list();
-    while remaining > 0 {
-        let digit = remaining - ((remaining / 10) * 10);
-        list_push(mutref reversed, digit_text(digit));
-        remaining = remaining / 10;
-    }
-    let mut text = "";
-    if negative {
-        text = "-";
-    }
-    let mut index = list_len(ref reversed) - 1;
-    while index >= 0 {
-        let entry = list_get(ref reversed, index);
-        match entry {
-            Some(value_text) => {
-                text = str_concat(text, value_text);
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return text;
 }
 
 fn str_less(left: str, right: str) -> bool {
@@ -166,24 +93,6 @@ fn indent(level: i32) -> str {
 fn append_line(lines: mutref list<str>, text: str) -> unit {
     list_push(mutref lines, text);
     return;
-}
-
-fn list_contains_i32(items: ref list<i32>, target: i32) -> bool {
-    let mut index = 0;
-    while index < list_len(ref items) {
-        let entry = list_get(ref items, index);
-        match entry {
-            Some(value) => {
-                if value == target {
-                    return true;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return false;
 }
 
 fn list_contains_result_entry(items: ref list<result_generic_entry>, ok_type_id: i32, err_type_id: i32) -> bool {

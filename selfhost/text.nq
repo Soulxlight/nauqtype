@@ -101,3 +101,179 @@ audit {
     }
     return false;
 }
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+pub fn i32_to_str(value: i32) -> str
+audit {
+    intent("Render an i32 as deterministic decimal text");
+    mutates();
+    effects();
+}
+{
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
+}
+
+pub fn bool_text(value: bool) -> str
+audit {
+    intent("Render a bool as JSON-compatible text");
+    mutates();
+    effects();
+}
+{
+    if value {
+        return "true";
+    }
+    return "false";
+}
+
+pub fn str_starts_with(text: str, prefix: str) -> bool
+audit {
+    intent("Check whether text starts with a literal prefix");
+    mutates();
+    effects();
+}
+{
+    return starts_with_at(text, 0, prefix);
+}
+
+pub fn str_ends_with(text: str, suffix: str) -> bool
+audit {
+    intent("Check whether text ends with a literal suffix");
+    mutates();
+    effects();
+}
+{
+    let text_len = str_len(text);
+    let suffix_len = str_len(suffix);
+    if suffix_len > text_len {
+        return false;
+    }
+    let value = str_slice(text, text_len - suffix_len, text_len);
+    match value {
+        Some(part) => {
+            return part == suffix;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+pub fn list_contains(items: ref list<str>, target: str) -> bool
+audit {
+    intent("Check whether a string list contains a target value");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn list_contains_str(items: ref list<str>, target: str) -> bool
+audit {
+    intent("Alias string list containment for call sites that name the element type");
+    mutates();
+    effects();
+}
+{
+    return list_contains(ref items, target);
+}
+
+pub fn list_contains_i32(items: ref list<i32>, target: i32) -> bool
+audit {
+    intent("Check whether an i32 list contains a target value");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}

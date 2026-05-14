@@ -1,6 +1,7 @@
 use ast;
 use lexer;
 use source;
+use text;
 use token;
 
 pub type review_function_fact {
@@ -80,14 +81,6 @@ audit {
     };
 }
 
-fn concat3(a: str, b: str, c: str) -> str {
-    return str_concat(a, str_concat(b, c));
-}
-
-fn concat4(a: str, b: str, c: str, d: str) -> str {
-    return str_concat(a, concat3(b, c, d));
-}
-
 fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
     return str_concat(a, concat4(b, c, d, e));
 }
@@ -113,24 +106,6 @@ fn advance(cursor: mutref i32) -> unit {
     return;
 }
 
-fn list_contains(items: ref list<str>, target: str) -> bool {
-    let mut index = 0;
-    while index < list_len(ref items) {
-        let entry = list_get(ref items, index);
-        match entry {
-            Some(value) => {
-                if value == target {
-                    return true;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return false;
-}
-
 fn push_if_missing(items: mutref list<str>, value: str) -> unit {
     if not list_contains(ref items, value) {
         list_push(mutref items, value);
@@ -152,79 +127,6 @@ fn builtin_identity(name: str) -> str {
 
 fn call_identity(module: str, function_name: str, at: i32) -> str {
     return concat6("call:", module, "::", function_name, "@", i32_to_str(at));
-}
-
-fn bool_text(value: bool) -> str {
-    if value {
-        return "true";
-    }
-    return "false";
-}
-
-fn digit_text(value: i32) -> str {
-    if value == 0 {
-        return "0";
-    }
-    if value == 1 {
-        return "1";
-    }
-    if value == 2 {
-        return "2";
-    }
-    if value == 3 {
-        return "3";
-    }
-    if value == 4 {
-        return "4";
-    }
-    if value == 5 {
-        return "5";
-    }
-    if value == 6 {
-        return "6";
-    }
-    if value == 7 {
-        return "7";
-    }
-    if value == 8 {
-        return "8";
-    }
-    return "9";
-}
-
-fn i32_to_str(value: i32) -> str {
-    if value == 0 {
-        return "0";
-    }
-    let mut remaining = value;
-    let mut negative = false;
-    if remaining < 0 {
-        negative = true;
-        remaining = 0 - remaining;
-    }
-    let mut reversed: list<str> = list();
-    while remaining > 0 {
-        let digit = remaining - ((remaining / 10) * 10);
-        list_push(mutref reversed, digit_text(digit));
-        remaining = remaining / 10;
-    }
-    let mut text = "";
-    if negative {
-        text = "-";
-    }
-    let mut index = list_len(ref reversed) - 1;
-    while index >= 0 {
-        let entry = list_get(ref reversed, index);
-        match entry {
-            Some(value_text) => {
-                text = str_concat(text, value_text);
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return text;
 }
 
 fn json_escape(text: str) -> str {
