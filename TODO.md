@@ -230,3 +230,5 @@
 - [ ] Add `propagates(E)` audit contract inference and validation
 - [ ] Add versioned propagation evidence to facts/review/change-report surfaces
 - [ ] Add canonical examples comparing `?` with explicit `let-else`
+- [ ] Add a negative proof/corpus case for `?` without `propagates(...)` expecting `NQ-PROPAGATE-004`
+- [ ] Make `NQ-PROPAGATE-003` teach explicit error mapping instead of implicit conversion

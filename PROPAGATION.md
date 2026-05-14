@@ -133,6 +133,25 @@ Reserve deterministic diagnostics around propagation:
 
 Diagnostics should point users toward explicit `match` or `let-else` when propagation is not the right tool.
 
+`NQ-PROPAGATE-003` is especially important for teaching. When a function returns `result<_, BuildError>` but the propagated expression has type `result<_, LexError>`, the diagnostic should say there is no implicit conversion and point users toward explicit handling, for example:
+
+```nauq
+let value = read_lexed(path) else {
+    Err(err) => {
+        return Err(map_lex_error(err));
+    },
+};
+```
+
+That lack of an escape hatch is intentional. Nauqtype should make unchanged propagation concise, while keeping transformed errors explicit and reviewable.
+
+## Implementation Notes
+
+- Existing selfhost audit blocks should not need a `propagates(...)` backfill when M25 first lands because current selfhost sources do not use `?`.
+- The first implementation should add a negative proof or corpus case for `?` without a matching `propagates(...)` clause and expect `NQ-PROPAGATE-004`.
+- Propagation evidence should reuse the current evidence vocabulary where possible: `declared`, `checked`, `builtin`, and `unresolved`.
+- The implementation should avoid creating a second evidence taxonomy just for propagation sites.
+
 ## Deferred Extensions
 
 - Optional propagation labels such as `read_file(path)?[read_config]`.
