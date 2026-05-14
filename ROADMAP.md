@@ -328,14 +328,16 @@ Status:
 ### M24: `effects(io)` Audit Atom
 
 - add `io` as the second fixed effect atom after `print`
-- cover `read_file`, `write_file`, and `run_process`
+- cover `read_file`, `write_file`, `create_dir_all`, and `run_process`
 - extend review inference and docs without opening user-defined effect atoms
 - keep this as an audit/tooling milestone before propagation sugar
 
 Status:
 
-- planned
-- this must land before `?` so fallible file/process helpers have clear effect evidence
+- done
+- `io` is now a fixed audit effect inferred from `read_file`, `write_file`, `create_dir_all`, and `run_process`
+- stage1 review and the bootstrap reference both understand `effects(io)` so audited selfhost sources can carry truthful file/process effects
+- user-defined effect atoms remain deferred
 
 ### M25: Evidence-Backed `?` Propagation
 

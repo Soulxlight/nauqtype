@@ -28,14 +28,15 @@ audit {
 - Clause order is fixed: `intent`, then `mutates`, then `effects`.
 - `intent("...")` is required and must be non-empty.
 - `mutates(...)` may list only `mutref` parameters.
-- `effects(...)` currently supports only `print`.
+- `effects(...)` currently supports the fixed atoms `print` and `io`.
 - Public functions without `audit` are allowed in this phase, but they emit a warning.
 
 ## Compiler Inference
 
 - Mutation inference is direct only in this phase.
 - The compiler marks a `mutref` parameter as mutated when the function writes through that parameter.
-- `print` is inferred directly from `print_line(...)` calls and transitively across the single-file call graph.
+- `print` is inferred directly from `print_line(...)` / `eprint_line(...)` calls and transitively through checked calls.
+- `io` is inferred directly from `read_file(...)`, `write_file(...)`, `create_dir_all(...)`, and `run_process(...)` calls and transitively through checked calls.
 - Missing inferred facts are errors.
 - Overdeclared facts are warnings.
 
@@ -99,7 +100,7 @@ The canonical fixture for this loop lives under `tests/fixtures/supervised_workf
 
 `?` propagation is planned as an extension of the same compiler-evidence model, not as hidden Rust-style control flow.
 
-- M24 adds `io` as the next fixed effect atom before propagation grows.
+- M24 added `io` as the second fixed effect atom before propagation grows.
 - M25 adds statement-boundary `let name = result_expr?;` only.
 - Accepted `?` sites infer exact error-type propagation into a future `propagates(...)` audit clause.
 - Propagation evidence must use an explicit versioned facts/review/change-report surface instead of silently changing locked schemas.

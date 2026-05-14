@@ -17,6 +17,7 @@ class SemanticFunction:
     bindings: dict[int, BindingInfo] = field(default_factory=dict)
     direct_calls: set[str] = field(default_factory=set)
     direct_print: bool = False
+    direct_io: bool = False
     inferred_mutates: list[str] = field(default_factory=list)
     inferred_effects: list[str] = field(default_factory=list)
 
@@ -592,6 +593,8 @@ class TypeChecker:
                     expr.param_types = list(signature.param_types)
                     if target_name == "print_line" or target_name == "eprint_line":
                         semantic_function.direct_print = True
+                    if target_name in {"read_file", "write_file", "create_dir_all", "run_process"}:
+                        semantic_function.direct_io = True
                     elif not signature.builtin:
                         semantic_function.direct_calls.add(target_name)
                     if len(expr.args) != len(signature.param_types):
@@ -818,14 +821,18 @@ class TypeChecker:
         print_effects = {
             name: semantic_function.direct_print for name, semantic_function in semantic_program.function_bodies.items()
         }
+        io_effects = {
+            name: semantic_function.direct_io for name, semantic_function in semantic_program.function_bodies.items()
+        }
         changed = True
         while changed:
             changed = False
             for name, semantic_function in semantic_program.function_bodies.items():
-                if print_effects[name]:
-                    continue
-                if any(print_effects.get(callee, False) for callee in semantic_function.direct_calls):
+                if not print_effects[name] and any(print_effects.get(callee, False) for callee in semantic_function.direct_calls):
                     print_effects[name] = True
+                    changed = True
+                if not io_effects[name] and any(io_effects.get(callee, False) for callee in semantic_function.direct_calls):
+                    io_effects[name] = True
                     changed = True
 
         for internal_name, semantic_function in semantic_program.function_bodies.items():
@@ -839,7 +846,11 @@ class TypeChecker:
                 and semantic_function.bindings[param.symbol_id].ref_mutable
                 and semantic_function.bindings[param.symbol_id].written
             ]
-            semantic_function.inferred_effects = ["print"] if print_effects.get(internal_name, False) else []
+            semantic_function.inferred_effects = []
+            if print_effects.get(internal_name, False):
+                semantic_function.inferred_effects.append("print")
+            if io_effects.get(internal_name, False):
+                semantic_function.inferred_effects.append("io")
             self._check_contract_for_function(function, semantic_function)
 
     def _check_contract_for_function(self, function: ast.FunctionDecl, semantic_function: SemanticFunction) -> None:
@@ -885,14 +896,14 @@ class TypeChecker:
                 self.diagnostics.add("NQ-CONTRACT-010", "CONTRACT", f"duplicate `effects(...)` entry `{entry.name}`", entry.span, source=source)
                 continue
             seen_effects.add(entry.name)
-            if entry.name != "print":
+            if entry.name not in {"print", "io"}:
                 self.diagnostics.add(
                     "NQ-CONTRACT-007",
                     "CONTRACT",
                     f"unknown audit effect `{entry.name}`",
                     entry.span,
                     source=source,
-                    help="The current AI Contracts alpha supports only `print` in `effects(...)`.",
+                    help="The current AI Contracts alpha supports only `print` and `io` in `effects(...)`.",
                 )
                 continue
             valid_declared_effects.add(entry.name)
@@ -921,6 +932,17 @@ class TypeChecker:
                 "NQ-CONTRACT-009",
                 "CONTRACT",
                 "`audit` declares `print` in `effects(...)` but no print effect was inferred",
+                function.audit.effects_span,
+                source=source,
+                severity="warning",
+            )
+        if "io" in inferred_effects and "io" not in valid_declared_effects:
+            self.diagnostics.add("NQ-CONTRACT-008", "CONTRACT", "`audit` omits `io` from `effects(...)`", function.audit.effects_span, source=source)
+        if "io" in valid_declared_effects and "io" not in inferred_effects:
+            self.diagnostics.add(
+                "NQ-CONTRACT-009",
+                "CONTRACT",
+                "`audit` declares `io` in `effects(...)` but no io effect was inferred",
                 function.audit.effects_span,
                 source=source,
                 severity="warning",

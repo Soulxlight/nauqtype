@@ -142,6 +142,30 @@ fn main() -> i32 {
         codes = [item.code for item in diagnostics.items]
         self.assertIn("NQ-CONTRACT-008", codes)
 
+    def test_missing_direct_io_effect_is_error(self) -> None:
+        diagnostics, emitted = compile_text(
+            """
+fn load() -> unit
+audit {
+    intent("Reads a file");
+    mutates();
+    effects();
+}
+{
+    let data = read_file("input.txt");
+    return;
+}
+
+fn main() -> i32 {
+    load();
+    return 0;
+}
+"""
+        )
+        self.assertIsNone(emitted)
+        matching = [item for item in diagnostics.items if item.code == "NQ-CONTRACT-008"]
+        self.assertTrue(any("`io`" in item.message for item in matching))
+
     def test_missing_transitive_print_effect_is_error(self) -> None:
         diagnostics, emitted = compile_text(
             """
@@ -199,6 +223,29 @@ fn main() -> i32 {
         self.assertIsNotNone(emitted)
         severities = {item.code: item.severity for item in diagnostics.items}
         self.assertEqual(severities.get("NQ-CONTRACT-009"), "warning")
+
+    def test_overdeclared_io_effect_is_warning(self) -> None:
+        diagnostics, emitted = compile_text(
+            """
+fn pure() -> unit
+audit {
+    intent("No io");
+    mutates();
+    effects(io);
+}
+{
+    return;
+}
+
+fn main() -> i32 {
+    pure();
+    return 0;
+}
+"""
+        )
+        self.assertIsNotNone(emitted)
+        matching = [item for item in diagnostics.items if item.code == "NQ-CONTRACT-009"]
+        self.assertTrue(any("`io`" in item.message for item in matching))
 
 
 if __name__ == "__main__":

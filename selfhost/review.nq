@@ -919,6 +919,24 @@ fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_n
     return false;
 }
 
+fn function_has_direct_io(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and (value.name == "read_file" or value.name == "write_file" or value.name == "create_dir_all" or value.name == "run_process") {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
 fn build_print_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {
     let mut inferred: list<str> = list();
     let mut function_index = 0;
@@ -983,6 +1001,70 @@ fn build_print_effects(functions: ref list<review_function_fact>, calls: ref lis
     return inferred;
 }
 
+fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {
+    let mut inferred: list<str> = list();
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                if function_has_direct_io(ref calls, value.module, value.name) {
+                    push_if_missing(mutref inferred, function_internal_name(value.module, value.name));
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut index = 0;
+        while index < list_len(ref functions) {
+            let entry = list_get(ref functions, index);
+            match entry {
+                Some(value) => {
+                    let internal_name = function_internal_name(value.module, value.name);
+                    if not list_contains(ref inferred, internal_name) {
+                        let mut call_index = 0;
+                        let mut found_io = false;
+                        while call_index < list_len(ref calls) {
+                            let current = list_get(ref calls, call_index);
+                            match current {
+                                Some(call_entry) => {
+                                    if call_entry.module == value.module and call_entry.function_name == value.name {
+                                        if call_entry.name == "read_file" or call_entry.name == "write_file" or call_entry.name == "create_dir_all" or call_entry.name == "run_process" {
+                                            found_io = true;
+                                        } else {
+                                            let origin = visible_function_origin(ref functions, ref uses, value.module, call_entry.name);
+                                            if origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
+                                                found_io = true;
+                                            }
+                                        }
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            call_index = call_index + 1;
+                        }
+                        if found_io {
+                            list_push(mutref inferred, internal_name);
+                            changed = true;
+                        }
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+    }
+    return inferred;
+}
+
 fn emit_review_message(kind: str, code: str, message: str) -> unit {
     eprint_line(concat5(kind, "[", code, "] ", message));
     return;
@@ -1018,13 +1100,17 @@ fn emit_unknown_effect_error(name: str) -> unit {
     return;
 }
 
-fn emit_missing_print_error() -> unit {
-    emit_review_message("error", "NQ-CONTRACT-008", "`audit` omits `print` from `effects(...)`");
+fn audit_effect_is_supported(name: str) -> bool {
+    return name == "print" or name == "io";
+}
+
+fn emit_missing_effect_error(name: str) -> unit {
+    emit_review_message("error", "NQ-CONTRACT-008", concat5("`audit` omits `", name, "` from `effects(...)`", "", ""));
     return;
 }
 
-fn emit_overdeclared_print_warning() -> unit {
-    emit_review_message("warning", "NQ-CONTRACT-009", "`audit` declares `print` in `effects(...)` but no print effect was inferred");
+fn emit_overdeclared_effect_warning(name: str) -> unit {
+    emit_review_message("warning", "NQ-CONTRACT-009", concat5("`audit` declares `", name, "` in `effects(...)` but no matching effect was inferred", "", ""));
     return;
 }
 
@@ -1037,6 +1123,7 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
     let mut warning_count = 0;
     let mut error_count = 0;
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let mut index = 0;
     while index < list_len(ref functions) {
         let entry = list_get(ref functions, index);
@@ -1044,6 +1131,7 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
             Some(value) => {
                 let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
                 let inferred_print = list_contains(ref print_effects, function_internal_name(value.module, value.name));
+                let inferred_io = list_contains(ref io_effects, function_internal_name(value.module, value.name));
                 if value.is_public and not value.has_audit {
                     emit_public_missing_audit_warning(value.name);
                     warning_count = warning_count + 1;
@@ -1103,7 +1191,7 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
                                                     error_count = error_count + 1;
                                                 } else {
                                                     list_push(mutref seen_effects, decl_value.name);
-                                                    if decl_value.name == "print" {
+                                                    if audit_effect_is_supported(decl_value.name) {
                                                         list_push(mutref valid_effects, decl_value.name);
                                                     } else {
                                                         emit_unknown_effect_error(decl_value.name);
@@ -1155,11 +1243,19 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
                         }
 
                         if inferred_print and not list_contains(ref valid_effects, "print") {
-                            emit_missing_print_error();
+                            emit_missing_effect_error("print");
                             error_count = error_count + 1;
                         }
                         if list_contains(ref valid_effects, "print") and not inferred_print {
-                            emit_overdeclared_print_warning();
+                            emit_overdeclared_effect_warning("print");
+                            warning_count = warning_count + 1;
+                        }
+                        if inferred_io and not list_contains(ref valid_effects, "io") {
+                            emit_missing_effect_error("io");
+                            error_count = error_count + 1;
+                        }
+                        if list_contains(ref valid_effects, "io") and not inferred_io {
+                            emit_overdeclared_effect_warning("io");
                             warning_count = warning_count + 1;
                         }
                     }
@@ -1243,6 +1339,7 @@ fn evidence_for_origin(origin: str) -> str {
 
 fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let total_functions = module_function_count(ref functions, entry_module);
     let mut emitted_functions = 0;
 
@@ -1262,6 +1359,9 @@ fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref
                     let mut inferred_effect_names: list<str> = list();
                     if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
                         list_push(mutref inferred_effect_names, "print");
+                    }
+                    if list_contains(ref io_effects, function_internal_name(value.module, value.name)) {
+                        list_push(mutref inferred_effect_names, "io");
                     }
 
                     list_push(mutref lines, "    {");
@@ -1350,6 +1450,7 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
 
 fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let total_functions = list_len(ref functions);
     list_push(mutref lines, "  \"functions\": [");
     let mut index = 0;
@@ -1363,6 +1464,9 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 let mut inferred_effect_names: list<str> = list();
                 if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
                     list_push(mutref inferred_effect_names, "print");
+                }
+                if list_contains(ref io_effects, function_internal_name(value.module, value.name)) {
+                    list_push(mutref inferred_effect_names, "io");
                 }
 
                 list_push(mutref lines, "    {");
@@ -1598,9 +1702,13 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let mut inferred_effect_names: list<str> = list();
     if list_contains(ref print_effects, function_internal_name(entry.module, entry.name)) {
         list_push(mutref inferred_effect_names, "print");
+    }
+    if list_contains(ref io_effects, function_internal_name(entry.module, entry.name)) {
+        list_push(mutref inferred_effect_names, "io");
     }
     let mut call_edges: list<str> = list();
     collect_call_edges_for_function(ref functions, ref calls, ref uses, entry.module, entry.name, mutref call_edges);

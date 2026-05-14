@@ -213,11 +213,12 @@ Rules:
 - clause order is fixed: `intent`, then `mutates`, then `effects`
 - `intent("...")` is required and must be non-empty
 - `mutates(...)` may list only `mutref` parameters
-- `effects(...)` currently supports only `print`
+- `effects(...)` currently supports the fixed atoms `print` and `io`
 - `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
-- `effects(print)` is checked against direct or transitive use of `print_line` in the same source file
+- `effects(print)` is checked against direct or transitive use of `print_line` / `eprint_line`
+- `effects(io)` is checked against direct or transitive use of file/process builtins: `read_file`, `write_file`, `create_dir_all`, and `run_process`
 - duplicate clause entries are rejected
-- richer effect atoms, typed repair obligations, and stronger contract inference are deferred
+- user-defined effect atoms, typed repair obligations, and stronger contract inference are deferred
 
 ### Product Types
 
@@ -603,7 +604,7 @@ Planned v0.1 lints:
 - discarded `result` value
 - public function missing `audit`
 - overdeclared `mutates(...)`
-- overdeclared `effects(print)`
+- overdeclared `effects(print)` / `effects(io)`
 
 These are warnings, not hard errors.
 

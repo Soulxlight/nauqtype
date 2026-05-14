@@ -217,10 +217,10 @@
 
 ## M24 `effects(io)` Audit Atom
 
-- [ ] Add `io` as a fixed effect atom alongside `print`
-- [ ] Infer direct and same-file transitive `io` from file/process builtins
-- [ ] Update audit blocks that call `read_file`, `write_file`, or `run_process`
-- [ ] Keep user-defined effect atoms deferred
+- [x] Add `io` as a fixed effect atom alongside `print`
+- [x] Infer direct and transitive `io` from file/process builtins
+- [x] Update audit blocks that call `read_file`, `write_file`, `create_dir_all`, or `run_process`
+- [x] Keep user-defined effect atoms deferred
 
 ## M25 Evidence-Backed `?` Propagation
 

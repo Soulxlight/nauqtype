@@ -537,6 +537,153 @@ class Stage1DriverTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["print"])
 
+    def test_stage1_driver_review_infers_io_for_file_and_process_builtins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    pub fn touch_tooling() -> i32
+                    audit {
+                        intent("Touch file and process helpers");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let made = create_dir_all("build");
+                        let written = write_file("build/out.txt", "ok");
+                        let read = read_file("build/out.txt");
+                        let args: list<str> = [];
+                        let run = run_process("tool", ref args, ".");
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["io"])
+
+    def test_stage1_driver_review_infers_transitive_io_across_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    use helper;
+
+                    pub fn main() -> i32
+                    audit {
+                        intent("Load through helper");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        helper();
+                        return 0;
+                    }
+                    """,
+                    "helper.nq": """
+                    pub fn helper() -> unit
+                    audit {
+                        intent("Read a file");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let data = read_file("input.txt");
+                        return;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["io"])
+
+    def test_stage1_driver_review_requires_declared_io_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn load() -> unit
+                    audit {
+                        intent("Read a file");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        let data = read_file("input.txt");
+                        return;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("error[NQ-CONTRACT-008]", result.stderr)
+            self.assertIn("`io`", result.stderr)
+
+    def test_stage1_driver_review_warns_for_overdeclared_io_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    pub fn pure() -> i32
+                    audit {
+                        intent("Return a pure value");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        return 1;
+                    }
+                    """,
+                },
+            )
+            result = subprocess.run(
+                [str(self.driver_exe), "review", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("warning[NQ-CONTRACT-009]", result.stderr)
+            self.assertIn("`io`", result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["functions"][0]["audit"]["effects"], ["io"])
+            self.assertEqual(payload["functions"][0]["inferred"]["effects"], [])
+
     def test_stage1_driver_review_v2_exports_semantic_identities(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
