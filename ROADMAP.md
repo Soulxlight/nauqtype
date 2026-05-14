@@ -318,11 +318,12 @@ Status:
 
 Status:
 
-- in progress
+- done for the v0.1 stable-surface checkpoint
 - M23-A is done: shared `text.nq` helpers now own `i32_to_str`, `bool_text`, `str_starts_with`, `str_ends_with`, and string/i32 list containment
 - duplicate private helper definitions were removed from active selfhost modules that needed those helpers
 - the new import edges from `borrow`, `c_emit`, `facts`, `resolve`, and `review` are covered by the selfhost run and `prove`
-- M23-B and M23-C remain: widen the locked corpus, then declare the v0.1 stable surface
+- M23-B is done: the locked corpus now covers multi-module qualified call chains, nested `break` / `continue` inside `if` within `while`, and record update over a computed owned base value
+- M23-C is done: the current v0.1 language/tooling surface is stable; future growth resumes through explicit milestones and proof-backed examples
 
 ### M24: `effects(io)` Audit Atom
 

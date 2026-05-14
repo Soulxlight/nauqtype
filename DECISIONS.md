@@ -287,3 +287,11 @@
 - Reason chosen: Nauqtype needs less wordy fallible code, but a hidden early return that does not appear in facts/review/policy surfaces would contradict the language's AI-supervision mission. Treating propagation as evidence and contract makes the source shorter while making failure paths more reviewable.
 - Consequences: the initial form has no implicit error conversion, no traits, no expression-position `?`, no `option<T>?`, and no custom propagation protocols. Machine-readable propagation data must use an explicit versioned surface rather than silently changing locked JSON schemas.
 - Reversible later: extensible; optional context labels, `try` blocks, `option<T>?`, and expression-position `?` can grow through separate decisions once the statement-boundary form is proven.
+
+## D037: M23 declares the v0.1 surface stable
+
+- Decision: after M23, the current language and stage1-owned tooling surface is the v0.1 stable baseline.
+- Alternatives considered: keep accumulating syntax before declaring stability, or wait until `effects(io)` and evidence-backed `?` land before calling the current surface stable.
+- Reason chosen: the compiler is self-hosted, the stage1-to-stage2 proof is standing, active workflows are Nauqtype-owned, recent syntax has evidence/refactor coverage, and the locked corpus now covers the highest-risk v0.1 ergonomics. That is enough to stabilize the baseline before the next explicit feature milestones.
+- Consequences: future source-language or machine-readable contract changes should land through named milestones, examples, proof/corpus coverage, and decision records. v0.1 stability is not a package-manager, distro, or broad platform-support promise.
+- Reversible later: partially; individual features can evolve through versioned contracts, but the project should treat this point as the compatibility baseline for ordinary users and future model-teaching examples.

@@ -212,8 +212,8 @@
 
 - [x] Centralize duplicated pure-Nauqtype string/path/list helpers used by active tooling
 - [x] Add only helpers exercised by selfhost, proof tooling, or canonical examples
-- [ ] Widen proof confidence without starting a stage3/stage4 chain
-- [ ] Keep broad stdlib, package manager, and OS/runtime growth deferred
+- [x] Widen proof confidence without starting a stage3/stage4 chain
+- [x] Keep broad stdlib, package manager, and OS/runtime growth deferred
 
 ## M24 `effects(io)` Audit Atom
 

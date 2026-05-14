@@ -23,6 +23,8 @@ Current bootstrap status:
 - compile-to-C backend with a tiny runtime
 - `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
+v0.1 status: the current language and tooling surface is stable as of M23. Future additions still move through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
+
 ## Quick Start
 
 Install local bootstrap dependencies:
@@ -160,9 +162,12 @@ Example programs worth checking first:
 - `examples\fibonacci.nq`: functions plus mutable locals and `while`
 - `examples\top_level_const.nq`: stage1-owned top-level constants
 - `examples\named_arguments.nq`: Batch B named function arguments
+- `examples\nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
+- `examples\qualified_call_chain.nq`: multi-module qualified call chain
 - `examples\qualified_calls.nq`: direct module-qualified function calls
 - `examples\qualified_data_names.nq`: direct module-qualified struct and enum constructor names
 - `examples\record_update.nq`: copy-only record update with explicit base provenance
+- `examples\record_update_nontrivial.nq`: record update over a computed owned base value
 - `examples\break_continue.nq`: minimal loop control
 - `examples\review_contracts.nq`: AI Contracts and `review` workflow
 
