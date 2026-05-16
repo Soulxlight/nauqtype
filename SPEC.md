@@ -511,8 +511,10 @@ Rules:
 - fallible operations return `result<T, E>`
 - absent values use `option<T>`
 - errors are handled explicitly with `match` or the narrow `let Ok(value) = result else { return ...; };` guard form
+- unchanged `result<T, E>` errors may be forwarded with statement-boundary `let value = result_expr?;` when the enclosing function returns `result<_, E>` and declares `propagates(E)`
+- `?` performs no implicit error conversion; use `let-else` or `match` when mapping one error type into another
 - there are no exceptions
-- there is no `?` operator in v0.1
+- expression-position `?`, `option<T>?`, `try` blocks, and custom propagation protocols are not supported
 
 Example:
 

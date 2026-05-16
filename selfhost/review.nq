@@ -33,6 +33,7 @@ audit {
 pub enum review_decl_kind {
     review_decl_mutates,
     review_decl_effects,
+    review_decl_propagates,
 }
 
 pub type review_decl_entry {
@@ -699,7 +700,12 @@ fn parse_audit_block(tokens: ref list<token>, cursor: mutref i32, module: str, f
                             advance(mutref cursor);
                             parse_ident_list(ref tokens, mutref cursor, module, function_name, review_decl_effects, mutref decls_out);
                         } else {
-                            skip_until_semi(ref tokens, mutref cursor);
+                            if current.text == "propagates" {
+                                advance(mutref cursor);
+                                parse_ident_list(ref tokens, mutref cursor, module, function_name, review_decl_propagates, mutref decls_out);
+                            } else {
+                                skip_until_semi(ref tokens, mutref cursor);
+                            }
                         }
                     }
                 }
@@ -835,6 +841,15 @@ fn decl_entries_for_function(decls: ref list<review_decl_entry>, module: str, fu
                                 },
                             }
                         },
+                        review_decl_propagates => {
+                            match kind {
+                                review_decl_propagates => {
+                                    list_push(mutref names, value.name);
+                                },
+                                _ => {
+                                },
+                            }
+                        },
                     }
                 }
             },
@@ -899,6 +914,59 @@ fn inferred_mutates(function_params: ref list<function_param_fact>, assignments:
         index = index + 1;
     }
     return names;
+}
+
+fn builtin_propagation_error(name: str) -> str {
+    if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
+        return "io_err";
+    }
+    return "";
+}
+
+fn lookup_function_result_error(function_facts: ref list<function_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref function_facts) {
+        let entry = list_get(ref function_facts, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.return_name == "result" {
+                    return value.return_arg2_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, module: str, function_name: str) -> list<str> {
+    let mut inferred: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.expr_member_name == "propagate" {
+                    let mut error_name = builtin_propagation_error(value.expr_name);
+                    if error_name == "" {
+                        let origin = visible_function_origin(ref functions, ref uses, module, value.expr_name);
+                        if origin != "" and origin != "__builtin__" {
+                            error_name = lookup_function_result_error(ref function_facts, origin, value.expr_name);
+                        }
+                    }
+                    if error_name != "" {
+                        push_if_missing(mutref inferred, error_name);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return inferred;
 }
 
 fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
@@ -1114,12 +1182,22 @@ fn emit_overdeclared_effect_warning(name: str) -> unit {
     return;
 }
 
+fn emit_omitted_propagates_error(name: str) -> unit {
+    emit_review_message("error", "NQ-PROPAGATE-004", concat5("`audit` omits `", name, "` from `propagates(...)`", "", ""));
+    return;
+}
+
+fn emit_overdeclared_propagates_warning(name: str) -> unit {
+    emit_review_message("warning", "NQ-PROPAGATE-005", concat5("`audit` declares `", name, "` in `propagates(...)` but no matching propagation was inferred", "", ""));
+    return;
+}
+
 fn emit_duplicate_entry_error(kind: str, name: str) -> unit {
     emit_review_message("error", "NQ-CONTRACT-010", concat6("duplicate `", kind, "(...)` entry `", name, "`", ""));
     return;
 }
 
-fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> review_summary {
+fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>) -> review_summary {
     let mut warning_count = 0;
     let mut error_count = 0;
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
@@ -1130,6 +1208,7 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
         match entry {
             Some(value) => {
                 let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
                 let inferred_print = list_contains(ref print_effects, function_internal_name(value.module, value.name));
                 let inferred_io = list_contains(ref io_effects, function_internal_name(value.module, value.name));
                 if value.is_public and not value.has_audit {
@@ -1210,6 +1289,35 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
                             effect_index = effect_index + 1;
                         }
 
+                        let mut seen_propagates: list<str> = list();
+                        let mut valid_propagates: list<str> = list();
+                        let mut propagate_index = 0;
+                        while propagate_index < list_len(ref decls) {
+                            let decl_entry = list_get(ref decls, propagate_index);
+                            match decl_entry {
+                                Some(decl_value) => {
+                                    if decl_value.module == value.module and decl_value.function_name == value.name {
+                                        match decl_value.kind {
+                                            review_decl_propagates => {
+                                                if list_contains(ref seen_propagates, decl_value.name) {
+                                                    emit_duplicate_entry_error("propagates", decl_value.name);
+                                                    error_count = error_count + 1;
+                                                } else {
+                                                    list_push(mutref seen_propagates, decl_value.name);
+                                                    list_push(mutref valid_propagates, decl_value.name);
+                                                }
+                                            },
+                                            _ => {
+                                            },
+                                        }
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            propagate_index = propagate_index + 1;
+                        }
+
                         let mut inferred_index = 0;
                         while inferred_index < list_len(ref inferred_mutate_names) {
                             let inferred_entry = list_get(ref inferred_mutate_names, inferred_index);
@@ -1257,6 +1365,38 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
                         if list_contains(ref valid_effects, "io") and not inferred_io {
                             emit_overdeclared_effect_warning("io");
                             warning_count = warning_count + 1;
+                        }
+
+                        let mut inferred_propagate_index = 0;
+                        while inferred_propagate_index < list_len(ref inferred_propagate_names) {
+                            let inferred_entry = list_get(ref inferred_propagate_names, inferred_propagate_index);
+                            match inferred_entry {
+                                Some(inferred_name) => {
+                                    if not list_contains(ref valid_propagates, inferred_name) {
+                                        emit_omitted_propagates_error(inferred_name);
+                                        error_count = error_count + 1;
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            inferred_propagate_index = inferred_propagate_index + 1;
+                        }
+
+                        let mut declared_propagate_index = 0;
+                        while declared_propagate_index < list_len(ref valid_propagates) {
+                            let declared_entry = list_get(ref valid_propagates, declared_propagate_index);
+                            match declared_entry {
+                                Some(declared_name) => {
+                                    if not list_contains(ref inferred_propagate_names, declared_name) {
+                                        emit_overdeclared_propagates_warning(declared_name);
+                                        warning_count = warning_count + 1;
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                            declared_propagate_index = declared_propagate_index + 1;
                         }
                     }
                 }
@@ -2038,8 +2178,12 @@ audit {
     collect_review_fact_lists(ref before_sources, mutref before_functions, mutref before_decls);
     collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
 
-    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses);
-    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+    let empty_before_function_facts: list<function_fact> = list();
+    let empty_after_function_facts: list<function_fact> = list();
+    let empty_before_locals: list<local_init_fact> = list();
+    let empty_after_locals: list<local_init_fact> = list();
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref empty_before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref empty_before_locals, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref empty_after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref empty_after_locals, ref after_uses);
     let review_errors = before_summary.error_count + after_summary.error_count;
 
     let mut added_functions: list<str> = list();
@@ -2065,7 +2209,7 @@ audit {
     return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, review_errors + policy_errors);
 }
 
-pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
+pub fn emit_review(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review JSON from selfhost facts and audit blocks");
     mutates();
@@ -2076,7 +2220,7 @@ audit {
     let mut decls: list<review_decl_entry> = list();
     collect_review_fact_lists(ref sources, mutref functions, mutref decls);
 
-    let summary = validate_contracts(ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    let summary = validate_contracts(ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref locals, ref uses);
     if summary.error_count > 0 {
         return summary;
     }
@@ -2087,7 +2231,7 @@ audit {
     return summary;
 }
 
-pub fn emit_review_v2(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>) -> review_summary
+pub fn emit_review_v2(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review v2 JSON with semantic identities and evidence fields");
     mutates();
@@ -2098,7 +2242,7 @@ audit {
     let mut decls: list<review_decl_entry> = list();
     collect_review_fact_lists(ref sources, mutref functions, mutref decls);
 
-    let summary = validate_contracts(ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    let summary = validate_contracts(ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref locals, ref uses);
     if summary.error_count > 0 {
         return summary;
     }
@@ -2134,8 +2278,12 @@ audit {
     let mut after_decls: list<review_decl_entry> = list();
     collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
 
-    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses);
-    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+    let empty_before_function_facts: list<function_fact> = list();
+    let empty_after_function_facts: list<function_fact> = list();
+    let empty_before_locals: list<local_init_fact> = list();
+    let empty_after_locals: list<local_init_fact> = list();
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref empty_before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref empty_before_locals, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref empty_after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref empty_after_locals, ref after_uses);
     if before_summary.error_count > 0 or after_summary.error_count > 0 {
         return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, before_summary.error_count + after_summary.error_count);
     }

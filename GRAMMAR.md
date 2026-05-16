@@ -96,14 +96,15 @@ type_list     = type_expr { "," type_expr } [ "," ] ;
 The keyword `audit` is reserved. Clause names inside the block are contextual and only meaningful there.
 
 ```ebnf
-audit_block   = "audit" "{" intent_clause mutates_clause effects_clause "}" ;
+audit_block   = "audit" "{" intent_clause mutates_clause effects_clause [ propagates_clause ] "}" ;
 intent_clause = "intent" "(" STRING_LIT ")" ";" ;
 mutates_clause = "mutates" "(" ident_list? ")" ";" ;
 effects_clause = "effects" "(" effect_list? ")" ";" ;
+propagates_clause = "propagates" "(" ident_list? ")" ";" ;
 
 ident_list    = IDENT { "," IDENT } [ "," ] ;
 effect_list   = effect_name { "," effect_name } [ "," ] ;
-effect_name   = "print" ;
+effect_name   = "print" | "io" ;
 ```
 
 ## Type Grammar
@@ -132,6 +133,7 @@ In the current bootstrap compiler, generic arguments are semantically valid only
 block         = "{" { stmt } "}" ;
 
 stmt          = let_stmt
+              | let_propagate_stmt
               | let_else_stmt
               | assign_stmt
               | if_stmt
@@ -143,6 +145,7 @@ stmt          = let_stmt
               | expr_stmt ;
 
 let_stmt      = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr ";" ;
+let_propagate_stmt = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr "?" ";" ;
 let_else_stmt = "let" let_else_pattern "=" expr "else" block ";" ;
 let_else_pattern = ( "Some" | "Ok" ) "(" IDENT ")" ;
 assign_stmt   = IDENT "=" expr ";" ;

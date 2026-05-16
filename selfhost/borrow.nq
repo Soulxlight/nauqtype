@@ -326,6 +326,17 @@ fn is_stmt_let_else(kind: checked_stmt_kind) -> bool {
     }
 }
 
+fn is_stmt_propagate(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_propagate => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_stmt_break(kind: checked_stmt_kind) -> bool {
     match kind {
         checked_stmt_break => {
@@ -1457,7 +1468,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                     if stmt.expr_id <= 0 and not is_stmt_break(stmt.kind) and not is_stmt_continue(stmt.kind) {
                         push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked statement expression");
                     }
-                    if is_stmt_local(stmt.kind) {
+                    if is_stmt_local(stmt.kind) or is_stmt_propagate(stmt.kind) {
                         walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
                         if stmt.target_binding_id > 0 {
                             set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);

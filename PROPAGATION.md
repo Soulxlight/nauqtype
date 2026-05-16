@@ -1,12 +1,14 @@
 # Nauqtype Propagation Design
 
-This note packages the accepted design direction for eventual `?` support. The goal is not to clone Rust. Nauqtype should make fallible code less wordy while increasing compiler-visible evidence for human supervisors and agent pairs.
+This note packages the accepted design direction for `?` support. The goal is not to clone Rust. Nauqtype should make fallible code less wordy while increasing compiler-visible evidence for human supervisors and agent pairs.
+
+Current implementation status: statement-boundary `let name = result_expr?;`, exact error typing, C emission, and `propagates(E)` audit validation are implemented. The explicit versioned propagation-site export for facts/review/change-report remains the unfinished M25 evidence surface.
 
 ## Core Decision
 
 `?` is a checked propagation operator. It is not just syntax that disappears into an early `return`.
 
-When implemented, every accepted `?` site must become:
+Every accepted `?` site must become:
 
 - a typed control-flow edge in the compiler
 - a checked propagation fact in machine-readable output
@@ -17,7 +19,7 @@ The source gets shorter, but the review surface gets richer.
 
 ## First Implementation Shape
 
-M25 should start with statement-boundary `result` propagation only:
+M25 starts with statement-boundary `result` propagation only:
 
 ```nauq
 fn read_len(path: str) -> result<i32, io_err>

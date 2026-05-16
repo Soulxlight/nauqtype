@@ -4191,6 +4191,33 @@ fn local_init_is_let_else(local: local_init_fact) -> bool {
     return local.expr_member_name == "let_else";
 }
 
+fn local_init_is_propagate(local: local_init_fact) -> bool {
+    return local.expr_member_name == "propagate";
+}
+
+fn result_ok_payload_ctx(result_ctx: expected_type_ctx) -> expected_type_ctx {
+    if result_ctx.head == "result" {
+        return make_expected_type_ctx(result_ctx.arg1_name, "", "");
+    }
+    return empty_expected_type_ctx();
+}
+
+fn propagation_typecheck_payload_ctx(actual_ctx: expected_type_ctx, return_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
+    if actual_ctx.head != "result" {
+        push_diag(mutref diags, module, at, "NQ-PROPAGATE-001: `?` requires `result<T, E>`");
+        return empty_expected_type_ctx();
+    }
+    if return_ctx.head != "result" {
+        push_diag(mutref diags, module, at, "NQ-PROPAGATE-002: `?` requires an enclosing function that returns `result<_, E>`");
+        return empty_expected_type_ctx();
+    }
+    if not type_names_match(actual_ctx.arg2_name, return_ctx.arg2_name) {
+        push_diag(mutref diags, module, at, "NQ-PROPAGATE-003: propagated error type must match exactly; use let-else and return an explicitly mapped error");
+        return empty_expected_type_ctx();
+    }
+    return result_ok_payload_ctx(actual_ctx);
+}
+
 pub fn typecheck_value_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
     intent("Run the next selfhost type-checker slice over local initializers, return expressions, condition types, and assignment compatibility");
@@ -4274,15 +4301,28 @@ audit {
                                                         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
                                                     }
                                                 } else {
-                                                    if current.expected_type_name != "" {
-                                                        if not current.expected_is_borrow {
-                                                            if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
+                                                    if local_init_is_propagate(current) {
+                                                        let return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
+                                                        let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
+                                                        if current.expected_type_name != "" {
+                                                            if expected_ctx.head != "" and has_known_type_ctx(payload_ctx) and not type_ctx_matches(expected_ctx, payload_ctx) {
                                                                 push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
                                                             }
                                                         }
+                                                        if current.name != "" and has_known_type_ctx(payload_ctx) {
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                        }
                                                     } else {
-                                                        if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                        if current.expected_type_name != "" {
+                                                            if not current.expected_is_borrow {
+                                                                if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
+                                                                    push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                                                }
+                                                            }
+                                                        } else {
+                                                            if current.name != "" and has_known_type_ctx(actual_ctx) {
+                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -4461,9 +4501,17 @@ audit {
                                                         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
                                                     }
                                                 } else {
-                                                    if current.expected_type_name == "" {
-                                                        if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                    if local_init_is_propagate(current) {
+                                                        let return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
+                                                        let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
+                                                        if current.name != "" and has_known_type_ctx(payload_ctx) {
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                        }
+                                                    } else {
+                                                        if current.expected_type_name == "" {
+                                                            if current.name != "" and has_known_type_ctx(actual_ctx) {
+                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                            }
                                                         }
                                                     }
                                                 }

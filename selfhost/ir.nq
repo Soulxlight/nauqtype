@@ -8,6 +8,7 @@ pub enum ir_stmt_kind {
     ir_stmt_while,
     ir_stmt_match,
     ir_stmt_let_else,
+    ir_stmt_propagate,
     ir_stmt_return,
     ir_stmt_expr,
     ir_stmt_break,
@@ -109,6 +110,7 @@ pub type ir_stmt {
     block_id: i32,
     at: i32,
     kind: ir_stmt_kind,
+    type_id: i32,
     target_local_id: i32,
     expr_id: i32,
     child_block_id: i32,
@@ -306,6 +308,9 @@ fn checked_stmt_to_ir_kind(kind: checked_stmt_kind) -> ir_stmt_kind {
         },
         checked_stmt_let_else => {
             return ir_stmt_let_else;
+        },
+        checked_stmt_propagate => {
+            return ir_stmt_propagate;
         },
         checked_stmt_return => {
             return ir_stmt_return;
@@ -818,6 +823,7 @@ audit {
                     block_id: value.block_id,
                     at: value.at,
                     kind: checked_stmt_to_ir_kind(value.kind),
+                    type_id: value.type_id,
                     target_local_id: value.target_binding_id,
                     expr_id: value.expr_id,
                     child_block_id: value.child_block_id,
@@ -1031,6 +1037,15 @@ audit {
                         ir_stmt_let_else => {
                             match kind {
                                 ir_stmt_let_else => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
+                        ir_stmt_propagate => {
+                            match kind {
+                                ir_stmt_propagate => {
                                     return true;
                                 },
                                 _ => {

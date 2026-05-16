@@ -2704,6 +2704,46 @@ fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sha
     return;
 }
 
+fn emit_propagate_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let local_entry = lookup_local(ref locals, stmt.target_local_id);
+    let scrutinee_entry = lookup_expression(ref expressions, stmt.expr_id);
+    match local_entry {
+        Some(local_value) => {
+            match scrutinee_entry {
+                Some(scrutinee_expr) => {
+                    if stmt.type_id <= 0 {
+                        push_c_error(mutref diags, "", stmt.at, "missing function return type for propagation statement");
+                        return;
+                    }
+                    let success_variant = let_else_success_variant(ref type_shapes, scrutinee_expr.type_id);
+                    if success_variant != "Ok" {
+                        push_c_error(mutref diags, "", stmt.at, "propagation scrutinee must be result");
+                        return;
+                    }
+                    temp_index = temp_index + 1;
+                    let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
+                    append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                    append_line(mutref lines, concat6(indent(level), "if (", temp_name, ".tag == ", tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, "Err"), ") {"));
+                    let mut payloads: list<str> = list();
+                    list_push(mutref payloads, str_concat(temp_name, ".data.Err._0"));
+                    let err_return = emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, stmt.type_id, "Err", ref payloads);
+                    append_line(mutref lines, concat4(indent(level + 1), "return ", err_return, ";"));
+                    append_line(mutref lines, concat3(indent(level), "}", ""));
+                    let payload_expr = str_concat(temp_name, ".data.Ok._0");
+                    append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(payload_expr, ";")));
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing propagation scrutinee expression");
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", stmt.at, "missing local identity for propagation statement");
+        },
+    }
+    return;
+}
+
 fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let prefix = indent(level);
     match stmt.kind {
@@ -2761,6 +2801,9 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
         },
         ir_stmt_let_else => {
             emit_let_else_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
+        },
+        ir_stmt_propagate => {
+            emit_propagate_stmt(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
         },
         ir_stmt_return => {
             if stmt.expr_id > 0 {

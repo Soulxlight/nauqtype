@@ -236,7 +236,7 @@ Near-term focus:
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
-- implement evidence-backed statement-boundary `?` propagation with `propagates(...)` on top of the current fixed `print` / `io` effect atoms
+- finish the explicit versioned facts/review/change-report evidence surface for statement-boundary `?` propagation now that `propagates(...)` audit validation is implemented
 
 Current AI-first compiler output:
 

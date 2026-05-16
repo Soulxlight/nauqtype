@@ -225,10 +225,10 @@
 ## M25 Evidence-Backed `?` Propagation
 
 - [x] Lock the design direction in `PROPAGATION.md` and D036
-- [ ] Add statement-boundary `let name = result_expr?;`
-- [ ] Add exact `result<T, E>` propagation typing with no implicit conversion
-- [ ] Add `propagates(E)` audit contract inference and validation
+- [x] Add statement-boundary `let name = result_expr?;`
+- [x] Add exact `result<T, E>` propagation typing with no implicit conversion
+- [x] Add `propagates(E)` audit contract inference and validation
 - [ ] Add versioned propagation evidence to facts/review/change-report surfaces
-- [ ] Add canonical examples comparing `?` with explicit `let-else`
-- [ ] Add a negative proof/corpus case for `?` without `propagates(...)` expecting `NQ-PROPAGATE-004`
-- [ ] Make `NQ-PROPAGATE-003` teach explicit error mapping instead of implicit conversion
+- [x] Add canonical example coverage for `?` propagation
+- [x] Add negative driver coverage for `?` without `propagates(...)` expecting `NQ-PROPAGATE-004`
+- [x] Make `NQ-PROPAGATE-003` teach explicit error mapping instead of implicit conversion

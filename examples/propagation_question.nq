@@ -1,0 +1,43 @@
+fn parse_count_text(text: str) -> result<str, str>
+audit {
+    intent("Parse a tiny count from a trusted word.");
+    mutates();
+    effects();
+}
+{
+    if text == "seven" {
+        return Ok("1234567");
+    } else {
+        return Err("expected seven");
+    }
+}
+
+fn load_count() -> result<i32, str>
+audit {
+    intent("Forward unchanged parse errors while loading a count.");
+    mutates();
+    effects();
+    propagates(str);
+}
+{
+    let text = parse_count_text("seven")?;
+    return Ok(str_len(text));
+}
+
+fn main() -> i32
+audit {
+    intent("Run the propagation example and convert the result to an exit code.");
+    mutates();
+    effects();
+}
+{
+    let loaded = load_count();
+    match loaded {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 2;
+        },
+    }
+}

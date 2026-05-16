@@ -349,7 +349,9 @@ Status:
 
 Status:
 
-- planned
+- in progress
+- statement-boundary `let name = result_expr?;`, exact error typing, `propagates(E)` audit validation, diagnostics, and locked corpus coverage are implemented
+- remaining work is the explicit versioned propagation evidence surface for facts/review/change-report outputs
 - design direction is locked by `PROPAGATION.md` and D036
 
 ## Feature Ordering

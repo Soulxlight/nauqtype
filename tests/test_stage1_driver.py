@@ -684,6 +684,207 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(payload["functions"][0]["audit"]["effects"], ["io"])
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], [])
 
+    def test_stage1_driver_question_propagates_result_error_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+
+                    fn main() -> i32
+                    audit {
+                        intent("Run propagation sample.");
+                        mutates();
+                        effects(print, io);
+                    }
+                    {
+                        let value = load_count();
+                        match value {
+                            Ok(count) => {
+                                print_line("ok");
+                            },
+                            Err(err) => {
+                                print_line(io_err_text(err));
+                            },
+                        }
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            check = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            review = self._run_driver(["review", "main.nq"], cwd=tmp)
+            self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
+            self.assertEqual(review.stderr, "")
+
+    def test_stage1_driver_question_rejects_non_result_expression(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn bad() -> result<i32, io_err>
+                    audit {
+                        intent("Reject non-result propagation.");
+                        mutates();
+                        effects();
+                        propagates(io_err);
+                    }
+                    {
+                        let value = 1?;
+                        return Ok(value);
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("NQ-PROPAGATE-001", result.stdout + result.stderr)
+
+    def test_stage1_driver_question_requires_result_return_function(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn bad() -> i32
+                    audit {
+                        intent("Reject propagation outside result functions.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return str_len(data);
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("NQ-PROPAGATE-002", result.stdout + result.stderr)
+
+    def test_stage1_driver_question_requires_exact_error_type_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    enum app_err {
+                        Bad(unit),
+                    }
+
+                    fn bad() -> result<i32, app_err>
+                    audit {
+                        intent("Reject hidden error mapping.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("NQ-PROPAGATE-003", result.stdout + result.stderr)
+            self.assertIn("let-else", result.stdout + result.stderr)
+
+    def test_stage1_driver_question_is_statement_boundary_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn bad() -> result<i32, io_err>
+                    audit {
+                        intent("Reject expression-position propagation.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        return Ok(str_len(read_file("input.txt")?));
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("?", result.stdout + result.stderr)
+
+    def test_stage1_driver_review_requires_declared_propagation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["review", "main.nq"], cwd=tmp)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("NQ-PROPAGATE-004", result.stderr)
+            self.assertIn("io_err", result.stderr)
+
+    def test_stage1_driver_review_warns_for_overdeclared_propagation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn pure() -> result<i32, io_err>
+                    audit {
+                        intent("Return a pure result.");
+                        mutates();
+                        effects();
+                        propagates(io_err);
+                    }
+                    {
+                        return Ok(1);
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["review", "main.nq"], cwd=tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("warning[NQ-PROPAGATE-005]", result.stderr)
+            self.assertIn("io_err", result.stderr)
+
     def test_stage1_driver_review_v2_exports_semantic_identities(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
