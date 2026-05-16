@@ -25,6 +25,7 @@ class SelfhostBorrowTests(unittest.TestCase):
             "parser.nq",
             "resolve.nq",
             "source.nq",
+            "text.nq",
             "token.nq",
             "typecheck.nq",
         ]

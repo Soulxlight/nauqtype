@@ -265,6 +265,14 @@ fn build_exe_output_path(source_path: str, explicit_output: str) -> str {
     return default_build_exe_path(source_path);
 }
 
+fn path_relative_to_cwd(path: str, cwd: str) -> str {
+    let prefix = str_concat(cwd, "/");
+    if str_starts_with(path, prefix) {
+        return slice_text(path, str_len(prefix), str_len(path));
+    }
+    return path;
+}
+
 fn parse_driver_request() -> driver_request {
     let argc = arg_count();
     if argc <= 1 {
@@ -1163,15 +1171,48 @@ fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_er
         },
     }
 
-    let mut args: list<str> = list();
-    list_push(mutref args, "cc");
-    list_push(mutref args, "-std=c11");
-    list_push(mutref args, "-Istdlib");
-    list_push(mutref args, c_path);
-    list_push(mutref args, "stdlib/runtime.c");
-    list_push(mutref args, "-o");
-    list_push(mutref args, exe_path);
-    return run_process(".deps/ziglang/zig.exe", ref args, ".");
+    let mut cc_args: list<str> = list();
+    list_push(mutref cc_args, "-std=c11");
+    list_push(mutref cc_args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref cc_args, "-Istdlib");
+    list_push(mutref cc_args, c_path);
+    list_push(mutref cc_args, "stdlib/runtime.c");
+    list_push(mutref cc_args, "-o");
+    list_push(mutref cc_args, exe_path);
+    let system_cc = run_process("cc", ref cc_args, ".");
+    match system_cc {
+        Ok(status) => {
+            return Ok(status);
+        },
+        Err(system_err) => {
+            let mut zig_args: list<str> = list();
+            list_push(mutref zig_args, "cc");
+            list_push(mutref zig_args, "-std=c11");
+            list_push(mutref zig_args, "-D_POSIX_C_SOURCE=200809L");
+            list_push(mutref zig_args, "-Istdlib");
+            list_push(mutref zig_args, c_path);
+            list_push(mutref zig_args, "stdlib/runtime.c");
+            list_push(mutref zig_args, "-o");
+            list_push(mutref zig_args, exe_path);
+            let linux_zig = run_process(".deps/ziglang/zig", ref zig_args, ".");
+            match linux_zig {
+                Ok(status) => {
+                    return Ok(status);
+                },
+                Err(_) => {
+                },
+            }
+            let windows_zig = run_process(".deps/ziglang/zig.exe", ref zig_args, ".");
+            match windows_zig {
+                Ok(status) => {
+                    return Ok(status);
+                },
+                Err(_) => {
+                },
+            }
+            return Err(system_err);
+        },
+    }
 }
 
 fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
@@ -1201,7 +1242,9 @@ fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
     }
 
     let empty_args: list<str> = list();
-    let run_result = run_process(exe_path, ref empty_args, path_dir(request.entry_path));
+    let run_cwd = path_dir(request.entry_path);
+    let run_path = path_relative_to_cwd(exe_path, run_cwd);
+    let run_result = run_process(run_path, ref empty_args, run_cwd);
     match run_result {
         Ok(run_status) => {
             emit_process_output(run_status);

@@ -19,9 +19,17 @@ PINNED_PACKAGES = [
 ]
 
 
+def zig_executable(target: Path) -> Path:
+    if sys.platform.startswith("win"):
+        return target / "ziglang" / "zig.exe"
+    return target / "ziglang" / "zig"
+
+
 def deps_already_ready(target: Path) -> bool:
-    zig = target / "ziglang" / "zig.exe"
+    zig = zig_executable(target)
     if not zig.exists():
+        return False
+    if not sys.platform.startswith("win") and not zig.is_file():
         return False
     if not (target / "ziglang-0.16.0.dist-info").exists():
         return False
@@ -58,7 +66,7 @@ def main() -> int:
     target = deps_dir()
     target.mkdir(parents=True, exist_ok=True)
     if deps_already_ready(target):
-        zig = target / "ziglang" / "zig.exe"
+        zig = zig_executable(target)
         print(f"Bootstrap dependencies already available in {target}")
         print(f"Resolved zig compiler at {zig}")
         return 0
@@ -83,9 +91,9 @@ def main() -> int:
 
         overlay_tree(temp_target, target)
 
-    zig = target / "ziglang" / "zig.exe"
+    zig = zig_executable(target)
     if not zig.exists():
-        print("expected zig compiler at .deps/ziglang/zig.exe but it was not installed", file=sys.stderr)
+        print(f"expected zig compiler at {zig} but it was not installed", file=sys.stderr)
         return 1
 
     print(f"Installed bootstrap dependencies into {target}")

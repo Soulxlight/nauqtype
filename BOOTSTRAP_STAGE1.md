@@ -68,7 +68,7 @@ Current harness constraints to treat as proof-path facts, not surprise bugs:
 - keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
 - tolerate Windows temp-dir cleanup friction from emitted executables and debug artifacts
 - lift the current structural C normalization out of the stage1 C-emission test module into a shared proof helper instead of duplicating it during the proof milestone
-- during the current driver cutover, invoke stage1 `build` / `run` from the repo root because that slice still resolves `.deps/ziglang/zig.exe` and `stdlib/runtime.c` from the pinned workspace bootstrap layout
+- during the current driver cutover, invoke stage1 `build` / `run` from the repo root because that slice resolves pinned Zig from `.deps/ziglang/zig` or `.deps/ziglang/zig.exe`, with `cc` as the Linux development fallback, plus `stdlib/runtime.c` from the pinned workspace bootstrap layout
 
 ## Architecture Checkpoint
 

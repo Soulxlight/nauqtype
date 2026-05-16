@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -83,28 +84,52 @@ def build_review_payload(source: SourceFile, semantic) -> dict[str, object]:
 
 
 def detect_zig(project_root: Path) -> Path | None:
-    candidate = project_root / ".deps" / "ziglang" / "zig.exe"
-    if candidate.exists():
-        return candidate
+    if sys.platform.startswith("win"):
+        candidates = [
+            project_root / ".deps" / "ziglang" / "zig.exe",
+            project_root / ".deps" / "ziglang" / "zig",
+        ]
+    else:
+        candidates = [
+            project_root / ".deps" / "ziglang" / "zig",
+        ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
     return None
 
 
 def compile_c(project_root: Path, c_path: Path, exe_path: Path) -> tuple[int, str]:
     zig = detect_zig(project_root)
-    if zig is None:
-        return 1, "zig compiler not found at .deps/ziglang/zig.exe; run `python scripts/setup_deps.py` first"
+    cc = shutil.which("cc")
+    prefer_system_cc = not sys.platform.startswith("win") and cc is not None
+    if zig is None and cc is None:
+        return 1, "C compiler not found; install pinned Zig with `python scripts/setup_deps.py` or provide `cc` on PATH"
     runtime_c = project_root / "stdlib" / "runtime.c"
     include_dir = project_root / "stdlib"
-    command = [
-        str(zig),
-        "cc",
-        "-std=c11",
-        f"-I{include_dir}",
-        str(c_path),
-        str(runtime_c),
-        "-o",
-        str(exe_path),
-    ]
+    if zig is not None and not prefer_system_cc:
+        command = [
+            str(zig),
+            "cc",
+            "-std=c11",
+            "-D_POSIX_C_SOURCE=200809L",
+            f"-I{include_dir}",
+            str(c_path),
+            str(runtime_c),
+            "-o",
+            str(exe_path),
+        ]
+    else:
+        command = [
+            str(cc),
+            "-std=c11",
+            "-D_POSIX_C_SOURCE=200809L",
+            f"-I{include_dir}",
+            str(c_path),
+            str(runtime_c),
+            "-o",
+            str(exe_path),
+        ]
     result = subprocess.run(command, capture_output=True, text=True)
     output = (result.stdout + result.stderr).strip()
     return result.returncode, output

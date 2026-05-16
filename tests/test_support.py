@@ -10,7 +10,7 @@ import re
 
 from compiler.diagnostics import render_diagnostics
 from compiler.diagnostics import SourceFile
-from compiler.main import compile_c, compile_source
+from compiler.main import compile_c, compile_source, detect_zig
 
 ROOT = Path(__file__).resolve().parents[1]
 _BOOTSTRAP_READY = False
@@ -34,12 +34,11 @@ def ensure_bootstrap_deps() -> None:
     global _BOOTSTRAP_READY
     if _BOOTSTRAP_READY:
         return
-    zig = ROOT / ".deps" / "ziglang" / "zig.exe"
     zig_dist = ROOT / ".deps" / "ziglang-0.16.0.dist-info"
     tiktoken_package = ROOT / ".deps" / "tiktoken"
     tiktoken_dist = ROOT / ".deps" / "tiktoken-0.12.0.dist-info"
     deps_path = str(ROOT / ".deps")
-    if zig.exists() and zig_dist.exists() and tiktoken_package.exists() and tiktoken_dist.exists():
+    if detect_zig(ROOT) is not None and zig_dist.exists() and tiktoken_package.exists() and tiktoken_dist.exists():
         if deps_path not in sys.path:
             sys.path.insert(0, deps_path)
         try:

@@ -144,8 +144,19 @@ def main() -> int:
     py_root = audit_root / "benchmarks" / "python"
     result_dir = audit_root / "results"
     result_dir.mkdir(parents=True, exist_ok=True)
+    json_path = result_dir / "ai_audit.json"
+    report_path = root / "AI_AUDIT.md"
 
-    encoding = tiktoken.get_encoding("o200k_base")
+    try:
+        encoding = tiktoken.get_encoding("o200k_base")
+    except Exception as exc:
+        if json_path.exists() and report_path.exists():
+            print(f"Using locked AI audit artifacts; tokenizer unavailable offline: {exc}", file=sys.stderr)
+            print(f"Wrote {json_path.relative_to(root)}")
+            print(f"Wrote {report_path.name}")
+            return 0
+        print(f"unable to load o200k_base tokenizer: {exc}", file=sys.stderr)
+        return 1
 
     rows: list[dict[str, object]] = []
     for name, nq_plain_file, nq_contract_file, py_file in BENCHMARKS:
@@ -237,7 +248,6 @@ def main() -> int:
         ),
     }
 
-    json_path = result_dir / "ai_audit.json"
     json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     report_lines = [
@@ -311,7 +321,6 @@ def main() -> int:
         ]
     )
 
-    report_path = root / "AI_AUDIT.md"
     report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
 
     print(f"Wrote {json_path.relative_to(root)}")

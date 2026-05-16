@@ -4,13 +4,14 @@ import sys
 import unittest
 
 from tests.test_support import ROOT, ensure_bootstrap_deps
+from compiler.main import detect_zig
 
 
 class BootstrapTests(unittest.TestCase):
     def test_setup_deps_installs_expected_tools(self) -> None:
         ensure_bootstrap_deps()
-        zig = ROOT / ".deps" / "ziglang" / "zig.exe"
-        self.assertTrue(zig.exists(), f"missing zig executable at {zig}")
+        zig = detect_zig(ROOT)
+        self.assertIsNotNone(zig, "missing zig executable at .deps/ziglang/zig or .deps/ziglang/zig.exe")
 
         deps_path = str(ROOT / ".deps")
         if deps_path not in sys.path:
@@ -22,4 +23,3 @@ class BootstrapTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
