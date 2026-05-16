@@ -69,6 +69,7 @@ Current harness constraints to treat as proof-path facts, not surprise bugs:
 - tolerate Windows temp-dir cleanup friction from emitted executables and debug artifacts
 - lift the current structural C normalization out of the stage1 C-emission test module into a shared proof helper instead of duplicating it during the proof milestone
 - during the current driver cutover, invoke stage1 `build` / `run` from the repo root because that slice resolves pinned Zig from `.deps/ziglang/zig` or `.deps/ziglang/zig.exe`, with `cc` as the Linux development fallback, plus `stdlib/runtime.c` from the pinned workspace bootstrap layout
+- on Linux, prefer the repo-local `bin/nauqc` launcher for daily use; it normalizes caller paths and runs the active stage1 driver from the repo root until a copied install layout replaces the bootstrap checkout assumptions
 
 ## Architecture Checkpoint
 

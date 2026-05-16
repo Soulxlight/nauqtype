@@ -295,3 +295,11 @@
 - Reason chosen: the compiler is self-hosted, the stage1-to-stage2 proof is standing, active workflows are Nauqtype-owned, recent syntax has evidence/refactor coverage, and the locked corpus now covers the highest-risk v0.1 ergonomics. That is enough to stabilize the baseline before the next explicit feature milestones.
 - Consequences: future source-language or machine-readable contract changes should land through named milestones, examples, proof/corpus coverage, and decision records. v0.1 stability is not a package-manager, distro, or broad platform-support promise.
 - Reversible later: partially; individual features can evolve through versioned contracts, but the project should treat this point as the compatibility baseline for ordinary users and future model-teaching examples.
+
+## D038: Linux foundation before more sugar
+
+- Decision: pause additional source-language sugar while the Linux alpha foundation is made usable from a normal shell.
+- Alternatives considered: continue directly into the remaining propagation evidence surface and next syntax features, or jump straight to distro packaging.
+- Reason chosen: the compiler is self-hosted and Linux-proven, but daily use should not require invoking `selfhost/build/main.exe` directly or remembering repo-root path assumptions. A small launcher/install/checkpoint layer gives us a stable Linux workflow without pretending the project is distro-packaged.
+- Consequences: `bin/nauqc`, `scripts/install_nauqtype.sh`, and `scripts/check_linux_alpha.sh` are accepted as alpha foundation scaffolding. They do not add language semantics, runtime APIs, or packaging guarantees. The historical `main.exe` artifact remains an internal bootstrap output until a later release-layout milestone replaces it.
+- Reversible later: the symlink install can be replaced by a copied install layout, tarball, `.deb`, or NauqOS integration once the release manifest is locked.

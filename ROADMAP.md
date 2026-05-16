@@ -354,6 +354,22 @@ Status:
 - remaining work is the explicit versioned propagation evidence surface for facts/review/change-report outputs
 - design direction is locked by `PROPAGATION.md` and D036
 
+### M26: Linux Alpha Foundation
+
+- pause additional language sugar while the compiler becomes comfortable to use from a normal Linux shell
+- keep this as launcher/install/release scaffolding around the existing stage1 driver, not a source-language milestone
+- add a repo-local `nauqc` launcher that hides the historical `selfhost/build/main.exe` path from daily use
+- add a conservative local install path and a Linux alpha verification gate
+- document what is alpha-ready now versus what is still required for distro packaging
+
+Status:
+
+- in progress
+- `bin/nauqc` wraps the active stage1 driver and normalizes user paths while running from the repository root
+- `scripts/install_nauqtype.sh` installs a symlink into `$HOME/.local/bin` or `$PREFIX/bin`
+- `scripts/check_linux_alpha.sh` runs the bootstrap rebuild, `bin/nauqc` smoke checks, and the stage1-owned `prove` gate
+- further sugar and versioned propagation evidence resume after this Linux foundation checkpoint is green
+
 ## Feature Ordering
 
 Features required before first success:

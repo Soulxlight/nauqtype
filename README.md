@@ -5,6 +5,7 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 Current bootstrap status:
 
 - `stage0`: frozen Python bootstrap/reference compiler in the current workspace
+- Linux alpha development is supported through the repo-local `bin/nauqc` stage1 launcher; see [LINUX.md](LINUX.md)
 - flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
 - top-level `const` for small compile-time configuration values
@@ -29,147 +30,153 @@ v0.1 status: the current language and tooling surface is stable as of M23. Futur
 
 Install local bootstrap dependencies:
 
-```powershell
-python scripts/setup_deps.py
+```bash
+python3 scripts/setup_deps.py
 ```
 
 Run the full test suite:
 
-```powershell
-python -m unittest discover -s tests -v
+```bash
+python3 -m unittest discover -s tests -v
 ```
 
 Bootstrap the stage1 driver once:
 
-```powershell
-python -m compiler.main run selfhost\main.nq
+```bash
+python3 -m compiler.main run selfhost/main.nq
 ```
 
 Use the active Nauqtype-owned driver for `check`:
 
-```powershell
-selfhost\build\main.exe check examples\hello.nq
+```bash
+bin/nauqc check examples/hello.nq
 ```
 
 Use the active Nauqtype-owned driver for `emit-c`:
 
-```powershell
-selfhost\build\main.exe emit-c examples\hello.nq -o build\hello.c
+```bash
+bin/nauqc emit-c examples/hello.nq -o build/hello.c
 ```
 
 Export deterministic semantic facts for agent-pair supervision:
 
-```powershell
-selfhost\build\main.exe facts examples\hello.nq
-selfhost\build\main.exe facts examples\hello.nq --format v2
+```bash
+bin/nauqc facts examples/hello.nq
+bin/nauqc facts examples/hello.nq --format v2
 ```
 
 Use the active Nauqtype-owned driver for `review`:
 
-```powershell
-selfhost\build\main.exe review examples\review_contracts.nq
-selfhost\build\main.exe review examples\review_contracts.nq --format v2
+```bash
+bin/nauqc review examples/review_contracts.nq
+bin/nauqc review examples/review_contracts.nq --format v2
 ```
 
 Compare two checked review surfaces with stable semantic identities:
 
-```powershell
-selfhost\build\main.exe review-diff before\main.nq after\main.nq
-selfhost\build\main.exe review-diff before\main.nq after\main.nq --format v2
+```bash
+bin/nauqc review-diff before/main.nq after/main.nq
+bin/nauqc review-diff before/main.nq after/main.nq --format v2
 ```
 
 Produce a supervised semantic change report, optionally linked to policy metadata:
 
-```powershell
-selfhost\build\main.exe change-report before\main.nq after\main.nq --format v1
-selfhost\build\main.exe change-report before\main.nq after\main.nq --policy nauqtype.policy.json --format v1
+```bash
+bin/nauqc change-report before/main.nq after/main.nq --format v1
+bin/nauqc change-report before/main.nq after/main.nq --policy nauqtype.policy.json --format v1
 ```
 
 Canonical supervised workflow for an agent/human review loop:
 
-```powershell
-selfhost\build\main.exe check tests\fixtures\supervised_workflow\after\main.nq
-selfhost\build\main.exe facts tests\fixtures\supervised_workflow\after\main.nq --format v2
-selfhost\build\main.exe review tests\fixtures\supervised_workflow\after\main.nq --format v2
-selfhost\build\main.exe review-diff tests\fixtures\supervised_workflow\before\main.nq tests\fixtures\supervised_workflow\after\main.nq --format v2
-selfhost\build\main.exe change-report tests\fixtures\supervised_workflow\before\main.nq tests\fixtures\supervised_workflow\after\main.nq --policy tests\fixtures\supervised_workflow\policy.json --format v1
-selfhost\build\main.exe policy-check tests\fixtures\supervised_workflow\after\main.nq tests\fixtures\supervised_workflow\policy.json
-selfhost\build\main.exe refactor-rename tests\fixtures\supervised_workflow\after\main.nq binding:fn:main::apply:1:bonus@25 extra
+```bash
+bin/nauqc check tests/fixtures/supervised_workflow/after/main.nq
+bin/nauqc facts tests/fixtures/supervised_workflow/after/main.nq --format v2
+bin/nauqc review tests/fixtures/supervised_workflow/after/main.nq --format v2
+bin/nauqc review-diff tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --format v2
+bin/nauqc change-report tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --policy tests/fixtures/supervised_workflow/policy.json --format v1
+bin/nauqc policy-check tests/fixtures/supervised_workflow/after/main.nq tests/fixtures/supervised_workflow/policy.json
+bin/nauqc refactor-rename tests/fixtures/supervised_workflow/after/main.nq binding:fn:main::apply:1:bonus@25 extra
 ```
 
 Plan a semantic rename without mutating files:
 
-```powershell
-selfhost\build\main.exe refactor-rename examples\hello.nq fn:hello::main renamed_main
+```bash
+bin/nauqc refactor-rename examples/hello.nq fn:hello::main renamed_main
 ```
 
 Validate sidecar ownership/review metadata against checked facts:
 
-```powershell
-selfhost\build\main.exe policy-check selfhost\main.nq nauqtype.policy.json
+```bash
+bin/nauqc policy-check selfhost/main.nq nauqtype.policy.json
 ```
 
 Format trusted-subset Nauqtype source without mutating files:
 
-```powershell
-selfhost\build\main.exe fmt examples\hello.nq
-selfhost\build\main.exe fmt --check examples\hello.nq
+```bash
+bin/nauqc fmt examples/hello.nq
+bin/nauqc fmt --check examples/hello.nq
 ```
 
 Formatter-lite is output-only / `--check` for now. Its canonical teaching-corpus rules are documented in [FORMATTER.md](FORMATTER.md); write mode remains deferred until comment preservation is safe.
 
 Use the active Nauqtype-owned driver for `build`:
 
-```powershell
-selfhost\build\main.exe build examples\hello.nq
+```bash
+bin/nauqc build examples/hello.nq
 ```
 
 Use the active Nauqtype-owned driver for `run`:
 
-```powershell
-selfhost\build\main.exe run examples\hello.nq
+```bash
+bin/nauqc run examples/hello.nq
+```
+
+Run the Linux alpha gate:
+
+```bash
+scripts/check_linux_alpha.sh
 ```
 
 Run the active Nauqtype-owned transition gate:
 
-```powershell
-selfhost\build\main.exe prove
+```bash
+bin/nauqc prove
 ```
 
 Run the individual proof gates when you need to isolate a failure:
 
-```powershell
-selfhost\build\main.exe prove-selfhost
-selfhost\build\main.exe prove-corpus
+```bash
+bin/nauqc prove-selfhost
+bin/nauqc prove-corpus
 ```
 
-The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build\proof\summary.json`, locked by `schemas\proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples\` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
+The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, locked by `schemas/proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples/` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
 
-Current cutover note: invoke stage1 `build` / `run` from the repo root for now, because that slice still resolves the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
+Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 
 Frozen bootstrap/reference workflows that still exist during the cutover:
 
-```powershell
-python -m compiler.main check examples\hello.nq --diagnostics json
-python -m compiler.main run examples\hello.nq
-python scripts/run_ai_audit.py
+```bash
+python3 -m compiler.main check examples/hello.nq --diagnostics json
+python3 -m compiler.main run examples/hello.nq
+python3 scripts/run_ai_audit.py
 ```
 
 Example programs worth checking first:
 
-- `examples\hello.nq`: minimal print path
-- `examples\while_counter.nq`: bootstrap-track `while` loop semantics
-- `examples\fibonacci.nq`: functions plus mutable locals and `while`
-- `examples\top_level_const.nq`: stage1-owned top-level constants
-- `examples\named_arguments.nq`: Batch B named function arguments
-- `examples\nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
-- `examples\qualified_call_chain.nq`: multi-module qualified call chain
-- `examples\qualified_calls.nq`: direct module-qualified function calls
-- `examples\qualified_data_names.nq`: direct module-qualified struct and enum constructor names
-- `examples\record_update.nq`: copy-only record update with explicit base provenance
-- `examples\record_update_nontrivial.nq`: record update over a computed owned base value
-- `examples\break_continue.nq`: minimal loop control
-- `examples\review_contracts.nq`: AI Contracts and `review` workflow
+- `examples/hello.nq`: minimal print path
+- `examples/while_counter.nq`: bootstrap-track `while` loop semantics
+- `examples/fibonacci.nq`: functions plus mutable locals and `while`
+- `examples/top_level_const.nq`: stage1-owned top-level constants
+- `examples/named_arguments.nq`: Batch B named function arguments
+- `examples/nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
+- `examples/qualified_call_chain.nq`: multi-module qualified call chain
+- `examples/qualified_calls.nq`: direct module-qualified function calls
+- `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names
+- `examples/record_update.nq`: copy-only record update with explicit base provenance
+- `examples/record_update_nontrivial.nq`: record update over a computed owned base value
+- `examples/break_continue.nq`: minimal loop control
+- `examples/review_contracts.nq`: AI Contracts and `review` workflow
 
 Current selfhost semantic coverage:
 
@@ -233,10 +240,11 @@ Current remaining gaps:
 
 Near-term focus:
 
+- finish Linux alpha foundation work around launcher/install/release layout before more language sugar
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
-- finish the explicit versioned facts/review/change-report evidence surface for statement-boundary `?` propagation now that `propagates(...)` audit validation is implemented
+- finish the explicit versioned facts/review/change-report evidence surface for statement-boundary `?` propagation after the Linux foundation checkpoint
 
 Current AI-first compiler output:
 

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path="${BASH_SOURCE[0]}"
+while [[ -L "$source_path" ]]; do
+    source_dir="$(cd -- "$(dirname -- "$source_path")" && pwd -P)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+        source_path="$link_target"
+    else
+        source_path="$source_dir/$link_target"
+    fi
+done
+
+script_dir="$(cd -- "$(dirname -- "$source_path")" && pwd -P)"
+repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+driver="$repo_root/selfhost/build/main.exe"
+caller_cwd="$(pwd -P)"
+
+if [[ ! -x "$driver" ]]; then
+    printf 'nauqc: missing stage1 driver at %s\n' "$driver" >&2
+    printf 'nauqc: run from the repository root: python3 -m compiler.main run selfhost/main.nq\n' >&2
+    exit 127
+fi
+
+driver_path() {
+    local path="$1"
+    local absolute
+    if [[ "$path" == /* ]]; then
+        absolute="$path"
+    else
+        absolute="$caller_cwd/$path"
+    fi
+
+    if [[ "$absolute" == "$repo_root" ]]; then
+        printf '.\n'
+    elif [[ "$absolute" == "$repo_root/"* ]]; then
+        printf '%s\n' "${absolute#"$repo_root/"}"
+    else
+        printf '%s\n' "$absolute"
+    fi
+}
+
+args=("$@")
+if (( ${#args[@]} > 0 )); then
+    case "${args[0]}" in
+        check|facts|review|refactor-rename)
+            if (( ${#args[@]} >= 2 )); then
+                args[1]="$(driver_path "${args[1]}")"
+            fi
+            ;;
+        fmt)
+            if (( ${#args[@]} >= 2 )); then
+                if [[ "${args[1]}" == "--check" && ${#args[@]} -ge 3 ]]; then
+                    args[2]="$(driver_path "${args[2]}")"
+                else
+                    args[1]="$(driver_path "${args[1]}")"
+                fi
+            fi
+            ;;
+        emit-c|build|run)
+            if (( ${#args[@]} >= 2 )); then
+                args[1]="$(driver_path "${args[1]}")"
+            fi
+            if (( ${#args[@]} >= 4 )) && [[ "${args[2]}" == "-o" || "${args[2]}" == "--output" ]]; then
+                args[3]="$(driver_path "${args[3]}")"
+            fi
+            ;;
+        review-diff)
+            if (( ${#args[@]} >= 3 )); then
+                args[1]="$(driver_path "${args[1]}")"
+                args[2]="$(driver_path "${args[2]}")"
+            fi
+            ;;
+        change-report)
+            if (( ${#args[@]} >= 3 )); then
+                args[1]="$(driver_path "${args[1]}")"
+                args[2]="$(driver_path "${args[2]}")"
+            fi
+            if (( ${#args[@]} >= 6 )) && [[ "${args[3]}" == "--policy" ]]; then
+                args[4]="$(driver_path "${args[4]}")"
+            fi
+            ;;
+        policy-check)
+            if (( ${#args[@]} >= 3 )); then
+                args[1]="$(driver_path "${args[1]}")"
+                args[2]="$(driver_path "${args[2]}")"
+            fi
+            ;;
+    esac
+fi
+
+cd "$repo_root"
+exec "$driver" "${args[@]}"

@@ -232,3 +232,14 @@
 - [x] Add canonical example coverage for `?` propagation
 - [x] Add negative driver coverage for `?` without `propagates(...)` expecting `NQ-PROPAGATE-004`
 - [x] Make `NQ-PROPAGATE-003` teach explicit error mapping instead of implicit conversion
+
+## M26 Linux Alpha Foundation
+
+- [x] Add a repo-local `bin/nauqc` launcher for normal Linux shell use
+- [x] Add a conservative local install script for `$HOME/.local/bin/nauqc`
+- [x] Add a Linux alpha verification script around bootstrap rebuild, smoke run, and `prove`
+- [x] Document current Linux alpha readiness and distro-readiness gaps
+- [ ] Replace the historical `main.exe` artifact name in release/install outputs
+- [ ] Define a copied install layout for runtime, schemas, examples, and docs
+- [ ] Add a Linux release manifest and packaging plan
+- [ ] Add CI or another clean-checkout Linux release gate
