@@ -148,7 +148,7 @@ Rules:
 - V1 supports only `Some(name)` for `option<T>` and `Ok(name)` for `result<T, E>`.
 - The success pattern introduces the payload binding after the statement.
 - The `else` block must exit explicitly, such as with `return`.
-- Pattern guards, chained `if let`, hidden propagation, and `?` are not part of V1.
+- Pattern guards, chained `if let`, and hidden propagation are not part of `let-else` V1. Statement-boundary `?` is a separate evidence-backed propagation feature.
 
 ### Top-Level Constants
 

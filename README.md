@@ -242,11 +242,11 @@ Current remaining gaps:
 Near-term focus:
 
 - keep Linux alpha release-layout checks green before more language sugar
-- add the M27 stress-leg cleanup pass so dense multi-module programs are used periodically to catch feature-composition edges
+- run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
-- finish the explicit versioned facts/review/change-report evidence surface for statement-boundary `?` propagation after the Linux foundation checkpoint
+- keep statement-boundary `?` propagation evidence visible through facts v2, review v2, and change-report v1
 
 Current AI-first compiler output:
 

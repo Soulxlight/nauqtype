@@ -381,12 +381,14 @@ Status:
 
 Status:
 
-- in progress before the next source-language sugar batch
+- done
 - the first Linux leg test compiled and ran end-to-end after reducing two edge shapes, which makes the remaining work concrete rather than speculative
 - qualified enum constructors inside `match` expressions now participate in exhaustiveness the same way statement `match` already does
 - nested qualified function calls used directly as call arguments now stay positional instead of being misread as named arguments
 - review/facts/change-report propagation evidence is aligned with the M25 versioned evidence surface
-- remaining work is M27 housekeeping: keep the focused regressions, document the periodic leg-test cadence, and decide which dense stress program pieces belong in the permanent corpus
+- `STRESS_LEG.md` documents the cadence, temporary-program policy, checklist, and reduction rule
+- `scripts/run_stress_leg.sh` creates a dense temporary multi-module workspace and runs check, review v2, facts v2, fmt, emit-c, build, and direct runtime execution
+- the first stress-program findings were reduced into focused driver regressions; the dense runner remains periodic hygiene, not a fast-test replacement
 
 ## Feature Ordering
 
