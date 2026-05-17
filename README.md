@@ -15,6 +15,7 @@ Current bootstrap status:
 - explicit `match`
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
+- statement-boundary `?` propagation for unchanged `result<T, E>` errors, checked by `propagates(E)`
 - named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
@@ -137,6 +138,12 @@ Run the Linux alpha gate:
 scripts/check_linux_alpha.sh
 ```
 
+Run the dense milestone stress leg when checking cross-feature interactions:
+
+```bash
+scripts/run_stress_leg.sh
+```
+
 Run the active Nauqtype-owned transition gate:
 
 ```bash
@@ -176,6 +183,7 @@ Example programs worth checking first:
 - `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names
 - `examples/record_update.nq`: copy-only record update with explicit base provenance
 - `examples/record_update_nontrivial.nq`: record update over a computed owned base value
+- `examples/propagation_question.nq`: statement-boundary `?` with `propagates(...)` evidence
 - `examples/break_continue.nq`: minimal loop control
 - `examples/review_contracts.nq`: AI Contracts and `review` workflow
 
@@ -220,7 +228,7 @@ Current semantic near-parity milestone:
 - stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
 - stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
 - the first copied-selfhost stage1-to-stage2 comparison proof is now complete
-- the stage1 executable now owns the active `check`, `emit-c`, `review`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus` workflow while preserving the no-arg copied-selfhost proof path
+- the stage1 executable now owns the active `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus` workflow while preserving the no-arg copied-selfhost proof path
 
 Architecture checkpoint:
 
@@ -283,6 +291,8 @@ Compatibility stance for the alpha checkpoint:
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
 - [PROPAGATION.md](PROPAGATION.md)
 - [FORMATTER.md](FORMATTER.md)
+- [LINUX.md](LINUX.md)
+- [STRESS_LEG.md](STRESS_LEG.md)
 - [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
 - [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md)
 

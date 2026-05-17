@@ -210,13 +210,15 @@ An `audit` block is a fixed-shape, compiler-checked review surface for a functio
 
 Rules:
 
-- clause order is fixed: `intent`, then `mutates`, then `effects`
+- clause order is fixed: `intent`, then `mutates`, then `effects`, then optional `propagates`
 - `intent("...")` is required and must be non-empty
 - `mutates(...)` may list only `mutref` parameters
 - `effects(...)` currently supports the fixed atoms `print` and `io`
+- `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`
 - `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
 - `effects(print)` is checked against direct or transitive use of `print_line` / `eprint_line`
 - `effects(io)` is checked against direct or transitive use of file/process builtins: `read_file`, `write_file`, `create_dir_all`, and `run_process`
+- `propagates(E)` is checked against direct `let name = result_expr?;` propagation sites in the function
 - duplicate clause entries are rejected
 - user-defined effect atoms, typed repair obligations, and stronger contract inference are deferred
 
@@ -262,7 +264,10 @@ Supported expression forms in v0.1:
 - constructor references such as `Ok(value)` or `User { ... }`
 - list literals: `[]` and `[a, b, c]`
 - function calls
+- direct module-qualified function and data names
 - field access
+- copy-only record update with `Type { from base, field: value }`
+- match expressions
 - unary operators: `-`, `not`
 - binary operators
 
@@ -328,11 +333,14 @@ Rules:
 Supported statements:
 
 - local binding
+- statement-boundary propagation binding: `let name = result_expr?;`
+- `let-else` guard binding for `option` / `result` success patterns
 - assignment to a mutable local
 - `if`
 - `while`
 - `match`
 - `return`
+- `break` and `continue` inside `while`
 - expression statement
 
 ### Assignment

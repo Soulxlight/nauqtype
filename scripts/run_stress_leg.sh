@@ -8,6 +8,7 @@ cd "$repo_root"
 stamp="$(date +%Y%m%d-%H%M%S)"
 work="${TMPDIR:-/tmp}/nauqtype-stress-leg-$stamp-$$"
 mkdir -p "$work/build"
+mkdir -p "$work/before"
 
 cat > "$work/math.nq" <<'NQ'
 pub fn add(left: i32, right: i32) -> i32
@@ -185,17 +186,52 @@ audit {
 }
 NQ
 
+cat > "$work/before/main.nq" <<'NQ'
+fn load_bonus() -> result<i32, io_err>
+audit {
+    intent("Return a fixed bonus before propagation is introduced.");
+    mutates();
+    effects();
+}
+{
+    return Ok(5);
+}
+
+fn main() -> i32
+audit {
+    intent("Run the before side of the stress-leg change report.");
+    mutates();
+    effects();
+}
+{
+    let loaded = load_bonus();
+    match loaded {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 1;
+        },
+    }
+}
+NQ
+
 printf 'hello' > "$work/stress_input.txt"
 
 bin/nauqc check "$work/main.nq"
 bin/nauqc review "$work/main.nq" --format v2 > "$work/build/review-v2.json"
 bin/nauqc facts "$work/main.nq" --format v2 > "$work/build/facts-v2.json"
-grep -q '"propagation_sites"' "$work/build/review-v2.json"
+bin/nauqc change-report "$work/before/main.nq" "$work/main.nq" --format v1 > "$work/build/change-report-v1.json"
+grep -q '"id": "propagation:main::load_bonus@' "$work/build/review-v2.json"
 grep -q '"propagation_site"' "$work/build/facts-v2.json"
+grep -q '"target_id": "builtin-type:io_err"' "$work/build/facts-v2.json"
+grep -q '"added_propagates": [1-9]' "$work/build/change-report-v1.json"
+grep -q 'fn:main::load_bonus -> io_err' "$work/build/change-report-v1.json"
 bin/nauqc fmt --check "$work/main.nq"
 bin/nauqc fmt --check "$work/data.nq"
 bin/nauqc fmt --check "$work/io_util.nq"
 bin/nauqc fmt --check "$work/math.nq"
+bin/nauqc fmt --check "$work/before/main.nq"
 bin/nauqc emit-c "$work/main.nq" -o "$work/build/stress.c"
 bin/nauqc build "$work/main.nq" -o "$work/build/stress"
 run_output="$(cd "$work" && build/stress)"

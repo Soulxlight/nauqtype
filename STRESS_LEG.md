@@ -29,6 +29,7 @@ A dense stress leg should combine as many of these as the current language surfa
 - `check`
 - `review --format v2`
 - `facts --format v2`
+- `change-report --format v1`
 - `fmt --check`
 - `emit-c`
 - `build`

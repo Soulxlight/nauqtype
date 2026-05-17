@@ -9,12 +9,14 @@ This is the M26 alpha release layout contract. It is a copied development artifa
 - `build/linux-release/nauqtype/lib/nauqtype/stdlib/runtime.h`
 - `build/linux-release/nauqtype/lib/nauqtype/stdlib/runtime.c`
 - `build/linux-release/nauqtype/share/nauqtype/schemas/`
-- `build/linux-release/nauqtype/share/nauqtype/examples/`
+- `build/linux-release/nauqtype/share/nauqtype/examples/` with tracked example source files only
 - `build/linux-release/nauqtype/share/doc/nauqtype/README.md`
 - `build/linux-release/nauqtype/share/doc/nauqtype/LINUX.md`
 - `build/linux-release/nauqtype/share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md`
 
 The launcher runs from `lib/nauqtype` so `build` and `run` can find `stdlib/runtime.c` without relying on a source checkout. The stage1 driver binary is named `nauqc-stage1`; the public executable remains `nauqc`.
+
+Generated artifacts under `examples/build/` and copied executable outputs such as `*.exe` are intentionally excluded from the release layout.
 
 Still out of scope:
 

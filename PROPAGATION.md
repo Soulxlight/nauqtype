@@ -19,7 +19,7 @@ The source gets shorter, but the review surface gets richer.
 
 ## First Implementation Shape
 
-M25 starts with statement-boundary `result` propagation only:
+M25 implements statement-boundary `result` propagation only:
 
 ```nauq
 fn read_len(path: str) -> result<i32, io_err>
@@ -66,7 +66,7 @@ The teaching rule is simple: use `?` when this function forwards the same error 
 
 ## Audit Contract
 
-The future audit block grows a fourth fixed clause:
+The audit block supports a fourth fixed clause after `effects(...)`:
 
 ```nauq
 audit {
@@ -77,7 +77,7 @@ audit {
 }
 ```
 
-Compiler behavior should mirror the existing contract pattern:
+Compiler behavior mirrors the existing contract pattern:
 
 - inferred propagation missing from `propagates(...)` is an error
 - overdeclared propagation is a warning
@@ -121,11 +121,11 @@ Example shape:
 }
 ```
 
-Review and change-report should summarize added, removed, and changed propagation sites so a human supervisor can see changed failure behavior without reading every branch.
+Review and change-report summarize propagation contract changes so a human supervisor can see changed failure behavior without reading every branch.
 
 ## Diagnostics
 
-Reserve deterministic diagnostics around propagation:
+Deterministic propagation diagnostics:
 
 - `NQ-PROPAGATE-001`: `?` on a non-`result` expression
 - `NQ-PROPAGATE-002`: `?` inside a function that does not return `result`
@@ -149,8 +149,8 @@ That lack of an escape hatch is intentional. Nauqtype should make unchanged prop
 
 ## Implementation Notes
 
-- Existing selfhost audit blocks should not need a `propagates(...)` backfill when M25 first lands because current selfhost sources do not use `?`.
-- The first implementation should add a negative proof or corpus case for `?` without a matching `propagates(...)` clause and expect `NQ-PROPAGATE-004`.
+- Existing selfhost audit blocks did not need a `propagates(...)` backfill when M25 landed because current selfhost sources do not use `?`.
+- The current stress-leg and stage1-driver checks include negative coverage for `?` without a matching `propagates(...)` clause and expect `NQ-PROPAGATE-004`.
 - Propagation evidence should reuse the current evidence vocabulary where possible: `declared`, `checked`, `builtin`, and `unresolved`.
 - The implementation should avoid creating a second evidence taxonomy just for propagation sites.
 

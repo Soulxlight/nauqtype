@@ -24,7 +24,12 @@ cp "$driver" "$release_root/lib/nauqtype/nauqc-stage1"
 cp "$repo_root/stdlib/runtime.h" "$release_root/lib/nauqtype/stdlib/runtime.h"
 cp "$repo_root/stdlib/runtime.c" "$release_root/lib/nauqtype/stdlib/runtime.c"
 cp -R "$repo_root/schemas" "$release_root/share/nauqtype/schemas"
-cp -R "$repo_root/examples" "$release_root/share/nauqtype/examples"
+mkdir -p "$release_root/share/nauqtype/examples"
+while IFS= read -r example_file; do
+    target="$release_root/share/nauqtype/$example_file"
+    mkdir -p "$(dirname -- "$target")"
+    cp "$repo_root/$example_file" "$target"
+done < <(git ls-files 'examples/*')
 cp "$repo_root/README.md" "$release_root/share/doc/nauqtype/README.md"
 cp "$repo_root/LINUX.md" "$release_root/share/doc/nauqtype/LINUX.md"
 cp "$repo_root/LINUX_RELEASE_MANIFEST.md" "$release_root/share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md"

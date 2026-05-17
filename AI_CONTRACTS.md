@@ -16,6 +16,7 @@ audit {
     intent("Increment a counter in place");
     mutates(value);
     effects();
+    propagates();
 }
 {
     value = value + 1;
@@ -25,10 +26,11 @@ audit {
 
 ## Alpha Rules
 
-- Clause order is fixed: `intent`, then `mutates`, then `effects`.
+- Clause order is fixed: `intent`, then `mutates`, then `effects`, then optional `propagates`.
 - `intent("...")` is required and must be non-empty.
 - `mutates(...)` may list only `mutref` parameters.
 - `effects(...)` currently supports the fixed atoms `print` and `io`.
+- `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`.
 - Public functions without `audit` are allowed in this phase, but they emit a warning.
 
 ## Compiler Inference
@@ -37,6 +39,7 @@ audit {
 - The compiler marks a `mutref` parameter as mutated when the function writes through that parameter.
 - `print` is inferred directly from `print_line(...)` / `eprint_line(...)` calls and transitively through checked calls.
 - `io` is inferred directly from `read_file(...)`, `write_file(...)`, `create_dir_all(...)`, and `run_process(...)` calls and transitively through checked calls.
+- Propagation is inferred from accepted `let name = result_expr?;` sites and checked against exact `propagates(E)` entries.
 - Missing inferred facts are errors.
 - Overdeclared facts are warnings.
 
@@ -48,7 +51,7 @@ audit {
 - function name
 - visibility
 - declared audit data
-- compiler-inferred mutation/effect facts
+- compiler-inferred mutation, effect, and propagation facts
 
 `nauqc review <file> --format v2` keeps the same contract validation behavior and emits the first richer AI-first review surface:
 
@@ -56,6 +59,7 @@ audit {
 - stable call-site identities
 - call references with resolved target identity where available
 - call graph edges
+- propagation contracts and checked propagation sites
 - evidence fields that distinguish declared audit data from checked compiler inference
 
 `nauqc review-diff <before> <after>` consumes the same checked review facts and emits deterministic JSON for semantic changes:
@@ -70,7 +74,7 @@ audit {
 
 This output is intended to be consumed by both humans and future AI tooling.
 
-During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, and `policy-check` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
+During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, and `fmt` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
 
 The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
 

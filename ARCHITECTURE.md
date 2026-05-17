@@ -28,7 +28,7 @@ Reason:
 
 - The first stage1-to-stage2 self-build proof is complete.
 - The project now benefits more from teaching and exercising Nauqtype through its own implementation path than from continuing to grow the host-language bootstrap.
-- Python remains valuable as a pinned bootstrap/reference path while the active driver and runner finish cutting over.
+- Python remains valuable as a pinned bootstrap/reference path while the active driver and proof/corpus gates are owned by stage1.
 
 ## Top-Level Module Boundaries
 
@@ -134,7 +134,7 @@ Responsibilities:
 - validate return statements
 - validate `while` conditions
 - validate imported type and function usage across the flat-root graph
-- infer AI Contract mutation/effect facts
+- infer AI Contract mutation, effect, and propagation facts
 - validate match exhaustiveness for supported patterns
 - distinguish copy vs move types
 
@@ -272,7 +272,7 @@ Rules deferred:
 - references in structs
 - reference returns
 - non-lexical lifetime-like refinements
-- loop control beyond statement-form `while`
+- loop values, labels, and broader loop families beyond statement-form `while`
 - transitive mutation contracts and richer effect atoms
 
 ## Diagnostics Strategy
@@ -317,7 +317,7 @@ Categories:
 - Resolve errors: unknown name, duplicate definition, unknown field or variant
 - Pattern errors: non-exhaustive match, invalid constructor pattern
 - Fallibility misuse: discarded `result` warning
-- Contract errors: missing audit clauses, invalid `mutates(...)`, missing `effects(print)`, public API missing `audit`
+- Contract errors: missing audit clauses, invalid `mutates(...)`, missing `effects(print)` / `effects(io)`, missing `propagates(E)`, public API missing `audit`
 
 ## Testing Strategy
 
@@ -334,7 +334,7 @@ Categories:
 
 - diagnostics
 - emitted C for representative examples
-- `review` JSON for representative examples
+- `review`, `review-diff`, `change-report`, and `facts` JSON for representative examples
 
 ### Integration Tests
 

@@ -35,7 +35,7 @@ Current trustworthy selfhost slice:
 - stage1 borrow checking now runs on the structured checked handoff
 - stage1 IR lowering now runs on the structured checked handoff
 - stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `review` / `build` / `run` / `prove` / `prove-selfhost` / `prove-corpus` driver workflow
+- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `facts` / `review` / `review-diff` / `change-report` / `refactor-rename` / `policy-check` / `fmt` / `build` / `run` / `prove` / `prove-selfhost` / `prove-corpus` driver workflow
 
 Current semantic near-parity milestone:
 
@@ -130,7 +130,7 @@ Minimum collection goal:
 
 ## Relationship To AI Contracts
 
-- `review` output now follows the current imported-call surface used by the active driver slice, while richer machine-readable review surfaces remain future work.
+- `review`, `facts`, `review-diff`, `change-report`, `refactor-rename`, and `policy-check` are current stage1-owned machine-readable supervision surfaces.
 - AI Contracts should remain small while Stage1 focuses on expressiveness needed for a self-hosted compiler.
 - Do not let the AI-first differentiator stall bootstrap-critical work.
 
@@ -140,5 +140,5 @@ Stage1 has crossed the first copied-selfhost self-build proof and now owns the a
 
 - broader proof hardening beyond the first copied-selfhost self-build checkpoint
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- live-in-the-language ergonomics now resume after the completed AI tooling spine; top-level `const` is the first completed item in that batch
+- live-in-the-language ergonomics now resume after the completed AI tooling spine; top-level `const`, list literals, match expressions, let-else, formatter-lite, named arguments, qualified calls/data, break/continue, copy-only record update, and statement-boundary `?` are current completed items
 - retained explicit limitation boundary today: non-name callees and member-call syntax

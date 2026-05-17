@@ -52,6 +52,8 @@ scripts/make_linux_release.sh
 
 The layout is written to `build/linux-release/nauqtype/` and is documented in [LINUX_RELEASE_MANIFEST.md](LINUX_RELEASE_MANIFEST.md). Its public executable is `bin/nauqc`; the internal stage1 driver is `lib/nauqtype/nauqc-stage1`.
 
+The copied layout includes tracked example sources only. Generated example build artifacts such as `examples/build/` and `*.exe` files must not be copied into the release tree.
+
 ## Linux Alpha Gate
 
 Run:
@@ -60,7 +62,7 @@ Run:
 scripts/check_linux_alpha.sh
 ```
 
-The gate rebuilds the stage1 driver with the frozen bootstrap, checks and runs a small example through `bin/nauqc`, runs the stage1-owned `prove` gate, creates the copied alpha layout, and smoke-tests that copied launcher.
+The gate rebuilds the stage1 driver with the frozen bootstrap, checks and runs a small example through `bin/nauqc`, runs the stage1-owned `prove` gate, creates the copied alpha layout, verifies generated example artifacts were not copied, and smoke-tests that copied launcher.
 
 ## Not Distro-Ready Yet
 

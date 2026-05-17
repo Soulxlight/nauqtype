@@ -2179,11 +2179,12 @@ fn collect_propagation_contracts(decls: ref list<review_decl_entry>, values_out:
     return;
 }
 
-fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> str {
+fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>) -> str {
     let declared_mutates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_mutates);
     let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
     let declared_propagates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_propagates);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
+    let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, entry.module, entry.name);
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let mut inferred_effect_names: list<str> = list();
@@ -2205,18 +2206,19 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     signature = concat3(signature, "|decl_propagates=", join_strings(ref declared_propagates));
     signature = concat3(signature, "|inferred_mutates=", join_strings(ref inferred_mutate_names));
     signature = concat3(signature, "|inferred_effects=", join_strings(ref inferred_effect_names));
+    signature = concat3(signature, "|inferred_propagates=", join_strings(ref inferred_propagate_names));
     signature = concat3(signature, "|calls=", join_strings(ref call_edges));
     return signature;
 }
 
-fn review_function_signature_by_id(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, id: str) -> str {
+fn review_function_signature_by_id(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, id: str) -> str {
     let mut index = 0;
     while index < list_len(ref functions) {
         let entry = list_get(ref functions, index);
         match entry {
             Some(value) => {
                 if function_identity(value.module, value.name) == id {
-                    return review_function_signature(value, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+                    return review_function_signature(value, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref locals, ref uses);
                 }
             },
             None => {
@@ -2298,7 +2300,7 @@ fn collect_removed_functions(before_functions: ref list<review_function_fact>, a
     return;
 }
 
-fn collect_changed_functions(before_functions: ref list<review_function_fact>, before_decls: ref list<review_decl_entry>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_uses: ref list<module_use>, after_functions: ref list<review_function_fact>, after_decls: ref list<review_decl_entry>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_uses: ref list<module_use>, changed_out: mutref list<str>) -> unit {
+fn collect_changed_functions(before_functions: ref list<review_function_fact>, before_decls: ref list<review_decl_entry>, before_function_facts: ref list<function_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, before_uses: ref list<module_use>, after_functions: ref list<review_function_fact>, after_decls: ref list<review_decl_entry>, after_function_facts: ref list<function_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>, after_uses: ref list<module_use>, changed_out: mutref list<str>) -> unit {
     let mut index = 0;
     while index < list_len(ref after_functions) {
         let entry = list_get(ref after_functions, index);
@@ -2306,8 +2308,8 @@ fn collect_changed_functions(before_functions: ref list<review_function_fact>, b
             Some(value) => {
                 let id = function_identity(value.module, value.name);
                 if function_identity_exists(ref before_functions, id) {
-                    let before_signature = review_function_signature_by_id(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, id);
-                    let after_signature = review_function_signature(value, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses);
+                    let before_signature = review_function_signature_by_id(ref before_functions, ref before_decls, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses, id);
+                    let after_signature = review_function_signature(value, ref after_functions, ref after_decls, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses);
                     if before_signature != after_signature {
                         list_push(mutref changed_out, id);
                     }
@@ -2513,7 +2515,7 @@ audit {
     return 1;
 }
 
-pub fn emit_change_report(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool) -> review_summary
+pub fn emit_change_report(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_function_facts: ref list<function_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_function_facts: ref list<function_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool) -> review_summary
 audit {
     intent("Emit deterministic supervised change-report JSON from two checked review inputs");
     mutates();
@@ -2527,12 +2529,8 @@ audit {
     collect_review_fact_lists(ref before_sources, mutref before_functions, mutref before_decls);
     collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
 
-    let empty_before_function_facts: list<function_fact> = list();
-    let empty_after_function_facts: list<function_fact> = list();
-    let empty_before_locals: list<local_init_fact> = list();
-    let empty_after_locals: list<local_init_fact> = list();
-    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref empty_before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref empty_before_locals, ref before_uses);
-    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref empty_after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref empty_after_locals, ref after_uses);
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses);
     let review_errors = before_summary.error_count + after_summary.error_count;
 
     let mut added_functions: list<str> = list();
@@ -2549,7 +2547,7 @@ audit {
     if review_errors == 0 {
         collect_added_functions(ref before_functions, ref after_functions, mutref added_functions);
         collect_removed_functions(ref before_functions, ref after_functions, mutref removed_functions);
-        collect_changed_functions(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses, mutref changed_functions);
+        collect_changed_functions(ref before_functions, ref before_decls, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses, ref after_functions, ref after_decls, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses, mutref changed_functions);
         collect_call_edges(ref before_functions, ref before_calls, ref before_uses, mutref before_call_edges);
         collect_call_edges(ref after_functions, ref after_calls, ref after_uses, mutref after_call_edges);
         collect_added_strings(ref before_call_edges, ref after_call_edges, mutref added_call_edges);
@@ -2610,17 +2608,17 @@ audit {
     return summary;
 }
 
-pub fn emit_review_diff(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>) -> review_summary
+pub fn emit_review_diff(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_function_facts: ref list<function_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_function_facts: ref list<function_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>) -> review_summary
 audit {
     intent("Emit deterministic semantic review diffs from two checked stage1 review inputs");
     mutates();
     effects(print);
 }
 {
-    return emit_review_diff_format(before_module, ref before_sources, ref before_uses, ref before_params, ref before_assignments, ref before_calls, after_module, ref after_sources, ref after_uses, ref after_params, ref after_assignments, ref after_calls, false);
+    return emit_review_diff_format(before_module, ref before_sources, ref before_uses, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, after_module, ref after_sources, ref after_uses, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, false);
 }
 
-pub fn emit_review_diff_format(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, use_v2: bool) -> review_summary
+pub fn emit_review_diff_format(before_module: str, before_sources: ref list<source_file>, before_uses: ref list<module_use>, before_function_facts: ref list<function_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, after_module: str, after_sources: ref list<source_file>, after_uses: ref list<module_use>, after_function_facts: ref list<function_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>, use_v2: bool) -> review_summary
 audit {
     intent("Emit deterministic semantic review diffs with optional v2 evidence metadata");
     mutates();
@@ -2635,12 +2633,8 @@ audit {
     let mut after_decls: list<review_decl_entry> = list();
     collect_review_fact_lists(ref after_sources, mutref after_functions, mutref after_decls);
 
-    let empty_before_function_facts: list<function_fact> = list();
-    let empty_after_function_facts: list<function_fact> = list();
-    let empty_before_locals: list<local_init_fact> = list();
-    let empty_after_locals: list<local_init_fact> = list();
-    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref empty_before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref empty_before_locals, ref before_uses);
-    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref empty_after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref empty_after_locals, ref after_uses);
+    let before_summary = validate_contracts(ref before_functions, ref before_decls, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses);
+    let after_summary = validate_contracts(ref after_functions, ref after_decls, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses);
     if before_summary.error_count > 0 or after_summary.error_count > 0 {
         return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, before_summary.error_count + after_summary.error_count);
     }
@@ -2650,7 +2644,7 @@ audit {
     let mut changed_functions: list<str> = list();
     collect_added_functions(ref before_functions, ref after_functions, mutref added_functions);
     collect_removed_functions(ref before_functions, ref after_functions, mutref removed_functions);
-    collect_changed_functions(ref before_functions, ref before_decls, ref before_params, ref before_assignments, ref before_calls, ref before_uses, ref after_functions, ref after_decls, ref after_params, ref after_assignments, ref after_calls, ref after_uses, mutref changed_functions);
+    collect_changed_functions(ref before_functions, ref before_decls, ref before_function_facts, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses, ref after_functions, ref after_decls, ref after_function_facts, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses, mutref changed_functions);
 
     let mut before_call_edges: list<str> = list();
     let mut after_call_edges: list<str> = list();

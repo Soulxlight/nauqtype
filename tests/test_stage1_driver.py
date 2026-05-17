@@ -797,6 +797,57 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(report_payload["summary"]["added_propagates"], 1)
             self.assertEqual(report_payload["changes"]["added_propagates"], ["fn:main::load_count -> io_err"])
 
+    def test_stage1_driver_change_report_rejects_missing_propagation_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            self._write_project(
+                before,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Return a fixed count.");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return Ok(1);
+                    }
+                    """,
+                },
+            )
+            self._write_project(
+                after,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+                    """,
+                },
+            )
+
+            report = self._run_driver(["change-report", str(before / "main.nq"), str(after / "main.nq"), "--format", "v1"])
+            self.assertNotEqual(report.returncode, 0, report.stdout + report.stderr)
+            self.assertIn("NQ-PROPAGATE-004", report.stderr)
+            payload = json.loads(report.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["diagnostics"][0]["code"], "NQ-CHANGE-001")
+            self.assertEqual(payload["summary"]["added_propagates"], 0)
+
+            diff = self._run_driver(["review-diff", str(before / "main.nq"), str(after / "main.nq")])
+            self.assertNotEqual(diff.returncode, 0, diff.stdout + diff.stderr)
+            self.assertIn("NQ-PROPAGATE-004", diff.stderr)
+
     def test_stage1_driver_question_rejects_non_result_expression(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
