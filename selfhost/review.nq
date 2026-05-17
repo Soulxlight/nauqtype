@@ -130,6 +130,10 @@ fn call_identity(module: str, function_name: str, at: i32) -> str {
     return concat6("call:", module, "::", function_name, "@", i32_to_str(at));
 }
 
+fn propagation_identity(module: str, function_name: str, at: i32) -> str {
+    return concat6("propagation:", module, "::", function_name, "@", i32_to_str(at));
+}
+
 fn json_escape(text: str) -> str {
     let mut escaped = "";
     let mut index = 0;
@@ -326,6 +330,13 @@ fn is_builtin_function(name: str) -> bool {
     return false;
 }
 
+fn is_builtin_variant(name: str) -> bool {
+    if name == "Some" or name == "None" or name == "Ok" or name == "Err" {
+        return true;
+    }
+    return false;
+}
+
 fn visible_function_origin(functions: ref list<review_function_fact>, uses: ref list<module_use>, module: str, name: str) -> str {
     if is_builtin_function(name) {
         return "__builtin__";
@@ -346,6 +357,72 @@ fn visible_function_origin(functions: ref list<review_function_fact>, uses: ref 
             },
         }
         use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn module_exports_variant(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.is_public {
+                    match value.kind {
+                        item_variant => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn visible_variant_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if is_builtin_variant(name) {
+        return "__builtin__";
+    }
+    if module_exports_variant(ref items, module, name) {
+        return module;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_variant(ref items, value.name, name) {
+                    return value.name;
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn variant_enum_name(variants: ref list<variant_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref variants) {
+        let entry = list_get(ref variants, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    return value.enum_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
     }
     return "";
 }
@@ -941,6 +1018,166 @@ fn lookup_function_result_error(function_facts: ref list<function_fact>, module:
     return "";
 }
 
+fn propagation_error_name(function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, uses: ref list<module_use>, local: local_init_fact) -> str {
+    let builtin = builtin_propagation_error(local.expr_name);
+    if builtin != "" {
+        return builtin;
+    }
+    let origin = visible_function_origin(ref functions, ref uses, local.module, local.expr_name);
+    if origin != "" and origin != "__builtin__" {
+        return lookup_function_result_error(ref function_facts, origin, local.expr_name);
+    }
+    return "";
+}
+
+fn propagation_site_count(locals: ref list<local_init_fact>) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.expr_member_name == "propagate" {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn propagation_type_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if name == "bool" or name == "i32" or name == "str" or name == "unit" or name == "io_err" {
+        return "__builtin__";
+    }
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    match value.kind {
+                        item_type => {
+                            return module;
+                        },
+                        item_enum => {
+                            return module;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(use_entry) => {
+                if use_entry.module == module {
+                    index = 0;
+                    while index < list_len(ref items) {
+                        let item_entry = list_get(ref items, index);
+                        match item_entry {
+                            Some(value) => {
+                                if value.module == use_entry.name and value.name == name and value.is_public {
+                                    match value.kind {
+                                        item_type => {
+                                            return use_entry.name;
+                                        },
+                                        item_enum => {
+                                            return use_entry.name;
+                                        },
+                                        _ => {
+                                        },
+                                    }
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return "";
+}
+
+fn propagation_type_is_enum(items: ref list<top_item>, module: str, name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name {
+                    match value.kind {
+                        item_enum => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn propagation_target_kind(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let origin = propagation_type_origin(ref items, ref uses, module, name);
+    if origin == "__builtin__" {
+        return "builtin_type";
+    }
+    if origin == "" {
+        return "unknown";
+    }
+    if propagation_type_is_enum(ref items, origin, name) {
+        return "enum";
+    }
+    return "type";
+}
+
+fn propagation_target_id(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let origin = propagation_type_origin(ref items, ref uses, module, name);
+    if origin == "__builtin__" {
+        return str_concat("builtin-type:", name);
+    }
+    if origin == "" {
+        return "";
+    }
+    if propagation_type_is_enum(ref items, origin, name) {
+        return concat4("enum:", origin, "::", name);
+    }
+    return concat4("type:", origin, "::", name);
+}
+
+fn propagation_target_evidence(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let origin = propagation_type_origin(ref items, ref uses, module, name);
+    if origin == "__builtin__" {
+        return "builtin";
+    }
+    if origin == "" {
+        return "unresolved";
+    }
+    return "checked";
+}
+
 fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, module: str, function_name: str) -> list<str> {
     let mut inferred: list<str> = list();
     let mut index = 0;
@@ -949,13 +1186,7 @@ fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref l
         match entry {
             Some(value) => {
                 if value.module == module and value.function_name == function_name and value.expr_member_name == "propagate" {
-                    let mut error_name = builtin_propagation_error(value.expr_name);
-                    if error_name == "" {
-                        let origin = visible_function_origin(ref functions, ref uses, module, value.expr_name);
-                        if origin != "" and origin != "__builtin__" {
-                            error_name = lookup_function_result_error(ref function_facts, origin, value.expr_name);
-                        }
-                    }
+                    let error_name = propagation_error_name(ref function_facts, ref functions, ref uses, value);
                     if error_name != "" {
                         push_if_missing(mutref inferred, error_name);
                     }
@@ -1447,14 +1678,59 @@ fn function_call_count(calls: ref list<call_fact>, module: str, function_name: s
     return count;
 }
 
-fn target_kind_for_origin(origin: str) -> str {
+fn call_target_kind(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
+    if function_origin == "__builtin__" {
+        return "builtin";
+    }
+    if function_origin != "" {
+        return "function";
+    }
+    let variant_origin = visible_variant_origin(ref items, ref uses, module, name);
+    if variant_origin == "__builtin__" {
+        return "builtin_variant";
+    }
+    if variant_origin != "" {
+        return "variant";
+    }
+    return "unknown";
+}
+
+fn call_target_id(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, module: str, name: str) -> str {
+    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
+    if function_origin == "__builtin__" {
+        return builtin_identity(name);
+    }
+    if function_origin != "" {
+        return function_identity(function_origin, name);
+    }
+    let variant_origin = visible_variant_origin(ref items, ref uses, module, name);
+    if variant_origin == "__builtin__" {
+        return str_concat("builtin-variant:", name);
+    }
+    if variant_origin != "" {
+        return concat6("variant:", variant_origin, "::", variant_enum_name(ref variants, variant_origin, name), "::", name);
+    }
+    return "";
+}
+
+fn call_target_module(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
+    if function_origin != "" {
+        return function_origin;
+    }
+    return visible_variant_origin(ref items, ref uses, module, name);
+}
+
+fn call_target_evidence(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    let origin = call_target_module(ref functions, ref items, ref uses, module, name);
     if origin == "__builtin__" {
         return "builtin";
     }
     if origin == "" {
-        return "unknown";
+        return "unresolved";
     }
-    return "function";
+    return "checked";
 }
 
 fn target_id_for_call(origin: str, name: str) -> str {
@@ -1465,16 +1741,6 @@ fn target_id_for_call(origin: str, name: str) -> str {
         return "";
     }
     return function_identity(origin, name);
-}
-
-fn evidence_for_origin(origin: str) -> str {
-    if origin == "__builtin__" {
-        return "builtin";
-    }
-    if origin == "" {
-        return "unresolved";
-    }
-    return "checked";
 }
 
 fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
@@ -1540,7 +1806,7 @@ fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref
     return;
 }
 
-fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, trailing_comma: bool) -> unit {
+fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, trailing_comma: bool) -> unit {
     let total_calls = function_call_count(ref calls, module, function_name);
     let mut suffix = "";
     if trailing_comma {
@@ -1559,10 +1825,10 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
         match entry {
             Some(value) => {
                 if value.module == module and value.function_name == function_name {
-                    let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
-                    let target_kind = target_kind_for_origin(origin);
-                    let target_id = target_id_for_call(origin, value.name);
-                    let evidence = evidence_for_origin(origin);
+                    let origin = call_target_module(ref functions, ref items, ref uses, value.module, value.name);
+                    let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
+                    let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
+                    let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
                     list_push(mutref lines, concat3(indent, "  {", ""));
                     list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
@@ -1588,7 +1854,7 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
     return;
 }
 
-fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let total_functions = list_len(ref functions);
@@ -1600,7 +1866,9 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
             Some(value) => {
                 let declared_mutates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_mutates);
                 let declared_effects = decl_entries_for_function(ref decls, value.module, value.name, review_decl_effects);
+                let declared_propagates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_propagates);
                 let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
                 let mut inferred_effect_names: list<str> = list();
                 if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
                     list_push(mutref inferred_effect_names, "print");
@@ -1621,20 +1889,22 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                     list_push(mutref lines, "      \"audit\": {");
                     list_push(mutref lines, concat3("        \"intent\": ", json_quote(value.intent), ","));
                     append_named_string_array(mutref lines, "        ", "mutates", ref declared_mutates, true);
-                    append_named_string_array(mutref lines, "        ", "effects", ref declared_effects, false);
+                    append_named_string_array(mutref lines, "        ", "effects", ref declared_effects, true);
+                    append_named_string_array(mutref lines, "        ", "propagates", ref declared_propagates, false);
                     list_push(mutref lines, "      },");
                 } else {
                     list_push(mutref lines, "      \"audit\": null,");
                 }
                 list_push(mutref lines, "      \"inferred\": {");
                 append_named_string_array(mutref lines, "        ", "mutates", ref inferred_mutate_names, true);
-                append_named_string_array(mutref lines, "        ", "effects", ref inferred_effect_names, false);
+                append_named_string_array(mutref lines, "        ", "effects", ref inferred_effect_names, true);
+                append_named_string_array(mutref lines, "        ", "propagates", ref inferred_propagate_names, false);
                 list_push(mutref lines, "      },");
                 list_push(mutref lines, "      \"evidence\": {");
                 list_push(mutref lines, "        \"audit\": \"declared\",");
                 list_push(mutref lines, "        \"inferred\": \"checked\"");
                 list_push(mutref lines, "      },");
-                append_review_v2_calls(mutref lines, "      ", ref functions, ref calls, ref uses, value.module, value.name, false);
+                append_review_v2_calls(mutref lines, "      ", ref functions, ref items, ref variants, ref calls, ref uses, value.module, value.name, false);
                 if index + 1 < total_functions {
                     list_push(mutref lines, "    },");
                 } else {
@@ -1650,7 +1920,7 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
     return;
 }
 
-fn append_review_v2_references(lines: mutref list<str>, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+fn append_review_v2_references(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
     let total_calls = list_len(ref calls);
     if total_calls == 0 {
         list_push(mutref lines, "  \"references\": [],");
@@ -1662,10 +1932,9 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
-                let target_kind = target_kind_for_origin(origin);
-                let target_id = target_id_for_call(origin, value.name);
-                let evidence = evidence_for_origin(origin);
+                let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
+                let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
+                let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 list_push(mutref lines, "      \"kind\": \"call\",");
@@ -1690,10 +1959,14 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
     return;
 }
 
-fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
     let total_calls = list_len(ref calls);
     if total_calls == 0 {
-        list_push(mutref lines, "  \"call_graph\": []");
+        list_push(mutref lines, concat3("  \"call_graph\": []", suffix, ""));
         return;
     }
     list_push(mutref lines, "  \"call_graph\": [");
@@ -1702,9 +1975,8 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let origin = visible_function_origin(ref functions, ref uses, value.module, value.name);
-                let target_id = target_id_for_call(origin, value.name);
-                let evidence = evidence_for_origin(origin);
+                let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
+                let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
                 list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
@@ -1721,19 +1993,63 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
         }
         index = index + 1;
     }
+    list_push(mutref lines, concat3("  ]", suffix, ""));
+    return;
+}
+
+fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, locals: ref list<local_init_fact>) -> unit {
+    let total_sites = propagation_site_count(ref locals);
+    if total_sites == 0 {
+        list_push(mutref lines, "  \"propagation_sites\": []");
+        return;
+    }
+    list_push(mutref lines, "  \"propagation_sites\": [");
+    let mut emitted = 0;
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.expr_member_name == "propagate" {
+                    let error_name = propagation_error_name(ref function_facts, ref functions, ref uses, value);
+                    let target_kind = propagation_target_kind(ref items, ref uses, value.module, error_name);
+                    let target_id = propagation_target_id(ref items, ref uses, value.module, error_name);
+                    let evidence = propagation_target_evidence(ref items, ref uses, value.module, error_name);
+                    list_push(mutref lines, "    {");
+                    list_push(mutref lines, concat5("      \"id\": ", json_quote(propagation_identity(value.module, value.function_name, value.at)), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"function\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"error\": ", json_quote(error_name), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                    append_span(mutref lines, "      ", value.at, false);
+                    emitted = emitted + 1;
+                    if emitted < total_sites {
+                        list_push(mutref lines, "    },");
+                    } else {
+                        list_push(mutref lines, "    }");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
     list_push(mutref lines, "  ]");
     return;
 }
 
-fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>) -> unit {
     list_push(mutref lines, "{");
     list_push(mutref lines, "  \"version\": 2,");
     list_push(mutref lines, "  \"command\": \"review\",");
     list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
-    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
-    append_review_v2_references(mutref lines, ref functions, ref calls, ref uses);
-    append_review_v2_call_graph(mutref lines, ref functions, ref calls, ref uses);
+    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals);
+    append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses);
+    append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true);
+    append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref locals);
     list_push(mutref lines, "}");
     return;
 }
@@ -1837,9 +2153,36 @@ fn collect_call_edges_for_function(functions: ref list<review_function_fact>, ca
     return;
 }
 
+fn propagation_contract_key(entry: review_decl_entry) -> str {
+    return concat5(function_identity(entry.module, entry.function_name), " -> ", entry.name, "", "");
+}
+
+fn collect_propagation_contracts(decls: ref list<review_decl_entry>, values_out: mutref list<str>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref decls) {
+        let entry = list_get(ref decls, index);
+        match entry {
+            Some(value) => {
+                match value.kind {
+                    review_decl_propagates => {
+                        push_if_missing(mutref values_out, propagation_contract_key(value));
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> str {
     let declared_mutates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_mutates);
     let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
+    let declared_propagates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_propagates);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
@@ -1859,6 +2202,7 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     signature = concat3(signature, "|params=", param_signature(ref function_params, entry.module, entry.name));
     signature = concat3(signature, "|decl_mutates=", join_strings(ref declared_mutates));
     signature = concat3(signature, "|decl_effects=", join_strings(ref declared_effects));
+    signature = concat3(signature, "|decl_propagates=", join_strings(ref declared_propagates));
     signature = concat3(signature, "|inferred_mutates=", join_strings(ref inferred_mutate_names));
     signature = concat3(signature, "|inferred_effects=", join_strings(ref inferred_effect_names));
     signature = concat3(signature, "|calls=", join_strings(ref call_edges));
@@ -2080,7 +2424,7 @@ fn append_change_report_diagnostic(lines: mutref list<str>, code: str, message: 
     return;
 }
 
-fn append_change_report_json(lines: mutref list<str>, before_module: str, after_module: str, added_functions: ref list<str>, removed_functions: ref list<str>, changed_functions: ref list<str>, added_call_edges: ref list<str>, removed_call_edges: ref list<str>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool, review_errors: i32) -> unit {
+fn append_change_report_json(lines: mutref list<str>, before_module: str, after_module: str, added_functions: ref list<str>, removed_functions: ref list<str>, changed_functions: ref list<str>, added_call_edges: ref list<str>, removed_call_edges: ref list<str>, added_propagates: ref list<str>, removed_propagates: ref list<str>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool, review_errors: i32) -> unit {
     let ok = review_errors == 0 and policy_errors == 0;
     let mut policy_evidence = "not-provided";
     if policy_provided {
@@ -2099,7 +2443,8 @@ fn append_change_report_json(lines: mutref list<str>, before_module: str, after_
     list_push(mutref lines, "  \"evidence\": {");
     list_push(mutref lines, "    \"review\": \"checked\",");
     list_push(mutref lines, "    \"comparison\": \"semantic-identities\",");
-    list_push(mutref lines, concat5("    \"policy\": ", json_quote(policy_evidence), "", "", ""));
+    list_push(mutref lines, concat5("    \"policy\": ", json_quote(policy_evidence), ",", "", ""));
+    list_push(mutref lines, "    \"propagation\": \"checked\"");
     list_push(mutref lines, "  },");
     list_push(mutref lines, "  \"summary\": {");
     list_push(mutref lines, concat3("    \"added_functions\": ", i32_to_str(list_len(ref added_functions)), ","));
@@ -2107,6 +2452,8 @@ fn append_change_report_json(lines: mutref list<str>, before_module: str, after_
     list_push(mutref lines, concat3("    \"changed_functions\": ", i32_to_str(list_len(ref changed_functions)), ","));
     list_push(mutref lines, concat3("    \"added_call_edges\": ", i32_to_str(list_len(ref added_call_edges)), ","));
     list_push(mutref lines, concat3("    \"removed_call_edges\": ", i32_to_str(list_len(ref removed_call_edges)), ","));
+    list_push(mutref lines, concat3("    \"added_propagates\": ", i32_to_str(list_len(ref added_propagates)), ","));
+    list_push(mutref lines, concat3("    \"removed_propagates\": ", i32_to_str(list_len(ref removed_propagates)), ","));
     list_push(mutref lines, concat3("    \"policy_targets\": ", i32_to_str(policy_targets), ","));
     list_push(mutref lines, concat3("    \"policy_errors\": ", i32_to_str(policy_errors), ","));
     list_push(mutref lines, concat3("    \"diagnostics\": ", i32_to_str(review_errors + policy_errors), ""));
@@ -2116,7 +2463,9 @@ fn append_change_report_json(lines: mutref list<str>, before_module: str, after_
     append_named_string_array(mutref lines, "    ", "removed_functions", ref removed_functions, true);
     append_named_string_array(mutref lines, "    ", "changed_functions", ref changed_functions, true);
     append_named_string_array(mutref lines, "    ", "added_call_edges", ref added_call_edges, true);
-    append_named_string_array(mutref lines, "    ", "removed_call_edges", ref removed_call_edges, false);
+    append_named_string_array(mutref lines, "    ", "removed_call_edges", ref removed_call_edges, true);
+    append_named_string_array(mutref lines, "    ", "added_propagates", ref added_propagates, true);
+    append_named_string_array(mutref lines, "    ", "removed_propagates", ref removed_propagates, false);
     list_push(mutref lines, "  },");
     list_push(mutref lines, "  \"policy\": {");
     list_push(mutref lines, concat3("    \"provided\": ", bool_text(policy_provided), ","));
@@ -2152,9 +2501,9 @@ audit {
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
     list_push(mutref lines, concat3("  \"before\": { \"module\": ", json_quote(before_module), ", \"evidence\": \"unavailable\" },"));
     list_push(mutref lines, concat3("  \"after\": { \"module\": ", json_quote(after_module), ", \"evidence\": \"unavailable\" },"));
-    list_push(mutref lines, "  \"evidence\": { \"review\": \"unavailable\", \"comparison\": \"unavailable\", \"policy\": \"not-provided\" },");
-    list_push(mutref lines, "  \"summary\": { \"added_functions\": 0, \"removed_functions\": 0, \"changed_functions\": 0, \"added_call_edges\": 0, \"removed_call_edges\": 0, \"policy_targets\": 0, \"policy_errors\": 0, \"diagnostics\": 1 },");
-    list_push(mutref lines, "  \"changes\": { \"added_functions\": [], \"removed_functions\": [], \"changed_functions\": [], \"added_call_edges\": [], \"removed_call_edges\": [] },");
+    list_push(mutref lines, "  \"evidence\": { \"review\": \"unavailable\", \"comparison\": \"unavailable\", \"policy\": \"not-provided\", \"propagation\": \"unavailable\" },");
+    list_push(mutref lines, "  \"summary\": { \"added_functions\": 0, \"removed_functions\": 0, \"changed_functions\": 0, \"added_call_edges\": 0, \"removed_call_edges\": 0, \"added_propagates\": 0, \"removed_propagates\": 0, \"policy_targets\": 0, \"policy_errors\": 0, \"diagnostics\": 1 },");
+    list_push(mutref lines, "  \"changes\": { \"added_functions\": [], \"removed_functions\": [], \"changed_functions\": [], \"added_call_edges\": [], \"removed_call_edges\": [], \"added_propagates\": [], \"removed_propagates\": [] },");
     list_push(mutref lines, "  \"policy\": { \"provided\": false, \"path\": \"\", \"targets\": 0, \"errors\": 0, \"malformed\": false },");
     list_push(mutref lines, "  \"diagnostics\": [");
     append_change_report_diagnostic(mutref lines, "NQ-CHANGE-001", message, false);
@@ -2193,6 +2542,10 @@ audit {
     let mut after_call_edges: list<str> = list();
     let mut added_call_edges: list<str> = list();
     let mut removed_call_edges: list<str> = list();
+    let mut before_propagates: list<str> = list();
+    let mut after_propagates: list<str> = list();
+    let mut added_propagates: list<str> = list();
+    let mut removed_propagates: list<str> = list();
     if review_errors == 0 {
         collect_added_functions(ref before_functions, ref after_functions, mutref added_functions);
         collect_removed_functions(ref before_functions, ref after_functions, mutref removed_functions);
@@ -2201,10 +2554,14 @@ audit {
         collect_call_edges(ref after_functions, ref after_calls, ref after_uses, mutref after_call_edges);
         collect_added_strings(ref before_call_edges, ref after_call_edges, mutref added_call_edges);
         collect_removed_strings(ref before_call_edges, ref after_call_edges, mutref removed_call_edges);
+        collect_propagation_contracts(ref before_decls, mutref before_propagates);
+        collect_propagation_contracts(ref after_decls, mutref after_propagates);
+        collect_added_strings(ref before_propagates, ref after_propagates, mutref added_propagates);
+        collect_removed_strings(ref before_propagates, ref after_propagates, mutref removed_propagates);
     }
 
     let mut lines: list<str> = list();
-    append_change_report_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges, policy_provided, policy_path, policy_targets, policy_errors, policy_malformed, review_errors);
+    append_change_report_json(mutref lines, before_module, after_module, ref added_functions, ref removed_functions, ref changed_functions, ref added_call_edges, ref removed_call_edges, ref added_propagates, ref removed_propagates, policy_provided, policy_path, policy_targets, policy_errors, policy_malformed, review_errors);
     emit_lines(ref lines);
     return make_review_summary(list_len(ref after_functions), list_len(ref after_decls), before_summary.warning_count + after_summary.warning_count, review_errors + policy_errors);
 }
@@ -2231,7 +2588,7 @@ audit {
     return summary;
 }
 
-pub fn emit_review_v2(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> review_summary
+pub fn emit_review_v2(entry_module: str, sources: ref list<source_file>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> review_summary
 audit {
     intent("Emit deterministic stage1 review v2 JSON with semantic identities and evidence fields");
     mutates();
@@ -2248,7 +2605,7 @@ audit {
     }
 
     let mut lines: list<str> = list();
-    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_params, ref assignments, ref calls, ref uses);
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals);
     emit_lines(ref lines);
     return summary;
 }

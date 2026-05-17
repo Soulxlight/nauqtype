@@ -300,6 +300,14 @@
 
 - Decision: pause additional source-language sugar while the Linux alpha foundation is made usable from a normal shell.
 - Alternatives considered: continue directly into the remaining propagation evidence surface and next syntax features, or jump straight to distro packaging.
-- Reason chosen: the compiler is self-hosted and Linux-proven, but daily use should not require invoking `selfhost/build/main.exe` directly or remembering repo-root path assumptions. A small launcher/install/checkpoint layer gives us a stable Linux workflow without pretending the project is distro-packaged.
-- Consequences: `bin/nauqc`, `scripts/install_nauqtype.sh`, and `scripts/check_linux_alpha.sh` are accepted as alpha foundation scaffolding. They do not add language semantics, runtime APIs, or packaging guarantees. The historical `main.exe` artifact remains an internal bootstrap output until a later release-layout milestone replaces it.
+- Reason chosen: the compiler is self-hosted and Linux-proven, but daily use should not require invoking an internal stage1 driver path directly or remembering repo-root path assumptions. A small launcher/install/checkpoint layer gives us a stable Linux workflow without pretending the project is distro-packaged.
+- Consequences: `bin/nauqc`, `scripts/install_nauqtype.sh`, `scripts/make_linux_release.sh`, `scripts/check_linux_alpha.sh`, and the Linux alpha CI workflow are accepted as alpha foundation scaffolding. They do not add language semantics, runtime APIs, or packaging guarantees. Linux-facing outputs use `selfhost/build/nauqc` in the repo and `lib/nauqtype/nauqc-stage1` in copied layouts rather than the misleading `.exe` artifact name.
 - Reversible later: the symlink install can be replaced by a copied install layout, tarball, `.deb`, or NauqOS integration once the release manifest is locked.
+
+## D039: Periodic leg tests are required milestone hygiene
+
+- Decision: add dense multi-module "leg tests" as a recurring engineering gate after every three completed milestones and before stable-surface, release-layout, or v0.x declarations.
+- Alternatives considered: rely only on focused unit/golden tests, immediately add every stress program to the permanent corpus, or defer stress testing until a release candidate.
+- Reason chosen: focused tests prove known behavior, but dense temporary programs expose feature-composition failures across parser, resolver, typechecker, handoff, borrow, IR, C emission, facts/review/fmt, and runtime execution. The first Linux leg test found concrete edge cases that normal coverage had not forced together.
+- Consequences: stress programs should intentionally combine imports, records, enums, lists, named args, qualified calls/data, `let-else`, `?`, loops, C emission, build, and direct execution. Exposed issues should become focused regression fixtures before the stress checkpoint is closed. Temporary stress programs do not become canonical teaching corpus until the resulting edges are understood.
+- Reversible later: the cadence can be tightened or automated once the runner has first-class stress-test support, but it should not be removed while source-language and tooling surfaces are still growing.

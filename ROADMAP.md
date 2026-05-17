@@ -349,26 +349,44 @@ Status:
 
 Status:
 
-- in progress
+- done
 - statement-boundary `let name = result_expr?;`, exact error typing, `propagates(E)` audit validation, diagnostics, and locked corpus coverage are implemented
-- remaining work is the explicit versioned propagation evidence surface for facts/review/change-report outputs
+- facts v2 now exports checked propagation-site references, review v2 exports propagation contracts/sites, and change-report v1 reports added/removed propagation contracts
 - design direction is locked by `PROPAGATION.md` and D036
 
 ### M26: Linux Alpha Foundation
 
 - pause additional language sugar while the compiler becomes comfortable to use from a normal Linux shell
 - keep this as launcher/install/release scaffolding around the existing stage1 driver, not a source-language milestone
-- add a repo-local `nauqc` launcher that hides the historical `selfhost/build/main.exe` path from daily use
+- add a repo-local `nauqc` launcher that hides the internal stage1 driver path from daily use
 - add a conservative local install path and a Linux alpha verification gate
 - document what is alpha-ready now versus what is still required for distro packaging
 
 Status:
 
-- in progress
-- `bin/nauqc` wraps the active stage1 driver and normalizes user paths while running from the repository root
+- done
+- the active repo-local stage1 driver is now built as `selfhost/build/nauqc`; Linux-facing release/install outputs no longer use the misleading `.exe` artifact name
+- `bin/nauqc` wraps the active stage1 driver and normalizes user paths while running from the repository root, or from the copied alpha layout when `lib/nauqtype/nauqc-stage1` is present
 - `scripts/install_nauqtype.sh` installs a symlink into `$HOME/.local/bin` or `$PREFIX/bin`
-- `scripts/check_linux_alpha.sh` runs the bootstrap rebuild, `bin/nauqc` smoke checks, and the stage1-owned `prove` gate
-- further sugar and versioned propagation evidence resume after this Linux foundation checkpoint is green
+- `scripts/make_linux_release.sh` creates a copied alpha layout with the launcher, internal stage1 driver, runtime files, schemas, examples, and docs
+- `scripts/check_linux_alpha.sh` runs the bootstrap rebuild, repo-local smoke checks, the stage1-owned `prove` gate, copied-layout creation, and copied-launcher smoke checks
+- `.github/workflows/linux-alpha.yml` gives clean-checkout Linux coverage for the same alpha gate
+
+### M27: Stress-Leg Edge Cleanup
+
+- promote periodic multi-module stress programs into the normal milestone process instead of relying only on focused unit/golden tests
+- run a "leg test" after every three completed milestones, and before any stable-surface declaration, Linux release-layout checkpoint, or v0.x release
+- keep these programs intentionally dense: imports, records, enums, list literals, `let-else`, `?`, loops, qualified calls/data, named args, review/facts/fmt, C emission, build, and runtime behavior
+- do not treat temporary leg tests as permanent corpus additions until the exposed edges are understood and reduced to focused fixtures
+
+Status:
+
+- in progress before the next source-language sugar batch
+- the first Linux leg test compiled and ran end-to-end after reducing two edge shapes, which makes the remaining work concrete rather than speculative
+- qualified enum constructors inside `match` expressions now participate in exhaustiveness the same way statement `match` already does
+- nested qualified function calls used directly as call arguments now stay positional instead of being misread as named arguments
+- review/facts/change-report propagation evidence is aligned with the M25 versioned evidence surface
+- remaining work is M27 housekeeping: keep the focused regressions, document the periodic leg-test cadence, and decide which dense stress program pieces belong in the permanent corpus
 
 ## Feature Ordering
 

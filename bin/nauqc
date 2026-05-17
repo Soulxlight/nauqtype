@@ -14,12 +14,20 @@ done
 
 script_dir="$(cd -- "$(dirname -- "$source_path")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
-driver="$repo_root/selfhost/build/main.exe"
+install_root="$repo_root"
+repo_driver="$repo_root/selfhost/build/nauqc"
+release_driver="$install_root/lib/nauqtype/nauqc-stage1"
+driver="$repo_driver"
+driver_cwd="$repo_root"
+if [[ -x "$release_driver" ]]; then
+    driver="$release_driver"
+    driver_cwd="$install_root/lib/nauqtype"
+fi
 caller_cwd="$(pwd -P)"
 
 if [[ ! -x "$driver" ]]; then
     printf 'nauqc: missing stage1 driver at %s\n' "$driver" >&2
-    printf 'nauqc: run from the repository root: python3 -m compiler.main run selfhost/main.nq\n' >&2
+    printf 'nauqc: run from the repository root: python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc\n' >&2
     exit 127
 fi
 
@@ -32,10 +40,10 @@ driver_path() {
         absolute="$caller_cwd/$path"
     fi
 
-    if [[ "$absolute" == "$repo_root" ]]; then
+    if [[ "$absolute" == "$driver_cwd" ]]; then
         printf '.\n'
-    elif [[ "$absolute" == "$repo_root/"* ]]; then
-        printf '%s\n' "${absolute#"$repo_root/"}"
+    elif [[ "$absolute" == "$driver_cwd/"* ]]; then
+        printf '%s\n' "${absolute#"$driver_cwd/"}"
     else
         printf '%s\n' "$absolute"
     fi
@@ -90,5 +98,5 @@ if (( ${#args[@]} > 0 )); then
     esac
 fi
 
-cd "$repo_root"
+cd "$driver_cwd"
 exec "$driver" "${args[@]}"

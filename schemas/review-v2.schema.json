@@ -3,7 +3,7 @@
   "$id": "https://nauqtype.dev/schemas/review-v2.schema.json",
   "title": "Nauqtype Review v2",
   "type": "object",
-  "required": ["version", "command", "module", "identity_scheme", "functions", "references", "call_graph"],
+  "required": ["version", "command", "module", "identity_scheme", "functions", "references", "call_graph", "propagation_sites"],
   "additionalProperties": false,
   "properties": {
     "version": { "const": 2 },
@@ -25,7 +25,7 @@
           "public": { "type": "boolean" },
           "span": { "$ref": "#/$defs/span" },
           "audit": { "type": ["object", "null"] },
-          "inferred": { "type": "object", "required": ["mutates", "effects"] },
+          "inferred": { "type": "object", "required": ["mutates", "effects", "propagates"] },
           "evidence": {
             "type": "object",
             "required": ["audit", "inferred"],
@@ -59,6 +59,10 @@
           "evidence": { "$ref": "#/$defs/evidence" }
         }
       }
+    },
+    "propagation_sites": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/propagation_site" }
     }
   },
   "$defs": {
@@ -92,6 +96,20 @@
         "kind": { "const": "call" },
         "from": { "type": "string" },
         "name": { "type": "string" },
+        "target_kind": { "type": "string" },
+        "target_id": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "span": { "$ref": "#/$defs/span" }
+      }
+    },
+    "propagation_site": {
+      "type": "object",
+      "required": ["id", "function", "error", "target_kind", "target_id", "evidence", "span"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "function": { "type": "string" },
+        "error": { "type": "string" },
         "target_kind": { "type": "string" },
         "target_id": { "type": "string" },
         "evidence": { "$ref": "#/$defs/evidence" },

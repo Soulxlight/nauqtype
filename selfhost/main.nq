@@ -248,7 +248,7 @@ fn default_build_c_path(source_path: str) -> str {
 }
 
 fn default_build_exe_path(source_path: str) -> str {
-    return join_path(default_build_dir(source_path), str_concat(path_stem(source_path), ".exe"));
+    return join_path(default_build_dir(source_path), path_stem(source_path));
 }
 
 fn build_c_output_path(source_path: str, explicit_output: str) -> str {
@@ -773,7 +773,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
         return 1;
     }
 
-    let summary = emit_facts_format(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, format_version);
+    let summary = emit_facts_format(entry_module, ref loaded, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variant_facts, ref field_facts, ref call_facts, ref function_facts, ref local_inits, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, format_version);
     if summary.module_count < 1 {
         eprint_line("stage1 internal error: facts output has no modules");
         return 1;
@@ -1019,7 +1019,7 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
 
     let mut review_summary = make_review_summary(0, 0, 0, 1);
     if use_v2 {
-        review_summary = emit_review_v2(entry_module, ref sources, ref uses, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits);
+        review_summary = emit_review_v2(entry_module, ref sources, ref uses, ref items, ref variant_facts, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits);
     } else {
         review_summary = emit_review(entry_module, ref sources, ref uses, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits);
     }

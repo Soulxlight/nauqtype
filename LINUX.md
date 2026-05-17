@@ -4,7 +4,7 @@ Nauqtype is ready for Linux alpha development from this repository checkout. It 
 
 ## Current Contract
 
-- The active compiler driver is the self-hosted stage1 binary at `selfhost/build/main.exe`.
+- The active compiler driver is the self-hosted stage1 binary at `selfhost/build/nauqc`.
 - The repo-local Linux launcher is `bin/nauqc`.
 - `bin/nauqc` runs the stage1 driver from the repository root so `stdlib/runtime.c`, `.deps/ziglang/zig`, and the Linux `cc` fallback are found consistently.
 - Source and output paths passed through `bin/nauqc` are normalized from the caller's current directory before the stage1 driver runs.
@@ -17,6 +17,7 @@ From the repository root:
 ```bash
 python3 scripts/setup_deps.py
 python3 -m compiler.main run selfhost/main.nq
+python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
 ```
 
 After that, use the stage1-owned driver:
@@ -41,6 +42,16 @@ PREFIX=/opt/nauqtype scripts/install_nauqtype.sh
 
 The installer only symlinks the repo-local launcher. It does not copy compiler sources, runtime files, dependency caches, or shell configuration.
 
+## Copied Alpha Layout
+
+Build a copied Linux alpha layout with:
+
+```bash
+scripts/make_linux_release.sh
+```
+
+The layout is written to `build/linux-release/nauqtype/` and is documented in [LINUX_RELEASE_MANIFEST.md](LINUX_RELEASE_MANIFEST.md). Its public executable is `bin/nauqc`; the internal stage1 driver is `lib/nauqtype/nauqc-stage1`.
+
 ## Linux Alpha Gate
 
 Run:
@@ -49,14 +60,12 @@ Run:
 scripts/check_linux_alpha.sh
 ```
 
-The gate rebuilds the stage1 driver with the frozen bootstrap, checks and runs a small example through `bin/nauqc`, and runs the stage1-owned `prove` gate.
+The gate rebuilds the stage1 driver with the frozen bootstrap, checks and runs a small example through `bin/nauqc`, runs the stage1-owned `prove` gate, creates the copied alpha layout, and smoke-tests that copied launcher.
 
 ## Not Distro-Ready Yet
 
 Before Nauqtype is comfortable as a Linux distribution component, the project still needs:
 
-- a copied install layout instead of a symlink into a development checkout
-- a stable public binary name without the historical `main.exe` artifact leaking into user docs
-- a release manifest for runtime files, schemas, examples, and docs
-- a Linux CI/release gate that runs outside one local checkout
+- install ownership and filesystem placement for system-wide packaging
+- bundled compiler strategy, if relying on host `cc` is not acceptable for a target distro
 - packaging decisions for `.deb`, tarball, or source-first distro integration

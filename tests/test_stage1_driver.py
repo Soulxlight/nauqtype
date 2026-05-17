@@ -730,6 +730,73 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
             self.assertEqual(review.stderr, "")
 
+    def test_stage1_driver_question_exports_propagation_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            self._write_project(
+                before,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Return a fixed count.");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return Ok(1);
+                    }
+                    """,
+                },
+            )
+            self._write_project(
+                after,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+                    """,
+                },
+            )
+
+            facts = self._run_driver(["facts", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            facts_payload = json.loads(facts.stdout)
+            self.assertTrue(
+                any(
+                    entry["kind"] == "propagation_site"
+                    and entry["target_id"] == "builtin-type:io_err"
+                    and entry["evidence"] == "builtin"
+                    for entry in facts_payload["references"]
+                )
+            )
+
+            review = self._run_driver(["review", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
+            review_payload = json.loads(review.stdout)
+            load_fn = next(entry for entry in review_payload["functions"] if entry["name"] == "load_count")
+            self.assertEqual(load_fn["audit"]["propagates"], ["io_err"])
+            self.assertEqual(load_fn["inferred"]["propagates"], ["io_err"])
+            self.assertEqual(len(review_payload["propagation_sites"]), 1)
+            self.assertEqual(review_payload["propagation_sites"][0]["target_id"], "builtin-type:io_err")
+
+            report = self._run_driver(["change-report", str(before / "main.nq"), str(after / "main.nq"), "--format", "v1"])
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            report_payload = json.loads(report.stdout)
+            self.assertEqual(report_payload["summary"]["added_propagates"], 1)
+            self.assertEqual(report_payload["changes"]["added_propagates"], ["fn:main::load_count -> io_err"])
+
     def test_stage1_driver_question_rejects_non_result_expression(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1619,7 +1686,7 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertEqual(result.stderr, "")
             self.assertTrue((tmp / "build" / "main.c").exists())
-            self.assertTrue((tmp / "build" / "main.exe").exists())
+            self.assertTrue((tmp / "build" / "main").exists())
 
     def test_stage1_driver_run_executes_with_source_directory_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1960,6 +2027,84 @@ class Stage1DriverTests(unittest.TestCase):
                 for edge in payload["call_graph"]
             )
         )
+
+    def test_stage1_driver_m27_qualified_variant_match_expression_is_exhaustive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "helper.nq": """
+                    pub enum Outcome {
+                        Keep(i32),
+                        Boost(i32),
+                        Stop(i32),
+                    }
+
+                    pub fn decide(value: i32) -> Outcome {
+                        if value > 10 {
+                            return Boost(value);
+                        } else {
+                            if value == 0 {
+                                return Stop(value);
+                            } else {
+                                return Keep(value);
+                            }
+                        }
+                    }
+                    """,
+                    "main.nq": """
+                    use helper;
+
+                    fn main() -> i32 {
+                        let outcome = helper::decide(2);
+                        let score = match outcome {
+                            helper::Keep(value) => value,
+                            helper::Boost(value) => value + 10,
+                            helper::Stop(value) => value + 20,
+                        };
+                        return score;
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn("match expression must be exhaustive", result.stdout + result.stderr)
+
+    def test_stage1_driver_m27_nested_qualified_call_argument_stays_positional(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "helper.nq": """
+                    pub fn make(value: i32) -> result<i32, str> {
+                        return Ok(value);
+                    }
+                    """,
+                    "main.nq": """
+                    use helper;
+
+                    fn unwrap(value: result<i32, str>) -> i32 {
+                        let Ok(score) = value else {
+                            return 0;
+                        };
+                        return score;
+                    }
+
+                    fn main() -> i32 {
+                        return unwrap(helper::make(7));
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", "main.nq"], cwd=tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("unknown named argument", result.stdout + result.stderr)
+            self.assertNotIn("missing named argument", result.stdout + result.stderr)
+            self.assertNotIn("stage1 limitation", result.stdout + result.stderr)
 
     def test_stage1_driver_fmt_outputs_canonical_text_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -22,7 +22,7 @@ class SelfhostProofTests(unittest.TestCase):
             self.assertNotIn("stage1 c error", stage1_output)
 
             emitted_c = workspace / "build" / "main.c"
-            emitted_exe = workspace / "build" / "main.exe"
+            emitted_exe = workspace / "build" / "main"
             compile_c_only(emitted_c, exe_path=emitted_exe)
 
             stage2_result = run_executable(emitted_exe, cwd=workspace, timeout=240)

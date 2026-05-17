@@ -276,6 +276,10 @@ fn arg_label_ref_identity(module: str, function_name: str, at: i32) -> str {
     return concat6("arglabel:", module, "::", function_name, "@", i32_to_str(at));
 }
 
+fn propagation_ref_identity(module: str, function_name: str, at: i32) -> str {
+    return concat6("propagation:", module, "::", function_name, "@", i32_to_str(at));
+}
+
 fn builtin_param_identity(function_name: str, name: str) -> str {
     return concat4("builtin-param:", function_name, "::", name);
 }
@@ -308,6 +312,13 @@ fn is_builtin_variant(name: str) -> bool {
         return true;
     }
     return false;
+}
+
+fn builtin_propagation_error(name: str) -> str {
+    if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
+        return "io_err";
+    }
+    return "";
 }
 
 fn item_kind_text(kind: top_item_kind) -> str {
@@ -759,6 +770,50 @@ fn type_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, en
         return make_fact_target("enum", enum_identity(origin, entry.name), "checked");
     }
     return make_fact_target("type", type_identity(origin, entry.name), "checked");
+}
+
+fn type_target_for_name(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> fact_target {
+    let origin = visible_type_origin(ref items, ref uses, module, name);
+    if origin == "__builtin__" {
+        return make_fact_target("builtin_type", str_concat("builtin-type:", name), "builtin");
+    }
+    if origin == "" {
+        return make_fact_target("unknown", "", "unresolved");
+    }
+    if top_item_visible(ref items, origin, name, item_enum) {
+        return make_fact_target("enum", enum_identity(origin, name), "checked");
+    }
+    return make_fact_target("type", type_identity(origin, name), "checked");
+}
+
+fn lookup_function_result_error(functions: ref list<function_fact>, module: str, name: str) -> str {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.name == name and value.return_name == "result" {
+                    return value.return_arg2_name;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return "";
+}
+
+fn propagation_error_name(functions: ref list<function_fact>, items: ref list<top_item>, uses: ref list<module_use>, local: local_init_fact) -> str {
+    let builtin = builtin_propagation_error(local.expr_name);
+    if builtin != "" {
+        return builtin;
+    }
+    let origin = visible_function_origin(ref items, ref uses, local.module, local.expr_name);
+    if origin != "" and origin != "__builtin__" {
+        return lookup_function_result_error(ref functions, origin, local.expr_name);
+    }
+    return "";
 }
 
 fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref, start_index: i32, end_index: i32) -> fact_target {
@@ -1408,7 +1463,29 @@ fn append_checked_arg_label_references(bindings: ref list<body_binding>, express
     return;
 }
 
-fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, include_checked_handoff_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
+fn append_propagation_references(functions: ref list<function_fact>, items: ref list<top_item>, uses: ref list<module_use>, locals: ref list<local_init_fact>, resolved_out: mutref list<fact_reference>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.expr_member_name == "propagate" {
+                    let error_name = propagation_error_name(ref functions, ref items, ref uses, value);
+                    if error_name != "" {
+                        let target = type_target_for_name(ref items, ref uses, value.module, error_name);
+                        list_push(mutref resolved_out, make_fact_reference(propagation_ref_identity(value.module, value.function_name, value.at), "propagation_site", value.module, function_identity(value.module, value.function_name), error_name, target.kind, target.id, value.at, target.evidence));
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, include_checked_handoff_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
     let mut use_index = 0;
     while use_index < list_len(ref uses) {
         let entry = list_get(ref uses, use_index);
@@ -1462,6 +1539,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
     if include_checked_handoff_refs {
         append_checked_field_references(ref expressions, ref struct_fields, mutref resolved_out);
         append_checked_arg_label_references(ref bindings, ref expressions, ref expr_children, mutref resolved_out);
+        append_propagation_references(ref functions, ref items, ref uses, ref locals, mutref resolved_out);
     }
     return;
 }
@@ -1848,7 +1926,9 @@ audit {
     }
 
     let mut resolved_refs: list<fact_reference> = list();
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, true, mutref resolved_refs);
+    let empty_functions: list<function_fact> = list();
+    let empty_locals: list<local_init_fact> = list();
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref empty_functions, ref empty_locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, true, mutref resolved_refs);
     let mut edit_count = 1;
     if new_name == target.name {
         edit_count = 0;
@@ -2304,10 +2384,12 @@ audit {
     let empty_expressions: list<checked_expr> = list();
     let empty_expr_children: list<checked_expr_child> = list();
     let empty_struct_fields: list<checked_struct_field_init> = list();
-    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, ref empty_expressions, ref empty_expr_children, ref empty_struct_fields, 1);
+    let empty_functions: list<function_fact> = list();
+    let empty_locals: list<local_init_fact> = list();
+    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, ref empty_functions, ref empty_locals, ref empty_expressions, ref empty_expr_children, ref empty_struct_fields, 1);
 }
 
-pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, format_version: i32) -> facts_summary
+pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, format_version: i32) -> facts_summary
 audit {
     intent("Emit deterministic stage1 semantic facts with versioned evidence fields when requested");
     mutates();
@@ -2318,7 +2400,7 @@ audit {
     let mut resolved_refs: list<fact_reference> = list();
     let mut resolved_edges: list<fact_call_edge> = list();
     let include_evidence = format_version == 2;
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, include_evidence, mutref resolved_refs);
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref functions, ref locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, include_evidence, mutref resolved_refs);
     build_resolved_call_edges(ref items, ref uses, ref variants, ref calls, mutref resolved_edges);
     let ref_count = list_len(ref resolved_refs);
     let mut version_text = "1";

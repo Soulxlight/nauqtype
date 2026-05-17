@@ -228,7 +228,7 @@
 - [x] Add statement-boundary `let name = result_expr?;`
 - [x] Add exact `result<T, E>` propagation typing with no implicit conversion
 - [x] Add `propagates(E)` audit contract inference and validation
-- [ ] Add versioned propagation evidence to facts/review/change-report surfaces
+- [x] Add versioned propagation evidence to facts/review/change-report surfaces
 - [x] Add canonical example coverage for `?` propagation
 - [x] Add negative driver coverage for `?` without `propagates(...)` expecting `NQ-PROPAGATE-004`
 - [x] Make `NQ-PROPAGATE-003` teach explicit error mapping instead of implicit conversion
@@ -239,7 +239,17 @@
 - [x] Add a conservative local install script for `$HOME/.local/bin/nauqc`
 - [x] Add a Linux alpha verification script around bootstrap rebuild, smoke run, and `prove`
 - [x] Document current Linux alpha readiness and distro-readiness gaps
-- [ ] Replace the historical `main.exe` artifact name in release/install outputs
-- [ ] Define a copied install layout for runtime, schemas, examples, and docs
-- [ ] Add a Linux release manifest and packaging plan
-- [ ] Add CI or another clean-checkout Linux release gate
+- [x] Replace the historical `main.exe` artifact name in release/install outputs
+- [x] Define a copied install layout for runtime, schemas, examples, and docs
+- [x] Add a Linux release manifest and packaging plan
+- [x] Add CI or another clean-checkout Linux release gate
+
+## M27 Stress-Leg Edge Cleanup
+
+- [ ] Add a repeatable multi-module "leg test" cadence after every three completed milestones and before stable/release declarations
+- [ ] Turn the first stress-program findings into focused regression fixtures instead of leaving them as temporary notes
+- [x] Fix qualified enum constructors inside `match` expressions so exhaustiveness matches statement `match`
+- [x] Fix nested qualified calls used directly as call arguments so named-argument export stays resolved
+- [x] Align `review --format v2` constructor-call evidence with `facts --format v2`
+- [x] Add explicit propagation-contract/site evidence to review/facts/change-report outputs as part of the existing M25 evidence work
+- [ ] Add a dense temporary stress-run checklist covering check, review v2, facts v2, fmt, emit-c, build, and direct runtime execution

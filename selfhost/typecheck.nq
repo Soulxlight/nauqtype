@@ -2645,10 +2645,18 @@ fn segment_label_colon(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     }
     let label = token_at(ref tokens, start);
     let colon = token_at(ref tokens, start + 1);
+    let maybe_second_colon = token_at(ref tokens, start + 2);
     match label.kind {
         tk_ident => {
             match colon.kind {
                 tk_colon => {
+                    match maybe_second_colon.kind {
+                        tk_colon => {
+                            return -1;
+                        },
+                        _ => {
+                        },
+                    }
                     return start + 1;
                 },
                 _ => {
@@ -3350,6 +3358,14 @@ fn match_pattern_variant_name(tokens: ref list<token>, start: i32, end: i32) -> 
     }
     if pattern_start >= pattern_end {
         return "";
+    }
+    if pattern_start + 3 < pattern_end {
+        let first_colon = token_at(ref tokens, pattern_start + 1);
+        let second_colon = token_at(ref tokens, pattern_start + 2);
+        let name = token_at(ref tokens, pattern_start + 3);
+        if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) {
+            return name.text;
+        }
     }
     let current = token_at(ref tokens, pattern_start);
     match current.kind {

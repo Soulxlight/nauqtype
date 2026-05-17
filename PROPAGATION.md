@@ -2,7 +2,7 @@
 
 This note packages the accepted design direction for `?` support. The goal is not to clone Rust. Nauqtype should make fallible code less wordy while increasing compiler-visible evidence for human supervisors and agent pairs.
 
-Current implementation status: statement-boundary `let name = result_expr?;`, exact error typing, C emission, and `propagates(E)` audit validation are implemented. The explicit versioned propagation-site export for facts/review/change-report remains the unfinished M25 evidence surface.
+Current implementation status: statement-boundary `let name = result_expr?;`, exact error typing, C emission, `propagates(E)` audit validation, and the versioned facts/review/change-report evidence surface are implemented.
 
 ## Core Decision
 
@@ -88,7 +88,7 @@ Compiler behavior should mirror the existing contract pattern:
 
 ## Evidence Surface
 
-Do not silently add new top-level fields to locked v1/v2 JSON schemas. Because current schemas are strict, propagation evidence should use a new versioned surface such as facts v3/review v3/change-report v2, or another explicit version bump.
+Do not silently change default or unversioned JSON behavior. Propagation evidence lives on explicit machine-readable surfaces: facts v2 exports checked propagation-site references, review v2 exports propagation contracts/sites, and change-report v1 reports added/removed propagation contracts. Future incompatible shape changes still require a new version.
 
 A checked propagation site should carry at least:
 

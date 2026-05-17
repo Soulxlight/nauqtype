@@ -153,6 +153,7 @@ bin/nauqc prove-corpus
 The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, locked by `schemas/proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples/` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
 
 Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
+The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux alpha layouts use `lib/nauqtype/nauqc-stage1` behind the public `bin/nauqc` launcher.
 
 Frozen bootstrap/reference workflows that still exist during the cutover:
 
@@ -240,7 +241,8 @@ Current remaining gaps:
 
 Near-term focus:
 
-- finish Linux alpha foundation work around launcher/install/release layout before more language sugar
+- keep Linux alpha release-layout checks green before more language sugar
+- add the M27 stress-leg cleanup pass so dense multi-module programs are used periodically to catch feature-composition edges
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples

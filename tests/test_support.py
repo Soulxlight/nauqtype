@@ -164,7 +164,7 @@ def built_stage1_driver(timeout: int = STAGE1_DRIVER_BUILD_TIMEOUT):
         ensure_bootstrap_deps()
         build_dir = tmp / "build"
         build_dir.mkdir(exist_ok=True)
-        emitted_exe = tmp / "build" / "main.exe"
+        emitted_exe = tmp / "build" / "nauqc"
         result = subprocess.run(
             [
                 sys.executable,
