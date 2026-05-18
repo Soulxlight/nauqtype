@@ -319,3 +319,11 @@
 - Reason chosen: Nauqtype's AI-first value depends on deterministic compiler evidence. If facts, review, review-diff, change-report, policy-check, or refactor plans disagree about shipped syntax, agent-pair supervision gets false confidence even when `check` and `run` succeed.
 - Consequences: M28 may fix evidence-surface bugs, but it must not introduce source syntax, runtime helpers, schema breaks, refactor apply mode, or broader policy enforcement. New evidence expectations should be added through existing versioned surfaces and locked goldens.
 - Reversible later: no for the alpha path; evidence parity should remain a gate before large syntax batches.
+
+## D041: Proof summaries are versioned evidence, not incidental logs
+
+- Decision: upgrade the active proof summary to v2 instead of mutating the locked v1 shape in place.
+- Alternatives considered: keep v1 minimal, add ad hoc log text beside the summary, or add a new proof command for detailed output.
+- Reason chosen: humans and agents need faster failure triage without changing the quiet proof command stdout. A versioned JSON summary can carry phase metadata, corpus IDs, artifact paths, and deterministic content hashes while preserving the command surface.
+- Consequences: `build/proof/summary.json` is now a machine-readable proof artifact, not a casual log. v1 remains documented historically, while v2 is the active summary schema. This does not add a stage4 proof chain, source-language syntax, runtime helpers, or new public commands.
+- Reversible later: extensible through proof-summary v3 if the proof matrix grows, but the active shape should only change through a schema/version update.

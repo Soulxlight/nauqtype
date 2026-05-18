@@ -274,7 +274,7 @@ Status:
 
 - done for proof summary v1
 - `prove`, `prove-selfhost`, and `prove-corpus` keep their existing quiet success stdout
-- each proof command now writes `build/proof/summary.json` using stable phase IDs and the versioned `schemas/proof-summary-v1.schema.json`
+- each proof command now writes `build/proof/summary.json` using stable phase IDs and versioned proof-summary schemas
 - summaries are written on success and failure, with `failed_phase` identifying the first failed proof phase
 - the locked corpus is guarded so every runnable canonical example under `examples/` participates in `prove-corpus`
 - no source-language syntax, runtime helpers, CLI flags, new commands, stage3/stage4 proof chain, or Batch D feature work was added
@@ -404,6 +404,106 @@ Status:
 - combined evidence-parity fixtures and goldens now cover facts v2, review v2, review-diff v2, change-report v1, policy-check, and refactor-rename for the shipped syntax surface
 - review-diff and change-report now use the same resolved builtin and variant call-edge identities as review v2/facts v2
 - full suite, stage1 `prove`, Linux alpha, and stress-leg gates passed before closure
+
+### M29: Proof Confidence Matrix v2
+
+- improve proof summaries with richer phase IDs, artifact hashes, corpus IDs, and better failure localization
+- keep `prove`, `prove-selfhost`, and `prove-corpus` stdout stable unless an explicit compatibility decision says otherwise
+- add a versioned proof-summary v2 schema instead of silently changing the locked v1 contract
+- keep this as proof observability only: no stage4 proof chain, source-language syntax, runtime helpers, or public command expansion
+
+Status:
+
+- done
+- proof-summary v2 is now the active proof evidence shape, while v1 remains historical/compatible
+- summaries now include richer phase metadata, first-failure localization, corpus IDs, preserved proof artifacts, and deterministic content hashes
+- `prove`, `prove-selfhost`, and `prove-corpus` stdout stayed stable
+- no stage4 proof chain, source-language syntax, runtime helpers, or public command expansion were added
+
+### M30: Linux Alpha RC1
+
+- make the copied Linux layout smoke-test outside the repository root
+- lock release manifest accuracy against the copied alpha layout
+- add explicit version/release identity for the alpha layout and generated artifacts
+- keep this as release-readiness scaffolding, not distro packaging or language growth
+
+Status:
+
+- planned
+
+### M31: Stress-Leg 2
+
+- run the next dense cross-feature leg after M28, M29, and M30
+- reduce every finding into focused fixtures before closing the milestone
+- update `STRESS_LEG.md`, roadmap status, and any relevant deferred-boundary notes from the findings
+- keep temporary stress programs separate from canonical teaching corpus until findings are understood
+
+Status:
+
+- planned
+
+### M32: Teaching Corpus v1
+
+- organize canonical examples into lessons, evidence demos, negative diagnostics, and runnable corpus entries
+- keep formatter-lite as the gate for teaching examples
+- make the corpus useful for future model training and human onboarding without growing source-language semantics
+- keep runnable corpus entries connected to `prove-corpus`
+
+Status:
+
+- planned
+
+### M33: Propagation Context Labels
+
+- add optional labels for statement-boundary `?` sites so propagation evidence can say why an error is forwarded
+- keep exact error typing, `propagates(E)`, and evidence-backed supervision intact
+- do not add expression-position `?`, `try` blocks, implicit error conversion, `option<T>?`, or custom propagation protocols
+
+Status:
+
+- planned
+
+### M34: Effect Evidence Granularity
+
+- keep source-level `effects(io)` as the declared audit atom
+- expose checked IO subkinds in evidence: read, write, create-dir, and process
+- keep user-defined effects deferred
+- make review/facts/change-report evidence more precise without changing source-language audit syntax
+
+Status:
+
+- planned
+
+### M35: Field Assignment V1
+
+- add `binding.field = expr;` only for owned mutable local product types
+- reject enum fields, list elements, mutref-param field assignment, nested field assignment, and arbitrary assignment targets
+- route through parse, resolve, typecheck, handoff, borrow, IR, C emission, facts/review where relevant, and proof corpus coverage
+- keep field borrows, stored refs, methods, and broader mutation semantics deferred
+
+Status:
+
+- planned
+
+### M36: Literal And Nested Constructor Patterns
+
+- add simple literal patterns and nested constructor patterns with conservative exhaustiveness rules
+- cover parser, typecheck, handoff, IR, C emission, facts/review, diagnostics, and examples
+- keep guards, ranges, or-patterns, implicit fallthrough, and broad pattern language work deferred
+
+Status:
+
+- planned
+
+### M37: v0.2 Supervised Alpha Gate
+
+- require full suite, `prove`, Linux alpha gate, stress leg, schemas, docs, policy sidecar, release layout, and teaching corpus all green
+- call the next surface stable only after machine-readable evidence and release artifacts agree
+- keep this as the v0.2 supervised alpha checkpoint rather than a feature milestone
+
+Status:
+
+- planned
 
 ## Feature Ordering
 

@@ -157,7 +157,7 @@ bin/nauqc prove-selfhost
 bin/nauqc prove-corpus
 ```
 
-The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, locked by `schemas/proof-summary-v1.schema.json`. The summary uses stable phase IDs such as `selfhost.stage1_build`, `corpus.run`, and `tooling.golden` so humans and agents can triage failures without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples/` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
+The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, now locked by `schemas/proof-summary-v2.schema.json`. The summary uses richer phase IDs such as `selfhost.stage1_emit_c`, `corpus.run`, and `tooling.schema_golden`, preserves artifact paths and deterministic content hashes, and records corpus IDs for faster triage without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples/` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
 
 Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux alpha layouts use `lib/nauqtype/nauqc-stage1` behind the public `bin/nauqc` launcher.

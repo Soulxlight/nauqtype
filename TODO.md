@@ -261,3 +261,12 @@
 - [x] Ensure review-diff and change-report resolve builtin variants and user variants through the same checked identity path as review v2/facts v2
 - [x] Include M28 evidence parity in the stage1-owned `prove` tooling gate
 - [x] Run final full-suite, `prove`, Linux alpha, and stress-leg gates before closing M28
+
+## M29 Proof Confidence Matrix v2
+
+- [x] Add proof-summary v2 with richer phase metadata while keeping proof command stdout stable
+- [x] Preserve selfhost stage1/stage2 C artifacts and per-corpus emit/build/run C artifacts for triage
+- [x] Add deterministic artifact hashes and corpus IDs to `build/proof/summary.json`
+- [x] Add a versioned `schemas/proof-summary-v2.schema.json`
+- [x] Add focused tests for success and failure summary shape
+- [x] Run final full-suite, `prove`, Linux alpha, and stress-leg gates before closing M29

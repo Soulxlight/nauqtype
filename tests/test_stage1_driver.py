@@ -51,14 +51,20 @@ class Stage1DriverTests(unittest.TestCase):
         path = self._proof_summary_path(cwd)
         self.assertTrue(path.exists(), f"missing proof summary at {path}")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        schema = json.loads((self.root / "schemas" / "proof-summary-v1.schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/proof-summary-v1.schema.json")
-        self.assertEqual(schema["properties"]["version"]["const"], 1)
+        schema = json.loads((self.root / "schemas" / "proof-summary-v2.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/proof-summary-v2.schema.json")
+        self.assertEqual(schema["properties"]["version"]["const"], 2)
         self._assert_schema_shape(payload, schema)
         return payload
 
     def _phase_statuses(self, summary: dict) -> dict[str, str]:
         return {entry["id"]: entry["status"] for entry in summary["phases"]}
+
+    def _phase_by_id(self, summary: dict, phase_id: str) -> dict:
+        for entry in summary["phases"]:
+            if entry["id"] == phase_id:
+                return entry
+        self.fail(f"missing phase {phase_id}")
 
     def _locked_corpus_entries(self) -> list[tuple[str, str]]:
         proof_source = (self.root / "selfhost" / "proof.nq").read_text(encoding="utf-8")
@@ -144,15 +150,31 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.stdout, "selfhost proof ok\nexample corpus ok\nnauqtype proof ok\n")
         self.assertEqual(result.stderr, "")
         summary = self._load_proof_summary()
-        self.assertEqual(summary["version"], 1)
+        self.assertEqual(summary["version"], 2)
         self.assertEqual(summary["command"], "prove")
         self.assertTrue(summary["ok"])
         self.assertEqual(summary["failed_phase"], "")
+        self.assertEqual(summary["failure"], {"phase": "", "corpus_id": "", "artifact_path": ""})
         self.assertEqual(summary["selfhost"]["status"], "passed")
         self.assertTrue(summary["selfhost"]["structural_c_equal"])
+        self.assertTrue(summary["selfhost"]["artifacts"]["stage1_c"]["hash"].startswith("nqsum:"))
+        self.assertEqual(
+            summary["selfhost"]["artifacts"]["stage1_c"]["hash"],
+            summary["selfhost"]["artifacts"]["stage2_c"]["hash"],
+        )
         self.assertEqual(summary["corpus"]["status"], "passed")
         self.assertEqual(summary["corpus"]["cases"], self._locked_corpus_count())
+        self.assertEqual(len(summary["corpus"]["ids"]), self._locked_corpus_count())
+        self.assertIn("hello", summary["corpus"]["ids"])
+        self.assertEqual(len(summary["corpus"]["artifacts"]), self._locked_corpus_count())
+        hello_artifact = next(entry for entry in summary["corpus"]["artifacts"] if entry["id"] == "hello")
+        self.assertTrue(hello_artifact["emit_c"]["hash"].startswith("nqsum:"))
+        self.assertEqual(hello_artifact["emit_c"]["hash"], hello_artifact["build_c"]["hash"])
+        self.assertEqual(hello_artifact["emit_c"]["hash"], hello_artifact["run_c"]["hash"])
         self.assertEqual(summary["tooling"]["status"], "passed")
+        self.assertEqual(summary["tooling"]["groups"], ["schema_golden", "policy_check", "refactor_plan", "formatter_check"])
+        self.assertEqual(self._phase_by_id(summary, "selfhost.stage1_emit_c")["ordinal"], 2)
+        self.assertEqual(self._phase_by_id(summary, "tooling.schema_golden")["group"], "tooling")
         self.assertEqual(set(self._phase_statuses(summary).values()), {"passed"})
 
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
@@ -170,11 +192,12 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(summary["corpus"]["status"], "skipped")
         self.assertEqual(summary["tooling"]["status"], "skipped")
         self.assertEqual(phases["selfhost.copy"], "passed")
-        self.assertEqual(phases["selfhost.stage1_build"], "passed")
+        self.assertEqual(phases["selfhost.stage1_emit_c"], "passed")
         self.assertEqual(phases["selfhost.stage2_run"], "passed")
         self.assertEqual(phases["selfhost.structural_c_compare"], "passed")
         self.assertEqual(phases["corpus.emit_c"], "skipped")
-        self.assertEqual(phases["tooling.golden"], "skipped")
+        self.assertEqual(phases["tooling.schema_golden"], "skipped")
+        self.assertTrue(summary["selfhost"]["artifacts"]["workspace_main"]["hash"].startswith("nqsum:"))
 
     def test_stage1_driver_prove_corpus_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
@@ -190,6 +213,8 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(summary["selfhost"]["status"], "skipped")
         self.assertEqual(summary["corpus"]["status"], "passed")
         self.assertEqual(summary["corpus"]["cases"], self._locked_corpus_count())
+        self.assertEqual(summary["corpus"]["ids"][0], "break_continue")
+        self.assertTrue(summary["corpus"]["artifacts"][0]["emit_c"]["hash"].startswith("nqsum:"))
         self.assertEqual(summary["tooling"]["status"], "skipped")
         self.assertEqual(phases["selfhost.copy"], "skipped")
         self.assertEqual(phases["corpus.emit_c"], "passed")
@@ -208,12 +233,15 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(summary["command"], "prove-corpus")
             self.assertFalse(summary["ok"])
             self.assertEqual(summary["failed_phase"], "corpus.emit_c")
+            self.assertEqual(summary["failure"]["phase"], "corpus.emit_c")
+            self.assertEqual(summary["failure"]["corpus_id"], "break_continue")
+            self.assertEqual(summary["failure"]["artifact_path"], "build/corpus/break_continue/emit.c")
             self.assertEqual(summary["selfhost"]["status"], "skipped")
             self.assertEqual(summary["corpus"]["status"], "failed")
             self.assertEqual(summary["tooling"]["status"], "skipped")
             self.assertEqual(phases["corpus.emit_c"], "failed")
             self.assertEqual(phases["corpus.build"], "skipped")
-            self.assertEqual(phases["tooling.golden"], "skipped")
+            self.assertEqual(phases["tooling.schema_golden"], "skipped")
 
     def test_stage1_driver_locked_corpus_covers_every_runnable_example(self) -> None:
         entries = self._locked_corpus_entries()

@@ -50,6 +50,40 @@ fn proof_summary_path() -> str {
     return "build/proof/summary.json";
 }
 
+fn proof_hash_bound(value: i32) -> i32 {
+    let mut out = value;
+    if out < 0 {
+        out = 0 - out;
+    }
+    return out - ((out / 1000000000) * 1000000000);
+}
+
+fn proof_text_hash(text: str) -> str {
+    let mut hash = 216613;
+    let mut index = 0;
+    while index < str_len(text) {
+        let mut ch = char_at(text, index);
+        if ch < 0 {
+            ch = 0;
+        }
+        hash = proof_hash_bound(hash + ((ch + 31) * (index + 1)));
+        index = index + 1;
+    }
+    return concat5("nqsum:", i32_to_str(str_len(text)), ":", i32_to_str(hash), "");
+}
+
+fn proof_file_hash(path: str) -> str {
+    let content = read_file(path);
+    match content {
+        Ok(text) => {
+            return proof_text_hash(text);
+        },
+        Err(_) => {
+            return "";
+        },
+    }
+}
+
 fn proof_phase_enabled(command: str, id: str) -> bool {
     if starts_with_at(id, 0, "selfhost.") {
         return command == "prove" or command == "prove-selfhost";
@@ -67,7 +101,7 @@ fn proof_phase_rank(id: str) -> i32 {
     if id == "selfhost.copy" {
         return 1;
     }
-    if id == "selfhost.stage1_build" {
+    if id == "selfhost.stage1_emit_c" {
         return 2;
     }
     if id == "selfhost.stage2_run" {
@@ -88,19 +122,38 @@ fn proof_phase_rank(id: str) -> i32 {
     if id == "corpus.structural_c_compare" {
         return 8;
     }
-    if id == "tooling.golden" {
+    if id == "tooling.schema_golden" {
         return 9;
     }
-    if id == "tooling.policy" {
+    if id == "tooling.policy_check" {
         return 10;
     }
-    if id == "tooling.refactor" {
+    if id == "tooling.refactor_plan" {
         return 11;
     }
-    if id == "tooling.formatter" {
+    if id == "tooling.formatter_check" {
         return 12;
     }
     return 0;
+}
+
+fn canonical_proof_phase(id: str) -> str {
+    if id == "selfhost.stage1_build" {
+        return "selfhost.stage1_emit_c";
+    }
+    if id == "tooling.golden" {
+        return "tooling.schema_golden";
+    }
+    if id == "tooling.policy" {
+        return "tooling.policy_check";
+    }
+    if id == "tooling.refactor" {
+        return "tooling.refactor_plan";
+    }
+    if id == "tooling.formatter" {
+        return "tooling.formatter_check";
+    }
+    return id;
 }
 
 fn proof_phase_status(command: str, ok: bool, failed_phase: str, id: str) -> str {
@@ -110,10 +163,11 @@ fn proof_phase_status(command: str, ok: bool, failed_phase: str, id: str) -> str
     if ok {
         return "passed";
     }
-    if id == failed_phase {
+    let canonical_failed = canonical_proof_phase(failed_phase);
+    if id == canonical_failed {
         return "failed";
     }
-    let failed_rank = proof_phase_rank(failed_phase);
+    let failed_rank = proof_phase_rank(canonical_failed);
     let current_rank = proof_phase_rank(id);
     if failed_rank > 0 and current_rank > 0 and current_rank < failed_rank {
         return "passed";
@@ -140,16 +194,46 @@ fn proof_group_status(command: str, ok: bool, failed_phase: str, group_name: str
     if ok {
         return "passed";
     }
-    if starts_with_at(failed_phase, 0, str_concat(group_name, ".")) {
+    let canonical_failed = canonical_proof_phase(failed_phase);
+    if starts_with_at(canonical_failed, 0, str_concat(group_name, ".")) {
         return "failed";
     }
     if group_name == "selfhost" {
         return "passed";
     }
-    if group_name == "corpus" and starts_with_at(failed_phase, 0, "tooling.") {
+    if group_name == "corpus" and starts_with_at(canonical_failed, 0, "tooling.") {
         return "passed";
     }
     return "skipped";
+}
+
+fn proof_phase_group(id: str) -> str {
+    if starts_with_at(id, 0, "selfhost.") {
+        return "selfhost";
+    }
+    if starts_with_at(id, 0, "corpus.") {
+        return "corpus";
+    }
+    if starts_with_at(id, 0, "tooling.") {
+        return "tooling";
+    }
+    return "";
+}
+
+fn proof_phase_artifact_path(id: str) -> str {
+    if id == "selfhost.copy" {
+        return "build/proof/selfhost/main.nq";
+    }
+    if id == "selfhost.stage1_emit_c" {
+        return "build/proof/selfhost/build/stage1.main.c";
+    }
+    if id == "selfhost.stage2_run" {
+        return "build/proof/selfhost/build/stage2.main.c";
+    }
+    if id == "selfhost.structural_c_compare" {
+        return "build/proof/selfhost/build/stage2.main.c";
+    }
+    return "";
 }
 
 fn append_proof_phase(lines: mutref list<str>, command: str, ok: bool, failed_phase: str, id: str, trailing_comma: bool) -> unit {
@@ -157,24 +241,32 @@ fn append_proof_phase(lines: mutref list<str>, command: str, ok: bool, failed_ph
     if trailing_comma {
         suffix = ",";
     }
-    list_push(mutref lines, concat5("    { \"id\": \"", id, "\", \"status\": \"", proof_phase_status(command, ok, failed_phase, id), str_concat("\" }", suffix)));
+    let artifact_path = proof_phase_artifact_path(id);
+    let artifact_hash = proof_file_hash(artifact_path);
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat5("      \"id\": \"", id, "\", \"group\": \"", proof_phase_group(id), "\","));
+    list_push(mutref lines, concat5("      \"ordinal\": ", i32_to_str(proof_phase_rank(id)), ", \"status\": \"", proof_phase_status(command, ok, failed_phase, id), "\","));
+    list_push(mutref lines, "      \"artifact\": {");
+    list_push(mutref lines, concat5("        \"path\": \"", artifact_path, "\", \"hash\": \"", artifact_hash, "\""));
+    list_push(mutref lines, concat3("      }", "", ""));
+    list_push(mutref lines, concat3("    }", suffix, ""));
     return;
 }
 
 fn append_proof_phases(lines: mutref list<str>, command: str, ok: bool, failed_phase: str) -> unit {
     list_push(mutref lines, "  \"phases\": [");
     append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.copy", true);
-    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.stage1_build", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.stage1_emit_c", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.stage2_run", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "selfhost.structural_c_compare", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.emit_c", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.build", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.run", true);
     append_proof_phase(mutref lines, command, ok, failed_phase, "corpus.structural_c_compare", true);
-    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.golden", true);
-    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.policy", true);
-    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.refactor", true);
-    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.formatter", false);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.schema_golden", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.policy_check", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.refactor_plan", true);
+    append_proof_phase(mutref lines, command, ok, failed_phase, "tooling.formatter_check", false);
     list_push(mutref lines, "  ],");
     return;
 }
@@ -185,7 +277,122 @@ fn locked_corpus_case_count() -> i32 {
     return list_len(ref cases);
 }
 
-fn write_proof_summary(command: str, ok: bool, failed_phase: str) -> bool {
+fn failure_artifact_path(failed_phase: str, failed_case: str) -> str {
+    let canonical_failed = canonical_proof_phase(failed_phase);
+    let selfhost_path = proof_phase_artifact_path(canonical_failed);
+    if selfhost_path != "" {
+        return selfhost_path;
+    }
+    if failed_case != "" {
+        if canonical_failed == "corpus.emit_c" {
+            return corpus_emit_c_path(failed_case);
+        }
+        if canonical_failed == "corpus.build" {
+            return corpus_build_c_path(failed_case);
+        }
+        if canonical_failed == "corpus.run" {
+            return corpus_run_c_path(failed_case);
+        }
+        if canonical_failed == "corpus.structural_c_compare" {
+            return corpus_run_c_path(failed_case);
+        }
+    }
+    return "";
+}
+
+fn append_proof_failure(lines: mutref list<str>, failed_phase: str, failed_case: str) -> unit {
+    let canonical_failed = canonical_proof_phase(failed_phase);
+    let artifact_path = failure_artifact_path(canonical_failed, failed_case);
+    list_push(mutref lines, "  \"failure\": {");
+    list_push(mutref lines, concat3("    \"phase\": \"", canonical_failed, "\","));
+    list_push(mutref lines, concat3("    \"corpus_id\": \"", failed_case, "\","));
+    list_push(mutref lines, concat3("    \"artifact_path\": \"", artifact_path, "\""));
+    list_push(mutref lines, "  },");
+    return;
+}
+
+fn append_artifact_object(lines: mutref list<str>, name: str, path: str, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, concat3("      \"", name, "\": {"));
+    list_push(mutref lines, concat5("        \"path\": \"", path, "\", \"hash\": \"", proof_file_hash(path), "\""));
+    list_push(mutref lines, concat3("      }", suffix, ""));
+    return;
+}
+
+fn append_selfhost_artifacts(lines: mutref list<str>) -> unit {
+    list_push(mutref lines, "    \"artifacts\": {");
+    append_artifact_object(mutref lines, "workspace_main", "build/proof/selfhost/main.nq", true);
+    append_artifact_object(mutref lines, "stage1_c", "build/proof/selfhost/build/stage1.main.c", true);
+    append_artifact_object(mutref lines, "stage2_c", "build/proof/selfhost/build/stage2.main.c", false);
+    list_push(mutref lines, "    }");
+    return;
+}
+
+fn append_corpus_ids(lines: mutref list<str>) -> unit {
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    list_push(mutref lines, "    \"ids\": [");
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let entry = list_get(ref cases, index);
+        match entry {
+            Some(value) => {
+                let mut suffix = "";
+                if index + 1 < list_len(ref cases) {
+                    suffix = ",";
+                }
+                list_push(mutref lines, concat5("      \"", value.name, "\"", suffix, ""));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "    ],");
+    return;
+}
+
+fn append_corpus_artifact_case(lines: mutref list<str>, entry: corpus_case, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    let emit_path = corpus_emit_c_path(entry.name);
+    let build_path = corpus_build_c_path(entry.name);
+    let run_path = corpus_run_c_path(entry.name);
+    list_push(mutref lines, "      {");
+    list_push(mutref lines, concat5("        \"id\": \"", entry.name, "\", \"source\": \"", entry.source_path, "\","));
+    list_push(mutref lines, concat5("        \"emit_c\": { \"path\": \"", emit_path, "\", \"hash\": \"", proof_file_hash(emit_path), "\" },"));
+    list_push(mutref lines, concat5("        \"build_c\": { \"path\": \"", build_path, "\", \"hash\": \"", proof_file_hash(build_path), "\" },"));
+    list_push(mutref lines, concat5("        \"run_c\": { \"path\": \"", run_path, "\", \"hash\": \"", proof_file_hash(run_path), "\" }"));
+    list_push(mutref lines, concat3("      }", suffix, ""));
+    return;
+}
+
+fn append_corpus_artifacts(lines: mutref list<str>) -> unit {
+    let mut cases: list<corpus_case> = list();
+    push_locked_example_corpus(mutref cases);
+    list_push(mutref lines, "    \"artifacts\": [");
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let entry = list_get(ref cases, index);
+        match entry {
+            Some(value) => {
+                append_corpus_artifact_case(mutref lines, value, index + 1 < list_len(ref cases));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "    ]");
+    return;
+}
+
+fn write_proof_summary(command: str, ok: bool, failed_phase: str, failed_case: str) -> bool {
     let path = proof_summary_path();
     let dir_result = ensure_parent_dir(path);
     match dir_result {
@@ -207,21 +414,31 @@ fn write_proof_summary(command: str, ok: bool, failed_phase: str) -> bool {
 
     let mut lines: list<str> = list();
     list_push(mutref lines, "{");
-    list_push(mutref lines, "  \"version\": 1,");
+    list_push(mutref lines, "  \"version\": 2,");
     list_push(mutref lines, concat3("  \"command\": \"", command, "\","));
     list_push(mutref lines, concat3("  \"ok\": ", bool_text(ok), ","));
-    list_push(mutref lines, concat3("  \"failed_phase\": \"", failed_phase, "\","));
+    list_push(mutref lines, concat3("  \"failed_phase\": \"", canonical_proof_phase(failed_phase), "\","));
+    append_proof_failure(mutref lines, failed_phase, failed_case);
     append_proof_phases(mutref lines, command, ok, failed_phase);
     list_push(mutref lines, "  \"selfhost\": {");
     list_push(mutref lines, concat3("    \"status\": \"", selfhost_status, "\","));
-    list_push(mutref lines, concat3("    \"structural_c_equal\": ", bool_text(selfhost_status == "passed"), ""));
+    list_push(mutref lines, concat3("    \"structural_c_equal\": ", bool_text(selfhost_status == "passed"), ","));
+    append_selfhost_artifacts(mutref lines);
     list_push(mutref lines, "  },");
     list_push(mutref lines, "  \"corpus\": {");
     list_push(mutref lines, concat3("    \"status\": \"", corpus_status, "\","));
-    list_push(mutref lines, concat3("    \"cases\": ", i32_to_str(corpus_cases), ""));
+    list_push(mutref lines, concat3("    \"cases\": ", i32_to_str(corpus_cases), ","));
+    append_corpus_ids(mutref lines);
+    append_corpus_artifacts(mutref lines);
     list_push(mutref lines, "  },");
     list_push(mutref lines, "  \"tooling\": {");
-    list_push(mutref lines, concat3("    \"status\": \"", tooling_status, "\""));
+    list_push(mutref lines, concat3("    \"status\": \"", tooling_status, "\","));
+    list_push(mutref lines, "    \"groups\": [");
+    list_push(mutref lines, "      \"schema_golden\",");
+    list_push(mutref lines, "      \"policy_check\",");
+    list_push(mutref lines, "      \"refactor_plan\",");
+    list_push(mutref lines, "      \"formatter_check\"");
+    list_push(mutref lines, "    ]");
     list_push(mutref lines, "  }");
     list_push(mutref lines, "}");
     let write_result = write_file(path, lines_to_text(ref lines));
@@ -733,6 +950,36 @@ fn corpus_emit_c_path(case_name: str) -> str {
     return join_path(join_path("build/corpus", case_name), "emit.c");
 }
 
+fn corpus_build_c_path(case_name: str) -> str {
+    return join_path(join_path("build/corpus", case_name), "build.c");
+}
+
+fn corpus_run_c_path(case_name: str) -> str {
+    return join_path(join_path("build/corpus", case_name), "run.c");
+}
+
+fn write_artifact_snapshot(label: str, path: str, text: str) -> bool {
+    let dir_result = ensure_parent_dir(path);
+    match dir_result {
+        Ok(_) => {
+        },
+        Err(err) => {
+            eprint_line(str_concat(label, str_concat(": ", io_err_text(err))));
+            return false;
+        },
+    }
+    let write_result = write_file(path, text);
+    match write_result {
+        Ok(_) => {
+            return true;
+        },
+        Err(err) => {
+            eprint_line(str_concat(label, str_concat(": ", io_err_text(err))));
+            return false;
+        },
+    }
+}
+
 fn has_stage1_failure_text(status: process_result) -> bool {
     if text_contains(status.stdout, "stage1 limitation") or text_contains(status.stderr, "stage1 limitation") {
         return true;
@@ -1142,19 +1389,21 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
     return true;
 }
 
-fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref str) -> bool {
+fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref str, failed_case: mutref str) -> bool {
     let emit_path = corpus_emit_c_path(entry.name);
     let emit_result = run_driver_emit_c(driver_path, entry.source_path, emit_path);
     match emit_result {
         Ok(status) => {
             if not driver_step_ok(str_concat("emit-c ", entry.name), status) {
                 failed_phase = "corpus.emit_c";
+                failed_case = entry.name;
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
             failed_phase = "corpus.emit_c";
+            failed_case = entry.name;
             return false;
         },
     }
@@ -1162,6 +1411,7 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
     let mut emit_c = "";
     if not read_text_or_report(emit_path, str_concat("failed to read emitted C for ", entry.name), mutref emit_c) {
         failed_phase = "corpus.emit_c";
+        failed_case = entry.name;
         return false;
     }
 
@@ -1170,12 +1420,14 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
         Ok(status) => {
             if not driver_step_ok(str_concat("build ", entry.name), status) {
                 failed_phase = "corpus.build";
+                failed_case = entry.name;
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
             failed_phase = "corpus.build";
+            failed_case = entry.name;
             return false;
         },
     }
@@ -1184,11 +1436,18 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
     let mut build_c = "";
     if not read_text_or_report(build_c_path, str_concat("failed to read build C for ", entry.name), mutref build_c) {
         failed_phase = "corpus.build";
+        failed_case = entry.name;
+        return false;
+    }
+    if not write_artifact_snapshot(str_concat("failed to write build C artifact for ", entry.name), corpus_build_c_path(entry.name), build_c) {
+        failed_phase = "corpus.build";
+        failed_case = entry.name;
         return false;
     }
     if not structural_c_equal(emit_c, build_c) {
         eprint_line(str_concat("corpus proof failed: emit/build C changed for ", entry.name));
         failed_phase = "corpus.structural_c_compare";
+        failed_case = entry.name;
         return false;
     }
 
@@ -1199,24 +1458,28 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
                 eprint_line(str_concat("corpus proof failed: unexpected exit code for ", entry.name));
                 emit_process_output(status);
                 failed_phase = "corpus.run";
+                failed_case = entry.name;
                 return false;
             }
             if not output_matches(status.stdout, entry.expected_stdout) or status.stderr != "" {
                 eprint_line(str_concat("corpus proof failed: unexpected stdout/stderr for ", entry.name));
                 emit_process_output(status);
                 failed_phase = "corpus.run";
+                failed_case = entry.name;
                 return false;
             }
             if has_stage1_failure_text(status) {
                 eprint_line(str_concat("corpus proof failed: stage1 diagnostic text for ", entry.name));
                 emit_process_output(status);
                 failed_phase = "corpus.run";
+                failed_case = entry.name;
                 return false;
             }
         },
         Err(err) => {
             eprint_line(io_err_text(err));
             failed_phase = "corpus.run";
+            failed_case = entry.name;
             return false;
         },
     }
@@ -1224,18 +1487,25 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
     let mut run_c = "";
     if not read_text_or_report(build_c_path, str_concat("failed to read run C for ", entry.name), mutref run_c) {
         failed_phase = "corpus.structural_c_compare";
+        failed_case = entry.name;
+        return false;
+    }
+    if not write_artifact_snapshot(str_concat("failed to write run C artifact for ", entry.name), corpus_run_c_path(entry.name), run_c) {
+        failed_phase = "corpus.structural_c_compare";
+        failed_case = entry.name;
         return false;
     }
     if not structural_c_equal(emit_c, run_c) {
         eprint_line(str_concat("corpus proof failed: emit/run C changed for ", entry.name));
         failed_phase = "corpus.structural_c_compare";
+        failed_case = entry.name;
         return false;
     }
 
     return true;
 }
 
-fn run_example_corpus_inner(driver_path: str, failed_phase: mutref str) -> i32 {
+fn run_example_corpus_inner(driver_path: str, failed_phase: mutref str, failed_case: mutref str) -> i32 {
     let mut cases: list<corpus_case> = list();
     push_locked_example_corpus(mutref cases);
     let mut index = 0;
@@ -1243,7 +1513,7 @@ fn run_example_corpus_inner(driver_path: str, failed_phase: mutref str) -> i32 {
         let entry = list_get(ref cases, index);
         match entry {
             Some(value) => {
-                if not run_corpus_case(driver_path, value, mutref failed_phase) {
+                if not run_corpus_case(driver_path, value, mutref failed_phase, mutref failed_case) {
                     return 1;
                 }
             },
@@ -1263,8 +1533,9 @@ audit {
 }
 {
     let mut failed_phase = "";
-    let result = run_example_corpus_inner(driver_path, mutref failed_phase);
-    if not write_proof_summary("prove-corpus", result == 0, failed_phase) {
+    let mut failed_case = "";
+    let result = run_example_corpus_inner(driver_path, mutref failed_phase, mutref failed_case);
+    if not write_proof_summary("prove-corpus", result == 0, failed_phase, failed_case) {
         return 1;
     }
     if result == 0 {
@@ -1316,6 +1587,10 @@ fn run_selfhost_proof_inner(driver_path: str, failed_phase: mutref str) -> i32 {
             return 1;
         },
     }
+    if not write_artifact_snapshot("failed to write selfhost stage1 C artifact", join_path(join_path(proof_dir, "build"), "stage1.main.c"), stage1_c) {
+        failed_phase = "selfhost.stage1_build";
+        return 1;
+    }
 
     let stage2_path = join_path("build", "main");
     let stage2_result = run_stage2(stage2_path, proof_dir);
@@ -1343,6 +1618,10 @@ fn run_selfhost_proof_inner(driver_path: str, failed_phase: mutref str) -> i32 {
     let stage2_c_result = read_file(c_path);
     match stage2_c_result {
         Ok(stage2_c) => {
+            if not write_artifact_snapshot("failed to write selfhost stage2 C artifact", join_path(join_path(proof_dir, "build"), "stage2.main.c"), stage2_c) {
+                failed_phase = "selfhost.structural_c_compare";
+                return 1;
+            }
             if not structural_c_equal(stage1_c, stage2_c) {
                 eprint_line("selfhost proof failed: normalized structural C changed between stage1 and stage2");
                 failed_phase = "selfhost.structural_c_compare";
@@ -1367,8 +1646,9 @@ audit {
 }
 {
     let mut failed_phase = "";
+    let failed_case = "";
     let result = run_selfhost_proof_inner(driver_path, mutref failed_phase);
-    if not write_proof_summary("prove-selfhost", result == 0, failed_phase) {
+    if not write_proof_summary("prove-selfhost", result == 0, failed_phase, failed_case) {
         return 1;
     }
     if result == 0 {
@@ -1385,23 +1665,24 @@ audit {
 }
 {
     let mut failed_phase = "";
+    let mut failed_case = "";
     let selfhost_result = run_selfhost_proof_inner(driver_path, mutref failed_phase);
     if selfhost_result != 0 {
-        write_proof_summary("prove", false, failed_phase);
+        write_proof_summary("prove", false, failed_phase, failed_case);
         return selfhost_result;
     }
     print_line("selfhost proof ok");
-    let corpus_result = run_example_corpus_inner(driver_path, mutref failed_phase);
+    let corpus_result = run_example_corpus_inner(driver_path, mutref failed_phase, mutref failed_case);
     if corpus_result != 0 {
-        write_proof_summary("prove", false, failed_phase);
+        write_proof_summary("prove", false, failed_phase, failed_case);
         return corpus_result;
     }
     print_line("example corpus ok");
     if not run_tooling_confidence_gate(driver_path, mutref failed_phase) {
-        write_proof_summary("prove", false, failed_phase);
+        write_proof_summary("prove", false, failed_phase, failed_case);
         return 1;
     }
-    if not write_proof_summary("prove", true, "") {
+    if not write_proof_summary("prove", true, "", "") {
         return 1;
     }
     print_line("nauqtype proof ok");
