@@ -311,3 +311,11 @@
 - Reason chosen: focused tests prove known behavior, but dense temporary programs expose feature-composition failures across parser, resolver, typechecker, handoff, borrow, IR, C emission, facts/review/fmt, and runtime execution. The first Linux leg test found concrete edge cases that normal coverage had not forced together.
 - Consequences: stress programs should intentionally combine imports, records, enums, lists, named args, qualified calls/data, `let-else`, `?`, loops, C emission, build, and direct execution. Exposed issues should become focused regression fixtures before the stress checkpoint is closed. Temporary stress programs do not become canonical teaching corpus until the resulting edges are understood. `STRESS_LEG.md` and `scripts/run_stress_leg.sh` are the accepted M27 operating shape.
 - Reversible later: the cadence can be tightened or automated once the runner has first-class stress-test support, but it should not be removed while source-language and tooling surfaces are still growing.
+
+## D040: Evidence parity must precede the next syntax batch
+
+- Decision: after M27, lock a combined evidence-parity fixture before adding more language syntax.
+- Alternatives considered: move directly into propagation labels or field assignment, rely on the existing per-feature goldens, or treat review/facts drift as acceptable while the language is still alpha.
+- Reason chosen: Nauqtype's AI-first value depends on deterministic compiler evidence. If facts, review, review-diff, change-report, policy-check, or refactor plans disagree about shipped syntax, agent-pair supervision gets false confidence even when `check` and `run` succeed.
+- Consequences: M28 may fix evidence-surface bugs, but it must not introduce source syntax, runtime helpers, schema breaks, refactor apply mode, or broader policy enforcement. New evidence expectations should be added through existing versioned surfaces and locked goldens.
+- Reversible later: no for the alpha path; evidence parity should remain a gate before large syntax batches.

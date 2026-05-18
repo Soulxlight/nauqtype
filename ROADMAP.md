@@ -390,6 +390,21 @@ Status:
 - `scripts/run_stress_leg.sh` creates a dense temporary multi-module workspace and runs check, review v2, facts v2, fmt, emit-c, build, and direct runtime execution
 - the first stress-program findings were reduced into focused driver regressions; the dense runner remains periodic hygiene, not a fast-test replacement
 
+### M28: Evidence Parity Lock For Current Syntax
+
+- lock deterministic evidence coverage for the currently shipped syntax families before adding more language surface
+- require facts v2, review v2, review-diff v2, change-report v1, policy-check, and refactor-rename to agree on stable semantic identities where each surface applies
+- cover recent syntax together: top-level const, list literals, match expressions, let-else, named arguments, qualified calls/data, break/continue, copy-only record update, `effects(io)`, and statement-boundary `?`
+- keep facts v1 and existing JSON schemas compatible; add only golden coverage and bug fixes where current evidence is already supposed to be known
+
+Status:
+
+- done
+- no new source-language syntax, runtime helpers, public commands, or schema versions are part of this milestone
+- combined evidence-parity fixtures and goldens now cover facts v2, review v2, review-diff v2, change-report v1, policy-check, and refactor-rename for the shipped syntax surface
+- review-diff and change-report now use the same resolved builtin and variant call-edge identities as review v2/facts v2
+- full suite, stage1 `prove`, Linux alpha, and stress-leg gates passed before closure
+
 ## Feature Ordering
 
 Features required before first success:

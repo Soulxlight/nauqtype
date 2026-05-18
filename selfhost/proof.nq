@@ -994,6 +994,93 @@ fn run_supervised_workflow_gate(driver_path: str, failed_phase: mutref str) -> b
     return true;
 }
 
+fn evidence_parity_run_ok(driver_path: str, after_path: str) -> bool {
+    let run_result = run_driver_run(driver_path, after_path);
+    match run_result {
+        Ok(status) => {
+            if status.exit_code != 13 {
+                eprint_line("evidence parity run returned unexpected exit code");
+                emit_process_output(status);
+                return false;
+            }
+            if status.stdout != "" or status.stderr != "" {
+                eprint_line("evidence parity run produced unexpected output");
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_evidence_parity_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    let before_path = "tests/fixtures/evidence_parity/before/main.nq";
+    let after_path = "tests/fixtures/evidence_parity/after/main.nq";
+    let policy_path = "tests/fixtures/evidence_parity/policy.json";
+
+    if not run_quiet_result("evidence parity check", run_driver_check(driver_path, after_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not evidence_parity_run_ok(driver_path, after_path) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity facts v2", run_driver_facts(driver_path, after_path, "v2"), "tests/golden/evidence_parity/facts_v2.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity review v2", run_driver_review(driver_path, after_path, "v2"), "tests/golden/evidence_parity/review_v2.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity review-diff v2", run_driver_review_diff(driver_path, before_path, after_path, "v2"), "tests/golden/evidence_parity/review_diff_v2.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity change-report policy v1", run_driver_change_report(driver_path, before_path, after_path, policy_path), "tests/golden/evidence_parity/change_report_policy_v1.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity policy-check v1", run_driver_policy_check(driver_path, after_path, policy_path), "tests/golden/evidence_parity/policy_check_v1.json") {
+        failed_phase = "tooling.policy";
+        return false;
+    }
+
+    let mut before_refactor_text = "";
+    if not read_text_or_report(after_path, "failed to read evidence parity refactor fixture", mutref before_refactor_text) {
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity refactor field v1", run_driver_refactor_rename(driver_path, after_path, "field:helper::Box::value", "amount"), "tests/golden/evidence_parity/refactor_rename_field_v1.json") {
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity refactor variant v1", run_driver_refactor_rename(driver_path, after_path, "variant:helper::Choice::Use", "Keep"), "tests/golden/evidence_parity/refactor_rename_variant_v1.json") {
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    if not run_json_golden_result("evidence parity refactor const v1", run_driver_refactor_rename(driver_path, after_path, "const:helper::base_score", "starting_score"), "tests/golden/evidence_parity/refactor_rename_const_v1.json") {
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    let mut after_refactor_text = "";
+    if not read_text_or_report(after_path, "failed to reread evidence parity refactor fixture", mutref after_refactor_text) {
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    if before_refactor_text != after_refactor_text {
+        eprint_line("evidence parity refactor-rename mutated the fixture");
+        failed_phase = "tooling.refactor";
+        return false;
+    }
+    return true;
+}
+
 fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bool {
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
         failed_phase = "tooling.golden";
@@ -1044,6 +1131,9 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         return false;
     }
     if not run_supervised_workflow_gate(driver_path, mutref failed_phase) {
+        return false;
+    }
+    if not run_evidence_parity_gate(driver_path, mutref failed_phase) {
         return false;
     }
     if not run_formatter_tooling_checks(driver_path, mutref failed_phase) {

@@ -249,6 +249,7 @@ Current remaining gaps:
 
 Near-term focus:
 
+- build on the completed M28 evidence-parity lock before adding more source-language surface
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows

@@ -253,3 +253,11 @@
 - [x] Align `review --format v2` constructor-call evidence with `facts --format v2`
 - [x] Add explicit propagation-contract/site evidence to review/facts/change-report outputs as part of the existing M25 evidence work
 - [x] Add a dense temporary stress-run checklist covering check, review v2, facts v2, fmt, emit-c, build, and direct runtime execution
+
+## M28 Evidence Parity Lock For Current Syntax
+
+- [x] Add a combined evidence-parity fixture covering shipped syntax families without adding new syntax
+- [x] Lock facts v2, review v2, review-diff v2, change-report v1, policy-check, and refactor-rename goldens for that fixture
+- [x] Ensure review-diff and change-report resolve builtin variants and user variants through the same checked identity path as review v2/facts v2
+- [x] Include M28 evidence parity in the stage1-owned `prove` tooling gate
+- [x] Run final full-suite, `prove`, Linux alpha, and stress-leg gates before closing M28

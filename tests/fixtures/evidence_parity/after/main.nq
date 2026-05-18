@@ -1,0 +1,65 @@
+use helper;
+
+fn score(flag: bool, path: str) -> result<i32, io_err>
+audit {
+    intent("Exercise shipped syntax while keeping evidence surfaces aligned.");
+    mutates();
+    effects(io);
+    propagates(io_err);
+}
+{
+    let text = helper::load_text(path)?;
+    let bonus = str_len(text);
+    let numbers = [bonus, helper::boost(scale: 2, input: base_score), 0];
+    let mut index = 0;
+    let mut total = 0;
+    while index < list_len(ref numbers) {
+        let maybe_number = list_get(ref numbers, index);
+        let Some(number) = maybe_number else {
+            return Ok(total);
+        };
+        index = index + 1;
+        if number == 0 {
+            continue;
+        }
+        total = total + number;
+        if total > 20 {
+            break;
+        }
+    }
+    let first = Box {
+        value: total,
+        label: "score",
+    };
+    let updated = Box {
+        from first,
+        value: total + 1,
+    };
+    let choice = helper::Use(updated.value);
+    let selected = match choice {
+        helper::Use(value) => value,
+        helper::Skip => 0,
+    };
+    if flag {
+        return Ok(selected);
+    }
+    return Ok(total);
+}
+
+fn main() -> i32
+audit {
+    intent("Run the evidence parity fixture.");
+    mutates();
+    effects(io);
+}
+{
+    let scored = score(true, "../input.txt");
+    match scored {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 1;
+        },
+    }
+}
