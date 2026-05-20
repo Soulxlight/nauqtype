@@ -5,7 +5,7 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 Current bootstrap status:
 
 - `stage0`: frozen Python bootstrap/reference compiler in the current workspace
-- Linux alpha development is supported through the repo-local `bin/nauqc` stage1 launcher; see [LINUX.md](LINUX.md)
+- Linux alpha development is supported through the repo-local `bin/nauqc` stage1 launcher and the copied Alpha RC1 layout; see [LINUX.md](LINUX.md)
 - flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
 - top-level `const` for small compile-time configuration values
@@ -137,6 +137,8 @@ Run the Linux alpha gate:
 ```bash
 scripts/check_linux_alpha.sh
 ```
+
+The gate now verifies the Alpha RC1 copied layout, release identity, and an outside-repo smoke run for the copied `bin/nauqc` launcher.
 
 Run the dense milestone stress leg when checking cross-feature interactions:
 

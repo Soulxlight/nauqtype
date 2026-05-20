@@ -12,13 +12,15 @@ bin/nauqc check examples/hello.nq
 bin/nauqc run examples/hello.nq
 bin/nauqc prove
 scripts/make_linux_release.sh
-if [[ -d build/linux-release/nauqtype/share/nauqtype/examples/build ]]; then
-    printf 'linux alpha: copied release contains generated examples/build artifacts\n' >&2
-    exit 1
-fi
-if find build/linux-release/nauqtype/share/nauqtype/examples -name '*.exe' -print -quit | grep -q .; then
-    printf 'linux alpha: copied release contains .exe artifacts\n' >&2
-    exit 1
-fi
-build/linux-release/nauqtype/bin/nauqc check examples/hello.nq
-build/linux-release/nauqtype/bin/nauqc run examples/hello.nq
+scripts/verify_linux_release.sh build/linux-release/nauqtype
+
+smoke_root="$(mktemp -d -t nauqtype-linux-alpha-rc1-XXXXXX)"
+trap 'rm -rf "$smoke_root"' EXIT
+cp -R build/linux-release/nauqtype "$smoke_root/nauqtype"
+mkdir -p "$smoke_root/project"
+cp examples/hello.nq "$smoke_root/project/hello.nq"
+(
+    cd "$smoke_root/project"
+    "$smoke_root/nauqtype/bin/nauqc" check hello.nq
+    "$smoke_root/nauqtype/bin/nauqc" run hello.nq
+)

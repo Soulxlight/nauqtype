@@ -429,7 +429,11 @@ Status:
 
 Status:
 
-- planned
+- done
+- the release layout now carries a repository `VERSION`, copied `share/nauqtype/VERSION`, and deterministic `share/nauqtype/release.json` identity as `nauqtype-0.1.0-alpha.1`
+- `scripts/verify_linux_release.sh` validates executable placement, runtime files, docs, schemas, tracked examples, release identity, and generated-artifact exclusions against the copied layout
+- `scripts/check_linux_alpha.sh` now smoke-tests a copied release from a temporary project outside the repository root, proving the launcher/runtime path does not depend on the source checkout cwd
+- no distro packaging, source-language syntax, runtime helpers, public commands, or proof-chain widening were added
 
 ### M31: Stress-Leg 2
 

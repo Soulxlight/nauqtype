@@ -327,3 +327,11 @@
 - Reason chosen: humans and agents need faster failure triage without changing the quiet proof command stdout. A versioned JSON summary can carry phase metadata, corpus IDs, artifact paths, and deterministic content hashes while preserving the command surface.
 - Consequences: `build/proof/summary.json` is now a machine-readable proof artifact, not a casual log. v1 remains documented historically, while v2 is the active summary schema. This does not add a stage4 proof chain, source-language syntax, runtime helpers, or new public commands.
 - Reversible later: extensible through proof-summary v3 if the proof matrix grows, but the active shape should only change through a schema/version update.
+
+## D042: Linux Alpha RC1 release identity is explicit and verified
+
+- Decision: the copied Linux alpha layout carries explicit release identity through repository `VERSION`, copied `share/nauqtype/VERSION`, and generated `share/nauqtype/release.json`.
+- Alternatives considered: leave version identity implicit in git history, rely only on the release directory name, or jump directly to distro package metadata.
+- Reason chosen: a copied alpha layout needs enough identity for humans, agents, and future packaging checks to know what artifact they are testing without pretending the project is already a distro package.
+- Consequences: `scripts/make_linux_release.sh` owns release metadata generation, `scripts/verify_linux_release.sh` validates the copied manifest, and `scripts/check_linux_alpha.sh` must smoke-test a copied release from outside the repository root. This adds no source-language syntax, runtime helper, public compiler command, or package-manager guarantee.
+- Reversible later: yes; tarballs, `.deb` metadata, NauqOS integration, or richer release manifests can replace this alpha shape once packaging becomes the milestone.

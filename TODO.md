@@ -270,3 +270,11 @@
 - [x] Add a versioned `schemas/proof-summary-v2.schema.json`
 - [x] Add focused tests for success and failure summary shape
 - [x] Run final full-suite, `prove`, Linux alpha, and stress-leg gates before closing M29
+
+## M30 Linux Alpha RC1
+
+- [x] Add explicit repository and copied-release version identity
+- [x] Emit deterministic `share/nauqtype/release.json` from `scripts/make_linux_release.sh`
+- [x] Add a copied-layout verifier for launcher, runtime, schemas, examples, docs, and artifact exclusions
+- [x] Smoke-test the copied release from a temporary project outside the repository root
+- [x] Keep M30 scoped to release-readiness scaffolding, not distro packaging or language growth
