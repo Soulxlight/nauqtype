@@ -45,6 +45,8 @@ scripts/run_stress_leg.sh
 
 The script creates a temporary workspace under `/tmp`, writes a dense multi-module Nauqtype program, then runs the required stage1-owned commands through `bin/nauqc`.
 
+As of M31, the runner also builds and verifies the copied Linux Alpha RC1 layout, copies that layout into the temporary workspace, and reruns the dense check/review/facts/change-report/fmt/emit/build/runtime path through the copied `bin/nauqc` launcher. This keeps stress coverage aligned with the Linux release layout instead of only proving the source-checkout launcher.
+
 Expected final output:
 
 ```text
@@ -71,3 +73,9 @@ The first Linux stress leg exposed two compiler bugs and one evidence-surface ga
 - propagation contracts/sites appear in facts, review, and change-report evidence
 
 The dense stress runner remains as milestone hygiene. It should be used periodically, not added blindly to every fast test run.
+
+## M31 Closure
+
+Stress-Leg 2 extended the dense runner to cover the copied Linux Alpha RC1 launcher outside the repository root. The existing dense program passed through both the repo-local launcher and the copied release launcher.
+
+No new compiler bugs were exposed in this leg, so there were no findings to reduce into focused fixtures. The added reusable coverage is the copied-release rerun inside `scripts/run_stress_leg.sh`.

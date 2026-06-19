@@ -444,7 +444,11 @@ Status:
 
 Status:
 
-- planned
+- done
+- the dense stress runner now replays the same cross-feature program through both the repo-local launcher and a copied Linux Alpha RC1 release launcher outside the repository root
+- the leg covered check, review v2, facts v2, change-report v1, formatter-lite, C emission, build, and runtime behavior across imports, record update, qualified calls/data, list literals, `let-else`, `?`, and loop control
+- no new compiler findings were exposed, so no focused regression fixtures were required for this checkpoint
+- this remains milestone hygiene, not a permanent teaching-corpus entry or stage3/stage4 proof expansion
 
 ### M32: Teaching Corpus v1
 

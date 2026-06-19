@@ -278,3 +278,11 @@
 - [x] Add a copied-layout verifier for launcher, runtime, schemas, examples, docs, and artifact exclusions
 - [x] Smoke-test the copied release from a temporary project outside the repository root
 - [x] Keep M30 scoped to release-readiness scaffolding, not distro packaging or language growth
+
+## M31 Stress-Leg 2
+
+- [x] Run the dense cross-feature stress leg after M28, M29, and M30
+- [x] Extend the stress runner to replay the dense program through a copied Linux Alpha RC1 launcher outside the repository root
+- [x] Cover check, review v2, facts v2, change-report v1, fmt, emit-c, build, and runtime behavior through the stress path
+- [x] Record that this leg exposed no new compiler findings requiring focused reduction fixtures
+- [x] Keep the temporary stress program separate from the teaching corpus

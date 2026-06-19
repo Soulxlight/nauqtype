@@ -241,5 +241,34 @@ if [[ "$run_output" != "stress ok" ]]; then
     exit 1
 fi
 
+scripts/make_linux_release.sh >/dev/null
+scripts/verify_linux_release.sh build/linux-release/nauqtype >/dev/null
+mkdir -p "$work/release"
+cp -R build/linux-release/nauqtype "$work/release/nauqtype"
+(
+    cd "$work"
+    release_nauqc="$work/release/nauqtype/bin/nauqc"
+    "$release_nauqc" check main.nq
+    "$release_nauqc" review main.nq --format v2 > build/release-review-v2.json
+    "$release_nauqc" facts main.nq --format v2 > build/release-facts-v2.json
+    "$release_nauqc" change-report before/main.nq main.nq --format v1 > build/release-change-report-v1.json
+    grep -q '"id": "propagation:main::load_bonus@' build/release-review-v2.json
+    grep -q '"propagation_site"' build/release-facts-v2.json
+    grep -q '"added_propagates": [1-9]' build/release-change-report-v1.json
+    "$release_nauqc" fmt --check main.nq
+    "$release_nauqc" fmt --check data.nq
+    "$release_nauqc" fmt --check io_util.nq
+    "$release_nauqc" fmt --check math.nq
+    "$release_nauqc" fmt --check before/main.nq
+    "$release_nauqc" emit-c main.nq -o build/release-stress.c
+    "$release_nauqc" build main.nq -o build/release-stress
+    release_run_output="$(build/release-stress)"
+    if [[ "$release_run_output" != "stress ok" ]]; then
+        printf 'stress leg release: unexpected runtime output: %s\n' "$release_run_output" >&2
+        printf 'stress leg workspace kept at %s\n' "$work" >&2
+        exit 1
+    fi
+)
+
 printf 'stress leg ok\n'
 printf 'stress leg workspace: %s\n' "$work"
