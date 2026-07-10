@@ -35,6 +35,7 @@ type fact_call_edge {
     callee: str,
     call_site: str,
     evidence: str,
+    io_kind: str,
 }
 
 type refactor_target {
@@ -99,12 +100,13 @@ fn make_fact_reference(id: str, kind: str, module: str, from: str, name: str, ta
     };
 }
 
-fn make_fact_call_edge(caller: str, callee: str, call_site: str, evidence: str) -> fact_call_edge {
+fn make_fact_call_edge(caller: str, callee: str, call_site: str, evidence: str, io_kind: str) -> fact_call_edge {
     return fact_call_edge {
         caller: caller,
         callee: callee,
         call_site: call_site,
         evidence: evidence,
+        io_kind: io_kind,
     };
 }
 
@@ -319,6 +321,22 @@ fn is_builtin_variant(name: str) -> bool {
 fn builtin_propagation_error(name: str) -> str {
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
+    }
+    return "";
+}
+
+fn io_kind_for_builtin(name: str) -> str {
+    if name == "read_file" {
+        return "read";
+    }
+    if name == "write_file" {
+        return "write";
+    }
+    if name == "create_dir_all" {
+        return "create_dir";
+    }
+    if name == "run_process" {
+        return "process";
     }
     return "";
 }
@@ -1594,7 +1612,7 @@ fn build_resolved_call_edges(items: ref list<top_item>, uses: ref list<module_us
         match entry {
             Some(value) => {
                 let target = call_target(ref items, ref uses, ref variants, value);
-                list_push(mutref edges_out, make_fact_call_edge(function_identity(value.module, value.function_name), target.id, call_identity(value), target.evidence));
+                list_push(mutref edges_out, make_fact_call_edge(function_identity(value.module, value.function_name), target.id, call_identity(value), target.evidence, io_kind_for_builtin(value.name)));
             },
             None => {
             },
@@ -1642,7 +1660,12 @@ fn append_resolved_call_graph(lines: mutref list<str>, edges: ref list<fact_call
                 list_push(mutref lines, concat5("      \"callee\": ", json_quote(value.callee), ",", "", ""));
                 if include_evidence {
                     list_push(mutref lines, concat5("      \"call_site\": ", json_quote(value.call_site), ",", "", ""));
-                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(value.evidence), "", "", ""));
+                    if value.io_kind != "" {
+                        list_push(mutref lines, concat5("      \"evidence\": ", json_quote(value.evidence), ",", "", ""));
+                        list_push(mutref lines, concat5("      \"io_kind\": ", json_quote(value.io_kind), "", "", ""));
+                    } else {
+                        list_push(mutref lines, concat5("      \"evidence\": ", json_quote(value.evidence), "", "", ""));
+                    }
                 } else {
                     list_push(mutref lines, concat5("      \"call_site\": ", json_quote(value.call_site), "", "", ""));
                 }

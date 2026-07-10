@@ -67,6 +67,11 @@ pub type review_summary {
     error_count: i32,
 }
 
+type review_io_kind_fact {
+    function_id: str,
+    kind: str,
+}
+
 pub fn make_review_summary(function_count: i32, declaration_count: i32, warning_count: i32, error_count: i32) -> review_summary
 audit {
     intent("Build a stage1 review summary record");
@@ -79,6 +84,13 @@ audit {
         declaration_count: declaration_count,
         warning_count: warning_count,
         error_count: error_count,
+    };
+}
+
+fn make_review_io_kind_fact(function_id: str, kind: str) -> review_io_kind_fact {
+    return review_io_kind_fact {
+        function_id: function_id,
+        kind: kind,
     };
 }
 
@@ -1219,6 +1231,66 @@ fn propagation_contexts(locals: ref list<local_init_fact>, module: str, function
     return contexts;
 }
 
+fn io_kind_for_builtin(name: str) -> str {
+    if name == "read_file" {
+        return "read";
+    }
+    if name == "write_file" {
+        return "write";
+    }
+    if name == "create_dir_all" {
+        return "create_dir";
+    }
+    if name == "run_process" {
+        return "process";
+    }
+    return "";
+}
+
+fn review_io_kind_exists(entries: ref list<review_io_kind_fact>, function_id: str, kind: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.kind == kind {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn push_review_io_kind_if_missing(entries: mutref list<review_io_kind_fact>, function_id: str, kind: str) -> bool {
+    if review_io_kind_exists(ref entries, function_id, kind) {
+        return false;
+    }
+    list_push(mutref entries, make_review_io_kind_fact(function_id, kind));
+    return true;
+}
+
+fn io_kinds_for_function(entries: ref list<review_io_kind_fact>, module: str, function_name: str) -> list<str> {
+    let mut kinds: list<str> = list();
+    let function_id = function_internal_name(module, function_name);
+    if review_io_kind_exists(ref entries, function_id, "read") {
+        list_push(mutref kinds, "read");
+    }
+    if review_io_kind_exists(ref entries, function_id, "write") {
+        list_push(mutref kinds, "write");
+    }
+    if review_io_kind_exists(ref entries, function_id, "create_dir") {
+        list_push(mutref kinds, "create_dir");
+    }
+    if review_io_kind_exists(ref entries, function_id, "process") {
+        list_push(mutref kinds, "process");
+    }
+    return kinds;
+}
+
 fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref calls) {
@@ -1243,7 +1315,7 @@ fn function_has_direct_io(calls: ref list<call_fact>, module: str, function_name
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name and (value.name == "read_file" or value.name == "write_file" or value.name == "create_dir_all" or value.name == "run_process") {
+                if value.module == module and value.function_name == function_name and io_kind_for_builtin(value.name) != "" {
                     return true;
                 }
             },
@@ -1353,7 +1425,7 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
                             match current {
                                 Some(call_entry) => {
                                     if call_entry.module == value.module and call_entry.function_name == value.name {
-                                        if call_entry.name == "read_file" or call_entry.name == "write_file" or call_entry.name == "create_dir_all" or call_entry.name == "run_process" {
+                                        if io_kind_for_builtin(call_entry.name) != "" {
                                             found_io = true;
                                         } else {
                                             let origin = visible_function_origin(ref functions, ref uses, value.module, call_entry.name);
@@ -1378,6 +1450,67 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
                 },
             }
             index = index + 1;
+        }
+    }
+    return inferred;
+}
+
+fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<review_io_kind_fact> {
+    let mut inferred: list<review_io_kind_fact> = list();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut function_index = 0;
+        while function_index < list_len(ref functions) {
+            let function_entry = list_get(ref functions, function_index);
+            match function_entry {
+                Some(function_value) => {
+                    let function_id = function_internal_name(function_value.module, function_value.name);
+                    let mut call_index = 0;
+                    while call_index < list_len(ref calls) {
+                        let call_entry = list_get(ref calls, call_index);
+                        match call_entry {
+                            Some(call_value) => {
+                                if call_value.module == function_value.module and call_value.function_name == function_value.name {
+                                    let direct_kind = io_kind_for_builtin(call_value.name);
+                                    if direct_kind != "" {
+                                        if push_review_io_kind_if_missing(mutref inferred, function_id, direct_kind) {
+                                            changed = true;
+                                        }
+                                    } else {
+                                        let origin = visible_function_origin(ref functions, ref uses, function_value.module, call_value.name);
+                                        if origin != "" and origin != "__builtin__" {
+                                            let callee_id = function_internal_name(origin, call_value.name);
+                                            let mut kind_index = 0;
+                                            while kind_index < list_len(ref inferred) {
+                                                let known_kind = list_get(ref inferred, kind_index);
+                                                match known_kind {
+                                                    Some(kind_value) => {
+                                                        if kind_value.function_id == callee_id {
+                                                            if push_review_io_kind_if_missing(mutref inferred, function_id, kind_value.kind) {
+                                                                changed = true;
+                                                            }
+                                                        }
+                                                    },
+                                                    None => {
+                                                    },
+                                                }
+                                                kind_index = kind_index + 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        call_index = call_index + 1;
+                    }
+                },
+                None => {
+                },
+            }
+            function_index = function_index + 1;
         }
     }
     return inferred;
@@ -1848,13 +1981,19 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
                     let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
                     let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
                     let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
+                    let io_kind = io_kind_for_builtin(value.name);
                     list_push(mutref lines, concat3(indent, "  {", ""));
                     list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_kind\": ", json_quote(target_kind), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_id\": ", json_quote(target_id), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"target_module\": ", json_quote(origin), ",", ""));
-                    list_push(mutref lines, concat5(indent, "    \"evidence\": ", json_quote(evidence), ",", ""));
+                    if io_kind != "" {
+                        list_push(mutref lines, concat5(indent, "    \"evidence\": ", json_quote(evidence), ",", ""));
+                        list_push(mutref lines, concat5(indent, "    \"io_kind\": ", json_quote(io_kind), ",", ""));
+                    } else {
+                        list_push(mutref lines, concat5(indent, "    \"evidence\": ", json_quote(evidence), ",", ""));
+                    }
                     append_span(mutref lines, concat3(indent, "    ", ""), value.at, false);
                     emitted_calls = emitted_calls + 1;
                     if emitted_calls < total_calls {
@@ -1876,6 +2015,7 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
 fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
+    let io_kind_effects = build_io_kind_effects(ref functions, ref calls, ref uses);
     let total_functions = list_len(ref functions);
     list_push(mutref lines, "  \"functions\": [");
     let mut index = 0;
@@ -1888,6 +2028,7 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 let declared_propagates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_propagates);
                 let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
                 let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
+                let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, value.module, value.name);
                 let mut inferred_effect_names: list<str> = list();
                 if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
                     list_push(mutref inferred_effect_names, "print");
@@ -1917,7 +2058,12 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 list_push(mutref lines, "      \"inferred\": {");
                 append_named_string_array(mutref lines, "        ", "mutates", ref inferred_mutate_names, true);
                 append_named_string_array(mutref lines, "        ", "effects", ref inferred_effect_names, true);
-                append_named_string_array(mutref lines, "        ", "propagates", ref inferred_propagate_names, false);
+                if list_len(ref inferred_io_kinds) > 0 {
+                    append_named_string_array(mutref lines, "        ", "propagates", ref inferred_propagate_names, true);
+                    append_named_string_array(mutref lines, "        ", "io_kinds", ref inferred_io_kinds, false);
+                } else {
+                    append_named_string_array(mutref lines, "        ", "propagates", ref inferred_propagate_names, false);
+                }
                 list_push(mutref lines, "      },");
                 list_push(mutref lines, "      \"evidence\": {");
                 list_push(mutref lines, "        \"audit\": \"declared\",");
@@ -1954,6 +2100,7 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
                 let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
                 let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
                 let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
+                let io_kind = io_kind_for_builtin(value.name);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 list_push(mutref lines, "      \"kind\": \"call\",");
@@ -1961,7 +2108,12 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
                 list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
                 list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
                 list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
-                list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                if io_kind != "" {
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"io_kind\": ", json_quote(io_kind), ",", "", ""));
+                } else {
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                }
                 append_span(mutref lines, "      ", value.at, false);
                 if index + 1 < total_calls {
                     list_push(mutref lines, "    },");
@@ -1996,11 +2148,17 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
             Some(value) => {
                 let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
                 let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
+                let io_kind = io_kind_for_builtin(value.name);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
                 list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
                 list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
-                list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), "", "", ""));
+                if io_kind != "" {
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"io_kind\": ", json_quote(io_kind), "", "", ""));
+                } else {
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), "", "", ""));
+                }
                 if index + 1 < total_calls {
                     list_push(mutref lines, "    },");
                 } else {
@@ -2200,15 +2358,14 @@ fn collect_propagation_contracts(decls: ref list<review_decl_entry>, values_out:
     return;
 }
 
-fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, items: ref list<top_item>, function_facts: ref list<function_fact>, variants: ref list<variant_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>) -> str {
+fn review_function_signature(entry: review_function_fact, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, items: ref list<top_item>, function_facts: ref list<function_fact>, variants: ref list<variant_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, print_effects: ref list<str>, io_effects: ref list<str>, io_kind_effects: ref list<review_io_kind_fact>) -> str {
     let declared_mutates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_mutates);
     let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
     let declared_propagates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_propagates);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
     let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, entry.module, entry.name);
     let propagation_context_names = propagation_contexts(ref locals, entry.module, entry.name);
-    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
-    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
+    let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, entry.module, entry.name);
     let mut inferred_effect_names: list<str> = list();
     if list_contains(ref print_effects, function_internal_name(entry.module, entry.name)) {
         list_push(mutref inferred_effect_names, "print");
@@ -2228,20 +2385,21 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     signature = concat3(signature, "|decl_propagates=", join_strings(ref declared_propagates));
     signature = concat3(signature, "|inferred_mutates=", join_strings(ref inferred_mutate_names));
     signature = concat3(signature, "|inferred_effects=", join_strings(ref inferred_effect_names));
+    signature = concat3(signature, "|inferred_io_kinds=", join_strings(ref inferred_io_kinds));
     signature = concat3(signature, "|inferred_propagates=", join_strings(ref inferred_propagate_names));
     signature = concat3(signature, "|propagation_contexts=", join_strings(ref propagation_context_names));
     signature = concat3(signature, "|calls=", join_strings(ref call_edges));
     return signature;
 }
 
-fn review_function_signature_by_id(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, items: ref list<top_item>, function_facts: ref list<function_fact>, variants: ref list<variant_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, id: str) -> str {
+fn review_function_signature_by_id(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, items: ref list<top_item>, function_facts: ref list<function_fact>, variants: ref list<variant_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, print_effects: ref list<str>, io_effects: ref list<str>, io_kind_effects: ref list<review_io_kind_fact>, id: str) -> str {
     let mut index = 0;
     while index < list_len(ref functions) {
         let entry = list_get(ref functions, index);
         match entry {
             Some(value) => {
                 if function_identity(value.module, value.name) == id {
-                    return review_function_signature(value, ref functions, ref decls, ref items, ref function_facts, ref variants, ref function_params, ref assignments, ref calls, ref locals, ref uses);
+                    return review_function_signature(value, ref functions, ref decls, ref items, ref function_facts, ref variants, ref function_params, ref assignments, ref calls, ref locals, ref uses, ref print_effects, ref io_effects, ref io_kind_effects);
                 }
             },
             None => {
@@ -2324,6 +2482,12 @@ fn collect_removed_functions(before_functions: ref list<review_function_fact>, a
 }
 
 fn collect_changed_functions(before_functions: ref list<review_function_fact>, before_decls: ref list<review_decl_entry>, before_items: ref list<top_item>, before_function_facts: ref list<function_fact>, before_variants: ref list<variant_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, before_uses: ref list<module_use>, after_functions: ref list<review_function_fact>, after_decls: ref list<review_decl_entry>, after_items: ref list<top_item>, after_function_facts: ref list<function_fact>, after_variants: ref list<variant_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>, after_uses: ref list<module_use>, changed_out: mutref list<str>) -> unit {
+    let before_print_effects = build_print_effects(ref before_functions, ref before_calls, ref before_uses);
+    let before_io_effects = build_io_effects(ref before_functions, ref before_calls, ref before_uses);
+    let before_io_kind_effects = build_io_kind_effects(ref before_functions, ref before_calls, ref before_uses);
+    let after_print_effects = build_print_effects(ref after_functions, ref after_calls, ref after_uses);
+    let after_io_effects = build_io_effects(ref after_functions, ref after_calls, ref after_uses);
+    let after_io_kind_effects = build_io_kind_effects(ref after_functions, ref after_calls, ref after_uses);
     let mut index = 0;
     while index < list_len(ref after_functions) {
         let entry = list_get(ref after_functions, index);
@@ -2331,8 +2495,8 @@ fn collect_changed_functions(before_functions: ref list<review_function_fact>, b
             Some(value) => {
                 let id = function_identity(value.module, value.name);
                 if function_identity_exists(ref before_functions, id) {
-                    let before_signature = review_function_signature_by_id(ref before_functions, ref before_decls, ref before_items, ref before_function_facts, ref before_variants, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses, id);
-                    let after_signature = review_function_signature(value, ref after_functions, ref after_decls, ref after_items, ref after_function_facts, ref after_variants, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses);
+                    let before_signature = review_function_signature_by_id(ref before_functions, ref before_decls, ref before_items, ref before_function_facts, ref before_variants, ref before_params, ref before_assignments, ref before_calls, ref before_locals, ref before_uses, ref before_print_effects, ref before_io_effects, ref before_io_kind_effects, id);
+                    let after_signature = review_function_signature(value, ref after_functions, ref after_decls, ref after_items, ref after_function_facts, ref after_variants, ref after_params, ref after_assignments, ref after_calls, ref after_locals, ref after_uses, ref after_print_effects, ref after_io_effects, ref after_io_kind_effects);
                     if before_signature != after_signature {
                         list_push(mutref changed_out, id);
                     }

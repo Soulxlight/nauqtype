@@ -217,7 +217,7 @@ Rules:
 - `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`
 - `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
 - `effects(print)` is checked against direct or transitive use of `print_line` / `eprint_line`
-- `effects(io)` is checked against direct or transitive use of file/process builtins: `read_file`, `write_file`, `create_dir_all`, and `run_process`
+- `effects(io)` is checked against direct or transitive use of file/process builtins: `read_file`, `write_file`, `create_dir_all`, and `run_process`; facts v2 and review v2 additionally report the checked `read`, `write`, `create_dir`, and `process` subkinds without widening source-level effect syntax
 - `propagates(E)` is checked against direct `let name = result_expr?;` propagation sites in the function
 - duplicate clause entries are rejected
 - user-defined effect atoms, typed repair obligations, and stronger contract inference are deferred

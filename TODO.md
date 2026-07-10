@@ -301,3 +301,11 @@
 - [x] Treat label-only changes as changed functions in review-diff and change-report
 - [x] Keep exact error typing, `propagates(E)`, lowering, and runtime behavior unchanged
 - [x] Add canonical corpus and focused stage1 driver coverage
+
+## M34 Effect Evidence Granularity
+
+- [x] Preserve `effects(io)` as the only source-level IO audit atom
+- [x] Emit checked `read`, `write`, `create_dir`, and `process` direct-call evidence in facts v2 and review v2
+- [x] Infer canonical transitive IO subkind lists for review v2 function evidence
+- [x] Surface subkind-only changes through existing review-diff and change-report changed-function evidence
+- [x] Keep policy metadata, enforcement, and user-defined effects out of scope

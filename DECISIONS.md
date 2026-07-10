@@ -343,3 +343,11 @@
 - Reason chosen: a short local label lets a reviewer see why an error is forwarded without duplicating the error contract or adding hidden control flow. Bare identifiers are deterministic, formatter-friendly, and keep provenance visible in source diffs.
 - Consequences: labels are emitted as optional `context` fields on facts v2 and review v2 propagation sites. A label-only change alters the checked function signature used by review-diff and change-report. Labels do not alter `result` typing, `propagates(E)` inference, IR lowering, C emission, or runtime behavior.
 - Reversible later: labels can gain policy requirements or broader text forms in a separately versioned evidence milestone; expression-position `?`, implicit conversion, and custom propagation protocols remain separate decisions.
+
+## D044: IO subkinds are checked evidence, not effects
+
+- Decision: expose the fixed IO subkinds `read`, `write`, `create_dir`, and `process` in versioned semantic evidence while retaining `io` as the only source-level IO audit atom.
+- Alternatives considered: separate `effects(read, write, ...)` declarations, user-defined effect atoms, subkind policy enforcement, or no subkind evidence.
+- Reason chosen: supervisors benefit from knowing how an `effects(io)` function touches the outside world, but splitting the declaration surface would make contracts noisier and less stable before real policy needs prove it worthwhile.
+- Consequences: facts v2 annotates direct IO builtin call edges; review v2 annotates direct calls and reports transitive `inferred.io_kinds` in canonical order. Review-diff and change-report surface subkind-only behavior through existing changed-function evidence. Policy remains intentionally keyed to stable semantic IDs and coarse `effects(io)` facts.
+- Reversible later: a separately versioned policy/effects milestone may add opt-in rules over these fixed subkinds, but no user-defined atoms, implicit capabilities, or effect subtyping are implied by this decision.

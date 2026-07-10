@@ -489,6 +489,14 @@ Status:
 
 Status:
 
+- done
+- facts v2 marks direct IO builtin call edges with optional checked `io_kind` values: `read`, `write`, `create_dir`, or `process`
+- review v2 carries those direct call markers and a canonical transitive `inferred.io_kinds` list per affected function
+- review-diff and change-report treat subkind-only changes as changed functions while retaining their locked schemas
+- source audit blocks and policy enforcement remain intentionally coarse at `effects(io)`; no user-defined effects or subkind declarations were added
+
+Status:
+
 - planned
 
 ### M35: Field Assignment V1

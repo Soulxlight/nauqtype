@@ -39,6 +39,7 @@ audit {
 - The compiler marks a `mutref` parameter as mutated when the function writes through that parameter.
 - `print` is inferred directly from `print_line(...)` / `eprint_line(...)` calls and transitively through checked calls.
 - `io` is inferred directly from `read_file(...)`, `write_file(...)`, `create_dir_all(...)`, and `run_process(...)` calls and transitively through checked calls.
+- Facts v2 and review v2 expose checked IO evidence as `read`, `write`, `create_dir`, or `process`; these subkinds are descriptive evidence, not new audit atoms.
 - Propagation is inferred from accepted `let name = result_expr?;` sites and checked against exact `propagates(E)` entries.
 - Missing inferred facts are errors.
 - Overdeclared facts are warnings.

@@ -647,6 +647,137 @@ class Stage1DriverTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["functions"][0]["inferred"]["effects"], ["io"])
 
+    def test_stage1_driver_io_subkind_evidence_is_transitive_and_diffable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            self._write_project(
+                before,
+                {
+                    "main.nq": """
+                    fn direct(path: str) -> unit
+                    audit {
+                        intent("Read a tooling file.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let data = read_file(path);
+                        return;
+                    }
+
+                    fn through(path: str) -> unit
+                    audit {
+                        intent("Call the tooling helper.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        direct(path);
+                        return;
+                    }
+
+                    fn main() -> i32
+                    audit {
+                        intent("Run the tooling evidence fixture.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        through("build/out.txt");
+                        return 0;
+                    }
+                    """,
+                },
+            )
+            self._write_project(
+                after,
+                {
+                    "main.nq": """
+                    fn direct(path: str) -> unit
+                    audit {
+                        intent("Use the supported tooling operations.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        let made = create_dir_all("build");
+                        let written = write_file(path, "ok");
+                        let data = read_file(path);
+                        let args: list<str> = [];
+                        let run = run_process("tool", ref args, ".");
+                        return;
+                    }
+
+                    fn through(path: str) -> unit
+                    audit {
+                        intent("Call the tooling helper.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        direct(path);
+                        return;
+                    }
+
+                    fn main() -> i32
+                    audit {
+                        intent("Run the tooling evidence fixture.");
+                        mutates();
+                        effects(io);
+                    }
+                    {
+                        through("build/out.txt");
+                        return 0;
+                    }
+                    """,
+                },
+            )
+
+            review = self._run_driver(["review", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
+            review_payload = json.loads(review.stdout)
+            expected_kinds = ["read", "write", "create_dir", "process"]
+            for function_name in ["direct", "through", "main"]:
+                function = next(entry for entry in review_payload["functions"] if entry["name"] == function_name)
+                self.assertEqual(function["audit"]["effects"], ["io"])
+                self.assertEqual(function["inferred"]["effects"], ["io"])
+                self.assertEqual(function["inferred"]["io_kinds"], expected_kinds)
+            direct = next(entry for entry in review_payload["functions"] if entry["name"] == "direct")
+            direct_kinds = {entry["name"]: entry.get("io_kind") for entry in direct["calls"]}
+            self.assertEqual(
+                {name: direct_kinds[name] for name in ["read_file", "write_file", "create_dir_all", "run_process"]},
+                {"read_file": "read", "write_file": "write", "create_dir_all": "create_dir", "run_process": "process"},
+            )
+            self._assert_schema_shape(
+                review_payload,
+                json.loads((self.root / "schemas" / "review-v2.schema.json").read_text(encoding="utf-8")),
+            )
+
+            facts = self._run_driver(["facts", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            facts_payload = json.loads(facts.stdout)
+            fact_kinds = {entry["callee"]: entry.get("io_kind") for entry in facts_payload["call_graph"]}
+            self.assertEqual(
+                {name: fact_kinds[f"builtin:{name}"] for name in ["read_file", "write_file", "create_dir_all", "run_process"]},
+                {"read_file": "read", "write_file": "write", "create_dir_all": "create_dir", "run_process": "process"},
+            )
+            self._assert_schema_shape(
+                facts_payload,
+                json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8")),
+            )
+
+            review_diff = self._run_driver(["review-diff", str(before / "main.nq"), str(after / "main.nq"), "--format", "v2"])
+            self.assertEqual(review_diff.returncode, 0, review_diff.stdout + review_diff.stderr)
+            review_diff_payload = json.loads(review_diff.stdout)
+            self.assertEqual(review_diff_payload["changes"]["changed_functions"], ["fn:main::direct", "fn:main::through", "fn:main::main"])
+
+            report = self._run_driver(["change-report", str(before / "main.nq"), str(after / "main.nq"), "--format", "v1"])
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            report_payload = json.loads(report.stdout)
+            self.assertEqual(report_payload["changes"]["changed_functions"], ["fn:main::direct", "fn:main::through", "fn:main::main"])
+
     def test_stage1_driver_review_requires_declared_io_effect(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

@@ -16,6 +16,7 @@ Current bootstrap status:
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
+- fixed `effects(io)` contracts with checked read/write/create-directory/process evidence in v2 supervision outputs
 - named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
