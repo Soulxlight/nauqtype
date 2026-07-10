@@ -39,7 +39,7 @@ These examples demonstrate Nauqtype's unique AI supervision surfaces, contract e
 - [fallible_function.nq](examples/fallible_function.nq): Writing functions that return `result<T, E>`.
 - [result_handling.nq](examples/result_handling.nq): Handling `Ok` and `Err` branches using `match`.
 - [read_file_len.nq](examples/read_file_len.nq): Reading files and demonstrating the inferred `effects(io)` audit atom.
-- [propagation_question.nq](examples/propagation_question.nq): Statement-boundary `?` operator usage with required `propagates(...)` audit evidence.
+- [propagation_question.nq](examples/propagation_question.nq): Statement-boundary `?` operator usage with a `?[context_label]` provenance label and required `propagates(...)` audit evidence.
 
 ## Multi-File Entrypoints
 

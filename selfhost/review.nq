@@ -1200,6 +1200,25 @@ fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref l
     return inferred;
 }
 
+fn propagation_contexts(locals: ref list<local_init_fact>, module: str, function_name: str) -> list<str> {
+    let mut contexts: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        let entry = list_get(ref locals, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.expr_member_name == "propagate" and value.propagation_label != "" {
+                    list_push(mutref contexts, concat3(propagation_identity(value.module, value.function_name, value.at), "=", value.propagation_label));
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return contexts;
+}
+
 fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref calls) {
@@ -2022,6 +2041,9 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
                     list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
                     list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
                     list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                    if value.propagation_label != "" {
+                        list_push(mutref lines, concat5("      \"context\": ", json_quote(value.propagation_label), ",", "", ""));
+                    }
                     append_span(mutref lines, "      ", value.at, false);
                     emitted = emitted + 1;
                     if emitted < total_sites {
@@ -2184,6 +2206,7 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     let declared_propagates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_propagates);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
     let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, entry.module, entry.name);
+    let propagation_context_names = propagation_contexts(ref locals, entry.module, entry.name);
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let mut inferred_effect_names: list<str> = list();
@@ -2206,6 +2229,7 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     signature = concat3(signature, "|inferred_mutates=", join_strings(ref inferred_mutate_names));
     signature = concat3(signature, "|inferred_effects=", join_strings(ref inferred_effect_names));
     signature = concat3(signature, "|inferred_propagates=", join_strings(ref inferred_propagate_names));
+    signature = concat3(signature, "|propagation_contexts=", join_strings(ref propagation_context_names));
     signature = concat3(signature, "|calls=", join_strings(ref call_edges));
     return signature;
 }

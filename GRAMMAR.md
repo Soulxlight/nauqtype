@@ -145,7 +145,7 @@ stmt          = let_stmt
               | expr_stmt ;
 
 let_stmt      = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr ";" ;
-let_propagate_stmt = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr "?" ";" ;
+let_propagate_stmt = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr "?" [ "[" IDENT "]" ] ";" ;
 let_else_stmt = "let" let_else_pattern "=" expr "else" block ";" ;
 let_else_pattern = ( "Some" | "Ok" ) "(" IDENT ")" ;
 assign_stmt   = IDENT "=" expr ";" ;

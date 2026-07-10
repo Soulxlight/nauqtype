@@ -794,6 +794,16 @@ class Stage1DriverTests(unittest.TestCase):
                         let data = read_file("input.txt")?;
                         return Ok(str_len(data));
                     }
+
+                    fn main() -> i32
+                    audit {
+                        intent("Provide a checked entrypoint.");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return 0;
+                    }
                     """,
                 },
             )
@@ -824,6 +834,90 @@ class Stage1DriverTests(unittest.TestCase):
             report_payload = json.loads(report.stdout)
             self.assertEqual(report_payload["summary"]["added_propagates"], 1)
             self.assertEqual(report_payload["changes"]["added_propagates"], ["fn:main::load_count -> io_err"])
+
+    def test_stage1_driver_propagation_context_label_flows_to_evidence_and_diffs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            self._write_project(
+                before,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?;
+                        return Ok(str_len(data));
+                    }
+                    """,
+                },
+            )
+            self._write_project(
+                after,
+                {
+                    "main.nq": """
+                    fn load_count() -> result<i32, io_err>
+                    audit {
+                        intent("Load a file and return its length.");
+                        mutates();
+                        effects(io);
+                        propagates(io_err);
+                    }
+                    {
+                        let data = read_file("input.txt")?[config_read];
+                        return Ok(str_len(data));
+                    }
+
+                    fn main() -> i32
+                    audit {
+                        intent("Provide a checked entrypoint.");
+                        mutates();
+                        effects();
+                    }
+                    {
+                        return 0;
+                    }
+                    """,
+                },
+            )
+
+            check = self._run_driver(["check", "main.nq"], cwd=after)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+            facts = self._run_driver(["facts", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            facts_payload = json.loads(facts.stdout)
+            propagation_ref = next(entry for entry in facts_payload["references"] if entry["kind"] == "propagation_site")
+            self.assertEqual(propagation_ref["context"], "config_read")
+            self._assert_schema_shape(
+                facts_payload,
+                json.loads((self.root / "schemas" / "facts-v2.schema.json").read_text(encoding="utf-8")),
+            )
+
+            review = self._run_driver(["review", "main.nq", "--format", "v2"], cwd=after)
+            self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
+            review_payload = json.loads(review.stdout)
+            self.assertEqual(review_payload["propagation_sites"][0]["context"], "config_read")
+            self._assert_schema_shape(
+                review_payload,
+                json.loads((self.root / "schemas" / "review-v2.schema.json").read_text(encoding="utf-8")),
+            )
+
+            review_diff = self._run_driver(["review-diff", str(before / "main.nq"), str(after / "main.nq"), "--format", "v2"])
+            self.assertEqual(review_diff.returncode, 0, review_diff.stdout + review_diff.stderr)
+            review_diff_payload = json.loads(review_diff.stdout)
+            self.assertEqual(review_diff_payload["changes"]["changed_functions"], ["fn:main::load_count"])
+
+            report = self._run_driver(["change-report", str(before / "main.nq"), str(after / "main.nq"), "--format", "v1"])
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            report_payload = json.loads(report.stdout)
+            self.assertEqual(report_payload["changes"]["changed_functions"], ["fn:main::load_count"])
 
     def test_stage1_driver_change_report_rejects_missing_propagation_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

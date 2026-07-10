@@ -27,6 +27,7 @@ type fact_reference {
     target_id: str,
     at: i32,
     evidence: str,
+    context: str,
 }
 
 type fact_call_edge {
@@ -83,7 +84,7 @@ fn make_fact_target(kind: str, id: str, evidence: str) -> fact_target {
     };
 }
 
-fn make_fact_reference(id: str, kind: str, module: str, from: str, name: str, target_kind: str, target_id: str, at: i32, evidence: str) -> fact_reference {
+fn make_fact_reference(id: str, kind: str, module: str, from: str, name: str, target_kind: str, target_id: str, at: i32, evidence: str, context: str) -> fact_reference {
     return fact_reference {
         id: id,
         kind: kind,
@@ -94,6 +95,7 @@ fn make_fact_reference(id: str, kind: str, module: str, from: str, name: str, ta
         target_id: target_id,
         at: at,
         evidence: evidence,
+        context: context,
     };
 }
 
@@ -1385,7 +1387,7 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
                 match value.kind {
                     checked_expr_field => {
                         if value.at >= 0 {
-                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked", ""));
                         }
                     },
                     _ => {
@@ -1410,7 +1412,7 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
                         if value.is_inherited {
                             ref_kind = "record_update_inherit";
                         }
-                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity(ref_kind, expr.module_name, expr.function_name, value.at), ref_kind, expr.module_name, function_identity(expr.module_name, expr.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked"));
+                        list_push(mutref resolved_out, make_fact_reference(field_ref_identity(ref_kind, expr.module_name, expr.function_name, value.at), ref_kind, expr.module_name, function_identity(expr.module_name, expr.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked", ""));
                     },
                     None => {
                     },
@@ -1444,7 +1446,7 @@ fn append_checked_arg_label_references(bindings: ref list<body_binding>, express
                                         target_id = builtin_param_identity(expr.name, value.label_name);
                                         evidence = "builtin";
                                     }
-                                    list_push(mutref resolved_out, make_fact_reference(arg_label_ref_identity(expr.module_name, expr.function_name, value.label_at), "argument_label", expr.module_name, function_identity(expr.module_name, expr.function_name), value.label_name, target_kind, target_id, value.label_at, evidence));
+                                    list_push(mutref resolved_out, make_fact_reference(arg_label_ref_identity(expr.module_name, expr.function_name, value.label_at), "argument_label", expr.module_name, function_identity(expr.module_name, expr.function_name), value.label_name, target_kind, target_id, value.label_at, evidence, ""));
                                 },
                                 _ => {
                                 },
@@ -1473,7 +1475,7 @@ fn append_propagation_references(functions: ref list<function_fact>, items: ref 
                     let error_name = propagation_error_name(ref functions, ref items, ref uses, value);
                     if error_name != "" {
                         let target = type_target_for_name(ref items, ref uses, value.module, error_name);
-                        list_push(mutref resolved_out, make_fact_reference(propagation_ref_identity(value.module, value.function_name, value.at), "propagation_site", value.module, function_identity(value.module, value.function_name), error_name, target.kind, target.id, value.at, target.evidence));
+                        list_push(mutref resolved_out, make_fact_reference(propagation_ref_identity(value.module, value.function_name, value.at), "propagation_site", value.module, function_identity(value.module, value.function_name), error_name, target.kind, target.id, value.at, target.evidence, value.propagation_label));
                     }
                 }
             },
@@ -1491,7 +1493,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
         let entry = list_get(ref uses, use_index);
         match entry {
             Some(value) => {
-                list_push(mutref resolved_out, make_fact_reference(use_identity(value), "import", value.module, module_identity(value.module), value.name, "module", module_identity(value.name), value.at, "declared"));
+                list_push(mutref resolved_out, make_fact_reference(use_identity(value), "import", value.module, module_identity(value.module), value.name, "module", module_identity(value.name), value.at, "declared", ""));
             },
             None => {
             },
@@ -1505,7 +1507,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
         match entry {
             Some(value) => {
                 let target = type_target_for_ref(ref items, ref uses, value);
-                list_push(mutref resolved_out, make_fact_reference(type_ref_identity(value), type_ref_kind_text(value.kind), value.module, value.context_name, value.name, target.kind, target.id, value.at, target.evidence));
+                list_push(mutref resolved_out, make_fact_reference(type_ref_identity(value), type_ref_kind_text(value.kind), value.module, value.context_name, value.name, target.kind, target.id, value.at, target.evidence, ""));
             },
             None => {
             },
@@ -1529,7 +1531,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
                     bind_end = last_binding_index_for_function(ref bindings, value.module, value.function_name);
                 }
                 let target = name_target_for_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, value, bind_start, bind_end);
-                list_push(mutref resolved_out, make_fact_reference(name_ref_identity(value), name_ref_kind_text(value.kind), value.module, function_identity(value.module, value.function_name), value.name, target.kind, target.id, value.at, target.evidence));
+                list_push(mutref resolved_out, make_fact_reference(name_ref_identity(value), name_ref_kind_text(value.kind), value.module, function_identity(value.module, value.function_name), value.name, target.kind, target.id, value.at, target.evidence, ""));
             },
             None => {
             },
@@ -1558,6 +1560,9 @@ fn append_fact_reference(lines: mutref list<str>, entry: fact_reference, include
     list_push(mutref lines, concat5("      \"target_id\": ", json_quote(entry.target_id), ",", "", ""));
     if include_evidence {
         list_push(mutref lines, concat5("      \"evidence\": ", json_quote(entry.evidence), ",", "", ""));
+    }
+    if entry.context != "" {
+        list_push(mutref lines, concat5("      \"context\": ", json_quote(entry.context), ",", "", ""));
     }
     append_span(mutref lines, "      ", entry.at, false);
     list_push(mutref lines, concat3("    }", suffix, ""));

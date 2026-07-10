@@ -15,7 +15,7 @@ Current bootstrap status:
 - explicit `match`
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
-- statement-boundary `?` propagation for unchanged `result<T, E>` errors, checked by `propagates(E)`
+- statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
 - named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
@@ -185,7 +185,7 @@ Example programs worth checking first:
 - `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names
 - `examples/record_update.nq`: copy-only record update with explicit base provenance
 - `examples/record_update_nontrivial.nq`: record update over a computed owned base value
-- `examples/propagation_question.nq`: statement-boundary `?` with `propagates(...)` evidence
+- `examples/propagation_question.nq`: statement-boundary `?` with optional context-label and `propagates(...)` evidence
 - `examples/break_continue.nq`: minimal loop control
 - `examples/review_contracts.nq`: AI Contracts and `review` workflow
 

@@ -2,7 +2,7 @@
 
 This note packages the accepted design direction for `?` support. The goal is not to clone Rust. Nauqtype should make fallible code less wordy while increasing compiler-visible evidence for human supervisors and agent pairs.
 
-Current implementation status: statement-boundary `let name = result_expr?;`, exact error typing, C emission, `propagates(E)` audit validation, and the versioned facts/review/change-report evidence surface are implemented.
+Current implementation status: statement-boundary `let name = result_expr?;`, optional `?[context_label]` provenance labels, exact error typing, C emission, `propagates(E)` audit validation, and the versioned facts/review/change-report evidence surface are implemented.
 
 ## Core Decision
 
@@ -30,7 +30,7 @@ audit {
     propagates(io_err);
 }
 {
-    let text = read_file(path)?;
+    let text = read_file(path)?[config_read];
     return Ok(str_len(text));
 }
 ```
@@ -57,6 +57,8 @@ but it must remain visible as a propagation site in facts/review/change-report o
 - Bind the `Ok` payload to the left-hand local.
 - Return `Err(err)` unchanged on failure.
 - Require or infer `propagates(E)` through the audit contract.
+- Permit an optional bare identifier label as `?[context_label]`.
+- Treat the label as checked evidence only; it does not affect error typing, audit inference, lowering, or runtime control flow.
 - Reject implicit error conversion.
 - Reject traits, custom propagation protocols, and overloads.
 - Reject expression-position `?`, including call arguments, binary expressions, conditions, and `return Ok(expr?);`.
@@ -88,7 +90,7 @@ Compiler behavior mirrors the existing contract pattern:
 
 ## Evidence Surface
 
-Do not silently change default or unversioned JSON behavior. Propagation evidence lives on explicit machine-readable surfaces: facts v2 exports checked propagation-site references, review v2 exports propagation contracts/sites, and change-report v1 reports added/removed propagation contracts. Future incompatible shape changes still require a new version.
+Do not silently change default or unversioned JSON behavior. Propagation evidence lives on explicit machine-readable surfaces: facts v2 exports checked propagation-site references, review v2 exports propagation contracts/sites, and change-report v1 reports added/removed propagation contracts. Labeled sites include an optional `context` string in facts/review v2, and label-only changes are visible as changed functions in review-diff/change-report. Future incompatible shape changes still require a new version.
 
 A checked propagation site should carry at least:
 
@@ -100,7 +102,7 @@ A checked propagation site should carry at least:
 - success payload type
 - propagated error type
 - enclosing return type
-- optional context label when that extension is accepted
+- optional context label
 - checked evidence marker
 
 Example shape:
@@ -116,7 +118,7 @@ Example shape:
   "ok_type": "str",
   "err_type": "io_err",
   "return_type": "result<i32, io_err>",
-  "context": "",
+  "context": "config_read",
   "evidence": "checked"
 }
 ```
@@ -156,7 +158,6 @@ That lack of an escape hatch is intentional. Nauqtype should make unchanged prop
 
 ## Deferred Extensions
 
-- Optional propagation labels such as `read_file(path)?[read_config]`.
 - Policy rules requiring labels for public APIs or `effects(io)` functions.
 - `option<T>?` inside functions returning `option<U>`.
 - Expression-position `?`.

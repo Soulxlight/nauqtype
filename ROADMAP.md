@@ -473,7 +473,12 @@ Status:
 
 Status:
 
-- planned
+- done
+- statement-boundary propagation now accepts an optional bare identifier label as `?[context_label]`
+- labels are preserved as optional `context` evidence on facts v2 and review v2 propagation sites without changing unlabeled output shapes
+- label-only changes participate in review-diff and change-report function-change detection
+- exact error typing, `propagates(E)`, lowering, and runtime behavior remain unchanged
+- no expression-position `?`, `try` blocks, implicit conversion, `option<T>?`, or custom propagation protocols were added
 
 ### M34: Effect Evidence Granularity
 

@@ -293,3 +293,11 @@
 - [x] keep formatter-lite as the gate for teaching examples
 - [x] make the corpus useful for future model training and human onboarding without growing source-language semantics
 - [x] keep runnable corpus entries connected to `prove-corpus`
+
+## M33 Propagation Context Labels
+
+- [x] Add optional bare identifier labels at existing statement-boundary `?` sites using `?[context_label]`
+- [x] Preserve labels as optional facts v2 and review v2 propagation-site context evidence
+- [x] Treat label-only changes as changed functions in review-diff and change-report
+- [x] Keep exact error typing, `propagates(E)`, lowering, and runtime behavior unchanged
+- [x] Add canonical corpus and focused stage1 driver coverage

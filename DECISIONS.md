@@ -335,3 +335,11 @@
 - Reason chosen: a copied alpha layout needs enough identity for humans, agents, and future packaging checks to know what artifact they are testing without pretending the project is already a distro package.
 - Consequences: `scripts/make_linux_release.sh` owns release metadata generation, `scripts/verify_linux_release.sh` validates the copied manifest, and `scripts/check_linux_alpha.sh` must smoke-test a copied release from outside the repository root. This adds no source-language syntax, runtime helper, public compiler command, or package-manager guarantee.
 - Reversible later: yes; tarballs, `.deb` metadata, NauqOS integration, or richer release manifests can replace this alpha shape once packaging becomes the milestone.
+
+## D043: Propagation labels are evidence-only provenance
+
+- Decision: permit an optional bare identifier after an existing statement-boundary propagation operator, written `result_expr?[context_label]`.
+- Alternatives considered: string labels, mandatory labels, audit-block label declarations, expression-position propagation labels, or no labels at all.
+- Reason chosen: a short local label lets a reviewer see why an error is forwarded without duplicating the error contract or adding hidden control flow. Bare identifiers are deterministic, formatter-friendly, and keep provenance visible in source diffs.
+- Consequences: labels are emitted as optional `context` fields on facts v2 and review v2 propagation sites. A label-only change alters the checked function signature used by review-diff and change-report. Labels do not alter `result` typing, `propagates(E)` inference, IR lowering, C emission, or runtime behavior.
+- Reversible later: labels can gain policy requirements or broader text forms in a separately versioned evidence milestone; expression-position `?`, implicit conversion, and custom propagation protocols remain separate decisions.
