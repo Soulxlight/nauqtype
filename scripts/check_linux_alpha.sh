@@ -5,12 +5,60 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 cd "$repo_root"
 
-python3 -m compiler.main run selfhost/main.nq
-python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
+usage() {
+    cat <<'EOF'
+Usage: scripts/check_linux_alpha.sh [--reuse-stage1] [--skip-prove]
+
+Run the Linux Alpha RC1 release-layout gate.
+
+  --reuse-stage1  Reuse an already-built selfhost/build/nauqc from this
+                  verification run instead of rebuilding it with stage0.
+  --skip-prove    Skip the repo-local `nauqc prove` run when the caller has
+                  already run it in this verification run.
+
+Without flags this remains the standalone, release-grade Alpha gate.
+EOF
+}
+
+reuse_stage1=false
+skip_prove=false
+while (( $# > 0 )); do
+    case "$1" in
+        --reuse-stage1)
+            reuse_stage1=true
+            ;;
+        --skip-prove)
+            skip_prove=true
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            printf 'check_linux_alpha: unknown option %s\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if "$reuse_stage1"; then
+    if [[ ! -x selfhost/build/nauqc ]]; then
+        printf 'check_linux_alpha: --reuse-stage1 requires selfhost/build/nauqc\n' >&2
+        exit 1
+    fi
+else
+    python3 -m compiler.main run selfhost/main.nq
+    python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
+fi
+
 test -x scripts/make_linux_release.sh
 bin/nauqc check examples/hello.nq
 bin/nauqc run examples/hello.nq
-bin/nauqc prove
+if ! "$skip_prove"; then
+    bin/nauqc prove
+fi
 scripts/make_linux_release.sh
 scripts/verify_linux_release.sh build/linux-release/nauqtype
 

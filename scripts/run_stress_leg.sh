@@ -5,6 +5,44 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 cd "$repo_root"
 
+usage() {
+    cat <<'EOF'
+Usage: scripts/run_stress_leg.sh [--release-root <path>]
+
+Run the dense multi-module stress leg through the repo launcher and a copied
+Linux release launcher.
+
+  --release-root <path>  Reuse an already-verified Linux release layout instead
+                         of rebuilding one. Intended for check_milestone.sh.
+
+Without flags this remains the standalone, release-grade stress gate.
+EOF
+}
+
+release_root=""
+while (( $# > 0 )); do
+    case "$1" in
+        --release-root)
+            if (( $# < 2 )); then
+                printf 'run_stress_leg: --release-root requires a path\n' >&2
+                exit 2
+            fi
+            release_root="$2"
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            printf 'run_stress_leg: unknown option %s\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
 stamp="$(date +%Y%m%d-%H%M%S)"
 work="${TMPDIR:-/tmp}/nauqtype-stress-leg-$stamp-$$"
 mkdir -p "$work/build"
@@ -241,10 +279,13 @@ if [[ "$run_output" != "stress ok" ]]; then
     exit 1
 fi
 
-scripts/make_linux_release.sh >/dev/null
-scripts/verify_linux_release.sh build/linux-release/nauqtype >/dev/null
+if [[ -z "$release_root" ]]; then
+    scripts/make_linux_release.sh >/dev/null
+    release_root="$repo_root/build/linux-release/nauqtype"
+fi
+scripts/verify_linux_release.sh "$release_root" >/dev/null
 mkdir -p "$work/release"
-cp -R build/linux-release/nauqtype "$work/release/nauqtype"
+cp -R "$release_root" "$work/release/nauqtype"
 (
     cd "$work"
     release_nauqc="$work/release/nauqtype/bin/nauqc"

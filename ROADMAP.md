@@ -495,9 +495,19 @@ Status:
 - review-diff and change-report treat subkind-only changes as changed functions while retaining their locked schemas
 - source audit blocks and policy enforcement remain intentionally coarse at `effects(io)`; no user-defined effects or subkind declarations were added
 
+### M34.5: Verification Reuse And Failure Localization
+
+- eliminate repeated selfhost proof and Linux release work from ordinary milestone closeouts without weakening final release gates
+- add explicit fast-feedback, milestone, and final-alpha verification tiers
+- reuse only freshly-built artifacts inside one milestone invocation and record deterministic timing/failure localization evidence
+
 Status:
 
-- planned
+- done
+- `scripts/check_fast.sh` runs the focused non-selfhost reference tier plus explicit feature suites
+- `scripts/check_milestone.sh` runs stage1 bootstrap, proof, one copied Linux release smoke, and one stress leg in dependency order, reusing only artifacts created earlier in that invocation
+- standalone `scripts/check_linux_alpha.sh` and `scripts/run_stress_leg.sh` retain their complete default behavior for M37 and release candidates
+- `build/verification/milestone-summary.json` records phase durations and the failing phase when a composed milestone run stops
 
 ### M35: Field Assignment V1
 

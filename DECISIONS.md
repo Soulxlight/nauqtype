@@ -351,3 +351,11 @@
 - Reason chosen: supervisors benefit from knowing how an `effects(io)` function touches the outside world, but splitting the declaration surface would make contracts noisier and less stable before real policy needs prove it worthwhile.
 - Consequences: facts v2 annotates direct IO builtin call edges; review v2 annotates direct calls and reports transitive `inferred.io_kinds` in canonical order. Review-diff and change-report surface subkind-only behavior through existing changed-function evidence. Policy remains intentionally keyed to stable semantic IDs and coarse `effects(io)` facts.
 - Reversible later: a separately versioned policy/effects milestone may add opt-in rules over these fixed subkinds, but no user-defined atoms, implicit capabilities, or effect subtyping are implied by this decision.
+
+## D045: Milestone verification reuses fresh artifacts, final gates remain independent
+
+- Decision: ordinary milestone closeouts run a composed verification gate that builds stage1 once, proves it once, creates one Linux release, and reuses that release for the stress leg; M37 and release candidates retain independent standalone gates plus the full suite.
+- Alternatives considered: keep every closeout command fully independent, add persistent cross-run compiler caches, or reduce the final Alpha gate to the fast tier.
+- Reason chosen: repeated proof and release assembly consume most milestone-closeout time, while persistent caching would make freshness harder to audit. In-process dependency-ordered reuse keeps the evidence honest and makes failures faster to locate.
+- Consequences: `scripts/check_fast.sh` is not a release gate; `scripts/check_milestone.sh` writes ignored timing/failure evidence and reuses only artifacts it just produced. Standalone `check_linux_alpha.sh` and `run_stress_leg.sh` remain complete by default.
+- Reversible later: the phase list can gain parallel-safe checks or artifact hashing, but persistent reuse must require an explicit freshness contract.

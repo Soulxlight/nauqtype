@@ -309,3 +309,10 @@
 - [x] Infer canonical transitive IO subkind lists for review v2 function evidence
 - [x] Surface subkind-only changes through existing review-diff and change-report changed-function evidence
 - [x] Keep policy metadata, enforcement, and user-defined effects out of scope
+
+## M34.5 Verification Reuse And Failure Localization
+
+- [x] Add focused, non-selfhost test coverage for rapid feedback
+- [x] Add a composed milestone gate that runs selfhost proof and Linux release work once in dependency order
+- [x] Preserve standalone Linux alpha and stress-leg release gates for M37 and release candidates
+- [x] Record milestone phase timing and failure-localization evidence under ignored `build/verification/`

@@ -141,6 +141,12 @@ scripts/check_linux_alpha.sh
 
 The gate now verifies the Alpha RC1 copied layout, release identity, and an outside-repo smoke run for the copied `bin/nauqc` launcher.
 
+For normal milestone work, use the layered verification commands in
+[VERIFICATION.md](VERIFICATION.md). `scripts/check_fast.sh` provides quick
+focused feedback, while `scripts/check_milestone.sh` runs the selfhost proof,
+release smoke, and stress leg once each before focused tests. The standalone
+commands below remain the deliberately redundant final Alpha/release gates.
+
 Run the dense milestone stress leg when checking cross-feature interactions:
 
 ```bash
