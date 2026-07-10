@@ -442,6 +442,16 @@ fn is_eq_token(tok: token) -> bool {
     }
 }
 
+fn is_nested_field_assign_start(tokens: ref list<token>, cursor: i32) -> bool {
+    let base = token_at(ref tokens, cursor);
+    let first_dot = token_at(ref tokens, cursor + 1);
+    let first_field = token_at(ref tokens, cursor + 2);
+    let second_dot = token_at(ref tokens, cursor + 3);
+    let second_field = token_at(ref tokens, cursor + 4);
+    let eq = token_at(ref tokens, cursor + 5);
+    return is_ident_token(base) and is_dot_token(first_dot) and is_ident_token(first_field) and is_dot_token(second_dot) and is_ident_token(second_field) and is_eq_token(eq);
+}
+
 fn is_question_token(tok: token) -> bool {
     match tok.kind {
         tk_question => {
@@ -1056,6 +1066,19 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
         },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
+            let field_name = token_at(ref tokens, cursor + 2);
+            let field_eq = token_at(ref tokens, cursor + 3);
+            if is_nested_field_assign_start(ref tokens, cursor) {
+                push_diag(mutref diags, file, current, "nested field assignment is not supported in V1");
+                skip_until_semi(ref tokens, mutref cursor);
+            } else {
+            if is_ident_token(current) and is_dot_token(next) and is_ident_token(field_name) and is_eq_token(field_eq) {
+                push_name_ref(mutref refs, file, function_name, scope_id, current.text, current.start, ref_assign_target);
+                let expr_start = cursor + 4;
+                skip_until_semi(ref tokens, mutref cursor);
+                push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
+                scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            } else {
             if is_ident_token(current) and is_eq_token(next) {
                 push_name_ref(mutref refs, file, function_name, scope_id, current.text, current.start, ref_assign_target);
                 let expr_start = cursor + 2;
@@ -1067,6 +1090,8 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
                 skip_until_semi(ref tokens, mutref cursor);
                 push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
                 scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            }
+            }
             }
         },
     }
@@ -3588,8 +3613,10 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
         tk_kw_let => {
             advance(mutref cursor);
             let maybe_mut = token_at(ref tokens, cursor);
+            let mut is_mutable = false;
             match maybe_mut.kind {
                 tk_kw_mut => {
+                    is_mutable = true;
                     advance(mutref cursor);
                 },
                 _ => {
@@ -3627,7 +3654,14 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
                 stmt_kind = stmt_propagate;
                 member_name = "propagate";
             }
-            list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_kind, local_name, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name, -1, -1));
+            match stmt_kind {
+                stmt_local => {
+                    list_push(mutref statements, make_local_stmt_fact(file, function_name, scope_id, current.start, local_name, is_mutable, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name));
+                },
+                _ => {
+                    list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_kind, local_name, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name, -1, -1));
+                },
+            }
         },
         tk_kw_if => {
             advance(mutref cursor);
@@ -3696,6 +3730,18 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
         },
         _ => {
             let next = token_at(ref tokens, cursor + 1);
+            let field_token = token_at(ref tokens, cursor + 2);
+            let field_eq = token_at(ref tokens, cursor + 3);
+            if is_nested_field_assign_start(ref tokens, cursor) {
+                push_diag(mutref diags, file, current, "nested field assignment is not supported in V1");
+                skip_until_semi(ref tokens, mutref cursor);
+            } else {
+            if is_ident_token(current) and is_dot_token(next) and is_ident_token(field_token) and is_eq_token(field_eq) {
+                let expr_start = cursor + 4;
+                skip_until_semi(ref tokens, mutref cursor);
+                collect_stmt_match_expr_scopes(ref tokens, expr_start, cursor - 1, mutref diags, file, function_name, scope_id, mutref next_scope_id);
+                list_push(mutref statements, make_field_assign_stmt_fact(file, function_name, scope_id, current.start, current.text, field_token.text, expr_start, cursor - 1, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1)));
+            } else {
             if is_ident_token(current) and is_eq_token(next) {
                 let expr_start = cursor + 2;
                 skip_until_semi(ref tokens, mutref cursor);
@@ -3706,6 +3752,8 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
                 skip_until_semi(ref tokens, mutref cursor);
                 collect_stmt_match_expr_scopes(ref tokens, expr_start, cursor - 1, mutref diags, file, function_name, scope_id, mutref next_scope_id);
                 list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_expr, "", expr_start, cursor - 1, classify_expr_kind(ref tokens, expr_start, cursor - 1), classify_expr_name(ref tokens, expr_start, cursor - 1), classify_expr_member_name(ref tokens, expr_start, cursor - 1), -1, -1));
+            }
+            }
             }
         },
     }

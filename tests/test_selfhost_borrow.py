@@ -163,7 +163,7 @@ class SelfhostBorrowTests(unittest.TestCase):
                 resolve_types(ref type_refs, ref uses, ref items, mutref diags);
                 resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-                typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+                typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
                 let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
                 let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
@@ -341,6 +341,30 @@ class SelfhostBorrowTests(unittest.TestCase):
         returncode, output = self._run_probe(modules)
         self.assertNotEqual(returncode, 0, output)
         self.assertIn("moving out of fields is not supported in v0.1", output)
+
+    def test_stage1_borrow_reports_field_assignment_after_move(self) -> None:
+        modules = {
+            "main": """
+            type bucket {
+                items: list<i32>,
+            }
+
+            fn take(value: bucket) -> unit {
+                return;
+            }
+
+            fn main() -> i32 {
+                let mut items: list<i32> = [1];
+                let mut bucket_value = bucket { items: items };
+                take(bucket_value);
+                bucket_value.items = [2];
+                return 0;
+            }
+            """,
+        }
+        returncode, output = self._run_probe(modules)
+        self.assertNotEqual(returncode, 0, output)
+        self.assertIn("use of moved value `bucket_value`", output)
 
     def test_stage1_borrow_reports_non_call_borrow_expr(self) -> None:
         modules = {

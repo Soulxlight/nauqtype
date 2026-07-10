@@ -162,7 +162,7 @@ class SelfhostCEmitTests(unittest.TestCase):
                 resolve_types(ref type_refs, ref uses, ref items, mutref diags);
                 resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-                typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+                typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
                 let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
                 let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
@@ -249,7 +249,8 @@ class SelfhostCEmitTests(unittest.TestCase):
                 let literal_items: list<i32> = [1, 2];
                 let mut number: i32 = 1;
                 list_push(mutref items, 1);
-                let current = pair { left: 1, right: list_len(ref items) };
+                let mut current = pair { left: 1, right: list_len(ref items) };
+                current.left = 2;
                 let wrapped_value = box(current.left);
                 let seen = read(ref number);
                 bump(mutref number);
@@ -279,6 +280,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("static inline NQ_List__i32", emitted)
         self.assertIn("nq_list__i32_from_array", emitted)
         self.assertIn("nq_write_file(", emitted)
+        self.assertIn(".left = 2;", emitted)
         self.assertIn("switch (nq_tmp_1.tag)", emitted)
         self.assertIn("const int32_t* nqv_", emitted)
         self.assertIn("int main(int argc, char** argv)", emitted)

@@ -271,6 +271,17 @@ fn is_stmt_assign(kind: checked_stmt_kind) -> bool {
     }
 }
 
+fn is_stmt_field_assign(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_field_assign => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_stmt_return(kind: checked_stmt_kind) -> bool {
     match kind {
         checked_stmt_return => {
@@ -1497,6 +1508,17 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                 push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked assignment target binding");
                             }
                         } else {
+                            if is_stmt_field_assign(stmt.kind) {
+                                if stmt.target_binding_id > 0 {
+                                    if lookup_moved(ref current, stmt.target_binding_id) and emit_diagnostics {
+                                        let name = lookup_binding_name(ref bindings, stmt.target_binding_id, "");
+                                        push_diag(mutref diags, stmt.module_name, stmt.at, str_concat("use of moved value `", str_concat(name, "`")));
+                                    }
+                                } else {
+                                    push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked field-assignment target binding");
+                                }
+                                walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, true, false, emit_diagnostics, mutref diags);
+                            } else {
                             if is_stmt_if(stmt.kind) {
                                 walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
                                 if stmt.child_block_id <= 0 {
@@ -1594,6 +1616,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                     }
                                 }
                             }
+                        }
                         }
                         }
                     }

@@ -237,7 +237,7 @@ Rules:
 - field order is declared order
 - field types are required
 - no methods in v0.1
-- no field assignment in v0.1
+- direct field assignment is allowed only through an owned `let mut` local product binding
 
 ### Enums
 
@@ -336,6 +336,7 @@ Supported statements:
 - statement-boundary propagation binding: `let name = result_expr?;`
 - `let-else` guard binding for `option` / `result` success patterns
 - assignment to a mutable local
+- direct field assignment through an owned mutable local product binding
 - `if`
 - `while`
 - `match`
@@ -353,7 +354,8 @@ count = count + 1;
 Rules:
 
 - only mutable locals may be assigned
-- field assignment is deferred
+- `binding.field = value;` requires `binding` to be a direct, owned `let mut` local of a user-defined product type
+- field assignment rejects `mutref` parameters, enum values, list elements, nested field paths, and arbitrary assignment targets
 - assigning to a `mutref` parameter writes through the borrow
 
 ### If
@@ -624,7 +626,6 @@ These are warnings, not hard errors.
 - traits
 - loop families beyond bootstrap `while`
 - labeled or valued `break` / `continue`
-- field assignment
 - user-defined generics
 - broader constant expressions beyond the v1 pure literal/operator subset
 - exceptions

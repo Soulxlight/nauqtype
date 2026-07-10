@@ -29,6 +29,7 @@ base_tests=(
     tests.test_codegen
     tests.test_contracts
     tests.test_diagnostics_json
+    tests.test_field_assignment
     tests.test_golden
     tests.test_imports
     tests.test_lexer

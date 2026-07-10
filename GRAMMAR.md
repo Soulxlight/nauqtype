@@ -136,6 +136,7 @@ stmt          = let_stmt
               | let_propagate_stmt
               | let_else_stmt
               | assign_stmt
+              | field_assign_stmt
               | if_stmt
               | while_stmt
               | match_stmt
@@ -149,6 +150,7 @@ let_propagate_stmt = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr "?" [ "[" 
 let_else_stmt = "let" let_else_pattern "=" expr "else" block ";" ;
 let_else_pattern = ( "Some" | "Ok" ) "(" IDENT ")" ;
 assign_stmt   = IDENT "=" expr ";" ;
+field_assign_stmt = IDENT "." IDENT "=" expr ";" ;
 return_stmt   = "return" [ expr ] ";" ;
 expr_stmt     = expr ";" ;
 
@@ -220,6 +222,7 @@ Parser note:
 - `[]` requires an expected `list<T>` context. Non-empty list literals infer from the first element unless an expected `list<T>` is available, and all elements must have one homogeneous type. Spreads, comprehensions, ranges, and const list initializers are not part of V1.
 - Statement `match` arms remain block-bodied; only `match_expr` arms are expression-bodied.
 - `let_else_stmt` is narrow in V1: only `Some(name)` and `Ok(name)` guard bindings are accepted, and the `else` block must exit explicitly.
+- `field_assign_stmt` is narrow in V1: its base is a direct owned `let mut` product binding, never a nested field, `mutref` parameter, enum, list element, or arbitrary expression.
 
 ## Pattern Grammar
 

@@ -23,6 +23,7 @@ These examples cover specific semantic features of Nauqtype.
 - [match_expr_let_else.nq](examples/match_expr_let_else.nq): Using `match` as an expression to yield values, and the `let-else` guard binding.
 - [record_update.nq](examples/record_update.nq): Copy-only record update using the explicit `Type { from base, field: value }` syntax.
 - [record_update_nontrivial.nq](examples/record_update_nontrivial.nq): Record update performed over a computed owned base value.
+- [field_assignment.nq](examples/field_assignment.nq): Updating a direct field on an owned `let mut` product local without widening mutation authority.
 - [named_arguments.nq](examples/named_arguments.nq): Using labeled arguments in direct function calls.
 - [qualified_calls.nq](examples/qualified_calls.nq): Making direct module-qualified function calls across a flat-root module boundary.
 - [qualified_call_chain.nq](examples/qualified_call_chain.nq): Multi-module qualified call chains across several files.
@@ -57,6 +58,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `enum_match.nq`
 - `fallible_function.nq`
 - `fibonacci.nq`
+- `field_assignment.nq`
 - `hello.nq`
 - `list_literals.nq`
 - `list_sum.nq`
@@ -97,3 +99,4 @@ To teach supervised failure to a model:
 1. **Unpropagated Errors:** Remove the `propagates(io_err)` clause from `examples/propagation_question.nq` and run `bin/nauqc check` to see `NQ-PROPAGATE-004`.
 2. **Undeclared Mutation:** Remove the `mutates()` clause from `examples/mutate_counter.nq` to see the compiler infer the `mutref` and demand the contract.
 3. **Invalid Exact Error:** Try using `?` on an `io_err` inside a function returning `result<str, parse_err>` in `examples/fallible_function.nq` to see the exact matching rules reject the code (`NQ-PROPAGATE-003`).
+4. **Restricted Field Mutation:** Remove `mut` from `score` in `examples/field_assignment.nq`, or try assigning through a `mutref` parameter, to see direct field writes rejected outside owned mutable product locals.

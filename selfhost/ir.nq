@@ -4,6 +4,7 @@ use handoff;
 pub enum ir_stmt_kind {
     ir_stmt_let,
     ir_stmt_assign,
+    ir_stmt_field_assign,
     ir_stmt_if,
     ir_stmt_while,
     ir_stmt_match,
@@ -112,6 +113,7 @@ pub type ir_stmt {
     kind: ir_stmt_kind,
     type_id: i32,
     target_local_id: i32,
+    field_name: str,
     expr_id: i32,
     child_block_id: i32,
     alt_block_id: i32,
@@ -296,6 +298,9 @@ fn checked_stmt_to_ir_kind(kind: checked_stmt_kind) -> ir_stmt_kind {
         },
         checked_stmt_assign => {
             return ir_stmt_assign;
+        },
+        checked_stmt_field_assign => {
+            return ir_stmt_field_assign;
         },
         checked_stmt_if => {
             return ir_stmt_if;
@@ -825,6 +830,7 @@ audit {
                     kind: checked_stmt_to_ir_kind(value.kind),
                     type_id: value.type_id,
                     target_local_id: value.target_binding_id,
+                    field_name: value.field_name,
                     expr_id: value.expr_id,
                     child_block_id: value.child_block_id,
                     alt_block_id: value.alt_block_id,
@@ -1007,6 +1013,15 @@ audit {
                                 },
                             }
                         },
+                        ir_stmt_field_assign => {
+                            match kind {
+                                ir_stmt_field_assign => {
+                                    return true;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
                         ir_stmt_if => {
                             match kind {
                                 ir_stmt_if => {
@@ -1087,6 +1102,36 @@ audit {
                                 _ => {
                                 },
                             }
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_field_assignment(statements: ref list<ir_stmt>, function_id: i32, field_name: str) -> bool
+audit {
+    intent("Check whether stage1 IR contains a direct field assignment with one resolved local target");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.field_name == field_name and value.target_local_id > 0 {
+                    match value.kind {
+                        ir_stmt_field_assign => {
+                            return true;
+                        },
+                        _ => {
                         },
                     }
                 }

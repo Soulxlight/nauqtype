@@ -1396,7 +1396,7 @@ fn lookup_param_binding_identity(bindings: ref list<body_binding>, module: str, 
     return "";
 }
 
-fn append_checked_field_references(expressions: ref list<checked_expr>, struct_fields: ref list<checked_struct_field_init>, resolved_out: mutref list<fact_reference>) -> unit {
+fn append_checked_field_references(expressions: ref list<checked_expr>, struct_fields: ref list<checked_struct_field_init>, statements: ref list<checked_stmt>, resolved_out: mutref list<fact_reference>) -> unit {
     let mut expr_index = 0;
     while expr_index < list_len(ref expressions) {
         let entry = list_get(ref expressions, expr_index);
@@ -1440,6 +1440,27 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
             },
         }
         field_index = field_index + 1;
+    }
+
+    let mut stmt_index = 0;
+    while stmt_index < list_len(ref statements) {
+        let entry = list_get(ref statements, stmt_index);
+        match entry {
+            Some(value) => {
+                match value.kind {
+                    checked_stmt_field_assign => {
+                        if value.at >= 0 and value.field_owner_module != "" and value.field_owner_type != "" and value.field_name != "" {
+                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_assign", value.module_name, value.function_name, value.at), "field_assign", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked", ""));
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        stmt_index = stmt_index + 1;
     }
     return;
 }
@@ -1505,7 +1526,7 @@ fn append_propagation_references(functions: ref list<function_fact>, items: ref 
     return;
 }
 
-fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, include_checked_handoff_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
+fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, statements: ref list<checked_stmt>, include_checked_handoff_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
     let mut use_index = 0;
     while use_index < list_len(ref uses) {
         let entry = list_get(ref uses, use_index);
@@ -1557,7 +1578,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
         ref_index = ref_index + 1;
     }
     if include_checked_handoff_refs {
-        append_checked_field_references(ref expressions, ref struct_fields, mutref resolved_out);
+        append_checked_field_references(ref expressions, ref struct_fields, ref statements, mutref resolved_out);
         append_checked_arg_label_references(ref bindings, ref expressions, ref expr_children, mutref resolved_out);
         append_propagation_references(ref functions, ref items, ref uses, ref locals, mutref resolved_out);
     }
@@ -1935,7 +1956,7 @@ fn refactor_reference_is_editable(value: fact_reference) -> bool {
     return true;
 }
 
-pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, target_id: str, new_name: str) -> i32
+pub fn emit_refactor_rename_plan(workspace_root: str, entry_module: str, entry_path: str, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, checked_statements: ref list<checked_stmt>, target_id: str, new_name: str) -> i32
 audit {
     intent("Emit a deterministic plan-only semantic rename edit set without mutating source files");
     mutates();
@@ -1956,7 +1977,7 @@ audit {
     let mut resolved_refs: list<fact_reference> = list();
     let empty_functions: list<function_fact> = list();
     let empty_locals: list<local_init_fact> = list();
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref empty_functions, ref empty_locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, true, mutref resolved_refs);
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref empty_functions, ref empty_locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, ref checked_statements, true, mutref resolved_refs);
     let mut edit_count = 1;
     if new_name == target.name {
         edit_count = 0;
@@ -2412,12 +2433,13 @@ audit {
     let empty_expressions: list<checked_expr> = list();
     let empty_expr_children: list<checked_expr_child> = list();
     let empty_struct_fields: list<checked_struct_field_init> = list();
+    let empty_statements: list<checked_stmt> = list();
     let empty_functions: list<function_fact> = list();
     let empty_locals: list<local_init_fact> = list();
-    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, ref empty_functions, ref empty_locals, ref empty_expressions, ref empty_expr_children, ref empty_struct_fields, 1);
+    return emit_facts_format(entry_module, ref modules, ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref fields, ref calls, ref empty_functions, ref empty_locals, ref empty_expressions, ref empty_expr_children, ref empty_struct_fields, ref empty_statements, 1);
 }
 
-pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, format_version: i32) -> facts_summary
+pub fn emit_facts_format(entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, fields: ref list<field_fact>, calls: ref list<call_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, checked_expressions: ref list<checked_expr>, checked_expr_children: ref list<checked_expr_child>, checked_struct_fields: ref list<checked_struct_field_init>, checked_statements: ref list<checked_stmt>, format_version: i32) -> facts_summary
 audit {
     intent("Emit deterministic stage1 semantic facts with versioned evidence fields when requested");
     mutates();
@@ -2428,7 +2450,7 @@ audit {
     let mut resolved_refs: list<fact_reference> = list();
     let mut resolved_edges: list<fact_call_edge> = list();
     let include_evidence = format_version == 2;
-    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref functions, ref locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, include_evidence, mutref resolved_refs);
+    build_resolved_references(ref items, ref uses, ref scopes, ref bindings, ref refs, ref type_refs, ref variants, ref functions, ref locals, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, ref checked_statements, include_evidence, mutref resolved_refs);
     build_resolved_call_edges(ref items, ref uses, ref variants, ref calls, mutref resolved_edges);
     let ref_count = list_len(ref resolved_refs);
     let mut version_text = "1";

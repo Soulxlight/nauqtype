@@ -81,6 +81,27 @@ class BorrowChecker:
             if stmt.symbol_id is not None:
                 current.moved[stmt.symbol_id] = False
             return current
+        if isinstance(stmt, ast.FieldAssignStmt):
+            if stmt.symbol_id is not None:
+                binding = semantic_function.bindings.get(stmt.symbol_id)
+                if binding is not None and current.moved.get(stmt.symbol_id, False) and emit_diagnostics:
+                    self.diagnostics.add(
+                        "NQ-BORROW-001",
+                        "BORROW",
+                        f"use of moved value `{binding.name}`",
+                        stmt.span,
+                        source=semantic_function.source,
+                    )
+            self._walk_expr(
+                program,
+                semantic_function,
+                stmt.expr,
+                current,
+                consume=True,
+                in_call_arg=False,
+                emit_diagnostics=emit_diagnostics,
+            )
+            return current
         if isinstance(stmt, ast.IfStmt):
             self._walk_expr(
                 program,

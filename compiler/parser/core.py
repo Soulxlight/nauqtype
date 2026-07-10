@@ -296,6 +296,13 @@ class Parser:
             return self._parse_match_stmt()
         if self._at("RETURN"):
             return self._parse_return_stmt()
+        if (
+            self._at("IDENT")
+            and self._peek(1).kind == "DOT"
+            and self._peek(2).kind == "IDENT"
+            and self._peek(3).kind == "EQ"
+        ):
+            return self._parse_field_assign_stmt()
         if self._at("IDENT") and self._peek(1).kind == "EQ":
             return self._parse_assign_stmt()
         expr = self._parse_expr()
@@ -320,6 +327,15 @@ class Parser:
         expr = self._parse_expr()
         semi = self._expect("SEMI", "expected `;` after assignment")
         return ast.AssignStmt(target.lexeme, expr, Span(target.span.start, semi.span.end))
+
+    def _parse_field_assign_stmt(self) -> ast.FieldAssignStmt:
+        target = self._expect("IDENT", "expected field-assignment target")
+        self._expect("DOT", "expected `.` in field assignment")
+        field = self._expect("IDENT", "expected field name in field assignment")
+        self._expect("EQ", "expected `=` in field assignment")
+        expr = self._parse_expr()
+        semi = self._expect("SEMI", "expected `;` after field assignment")
+        return ast.FieldAssignStmt(target.lexeme, field.lexeme, expr, Span(target.span.start, semi.span.end))
 
     def _parse_if_stmt(self) -> ast.IfStmt:
         start = self._expect("IF", "expected `if`").span.start

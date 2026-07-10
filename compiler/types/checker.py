@@ -359,6 +359,46 @@ class TypeChecker:
                 self._type_mismatch(source, stmt.expr.span, binding.typ, value_type)
             binding.written = True
             return
+        if isinstance(stmt, ast.FieldAssignStmt):
+            if stmt.symbol_id is None or stmt.symbol_id not in env:
+                return
+            binding = env[stmt.symbol_id]
+            if binding.is_ref_param or not binding.mutable:
+                self.diagnostics.add(
+                    "NQ-TYPE-038",
+                    "TYPE",
+                    "field assignment requires an owned mutable local product binding",
+                    stmt.span,
+                    source=source,
+                )
+                self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions, copyable_named, source)
+                return
+            if binding.typ.kind != "named" or binding.typ.name is None or binding.typ.name not in structs:
+                self.diagnostics.add(
+                    "NQ-TYPE-038",
+                    "TYPE",
+                    "field assignment target must be a user-defined product type",
+                    stmt.span,
+                    source=source,
+                )
+                self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions, copyable_named, source)
+                return
+            field_type = structs[binding.typ.name].fields.get(stmt.field_name)
+            if field_type is None:
+                self.diagnostics.add(
+                    "NQ-TYPE-039",
+                    "TYPE",
+                    f"field `{stmt.field_name}` does not exist on `{binding.name}`",
+                    stmt.span,
+                    source=source,
+                )
+                self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions, copyable_named, source)
+                return
+            value_type = self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions, copyable_named, source, field_type)
+            if value_type != field_type:
+                self._type_mismatch(source, stmt.expr.span, field_type, value_type)
+            binding.written = True
+            return
         if isinstance(stmt, ast.IfStmt):
             condition_type = self._check_expr(stmt.condition, env, semantic_function, module, structs, enums, functions, copyable_named, source)
             if condition_type != BOOL:

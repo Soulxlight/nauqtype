@@ -136,6 +136,15 @@ class AssignStmt:
 
 
 @dataclass(slots=True)
+class FieldAssignStmt:
+    target: str
+    field_name: str
+    expr: Any
+    span: Span
+    symbol_id: int | None = None
+
+
+@dataclass(slots=True)
 class IfStmt:
     condition: Any
     then_block: Block
@@ -176,7 +185,7 @@ class ExprStmt:
     span: Span
 
 
-Stmt = LetStmt | AssignStmt | IfStmt | WhileStmt | MatchStmt | ReturnStmt | ExprStmt
+Stmt = LetStmt | AssignStmt | FieldAssignStmt | IfStmt | WhileStmt | MatchStmt | ReturnStmt | ExprStmt
 
 
 @dataclass(slots=True)

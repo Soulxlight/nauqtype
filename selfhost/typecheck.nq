@@ -1087,6 +1087,52 @@ fn visible_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, scope
     return empty_expected_type_ctx();
 }
 
+fn visible_typed_binding_is_borrow(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return value.is_borrow;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
+fn visible_mutable_local_stmt(statements: ref list<stmt_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref statements) - 1;
+    while index >= 0 {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    match value.kind {
+                        stmt_local => {
+                            if value.is_mutable and scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                                return true;
+                            }
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
 fn exact_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
     let mut index = list_len(ref typed_bindings) - 1;
     while index >= 0 {
@@ -4234,9 +4280,9 @@ fn propagation_typecheck_payload_ctx(actual_ctx: expected_type_ctx, return_ctx: 
     return result_ok_payload_ctx(actual_ctx);
 }
 
-pub fn typecheck_value_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
+pub fn typecheck_value_facts_with_stmt_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, statements: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
-    intent("Run the next selfhost type-checker slice over local initializers, return expressions, condition types, and assignment compatibility");
+    intent("Run the selfhost type-checker slice over value flow and direct owned-local field assignments");
     mutates(diags);
     effects();
 }
@@ -4369,6 +4415,49 @@ audit {
                                     assignment_index = assignment_index + 1;
                                 }
 
+                                let mut statement_index = 0;
+                                while statement_index < list_len(ref statements) {
+                                    let statement_entry = list_get(ref statements, statement_index);
+                                    match statement_entry {
+                                        Some(current) => {
+                                            if current.module == current_function.module and current.function_name == current_function.name {
+                                                match current.kind {
+                                                    stmt_field_assign => {
+                                                        let base_ctx = visible_typed_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                                        if base_ctx.head != "" {
+                                                            let is_owned_mutable_local = visible_mutable_local_stmt(ref statements, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                                            let is_borrow = visible_typed_binding_is_borrow(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                                            if not is_owned_mutable_local or is_borrow {
+                                                                push_diag(mutref diags, current.module, current.at, "field assignment requires an owned mutable local product binding");
+                                                            } else {
+                                                                let origin_module = visible_type_origin_module(ref uses, ref items, current.module, base_ctx.head);
+                                                                if origin_module == "" {
+                                                                    push_diag(mutref diags, current.module, current.at, "field assignment target must be a user-defined product type");
+                                                                } else {
+                                                                    let expected_ctx = lookup_field_ctx(ref field_facts, origin_module, base_ctx.head, current.field_name);
+                                                                    if expected_ctx.head == "" {
+                                                                        push_diag(mutref diags, current.module, current.at, "field assignment target field does not exist on product type");
+                                                                    } else {
+                                                                        let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
+                                                                        if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
+                                                                            push_diag(mutref diags, current.module, current.at, "field assignment value does not match target field type");
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    _ => {
+                                                    },
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                        },
+                                    }
+                                    statement_index = statement_index + 1;
+                                }
+
                                 let mut return_index = 0;
                                 while return_index < list_len(ref function_returns) {
                                     let return_entry = list_get(ref function_returns, return_index);
@@ -4435,6 +4524,17 @@ audit {
         list_len(ref assignments),
         list_len(ref diags) - start_diag_count
     );
+}
+
+pub fn typecheck_value_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
+audit {
+    intent("Run the established selfhost value type-checker API without statement-specific extensions");
+    mutates(diags);
+    effects();
+}
+{
+    let empty_statements: list<stmt_fact> = list();
+    return typecheck_value_facts_with_stmt_facts(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref locals, ref returns, ref conditions, ref assignments, ref empty_statements, ref uses, ref items, ref sources, mutref diags);
 }
 
 pub fn collect_resolved_binding_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, resolved_bindings_out: mutref list<typed_binding_fact>, pattern_bindings_out: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> resolved_binding_summary

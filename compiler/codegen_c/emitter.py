@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from compiler.ir.core import (
     IRAssignStmt,
+    IRFieldAssignStmt,
     IRBinaryExpr,
     IRBindPattern,
     IRBlock,
@@ -110,6 +111,9 @@ class CEmitter:
                 collect_type(stmt.local.typ)
                 self._collect_expr_types(stmt.expr, collect_type)
             elif isinstance(stmt, IRAssignStmt):
+                collect_type(stmt.target.typ)
+                self._collect_expr_types(stmt.expr, collect_type)
+            elif isinstance(stmt, IRFieldAssignStmt):
                 collect_type(stmt.target.typ)
                 self._collect_expr_types(stmt.expr, collect_type)
             elif isinstance(stmt, IRIfStmt):
@@ -301,6 +305,10 @@ class CEmitter:
             expr = self._emit_expr(stmt.expr)
             target = f"*{self._binding_name(stmt.target)}" if stmt.target.is_ref_param else self._binding_name(stmt.target)
             self.lines.append(f"{prefix}{target} = {expr};")
+            return
+        if isinstance(stmt, IRFieldAssignStmt):
+            expr = self._emit_expr(stmt.expr)
+            self.lines.append(f"{prefix}{self._binding_name(stmt.target)}.{stmt.field_name} = {expr};")
             return
         if isinstance(stmt, IRIfStmt):
             condition = self._emit_expr(stmt.condition)

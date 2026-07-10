@@ -20,6 +20,7 @@ Current bootstrap status:
 - named function arguments and direct module-qualified function/data names
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
+- direct field assignment for owned `let mut` product locals
 - bootstrap file input and string helpers
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`

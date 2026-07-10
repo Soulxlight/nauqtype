@@ -568,6 +568,7 @@ pub enum stmt_fact_kind {
     stmt_local,
     stmt_expr,
     stmt_assign,
+    stmt_field_assign,
     stmt_return,
     stmt_if,
     stmt_while,
@@ -585,6 +586,8 @@ pub type stmt_fact {
     at: i32,
     kind: stmt_fact_kind,
     name: str,
+    field_name: str,
+    is_mutable: bool,
     expr_start: i32,
     expr_end: i32,
     expr_kind: expr_fact_kind,
@@ -608,6 +611,8 @@ audit {
         at: at,
         kind: kind,
         name: name,
+        field_name: "",
+        is_mutable: false,
         expr_start: expr_start,
         expr_end: expr_end,
         expr_kind: expr_kind,
@@ -615,6 +620,58 @@ audit {
         expr_member_name: expr_member_name,
         child_scope_id: child_scope_id,
         alt_scope_id: alt_scope_id,
+    };
+}
+
+pub fn make_local_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, name: str, is_mutable: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> stmt_fact
+audit {
+    intent("Build a local statement fact with explicit mutability for field-assignment checks");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: stmt_local,
+        name: name,
+        field_name: "",
+        is_mutable: is_mutable,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: -1,
+        alt_scope_id: -1,
+    };
+}
+
+pub fn make_field_assign_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, name: str, field_name: str, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> stmt_fact
+audit {
+    intent("Build a direct owned-local field assignment fact for the checked handoff");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: stmt_field_assign,
+        name: name,
+        field_name: field_name,
+        is_mutable: false,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: -1,
+        alt_scope_id: -1,
     };
 }
 

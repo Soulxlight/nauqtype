@@ -247,7 +247,7 @@ Status:
 - Batch B is done for named function arguments, direct module-qualified function calls, and minimal nearest-`while` `break` / `continue`
 - named arguments normalize to parameter order, qualified calls are module-provenance function calls only, and loop control stays statement-only with no labels, values, methods, or package-path expansion
 - the first tiny Batch C slice is done for direct `module::Type` struct literals and `module::Variant` enum constructors/patterns from directly imported flat-root modules
-- Batch D is done for copy-only record update with explicit `Type { from base, field: value }` provenance; broad field assignment remains deferred
+- Batch D is done for copy-only record update with explicit `Type { from base, field: value }` provenance; M35 adds the separate narrow owned-local field-assignment form without introducing general lvalues
 
 ### M19: Alpha Stabilization And Supervised Workflow
 
@@ -518,7 +518,11 @@ Status:
 
 Status:
 
-- planned
+- done
+- `binding.field = expr;` is accepted only for direct owned `let mut` locals of user-defined product types
+- immutable locals, `mutref` parameters, enums, list elements, nested paths, and arbitrary targets are rejected before handoff/IR lowering can degrade them
+- the form flows through stage0 and stage1 parse/resolve/typecheck/borrow/IR/C emission, checked facts v2, plan-only field rename, the formatter, and the locked corpus
+- `examples/field_assignment.nq` is the canonical runnable teaching example; its field-write target has checked `field_assign` evidence and remains renameable without mutation
 
 ### M36: Literal And Nested Constructor Patterns
 

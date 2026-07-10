@@ -154,7 +154,7 @@ class SelfhostHandoffTests(unittest.TestCase):
                 resolve_types(ref type_refs, ref uses, ref items, mutref diags);
                 resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
                 typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
-                typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref uses, ref items, ref sources, mutref diags);
+                typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
                 collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
 
                 let summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
@@ -211,6 +211,30 @@ class SelfhostHandoffTests(unittest.TestCase):
             "                }",
             '                if not handoff_has_assignment_target_type(ref checked_statements, "main", "main", "value", "i32") {',
             '                    print_line("missing typed assignment target");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
+    def test_handoff_captures_resolved_owned_local_field_assignment(self) -> None:
+        modules = {
+            "main": """
+            type pair {
+                left: i32,
+                right: i32,
+            }
+
+            fn main() -> i32 {
+                let mut value = pair { left: 1, right: 2 };
+                value.left = 5;
+                return value.left;
+            }
+            """,
+        }
+        assertions = [
+            '                if not handoff_has_field_assignment(ref checked_statements, "main", "main", "value", "left", "pair", "main", "i32") {',
+            '                    print_line("missing resolved field assignment");',
             "                    failures = failures + 1;",
             "                }",
         ]

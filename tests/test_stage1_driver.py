@@ -1925,6 +1925,47 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertTrue(all(edit["target_id"] == "field:main::Box::value" for edit in payload["edits"]))
             self.assertEqual((tmp / "main.nq").read_text(encoding="utf-8"), before)
 
+    def test_stage1_driver_field_assignment_facts_and_refactor_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    type Box {
+                        value: i32,
+                    }
+
+                    fn main() -> i32 {
+                        let mut box = Box { value: 1 };
+                        box.value = box.value + 1;
+                        return box.value;
+                    }
+                    """,
+                },
+            )
+            source = tmp / "main.nq"
+            before = source.read_text(encoding="utf-8")
+
+            facts = self._run_driver(["facts", str(source), "--format", "v2"])
+            self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+            references = json.loads(facts.stdout)["references"]
+            self.assertTrue(
+                any(
+                    ref["kind"] == "field_assign"
+                    and ref["target_id"] == "field:main::Box::value"
+                    for ref in references
+                )
+            )
+
+            result = self._run_driver(["refactor-rename", str(source), "field:main::Box::value", "amount"])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(any(edit["kind"] == "reference" and edit["old_text"] == "value" for edit in payload["edits"]))
+            self.assertTrue(all(edit["replacement"] == "amount" for edit in payload["edits"]))
+            self.assertEqual(source.read_text(encoding="utf-8"), before)
+
     def test_stage1_driver_refactor_rename_updates_named_argument_labels(self) -> None:
         fixture = self.root / "tests" / "fixtures" / "facts" / "named_args_main.nq"
         before_main = fixture.read_text(encoding="utf-8")

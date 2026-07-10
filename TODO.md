@@ -316,3 +316,11 @@
 - [x] Add a composed milestone gate that runs selfhost proof and Linux release work once in dependency order
 - [x] Preserve standalone Linux alpha and stress-leg release gates for M37 and release candidates
 - [x] Record milestone phase timing and failure-localization evidence under ignored `build/verification/`
+
+## M35 Field Assignment V1
+
+- [x] Add direct `binding.field = expr;` for owned mutable local product values
+- [x] Reject immutable locals, `mutref` parameters, enums, list elements, nested paths, and arbitrary targets
+- [x] Preserve type and move checking through handoff, borrow, IR, and C emission
+- [x] Export checked `field_assign` facts and include writes in plan-only field renames
+- [x] Add differential, selfhost, canonical-example, formatter, and locked-corpus coverage

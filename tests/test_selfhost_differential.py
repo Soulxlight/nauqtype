@@ -63,10 +63,16 @@ class SelfhostDifferentialTests(unittest.TestCase):
             return "BORROW"
         if "unknown name" in output or "unknown type" in output:
             return "RESOLVE"
+        if "nested field assignment is not supported in V1" in output:
+            return "PARSE"
         type_markers = [
             "annotated local initializer does not match declared type",
             "return expression does not match function return type",
             "assignment value does not match target type",
+            "field assignment requires an owned mutable local product binding",
+            "field assignment target must be a user-defined product type",
+            "field assignment target field does not exist on product type",
+            "field assignment value does not match target field type",
             "call argument type does not match parameter type",
             "constructor payload type does not match variant payload type",
             "field access base",
@@ -796,6 +802,92 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 },
                 "ACCEPT",
                 {"ACCEPT"},
+            ),
+            (
+                "owned mutable local field assignment",
+                {
+                    "main": """
+                    type pair {
+                        left: i32,
+                        right: i32,
+                    }
+
+                    fn main() -> i32 {
+                        let mut value = pair {
+                            left: 40,
+                            right: 2,
+                        };
+                        value.left = value.left + value.right;
+                        return value.left;
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "immutable local field assignment",
+                {
+                    "main": """
+                    type pair {
+                        left: i32,
+                    }
+
+                    fn main() -> i32 {
+                        let value = pair { left: 1 };
+                        value.left = 2;
+                        return value.left;
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "mutref parameter field assignment remains rejected",
+                {
+                    "main": """
+                    type pair {
+                        left: i32,
+                    }
+
+                    fn update(value: mutref pair) -> i32 {
+                        value.left = 2;
+                        return value.left;
+                    }
+
+                    fn main() -> i32 {
+                        let mut value = pair { left: 1 };
+                        return update(mutref value);
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "nested field assignment remains rejected",
+                {
+                    "main": """
+                    type inner {
+                        value: i32,
+                    }
+
+                    type outer {
+                        nested: inner,
+                    }
+
+                    fn main() -> i32 {
+                        let mut value = outer {
+                            nested: inner { value: 1 },
+                        };
+                        value.nested.value = 2;
+                        return value.nested.value;
+                    }
+                    """,
+                },
+                "PARSE",
+                {"PARSE"},
             ),
         ]
 

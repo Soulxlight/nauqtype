@@ -315,6 +315,20 @@ class Resolver:
                 stmt.symbol_id = symbol.id
             self._resolve_expr(stmt.expr, module, scope, scopes)
             return
+        if isinstance(stmt, ast.FieldAssignStmt):
+            symbol = self._lookup(scopes, stmt.target)
+            if symbol is None:
+                self.diagnostics.add(
+                    "NQ-RESOLVE-004",
+                    "RESOLVE",
+                    f"unknown assignment target `{stmt.target}`",
+                    stmt.span,
+                    source=scope.source,
+                )
+            else:
+                stmt.symbol_id = symbol.id
+            self._resolve_expr(stmt.expr, module, scope, scopes)
+            return
         if isinstance(stmt, ast.IfStmt):
             self._resolve_expr(stmt.condition, module, scope, scopes)
             self._resolve_block(stmt.then_block, module, scope, scopes)

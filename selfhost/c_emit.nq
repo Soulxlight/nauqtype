@@ -2782,6 +2782,25 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                 },
             }
         },
+        ir_stmt_field_assign => {
+            let local_entry = lookup_local(ref locals, stmt.target_local_id);
+            match local_entry {
+                Some(local_value) => {
+                    if local_value.is_ref_param {
+                        push_c_error(mutref diags, "", stmt.at, "field assignment cannot target a ref parameter");
+                    } else {
+                        if stmt.field_name == "" {
+                            push_c_error(mutref diags, "", stmt.at, "field assignment is missing a resolved field name");
+                        } else {
+                            append_line(mutref lines, concat5(prefix, binding_name(local_value), ".", stmt.field_name, str_concat(" = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";"))));
+                        }
+                    }
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing local identity for field assignment");
+                },
+            }
+        },
         ir_stmt_if => {
             append_line(mutref lines, concat4(prefix, "if (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ") {"));
             emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);

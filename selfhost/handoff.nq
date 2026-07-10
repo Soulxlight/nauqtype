@@ -24,6 +24,7 @@ pub enum checked_stmt_kind {
     checked_stmt_local,
     checked_stmt_expr,
     checked_stmt_assign,
+    checked_stmt_field_assign,
     checked_stmt_return,
     checked_stmt_if,
     checked_stmt_while,
@@ -176,6 +177,9 @@ pub type checked_stmt {
     at: i32,
     kind: checked_stmt_kind,
     name: str,
+    field_owner_module: str,
+    field_owner_type: str,
+    field_name: str,
     type_name: str,
     type_arg1_name: str,
     type_arg2_name: str,
@@ -462,6 +466,16 @@ fn checked_stmt_kind_matches(left: checked_stmt_kind, right: checked_stmt_kind) 
         checked_stmt_assign => {
             match right {
                 checked_stmt_assign => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_stmt_field_assign => {
+            match right {
+                checked_stmt_field_assign => {
                     return true;
                 },
                 _ => {
@@ -3743,6 +3757,15 @@ fn lookup_predicted_stmt_id(predicted: ref list<predicted_stmt_id>, module_name:
                                 },
                             }
                         },
+                        stmt_field_assign => {
+                            match kind {
+                                stmt_field_assign => {
+                                    return value.id;
+                                },
+                                _ => {
+                                },
+                            }
+                        },
                         stmt_return => {
                             match kind {
                                 stmt_return => {
@@ -4092,6 +4115,8 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                     let mut stmt_is_borrow = false;
                     let mut stmt_borrow_mutable = false;
                     let mut target_binding_id = -1;
+                    let mut field_owner_module = "";
+                    let mut field_owner_type = "";
                     match current.kind {
                         stmt_local => {
                             stmt_type_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
@@ -4135,6 +4160,18 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                             stmt_is_borrow = lookup_binding_is_borrow(ref checked_bindings, target_binding_id);
                             stmt_borrow_mutable = lookup_binding_borrow_mutable(ref checked_bindings, target_binding_id);
                             expr_expected_ctx = stmt_type_ctx;
+                        },
+                        stmt_field_assign => {
+                            let base_ctx = visible_resolved_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                            target_binding_id = visible_binding_id(ref checked_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.name, current.at);
+                            if base_ctx.head != "" {
+                                field_owner_module = visible_type_origin_module(ref uses, ref items, current.module, base_ctx.head);
+                                field_owner_type = base_ctx.head;
+                                if field_owner_module != "" and current.field_name != "" {
+                                    stmt_type_ctx = lookup_field_ctx(ref field_facts, field_owner_module, field_owner_type, current.field_name);
+                                    expr_expected_ctx = stmt_type_ctx;
+                                }
+                            }
                         },
                         stmt_return => {
                             let function_id_lookup = lookup_function_id(ref checked_functions, current.module, current.function_name);
@@ -4200,6 +4237,14 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                                 push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing assignment target binding id in checked handoff: ", current.name));
                             }
                         },
+                        stmt_field_assign => {
+                            if target_binding_id < 0 {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing field-assignment target binding id in checked handoff: ", current.name));
+                            }
+                            if field_owner_module == "" or field_owner_type == "" or current.field_name == "" or stmt_type_ctx.head == "" {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing resolved owned-local field target in checked handoff");
+                            }
+                        },
                         stmt_if => {
                             if lookup_block_id(ref blocks, current.module, current.function_name, current.child_scope_id) < 0 {
                                 push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing child block id for checked if statement");
@@ -4234,6 +4279,9 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         },
                         stmt_assign => {
                             checked_kind = checked_stmt_assign;
+                        },
+                        stmt_field_assign => {
+                            checked_kind = checked_stmt_field_assign;
                         },
                         stmt_return => {
                             checked_kind = checked_stmt_return;
@@ -4270,6 +4318,9 @@ fn append_statements_for_source(functions: ref list<function_fact>, function_par
                         at: current.at,
                         kind: checked_kind,
                         name: current.name,
+                        field_owner_module: field_owner_module,
+                        field_owner_type: field_owner_type,
+                        field_name: current.field_name,
                         type_name: stmt_type_ctx.head,
                         type_arg1_name: stmt_type_ctx.arg1_name,
                         type_arg2_name: stmt_type_ctx.arg2_name,
@@ -4746,6 +4797,30 @@ audit {
         match entry {
             Some(value) => {
                 if value.module_name == module_name and value.function_name == function_name and checked_stmt_kind_matches(value.kind, checked_stmt_assign) and value.name == name and value.type_name == type_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_field_assignment(statements: ref list<checked_stmt>, module_name: str, function_name: str, name: str, field_name: str, owner_type: str, owner_module: str, type_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a resolved owned-local field assignment");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name and checked_stmt_kind_matches(value.kind, checked_stmt_field_assign) and value.name == name and value.field_name == field_name and value.field_owner_type == owner_type and value.field_owner_module == owner_module and value.type_name == type_name and value.target_binding_id > 0 {
                     return true;
                 }
             },

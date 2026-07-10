@@ -56,6 +56,14 @@ class IRAssignStmt:
 
 
 @dataclass(slots=True)
+class IRFieldAssignStmt:
+    target: IRLocal
+    field_name: str
+    expr: "IRExpr"
+    span: Span
+
+
+@dataclass(slots=True)
 class IRIfStmt:
     condition: "IRExpr"
     then_block: IRBlock
@@ -97,7 +105,7 @@ class IRExprStmt:
     span: Span
 
 
-IRStmt = IRLetStmt | IRAssignStmt | IRIfStmt | IRWhileStmt | IRMatchStmt | IRReturnStmt | IRExprStmt
+IRStmt = IRLetStmt | IRAssignStmt | IRFieldAssignStmt | IRIfStmt | IRWhileStmt | IRMatchStmt | IRReturnStmt | IRExprStmt
 
 
 @dataclass(slots=True)
@@ -335,6 +343,20 @@ class IRLowerer:
             if expr is None:
                 return None
             return IRAssignStmt(target=locals_by_id[stmt.symbol_id], expr=expr, span=stmt.span)
+        if isinstance(stmt, ast.FieldAssignStmt):
+            if stmt.symbol_id is None or stmt.symbol_id not in locals_by_id:
+                self.diagnostics.add(
+                    "NQ-IR-003",
+                    "IR",
+                    f"internal lowering failure for field-assignment target `{stmt.target}`",
+                    stmt.span,
+                    help="This is a compiler bug; please report it with the source file.",
+                )
+                return None
+            expr = self._lower_expr(stmt.expr, locals_by_id)
+            if expr is None:
+                return None
+            return IRFieldAssignStmt(target=locals_by_id[stmt.symbol_id], field_name=stmt.field_name, expr=expr, span=stmt.span)
         if isinstance(stmt, ast.IfStmt):
             condition = self._lower_expr(stmt.condition, locals_by_id)
             then_block = self._lower_block(stmt.then_block, locals_by_id)

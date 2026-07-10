@@ -359,3 +359,11 @@
 - Reason chosen: repeated proof and release assembly consume most milestone-closeout time, while persistent caching would make freshness harder to audit. In-process dependency-ordered reuse keeps the evidence honest and makes failures faster to locate.
 - Consequences: `scripts/check_fast.sh` is not a release gate; `scripts/check_milestone.sh` writes ignored timing/failure evidence and reuses only artifacts it just produced. Standalone `check_linux_alpha.sh` and `run_stress_leg.sh` remain complete by default.
 - Reversible later: the phase list can gain parallel-safe checks or artifact hashing, but persistent reuse must require an explicit freshness contract.
+
+## D046: Field assignment is owned-local product update, not general lvalue syntax
+
+- Decision: permit `binding.field = value;` only when `binding` is a direct owned `let mut` local of a user-defined product type.
+- Alternatives considered: retain immutable record update only, permit writes through `mutref` parameters, add arbitrary nested lvalues, or wait for a broader mutable-place model.
+- Reason chosen: direct owned-local updates reduce repetitive reconstruction in practical compiler/tooling code while preserving visible mutation authority and avoiding hidden aliasing or lifetime machinery.
+- Consequences: field writes reject enum values, list elements, `mutref` parameters, nested paths, and arbitrary expression targets. The value still passes through ordinary type and move checks; this does not add field borrows, stored references, methods, or general assignment semantics.
+- Reversible later: a future explicit mutable-place design can widen this boundary, but it must make aliasing and evidence consequences explicit rather than treating this syntax as precedent for arbitrary lvalues.
