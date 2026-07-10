@@ -84,6 +84,7 @@ pub enum checked_pattern_kind {
     checked_pattern_wildcard,
     checked_pattern_bind,
     checked_pattern_variant,
+    checked_pattern_i32,
 }
 
 pub type checked_module {
@@ -2497,7 +2498,11 @@ fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: s
         if type_arg1_name == "" {
             return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing option payload type in checked handoff");
         }
-        let arg1_id = intern_checked_type_id(type_arg1_name, "", "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+        let mut nested_arg1_name = "";
+        if type_arg1_name == "option" {
+            nested_arg1_name = type_arg2_name;
+        }
+        let arg1_id = intern_checked_type_id(type_arg1_name, nested_arg1_name, "", false, false, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
         if arg1_id < 0 {
             return arg1_id;
         }
@@ -2537,6 +2542,9 @@ fn lookup_binding_type_id(bindings: ref list<checked_binding>, binding_id: i32) 
 
 fn build_expected_variant_payload_ctx(variant_name: str, expected_ctx: expected_type_ctx, payload_index: i32) -> expected_type_ctx {
     if variant_name == "Some" and payload_index == 0 and expected_ctx.head == "option" {
+        if expected_ctx.arg1_name == "option" and expected_ctx.arg2_name != "" {
+            return make_expected_type_ctx("option", expected_ctx.arg2_name, "");
+        }
         return make_expected_type_ctx(expected_ctx.arg1_name, "", "");
     }
     if variant_name == "Ok" and payload_index == 0 and expected_ctx.head == "result" {
@@ -4367,6 +4375,57 @@ fn build_checked_pattern_tree(variants: ref list<variant_fact>, uses: ref list<m
     }
     let current = token_at(ref tokens, pattern_start);
     match current.kind {
+        tk_int_lit => {
+            if pattern_start + 1 == pattern_end {
+                let pattern_id = next_pattern_id(ref patterns);
+                list_push(mutref patterns, checked_pattern {
+                    id: pattern_id,
+                    arm_id: arm_id,
+                    function_id: function_id,
+                    module_name: module_name,
+                    function_name: function_name,
+                    scope_id: scope_id,
+                    at: current.start,
+                    start: pattern_start,
+                    end: pattern_end,
+                    kind: checked_pattern_i32,
+                    binding_id: -1,
+                    name: current.text,
+                    constructor_origin_module: "",
+                    constructor_enum_name: "",
+                });
+                return pattern_id;
+            }
+        },
+        tk_minus => {
+            let value = token_at(ref tokens, pattern_start + 1);
+            match value.kind {
+                tk_int_lit => {
+                    if pattern_start + 2 == pattern_end {
+                        let pattern_id = next_pattern_id(ref patterns);
+                        list_push(mutref patterns, checked_pattern {
+                            id: pattern_id,
+                            arm_id: arm_id,
+                            function_id: function_id,
+                            module_name: module_name,
+                            function_name: function_name,
+                            scope_id: scope_id,
+                            at: current.start,
+                            start: pattern_start,
+                            end: pattern_end,
+                            kind: checked_pattern_i32,
+                            binding_id: -1,
+                            name: str_concat("-", value.text),
+                            constructor_origin_module: "",
+                            constructor_enum_name: "",
+                        });
+                        return pattern_id;
+                    }
+                },
+                _ => {
+                },
+            }
+        },
         tk_ident => {
             if current.text == "_" and pattern_start + 1 == pattern_end {
                 let pattern_id = next_pattern_id(ref patterns);
@@ -4846,6 +4905,98 @@ audit {
             Some(value) => {
                 if value.module_name == module_name and value.function_name == function_name and value.name == name and value.type_name == type_name {
                     return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_i32_pattern(patterns: ref list<checked_pattern>, module_name: str, function_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff preserves an integer literal pattern");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name {
+                    match value.kind {
+                        checked_pattern_i32 => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn handoff_has_nested_constructor_pattern(patterns: ref list<checked_pattern>, pattern_children: ref list<checked_pattern_child>, module_name: str, function_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff preserves a nested constructor pattern tree");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name {
+                    match value.kind {
+                        checked_pattern_variant => {
+                            let mut child_index = 0;
+                            while child_index < list_len(ref pattern_children) {
+                                let child_entry = list_get(ref pattern_children, child_index);
+                                match child_entry {
+                                    Some(child) => {
+                                        if child.parent_pattern_id == value.id {
+                                            let mut nested_index = 0;
+                                            while nested_index < list_len(ref patterns) {
+                                                let nested_entry = list_get(ref patterns, nested_index);
+                                                match nested_entry {
+                                                    Some(nested) => {
+                                                        if nested.id == child.child_pattern_id {
+                                                            match nested.kind {
+                                                                checked_pattern_variant => {
+                                                                    return true;
+                                                                },
+                                                                _ => {
+                                                                },
+                                                            }
+                                                        }
+                                                    },
+                                                    None => {
+                                                    },
+                                                }
+                                                nested_index = nested_index + 1;
+                                            }
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                child_index = child_index + 1;
+                            }
+                        },
+                        _ => {
+                        },
+                    }
                 }
             },
             None => {

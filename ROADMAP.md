@@ -532,7 +532,10 @@ Status:
 
 Status:
 
-- planned
+- done
+- integer literal patterns accept `INT` and `-INT` on `i32` scrutinees, while constructor patterns can nest recursively
+- literal and nested constructor matches require a wildcard or binding fallback arm, so refined cases remain reviewable and fail closed
+- stage0 and stage1 preserve the pattern tree through typechecking, handoff, borrow, IR, C emission, facts, the formatter, and the locked corpus
 
 ### M37: v0.2 Supervised Alpha Gate
 

@@ -21,13 +21,14 @@ Current bootstrap status:
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
 - direct field assignment for owned `let mut` product locals
+- integer literal and nested constructor patterns with an explicit fallback arm
 - bootstrap file input and string helpers
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
 - `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
-v0.1 status: the current language and tooling surface is stable as of M23. Future additions still move through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
+v0.1 status: the M23 language and tooling baseline remains stable. The current alpha surface extends that baseline through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
 
 ## Quick Start
 
@@ -188,6 +189,7 @@ Example programs worth checking first:
 - `examples/top_level_const.nq`: stage1-owned top-level constants
 - `examples/named_arguments.nq`: Batch B named function arguments
 - `examples/nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
+- `examples/nested_patterns.nq`: nested constructor and integer literal matching with an explicit fallback
 - `examples/qualified_call_chain.nq`: multi-module qualified call chain
 - `examples/qualified_calls.nq`: direct module-qualified function calls
 - `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names

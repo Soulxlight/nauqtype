@@ -395,6 +395,43 @@ class SelfhostIRTests(unittest.TestCase):
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
+    def test_ir_lowers_literal_and_nested_constructor_patterns(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let value: option<option<i32>> = Some(Some(42));
+                match value {
+                    Some(Some(42)) => {
+                        return 42;
+                    },
+                    Some(Some(number)) => {
+                        return number;
+                    },
+                    _ => {
+                        return 0;
+                    },
+                }
+            }
+            """,
+        }
+        assertions = [
+            '                let main_fn = ir_lookup_function_id(ref ir_functions, "main::main");',
+            '                if not ir_has_i32_pattern(ref ir_patterns, main_fn) {',
+            '                    print_line("missing lowered literal pattern");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not ir_has_nested_constructor_pattern(ref ir_patterns, ref ir_pattern_children, main_fn) {',
+            '                    print_line("missing lowered nested constructor pattern");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not ir_has_pattern_local(ref ir_patterns, main_fn, "number") {',
+            '                    print_line("missing lowered nested pattern local");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_ir_lowers_direct_owned_local_field_assignment(self) -> None:
         modules = {
             "main": """

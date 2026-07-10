@@ -2540,6 +2540,28 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertNotIn("match expression must be exhaustive", result.stdout + result.stderr)
 
+    def test_stage1_driver_m36_nested_patterns_run_and_export_constructor_evidence(self) -> None:
+        source = self.root / "examples" / "nested_patterns.nq"
+        checked = self._run_driver(["check", str(source)])
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertEqual(checked.stdout, "")
+        self.assertEqual(checked.stderr, "")
+
+        facts = self._run_driver(["facts", str(source), "--format", "v2"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        payload = json.loads(facts.stdout)
+        pattern_refs = [
+            ref
+            for ref in payload["references"]
+            if ref["kind"] == "pattern_ctor" and ref["name"] == "Some" and ref["evidence"] == "builtin"
+        ]
+        self.assertEqual(len(pattern_refs), 2)
+
+        result = self._run_driver(["run", str(source)])
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
     def test_stage1_driver_m27_nested_qualified_call_argument_stays_positional(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

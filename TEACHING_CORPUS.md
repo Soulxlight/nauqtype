@@ -31,6 +31,7 @@ These examples cover specific semantic features of Nauqtype.
 - [top_level_const.nq](examples/top_level_const.nq): Defining and using stage1-owned top-level constants.
 - [break_continue.nq](examples/break_continue.nq): Minimal `break` and `continue` statement usage within the nearest enclosing `while` loop.
 - [nested_break_continue.nq](examples/nested_break_continue.nq): Using nested `break` and `continue` inside `if` conditionals within a `while` loop.
+- [nested_patterns.nq](examples/nested_patterns.nq): Matching nested `option` constructors and an integer literal with an explicit fallback arm.
 
 ## AI and Evidence Workflow Demos
 
@@ -67,6 +68,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `mutate_counter.nq`
 - `named_arguments.nq`
 - `nested_break_continue.nq`
+- `nested_patterns.nq`
 - `propagation_question.nq`
 - `qualified_call_chain.nq`
 - `qualified_calls.nq`
@@ -100,3 +102,4 @@ To teach supervised failure to a model:
 2. **Undeclared Mutation:** Remove the `mutates()` clause from `examples/mutate_counter.nq` to see the compiler infer the `mutref` and demand the contract.
 3. **Invalid Exact Error:** Try using `?` on an `io_err` inside a function returning `result<str, parse_err>` in `examples/fallible_function.nq` to see the exact matching rules reject the code (`NQ-PROPAGATE-003`).
 4. **Restricted Field Mutation:** Remove `mut` from `score` in `examples/field_assignment.nq`, or try assigning through a `mutref` parameter, to see direct field writes rejected outside owned mutable product locals.
+5. **Refined Pattern Fallback:** Remove the `_` arm from `examples/nested_patterns.nq` to see refined patterns rejected until their fallback path is explicit.

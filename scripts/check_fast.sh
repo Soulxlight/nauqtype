@@ -34,6 +34,7 @@ base_tests=(
     tests.test_imports
     tests.test_lexer
     tests.test_parser
+    tests.test_patterns
     tests.test_resolution
     tests.test_review
     tests.test_teaching_corpus

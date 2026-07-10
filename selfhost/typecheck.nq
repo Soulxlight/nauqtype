@@ -1293,7 +1293,13 @@ fn type_ctx_matches(expected: expected_type_ctx, actual: expected_type_ctx) -> b
         return false;
     }
     if expected.head == "option" or expected.head == "list" {
-        return type_ctx_arg_matches(expected.arg1_name, actual.arg1_name);
+        if not type_ctx_arg_matches(expected.arg1_name, actual.arg1_name) {
+            return false;
+        }
+        if expected.head == "option" and expected.arg1_name == "option" {
+            return type_ctx_arg_matches(expected.arg2_name, actual.arg2_name);
+        }
+        return true;
     }
     if expected.head == "result" {
         if not type_ctx_arg_matches(expected.arg1_name, actual.arg1_name) {
@@ -3007,6 +3013,9 @@ fn builtin_variant_payload_ctx(call_name: str, return_ctx: expected_type_ctx, in
         return empty_expected_type_ctx();
     }
     if call_name == "Some" {
+        if return_ctx.head == "option" and return_ctx.arg1_name == "option" and return_ctx.arg2_name != "" {
+            return make_expected_type_ctx("option", return_ctx.arg2_name, "");
+        }
         return make_expected_type_ctx(return_ctx.arg1_name, "", "");
     }
     if call_name == "Ok" {
@@ -3395,6 +3404,35 @@ fn match_pattern_is_default(variants: ref list<variant_fact>, uses: ref list<mod
     }
 }
 
+fn pattern_span_is_refined(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut pattern_start = start;
+    let mut pattern_end = end;
+    while span_is_wrapped_in_parens(ref tokens, pattern_start, pattern_end) {
+        pattern_start = pattern_start + 1;
+        pattern_end = pattern_end - 1;
+    }
+    let mut paren_count = 0;
+    let mut index = pattern_start;
+    while index < pattern_end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_int_lit => {
+                return true;
+            },
+            tk_minus => {
+                return true;
+            },
+            tk_lparen => {
+                paren_count = paren_count + 1;
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return paren_count > 1;
+}
+
 fn match_pattern_variant_name(tokens: ref list<token>, start: i32, end: i32) -> str {
     let mut pattern_start = start;
     let mut pattern_end = end;
@@ -3484,6 +3522,66 @@ fn match_expr_patterns_have_default(variants: ref list<variant_fact>, uses: ref 
     return false;
 }
 
+fn match_expr_patterns_have_refined(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut cursor = start;
+    let match_token = token_at(ref tokens, cursor);
+    match match_token.kind {
+        tk_kw_match => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    skip_until_match_block(ref tokens, mutref cursor);
+    let open = token_at(ref tokens, cursor);
+    match open.kind {
+        tk_lbrace => {
+            cursor = cursor + 1;
+        },
+        _ => {
+            return false;
+        },
+    }
+    while cursor < end {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_rbrace => {
+                return false;
+            },
+            tk_eof => {
+                return false;
+            },
+            _ => {
+                let pattern_start = cursor;
+                skip_pattern_until_arrow(ref tokens, mutref cursor);
+                if pattern_span_is_refined(ref tokens, pattern_start, cursor) {
+                    return true;
+                }
+                let arrow = token_at(ref tokens, cursor);
+                match arrow.kind {
+                    tk_fat_arrow => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                        return false;
+                    },
+                }
+                skip_match_arm_value_expr(ref tokens, mutref cursor);
+                let maybe_comma = token_at(ref tokens, cursor);
+                match maybe_comma.kind {
+                    tk_comma => {
+                        cursor = cursor + 1;
+                    },
+                    _ => {
+                    },
+                }
+            },
+        }
+    }
+    return false;
+}
+
 fn match_expr_patterns_include_variant(tokens: ref list<token>, start: i32, end: i32, variant_name: str) -> bool {
     let mut cursor = start;
     let match_token = token_at(ref tokens, cursor);
@@ -3545,6 +3643,12 @@ fn match_expr_patterns_include_variant(tokens: ref list<token>, start: i32, end:
 }
 
 fn match_expr_is_exhaustive(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, tokens: ref list<token>, start: i32, end: i32, scrutinee_ctx: expected_type_ctx) -> bool {
+    if scrutinee_ctx.head == "i32" {
+        return match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end);
+    }
+    if match_expr_patterns_have_refined(ref tokens, start, end) {
+        return match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end);
+    }
     if scrutinee_ctx.head == "option" {
         if match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end) {
             return true;
@@ -3583,6 +3687,9 @@ fn match_expr_is_exhaustive(variants: ref list<variant_fact>, uses: ref list<mod
 }
 
 fn match_expr_scrutinee_is_supported(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, scrutinee_ctx: expected_type_ctx) -> bool {
+    if scrutinee_ctx.head == "i32" {
+        return true;
+    }
     if scrutinee_ctx.head == "option" or scrutinee_ctx.head == "result" {
         return true;
     }
@@ -3622,7 +3729,7 @@ fn infer_match_expr_type_ctx(functions: ref list<function_fact>, function_params
         return scrutinee_ctx;
     }
     if has_known_type_ctx(scrutinee_ctx) and not match_expr_scrutinee_is_supported(ref variants, ref uses, ref items, module, scrutinee_ctx) {
-        push_diag(mutref diags, module, match_token.start, "match expression scrutinee must be option, result, or enum");
+        push_diag(mutref diags, module, match_token.start, "match expression scrutinee must be i32, option, result, or enum");
         return unsupported_type_ctx();
     }
     let open = token_at(ref tokens, cursor);
@@ -4148,6 +4255,29 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
     }
     let current = token_at(ref tokens, pattern_start);
     match current.kind {
+        tk_int_lit => {
+            if pattern_start + 1 == pattern_end {
+                if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "i32" {
+                    push_diag(mutref diags, module, current.start, "integer literal patterns require an `i32` scrutinee");
+                }
+                return;
+            }
+        },
+        tk_minus => {
+            let value = token_at(ref tokens, pattern_start + 1);
+            match value.kind {
+                tk_int_lit => {
+                    if pattern_start + 2 == pattern_end {
+                        if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "i32" {
+                            push_diag(mutref diags, module, current.start, "integer literal patterns require an `i32` scrutinee");
+                        }
+                        return;
+                    }
+                },
+                _ => {
+                },
+            }
+        },
         tk_ident => {
             if current.text == "_" and pattern_start + 1 == pattern_end {
                 return;
@@ -4224,6 +4354,84 @@ fn typecheck_match_arm(variants: ref list<variant_fact>, variant_payloads: ref l
     return;
 }
 
+fn match_stmt_group_is_first(match_arms: ref list<match_arm_fact>, arm: match_arm_fact) -> bool {
+    let mut index = 0;
+    while index < list_len(ref match_arms) {
+        let entry = list_get(ref match_arms, index);
+        match entry {
+            Some(value) => {
+                if value.module == arm.module and value.function_name == arm.function_name and value.match_at == arm.match_at and not value.is_expression and value.at < arm.at {
+                    return false;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn match_stmt_group_has_default(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, module: str, function_name: str, match_at: i32, tokens: ref list<token>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref match_arms) {
+        let entry = list_get(ref match_arms, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.match_at == match_at and not value.is_expression {
+                    if match_pattern_is_default(ref variants, ref uses, ref items, module, ref tokens, value.pattern_start, value.pattern_end) {
+                        return true;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn match_stmt_group_has_refined(match_arms: ref list<match_arm_fact>, module: str, function_name: str, match_at: i32, tokens: ref list<token>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref match_arms) {
+        let entry = list_get(ref match_arms, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.match_at == match_at and not value.is_expression {
+                    if pattern_span_is_refined(ref tokens, value.pattern_start, value.pattern_end) {
+                        return true;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn validate_refined_match_stmt_groups(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, match_arms: ref list<match_arm_fact>, module: str, function_name: str, tokens: ref list<token>, diags: mutref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref match_arms) {
+        let entry = list_get(ref match_arms, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and not value.is_expression and match_stmt_group_is_first(ref match_arms, value) {
+                    if match_stmt_group_has_refined(ref match_arms, module, function_name, value.match_at, ref tokens) and not match_stmt_group_has_default(ref variants, ref uses, ref items, ref match_arms, module, function_name, value.match_at, ref tokens) {
+                        push_diag(mutref diags, module, value.match_at, "literal or nested constructor patterns require a wildcard or binding fallback arm");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn let_else_payload_ctx(variant_name: str, scrutinee_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
     if variant_name == "Some" {
         if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "option" {
@@ -4231,6 +4439,9 @@ fn let_else_payload_ctx(variant_name: str, scrutinee_ctx: expected_type_ctx, mod
             return empty_expected_type_ctx();
         }
         if scrutinee_ctx.head == "option" {
+            if scrutinee_ctx.arg1_name == "option" and scrutinee_ctx.arg2_name != "" {
+                return make_expected_type_ctx("option", scrutinee_ctx.arg2_name, "");
+            }
             return make_expected_type_ctx(scrutinee_ctx.arg1_name, "", "");
         }
         return empty_expected_type_ctx();
@@ -4501,6 +4712,7 @@ audit {
                                     condition_index = condition_index + 1;
                                 }
 
+                                validate_refined_match_stmt_groups(ref variants, ref uses, ref items, ref function_match_arms, current_function.module, current_function.name, ref tokens, mutref diags);
                                 total_resolved_binding_count = total_resolved_binding_count + list_len(ref resolved_bindings);
                             }
                         },

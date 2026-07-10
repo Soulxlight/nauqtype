@@ -417,24 +417,36 @@ class TypeChecker:
             scrutinee_type = self._check_expr(stmt.expr, env, semantic_function, module, structs, enums, functions, copyable_named, source)
             covered: set[str] = set()
             exhaustive = False
+            refined = False
             for arm in stmt.arms:
                 arm_env = dict(env)
                 arm_variant = self._check_pattern(arm.pattern, scrutinee_type, arm_env, semantic_function, enums, source)
-                if arm_variant is None:
+                if self._pattern_is_default(arm.pattern):
                     exhaustive = True
-                else:
+                if arm_variant is not None:
                     covered.add(arm_variant)
+                if self._pattern_is_refined(arm.pattern):
+                    refined = True
                 self._check_block(arm.block, signature, arm_env, semantic_function, module, structs, enums, functions, copyable_named, source)
             if not exhaustive:
-                missing = self._missing_variants(scrutinee_type, enums) - covered
-                if missing:
+                if scrutinee_type == I32 or refined:
                     self.diagnostics.add(
-                        "NQ-TYPE-008",
+                        "NQ-TYPE-041",
                         "TYPE",
-                        f"non-exhaustive match; missing {', '.join(sorted(name.split('::')[-1] for name in missing))}",
+                        "literal or nested constructor patterns require a wildcard or binding fallback arm",
                         stmt.span,
                         source=source,
                     )
+                else:
+                    missing = self._missing_variants(scrutinee_type, enums) - covered
+                    if missing:
+                        self.diagnostics.add(
+                            "NQ-TYPE-008",
+                            "TYPE",
+                            f"non-exhaustive match; missing {', '.join(sorted(name.split('::')[-1] for name in missing))}",
+                            stmt.span,
+                            source=source,
+                        )
             return
         if isinstance(stmt, ast.ReturnStmt):
             if stmt.expr is None:
@@ -790,6 +802,16 @@ class TypeChecker:
     ) -> str | None:
         if isinstance(pattern, ast.WildcardPattern):
             return None
+        if isinstance(pattern, ast.IntLiteralPattern):
+            if expected_type != I32:
+                self.diagnostics.add(
+                    "NQ-TYPE-040",
+                    "TYPE",
+                    "integer literal patterns require an `i32` scrutinee",
+                    pattern.span,
+                    source=source,
+                )
+            return None
         if isinstance(pattern, ast.NamePattern):
             if pattern.resolution_kind == "variant":
                 variant_name = pattern.target_name or pattern.name
@@ -805,11 +827,21 @@ class TypeChecker:
             variant_name = pattern.target_name or pattern.name
             payload_types = self._check_variant_pattern_name(source, pattern.span, variant_name, expected_type, enums, len(pattern.args))
             for nested, payload_type in zip(pattern.args, payload_types):
-                if isinstance(nested, ast.VariantPattern):
-                    self.diagnostics.add("NQ-TYPE-030", "TYPE", "nested constructor patterns are deferred in v0.1", nested.span, source=source)
                 self._check_pattern(nested, payload_type, env, semantic_function, enums, source)
             return variant_name
         return None
+
+    def _pattern_is_default(self, pattern: ast.Pattern) -> bool:
+        return isinstance(pattern, ast.WildcardPattern) or (
+            isinstance(pattern, ast.NamePattern) and pattern.resolution_kind == "binding"
+        )
+
+    def _pattern_is_refined(self, pattern: ast.Pattern) -> bool:
+        if isinstance(pattern, ast.IntLiteralPattern):
+            return True
+        if isinstance(pattern, ast.VariantPattern):
+            return any(self._pattern_is_refined(nested) or isinstance(nested, ast.VariantPattern) for nested in pattern.args)
+        return False
 
     def _check_variant_pattern_name(self, source: SourceFile, span, variant_name: str, expected_type: Type, enums: dict[str, EnumDef], arg_count: int) -> list[Type]:
         if expected_type.kind == "option":

@@ -424,7 +424,7 @@ Rules:
 
 - expression arms use `pattern => expr`, separated by commas
 - all arm result types must agree exactly
-- the scrutinee must be `option<T>`, `result<T, E>`, or a user enum
+- the scrutinee must be `i32`, `option<T>`, `result<T, E>`, or a user enum
 - match expression arms do not fall through; V1 requires either a wildcard/binding fallback arm or coverage of every visible variant for the scrutinee type
 - block expressions, implicit final-expression returns, and fallthrough are not supported
 
@@ -436,11 +436,10 @@ Supported pattern forms:
 - binding: `name`
 - unit-like variant: `None`
 - tuple-like variant: `Some(value)`
+- integer literal: `42` or `-1`, for `i32` scrutinees only
+- nested constructor: `Some(Some(value))`
 
-Deferred pattern forms in v0.1:
-
-- nested constructor patterns
-- literal patterns
+Any match containing a literal or nested constructor pattern must include a wildcard or binding fallback arm. This keeps the first refined-pattern form conservative and exhaustiveness visible. Guards, ranges, string or boolean literals, and or-patterns remain deferred.
 
 ## Operators
 

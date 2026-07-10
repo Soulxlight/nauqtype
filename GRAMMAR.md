@@ -228,6 +228,8 @@ Parser note:
 
 ```ebnf
 pattern       = "_"
+              | INT
+              | "-" INT
               | IDENT [ "(" pattern_list? ")" ] ;
 
 pattern_list  = pattern { "," pattern } [ "," ] ;
@@ -237,6 +239,8 @@ Pattern meaning is resolved semantically:
 
 - bare `IDENT` may be a binding or a unit-like constructor
 - `IDENT(...)` is a tuple-like constructor pattern
+- integer literals, including `-INT`, match only `i32` scrutinees
+- constructor patterns may nest recursively; a match containing a literal or nested constructor pattern requires a wildcard or binding fallback arm
 
 ## Precedence And Associativity
 
@@ -258,5 +262,4 @@ Pattern meaning is resolved semantically:
 - No general block expressions
 - No loop grammar beyond bootstrap `while` and Batch B `break;` / `continue;`
 - AI Contracts use a fixed clause order instead of free-form annotations
-- No literal patterns in v0.1
 - No generic parameter declarations in v0.1

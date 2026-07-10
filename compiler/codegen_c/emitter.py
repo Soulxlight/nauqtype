@@ -15,6 +15,7 @@ from compiler.ir.core import (
     IRFunction,
     IRIfStmt,
     IRIntLiteral,
+    IRIntLiteralPattern,
     IRLocal,
     IRMatchStmt,
     IRNameExpr,
@@ -343,6 +344,9 @@ class CEmitter:
         temp_name = self._fresh_temp()
         prefix = "    " * indent
         self.lines.append(f"{prefix}{self._c_type(stmt.scrutinee_type)} {temp_name} = {self._emit_expr(stmt.expr)};")
+        if any(self._pattern_is_refined(arm.pattern) for arm in stmt.arms):
+            self._emit_refined_match(stmt, temp_name, indent)
+            return
         default_arm = None
         self.lines.append(f"{prefix}switch ({temp_name}.tag) {{")
         for arm in stmt.arms:
@@ -368,6 +372,30 @@ class CEmitter:
             self.lines.append(f"{prefix}    }}")
         self.lines.append(f"{prefix}}}")
 
+    def _emit_refined_match(self, stmt: IRMatchStmt, temp_name: str, indent: int) -> None:
+        prefix = "    " * indent
+        for index, arm in enumerate(stmt.arms):
+            keyword = "if" if index == 0 else "else if"
+            condition = self._pattern_condition(arm.pattern, stmt.scrutinee_type, temp_name)
+            self.lines.append(f"{prefix}{keyword} ({condition}) {{")
+            self._emit_pattern_bindings(arm.pattern, stmt.scrutinee_type, temp_name, indent + 1)
+            self._emit_block(arm.block, indent=indent + 1)
+            self.lines.append(f"{prefix}}}")
+
+    def _pattern_condition(self, pattern: IRPattern, scrutinee_type: Type, value_expr: str) -> str:
+        if isinstance(pattern, (IRWildcardPattern, IRBindPattern)):
+            return "true"
+        if isinstance(pattern, IRIntLiteralPattern):
+            return f"({value_expr} == {pattern.value})"
+        if isinstance(pattern, IRVariantPattern):
+            conditions = [f"{value_expr}.tag == {self._tag_name(scrutinee_type, pattern.name)}"]
+            payload_types = self._pattern_payload_types(scrutinee_type, pattern.name)
+            for index, nested in enumerate(pattern.args):
+                payload_expr = f"{value_expr}.data.{pattern.name.split('::')[-1]}._{index}"
+                conditions.append(self._pattern_condition(nested, payload_types[index], payload_expr))
+            return "(" + " && ".join(conditions) + ")"
+        raise RuntimeError(f"unsupported pattern condition: {type(pattern).__name__}")
+
     def _emit_pattern_bindings(self, pattern: IRPattern, scrutinee_type: Type, value_expr: str, indent: int) -> None:
         prefix = "    " * indent
         if isinstance(pattern, IRBindPattern):
@@ -377,19 +405,14 @@ class CEmitter:
             payload_types = self._pattern_payload_types(scrutinee_type, pattern.name)
             for index, nested in enumerate(pattern.args):
                 payload_expr = f"{value_expr}.data.{pattern.name.split('::')[-1]}._{index}"
-                if isinstance(nested, IRWildcardPattern):
-                    continue
-                if isinstance(nested, IRBindPattern):
-                    self.lines.append(f"{prefix}{self._c_type(nested.local.typ)} {self._binding_name(nested.local)} = {payload_expr};")
-                    continue
-                if isinstance(nested, IRVariantPattern) and not nested.args:
-                    variant_type = payload_types[index]
-                    tag_check = self._tag_name(variant_type, nested.name)
-                    self.lines.append(f"{prefix}if ({payload_expr}.tag != {tag_check}) {{")
-                    self.lines.append(f"{prefix}    break;")
-                    self.lines.append(f"{prefix}}}")
-                    continue
-                raise RuntimeError("nested constructor patterns must be rejected before C emission")
+                self._emit_pattern_bindings(nested, payload_types[index], payload_expr, indent)
+
+    def _pattern_is_refined(self, pattern: IRPattern) -> bool:
+        if isinstance(pattern, IRIntLiteralPattern):
+            return True
+        if isinstance(pattern, IRVariantPattern):
+            return any(self._pattern_is_refined(nested) or isinstance(nested, IRVariantPattern) for nested in pattern.args)
+        return False
 
     def _emit_expr(self, expr: IRExpr) -> str:
         if isinstance(expr, IRIntLiteral):

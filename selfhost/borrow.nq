@@ -1000,7 +1000,11 @@ fn is_copy_type(module_name: str, type_name: str, type_arg1_name: str, type_arg2
         return false;
     }
     if type_name == "option" {
-        return is_copy_type(module_name, type_arg1_name, "", "", false, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags);
+        let mut nested_arg1_name = "";
+        if type_arg1_name == "option" {
+            nested_arg1_name = type_arg2_name;
+        }
+        return is_copy_type(module_name, type_arg1_name, nested_arg1_name, "", false, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags);
     }
     if type_name == "result" {
         return is_copy_type(module_name, type_arg1_name, "", "", false, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags)

@@ -81,6 +81,8 @@ class SelfhostDifferentialTests(unittest.TestCase):
             "condition must have type `bool`",
             "comparison operands must have matching types",
             "arithmetic operand must have integer type",
+            "integer literal patterns require an `i32` scrutinee",
+            "literal or nested constructor patterns require a wildcard or binding fallback arm",
         ]
         if any(marker in output for marker in type_markers):
             return "TYPE"
@@ -888,6 +890,88 @@ class SelfhostDifferentialTests(unittest.TestCase):
                 },
                 "PARSE",
                 {"PARSE"},
+            ),
+            (
+                "integer literal pattern accepts explicit fallback",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value = -1;
+                        match value {
+                            -1 => {
+                                return 42;
+                            },
+                            _ => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "nested constructor pattern accepts explicit fallback",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value: option<option<i32>> = Some(Some(42));
+                        match value {
+                            Some(Some(42)) => {
+                                return 42;
+                            },
+                            _ => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "ACCEPT",
+                {"ACCEPT"},
+            ),
+            (
+                "literal pattern requires i32 scrutinee",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        match true {
+                            1 => {
+                                return 1;
+                            },
+                            _ => {
+                                return 0;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "refined pattern requires fallback",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value: option<option<i32>> = Some(Some(1));
+                        match value {
+                            Some(Some(number)) => {
+                                return number;
+                            },
+                            Some(None) => {
+                                return 1;
+                            },
+                            None => {
+                                return 2;
+                            },
+                        }
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
             ),
         ]
 

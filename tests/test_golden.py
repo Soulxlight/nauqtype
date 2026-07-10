@@ -61,7 +61,7 @@ class GoldenTests(unittest.TestCase):
         diagnostics, _ = compile_source(source)
         self.assertGolden(render_diagnostics(source, diagnostics.items), ROOT / "tests" / "golden" / "diagnostics" / "borrow.txt")
 
-    def test_diagnostic_snapshot_deferred_pattern(self) -> None:
+    def test_diagnostic_snapshot_refined_pattern_requires_fallback(self) -> None:
         source = SourceFile(
             Path("diag_deferred.nq"),
             "fn main() -> i32 {\n    let value: option<option<i32>> = Some(Some(1));\n    match value {\n        Some(Some(inner)) => {\n            return inner;\n        },\n        Some(None) => {\n            return 1;\n        },\n        None => {\n            return 2;\n        },\n    }\n}\n",
@@ -69,7 +69,7 @@ class GoldenTests(unittest.TestCase):
         diagnostics, _ = compile_source(source)
         self.assertGolden(
             render_diagnostics(source, diagnostics.items),
-            ROOT / "tests" / "golden" / "diagnostics" / "deferred_pattern.txt",
+            ROOT / "tests" / "golden" / "diagnostics" / "refined_pattern.txt",
         )
 
 

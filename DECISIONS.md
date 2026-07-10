@@ -367,3 +367,11 @@
 - Reason chosen: direct owned-local updates reduce repetitive reconstruction in practical compiler/tooling code while preserving visible mutation authority and avoiding hidden aliasing or lifetime machinery.
 - Consequences: field writes reject enum values, list elements, `mutref` parameters, nested paths, and arbitrary expression targets. The value still passes through ordinary type and move checks; this does not add field borrows, stored references, methods, or general assignment semantics.
 - Reversible later: a future explicit mutable-place design can widen this boundary, but it must make aliasing and evidence consequences explicit rather than treating this syntax as precedent for arbitrary lvalues.
+
+## D047: Refined patterns require an explicit fallback
+
+- Decision: support integer literal patterns and recursively nested constructor patterns, but require any match using either form to include a wildcard or binding fallback arm.
+- Alternatives considered: defer both forms, infer exhaustiveness over every refined pattern, or add guards, ranges, strings, booleans, and or-patterns together.
+- Reason chosen: literal and nested cases make ordinary classification code clearer for people and agents, while a visible fallback prevents the first refined-pattern slice from claiming exhaustiveness it cannot yet prove mechanically.
+- Consequences: `INT` and `-INT` patterns apply only to `i32`; nested constructors preserve their full checked pattern tree through IR and C lowering. Guards, ranges, non-integer literal patterns, and or-patterns remain deferred.
+- Reversible later: a richer exhaustiveness analysis can relax the fallback rule only with explicit proof and evidence updates.

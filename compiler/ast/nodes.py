@@ -318,4 +318,10 @@ class VariantPattern:
     target_name: str | None = None
 
 
-Pattern = WildcardPattern | NamePattern | VariantPattern
+@dataclass(slots=True)
+class IntLiteralPattern:
+    value: int
+    span: Span
+
+
+Pattern = WildcardPattern | NamePattern | VariantPattern | IntLiteralPattern

@@ -50,6 +50,7 @@ pub enum ir_pattern_kind {
     ir_pattern_wildcard,
     ir_pattern_bind,
     ir_pattern_variant,
+    ir_pattern_i32,
 }
 
 pub type ir_program {
@@ -339,6 +340,9 @@ fn checked_pattern_to_ir_kind(kind: checked_pattern_kind) -> ir_pattern_kind {
         },
         checked_pattern_bind => {
             return ir_pattern_bind;
+        },
+        checked_pattern_i32 => {
+            return ir_pattern_i32;
         },
         _ => {
             return ir_pattern_variant;
@@ -1586,6 +1590,98 @@ audit {
                     match value.kind {
                         ir_pattern_bind => {
                             return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_i32_pattern(patterns: ref list<ir_pattern>, function_id: i32) -> bool
+audit {
+    intent("Check whether stage1 IR preserves an integer literal pattern");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_pattern_i32 => {
+                            return true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn ir_has_nested_constructor_pattern(patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, function_id: i32) -> bool
+audit {
+    intent("Check whether stage1 IR preserves a nested constructor pattern tree");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref patterns) {
+        let entry = list_get(ref patterns, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_pattern_variant => {
+                            let mut child_index = 0;
+                            while child_index < list_len(ref pattern_children) {
+                                let child_entry = list_get(ref pattern_children, child_index);
+                                match child_entry {
+                                    Some(child) => {
+                                        if child.parent_pattern_id == value.id {
+                                            let mut nested_index = 0;
+                                            while nested_index < list_len(ref patterns) {
+                                                let nested_entry = list_get(ref patterns, nested_index);
+                                                match nested_entry {
+                                                    Some(nested) => {
+                                                        if nested.id == child.child_pattern_id {
+                                                            match nested.kind {
+                                                                ir_pattern_variant => {
+                                                                    return true;
+                                                                },
+                                                                _ => {
+                                                                },
+                                                            }
+                                                        }
+                                                    },
+                                                    None => {
+                                                    },
+                                                }
+                                                nested_index = nested_index + 1;
+                                            }
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                child_index = child_index + 1;
+                            }
                         },
                         _ => {
                         },

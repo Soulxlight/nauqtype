@@ -356,6 +356,42 @@ class SelfhostHandoffTests(unittest.TestCase):
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
+    def test_handoff_preserves_literal_and_nested_constructor_patterns(self) -> None:
+        modules = {
+            "main": """
+            fn main() -> i32 {
+                let value: option<option<i32>> = Some(Some(42));
+                match value {
+                    Some(Some(42)) => {
+                        return 42;
+                    },
+                    Some(Some(number)) => {
+                        return number;
+                    },
+                    _ => {
+                        return 0;
+                    },
+                }
+            }
+            """,
+        }
+        assertions = [
+            '                if not handoff_has_i32_pattern(ref checked_patterns, "main", "main") {',
+            '                    print_line("missing literal pattern handoff");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_nested_constructor_pattern(ref checked_patterns, ref checked_pattern_children, "main", "main") {',
+            '                    print_line("missing nested constructor pattern handoff");',
+            "                    failures = failures + 1;",
+            "                }",
+            '                if not handoff_has_pattern_binding(ref checked_pattern_bindings, "main", "main", "number", "i32") {',
+            '                    print_line("missing nested pattern payload binding");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_handoff_reuses_binding_identity_and_exports_borrow_nodes(self) -> None:
         modules = {
             "main": """

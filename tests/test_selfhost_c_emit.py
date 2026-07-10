@@ -339,6 +339,28 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("nq_match_result_", emitted)
         self.assertNotIn("({", emitted)
 
+    def test_stage1_c_emit_lowers_literal_and_nested_constructor_patterns(self) -> None:
+        modules = {
+            "main": """
+            fn select(value: option<option<i32>>) -> i32 {
+                let score = match value {
+                    Some(Some(42)) => 7,
+                    _ => 0,
+                };
+                return score;
+            }
+
+            fn main() -> i32 {
+                return select(Some(Some(42)));
+            }
+            """,
+        }
+        returncode, output, emitted = self._run_stage1_emit(modules)
+        self.assertEqual(returncode, 0, output)
+        self.assertIn("if ((nq_tmp_", emitted)
+        self.assertIn("== 42", emitted)
+        self.assertIn("else if (true)", emitted)
+
     def test_stage1_rejects_match_expression_arm_type_mismatch(self) -> None:
         modules = {
             "main": """
@@ -380,7 +402,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         modules = {
             "main": """
             fn main() -> i32 {
-                let picked = match 1 {
+                let picked = match true {
                     _ => 2,
                 };
                 return picked;
@@ -391,7 +413,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         returncode, output, emitted = self._run_stage1_emit(modules)
         self.assertNotEqual(returncode, 0)
         self.assertEqual(emitted, "")
-        self.assertIn("match expression scrutinee must be option, result, or enum", output)
+        self.assertIn("match expression scrutinee must be i32, option, result, or enum", output)
 
     def test_stage1_rejects_let_else_binding_in_else_block(self) -> None:
         modules = {

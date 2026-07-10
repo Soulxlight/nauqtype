@@ -234,7 +234,13 @@ class IRVariantPattern:
     span: Span
 
 
-IRPattern = IRWildcardPattern | IRBindPattern | IRVariantPattern
+@dataclass(slots=True)
+class IRIntLiteralPattern:
+    value: int
+    span: Span
+
+
+IRPattern = IRWildcardPattern | IRBindPattern | IRVariantPattern | IRIntLiteralPattern
 
 
 class IRLowerer:
@@ -515,6 +521,8 @@ class IRLowerer:
     def _lower_pattern(self, pattern: ast.Pattern, locals_by_id: dict[int, IRLocal]) -> IRPattern | None:
         if isinstance(pattern, ast.WildcardPattern):
             return IRWildcardPattern(span=pattern.span)
+        if isinstance(pattern, ast.IntLiteralPattern):
+            return IRIntLiteralPattern(value=pattern.value, span=pattern.span)
         if isinstance(pattern, ast.NamePattern):
             if pattern.resolution_kind == "variant":
                 return IRVariantPattern(name=pattern.target_name or pattern.name, args=[], span=pattern.span)

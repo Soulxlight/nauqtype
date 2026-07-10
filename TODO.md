@@ -324,3 +324,9 @@
 - [x] Preserve type and move checking through handoff, borrow, IR, and C emission
 - [x] Export checked `field_assign` facts and include writes in plan-only field renames
 - [x] Add differential, selfhost, canonical-example, formatter, and locked-corpus coverage
+
+## M36 Literal And Nested Constructor Patterns
+
+- [x] Add `i32` literal patterns and recursively nested constructor patterns
+- [x] Require an explicit wildcard or binding fallback for refined matches
+- [x] Preserve refined patterns through stage0/stage1 checking, handoff, IR, C emission, facts, formatter, and locked corpus coverage

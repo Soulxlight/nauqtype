@@ -382,6 +382,13 @@ class Parser:
         if self._at("IDENT") and self._current().lexeme == "_":
             token = self._advance()
             return ast.WildcardPattern(token.span)
+        if self._match("MINUS"):
+            minus = self._previous()
+            value = self._expect("INT", "expected integer after `-` in literal pattern")
+            return ast.IntLiteralPattern(-int(value.lexeme), Span(minus.span.start, value.span.end))
+        if self._match("INT"):
+            token = self._previous()
+            return ast.IntLiteralPattern(int(token.lexeme), token.span)
         name = self._expect("IDENT", "expected pattern")
         if self._match("LPAREN"):
             args: list[ast.Pattern] = []

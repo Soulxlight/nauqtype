@@ -447,6 +447,8 @@ class Resolver:
     ) -> None:
         if isinstance(pattern, ast.WildcardPattern):
             return
+        if isinstance(pattern, ast.IntLiteralPattern):
+            return
         if isinstance(pattern, ast.NamePattern):
             if pattern.name in scope.variants:
                 pattern.resolution_kind = "variant"
