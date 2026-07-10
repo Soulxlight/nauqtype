@@ -293,6 +293,7 @@ Compatibility stance for the alpha checkpoint:
 - [AI_AUDIT.md](AI_AUDIT.md)
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
 - [PROPAGATION.md](PROPAGATION.md)
+- [TEACHING_CORPUS.md](TEACHING_CORPUS.md)
 - [FORMATTER.md](FORMATTER.md)
 - [LINUX.md](LINUX.md)
 - [STRESS_LEG.md](STRESS_LEG.md)

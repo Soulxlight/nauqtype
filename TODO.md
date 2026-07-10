@@ -286,3 +286,10 @@
 - [x] Cover check, review v2, facts v2, change-report v1, fmt, emit-c, build, and runtime behavior through the stress path
 - [x] Record that this leg exposed no new compiler findings requiring focused reduction fixtures
 - [x] Keep the temporary stress program separate from the teaching corpus
+
+## M32 Teaching Corpus v1
+
+- [x] organize canonical examples into lessons, evidence demos, negative diagnostics, and runnable corpus entries
+- [x] keep formatter-lite as the gate for teaching examples
+- [x] make the corpus useful for future model training and human onboarding without growing source-language semantics
+- [x] keep runnable corpus entries connected to `prove-corpus`

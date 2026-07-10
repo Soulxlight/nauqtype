@@ -459,7 +459,11 @@ Status:
 
 Status:
 
-- planned
+- done
+- the root `TEACHING_CORPUS.md` now groups runnable examples into beginner, feature, and evidence-workflow lessons
+- helper-only modules are documented separately
+- all `.nq` files are locked into the corpus index and verified by `tests/test_teaching_corpus.py`
+- formatter-lite and `prove-corpus` integration remained unchanged and enforced
 
 ### M33: Propagation Context Labels
 
