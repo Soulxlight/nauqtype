@@ -230,7 +230,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -282,7 +282,7 @@ fn parse_driver_request() -> driver_request {
 
     let command = option_text(arg_get(1));
     if command == "check" {
-        if argc != 3 {
+        if argc != 3 and argc != 5 {
             return invalid_request(usage_text());
         }
         let source_path = option_text(arg_get(2));
@@ -290,7 +290,17 @@ fn parse_driver_request() -> driver_request {
         if source_path == "" or entry_module == "" {
             return invalid_request("missing source path for `check`");
         }
-        return make_driver_request(driver_check, source_path, entry_module, path_dir(source_path), "", "", "");
+        let mut diagnostics_format = "text";
+        if argc == 5 {
+            if option_text(arg_get(3)) != "--diagnostics" {
+                return invalid_request("expected `--diagnostics` after the source path");
+            }
+            diagnostics_format = option_text(arg_get(4));
+            if diagnostics_format != "text" and diagnostics_format != "json" {
+                return invalid_request("expected diagnostics format `text` or `json`");
+            }
+        }
+        return make_driver_request(driver_check, source_path, entry_module, path_dir(source_path), "", diagnostics_format, "");
     }
 
     if command == "emit-c" {
@@ -582,7 +592,7 @@ fn write_c_output(output_path: str, rendered_c: str, diags: mutref list<diag>) -
     return;
 }
 
-fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_path: str, write_output: bool, success_message: str) -> i32 {
+fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_path: str, write_output: bool, diagnostics_json: bool, success_message: str) -> i32 {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut sources: list<source_file> = list();
@@ -674,7 +684,11 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     }
 
     if list_len(ref diags) > 0 {
-        emit_all(ref diags);
+        if diagnostics_json {
+            emit_diagnostics_json(ref diags);
+        } else {
+            emit_all(ref diags);
+        }
         return 1;
     }
 
@@ -705,6 +719,14 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
         }
     }
 
+    if diagnostics_json {
+        print_line("{");
+        print_line("  \"version\": \"diagnostics/v1\",");
+        print_line("  \"command\": \"check\",");
+        print_line("  \"ok\": true,");
+        print_line("  \"diagnostics\": []");
+        print_line("}");
+    }
     if success_message != "" {
         print_line(success_message);
     }
@@ -1240,7 +1262,7 @@ fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_er
 fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
     let c_path = build_c_output_path(request.entry_path, request.output_path);
     let exe_path = build_exe_output_path(request.entry_path, request.output_path);
-    let emit_code = run_pipeline(request.workspace_root, request.entry_module, request.entry_path, c_path, true, "");
+    let emit_code = run_pipeline(request.workspace_root, request.entry_module, request.entry_path, c_path, true, false, "");
     if emit_code != 0 {
         return emit_code;
     }
@@ -1283,13 +1305,13 @@ fn main() -> i32 {
     let request = parse_driver_request();
     match request.mode {
         driver_legacy => {
-            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "stage1 front-end ok");
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, false, "stage1 front-end ok");
         },
         driver_check => {
-            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, "", false, "");
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, "", false, request.extra_text == "json", "");
         },
         driver_emit_c => {
-            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, "");
+            return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, false, "");
         },
         driver_facts => {
             return run_facts(request.workspace_root, request.entry_module, request.entry_path, 1);

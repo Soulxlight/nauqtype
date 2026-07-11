@@ -1,3 +1,5 @@
+use text;
+
 pub type diag {
     file: str,
     at: i32,
@@ -30,3 +32,45 @@ audit {
     return;
 }
 
+pub fn emit_diagnostics_json(entries: ref list<diag>) -> unit
+audit {
+    intent("Emit the truthful stage1 subset of the stable diagnostics JSON v1 envelope");
+    mutates();
+    effects(print);
+}
+{
+    print_line("{");
+    print_line("  \"version\": \"diagnostics/v1\",");
+    print_line("  \"command\": \"check\",");
+    print_line("  \"ok\": false,");
+    print_line("  \"diagnostics\": [");
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                print_line("    {");
+                print_line("      \"code\": \"NQ-STAGE1-001\",");
+                print_line("      \"category\": \"STAGE1\",");
+                print_line("      \"severity\": \"error\",");
+                print_line(str_concat(str_concat("      \"message\": ", json_quote(value.message)), ","));
+                print_line("      \"span\": null,");
+                print_line("      \"notes\": [],");
+                print_line("      \"help\": null,");
+                let rendered = str_concat(str_concat(value.file, ": "), value.message);
+                let mut suffix = "";
+                if index + 1 < list_len(ref entries) {
+                    suffix = ",";
+                }
+                print_line(str_concat("      \"rendered\": ", json_quote(rendered)));
+                print_line(str_concat("    }", suffix));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    print_line("  ]");
+    print_line("}");
+    return;
+}

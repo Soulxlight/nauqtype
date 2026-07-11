@@ -575,9 +575,10 @@ Status:
 
 Status:
 
-- in progress
-- `nauqc test` now runs a Nauqtype-owned fixture suite covering successful checks, expected diagnostics, facts/review goldens, supervised policy/refactor evidence, formatter checks, the locked corpus, and copied-selfhost proof
-- the Python suite remains the comparison reference while M39 migrates the remaining mapped fixture groups
+- done
+- `nauqc test` runs a Nauqtype-owned fixture suite covering successful checks, expected diagnostics, stage1 diagnostics JSON, facts/review goldens, supervised policy/refactor evidence, formatter checks, the locked corpus, and copied-selfhost proof
+- `tests/fixtures/m39_fixture_manifest.txt` records every frozen Python suite as an owned gate, the M40 seed target, or an explicit historical-reference claim; `nauqc test` validates that complete ledger before running fixtures
+- Python remains frozen historical/reference material until the M40 host-C seed gate retires it from active workflows
 
 ### M40: C Seed Bootstrap And Python Retirement
 

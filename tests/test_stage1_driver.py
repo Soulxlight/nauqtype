@@ -183,6 +183,17 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.stdout, "nauqtype test ok\n")
         self.assertEqual(result.stderr, "")
 
+    def test_stage1_driver_check_diagnostics_json_is_schema_shaped(self) -> None:
+        result = self._run_driver(["check", "tests/fixtures/diagnostics_failure.nq", "--diagnostics", "json"])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        payload = json.loads(result.stdout)
+        schema = json.loads((self.root / "schemas" / "diagnostics-v1.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(payload, schema)
+        self.assertFalse(payload["ok"])
+        self.assertEqual([entry["code"] for entry in payload["diagnostics"]], ["NQ-STAGE1-001", "NQ-STAGE1-001"])
+        self.assertTrue(all(entry["span"] is None for entry in payload["diagnostics"]))
+
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove-selfhost"], timeout=900)

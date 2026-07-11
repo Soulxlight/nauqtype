@@ -31,7 +31,7 @@ Status: M38 inventory baseline, recorded after the M37 v0.2 supervised alpha gat
 | `test_borrow.py` | 8 | Move and borrow diagnostics | Expected-diagnostic fixtures |
 | `test_codegen.py` | 2 | C statement and runtime shape | Normalized C goldens |
 | `test_contracts.py` | 10 | Audit contract diagnostics | Review/diagnostic fixtures |
-| `test_diagnostics_json.py` | 4 | Diagnostics JSON schema and exits | JSON golden fixtures |
+| `test_diagnostics_json.py` | 4 | Diagnostics JSON schema and exits | Stage1 JSON golden fixture plus schema-shape driver check |
 | `test_field_assignment.py` | 5 | Restricted field-write behavior | Run and expected-failure fixtures |
 | `test_golden.py` | 8 | C and diagnostic snapshots | Existing golden fixture groups |
 | `test_imports.py` | 6 | Import graph behavior | Multi-module fixture group |
@@ -53,7 +53,7 @@ Status: M38 inventory baseline, recorded after the M37 v0.2 supervised alpha gat
 | `test_types.py` | 2 | Core type diagnostics | Expected-diagnostic fixtures |
 | `test_verification_scripts.py` | 2 | Shell verification contract | Shell gate smoke plus documented archive rationale |
 
-The suite counts total 240. A M39 fixture manifest must name each case group and carry either a direct replacement case ID or an explicit `historical_only` rationale before a Python suite can leave active gates.
+The suite counts total 240. `tests/fixtures/m39_fixture_manifest.txt` names every suite and carries either an owned gate or an explicit historical-reference rationale. `nauqc test` validates its version and all 26 suite mappings before executing active fixtures.
 
 ## M39 Fixture Requirements
 
@@ -61,7 +61,7 @@ The Nauqtype-owned runner must support deterministic case IDs and these assertio
 
 - source check success or failure
 - exit code, stdout, and stderr
-- text diagnostics and diagnostics JSON goldens
+- text diagnostics and diagnostics JSON goldens, including expected nonzero exits
 - facts, review, review-diff, change-report, policy-check, and refactor-plan goldens
 - normalized structural-C comparison
 - emitted-C compile/run behavior

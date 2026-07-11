@@ -187,6 +187,49 @@ audit {
     return "false";
 }
 
+pub fn json_escape(text: str) -> str
+audit {
+    intent("Escape a string for deterministic JSON output");
+    mutates();
+    effects();
+}
+{
+    let mut escaped = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let ch = char_at(text, index);
+        if ch == 92 {
+            escaped = str_concat(escaped, "\\\\");
+        } else {
+            if ch == 34 {
+                escaped = str_concat(escaped, "\\\"");
+            } else {
+                if ch == 10 {
+                    escaped = str_concat(escaped, "\\n");
+                } else {
+                    if ch == 9 {
+                        escaped = str_concat(escaped, "\\t");
+                    } else {
+                        escaped = str_concat(escaped, slice_text(text, index, index + 1));
+                    }
+                }
+            }
+        }
+        index = index + 1;
+    }
+    return escaped;
+}
+
+pub fn json_quote(text: str) -> str
+audit {
+    intent("Wrap deterministically escaped text as a JSON string");
+    mutates();
+    effects();
+}
+{
+    return concat3("\"", json_escape(text), "\"");
+}
+
 pub fn str_starts_with(text: str, prefix: str) -> bool
 audit {
     intent("Check whether text starts with a literal prefix");

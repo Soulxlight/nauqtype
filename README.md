@@ -184,7 +184,7 @@ The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux al
 Frozen bootstrap/reference workflows that still exist during the cutover:
 
 ```bash
-python3 -m compiler.main check examples/hello.nq --diagnostics json
+bin/nauqc check examples/hello.nq --diagnostics json
 python3 -m compiler.main run examples/hello.nq
 python3 scripts/run_ai_audit.py
 ```

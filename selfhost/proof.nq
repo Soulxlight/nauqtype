@@ -848,6 +848,15 @@ fn run_driver_check(driver_path: str, entry_path: str) -> result<process_result,
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_check_json(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "check");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, "--diagnostics");
+    list_push(mutref args, "json");
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_driver_emit_c(driver_path: str, entry_path: str, output_path: str) -> result<process_result, io_err> {
     let mut args: list<str> = list();
     list_push(mutref args, "emit-c");
@@ -1042,8 +1051,20 @@ fn read_text_or_report(path: str, label: str, output: mutref str) -> bool {
     }
 }
 
-fn driver_json_matches_golden(step_name: str, status: process_result, golden_path: str) -> bool {
-    if not driver_json_step_ok(step_name, status) {
+fn driver_json_matches_golden_with_exit(step_name: str, status: process_result, golden_path: str, expected_exit_code: i32) -> bool {
+    if status.exit_code != expected_exit_code {
+        eprint_line(str_concat(step_name, " returned an unexpected exit code"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(step_name, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if status.stderr != "" {
+        eprint_line(str_concat(step_name, " produced unexpected stderr"));
+        emit_process_output(status);
         return false;
     }
     let mut expected = "";
@@ -1055,6 +1076,10 @@ fn driver_json_matches_golden(step_name: str, status: process_result, golden_pat
         return false;
     }
     return true;
+}
+
+fn driver_json_matches_golden(step_name: str, status: process_result, golden_path: str) -> bool {
+    return driver_json_matches_golden_with_exit(step_name, status, golden_path, 0);
 }
 
 fn driver_json_contains3(step_name: str, status: process_result, first: str, second: str, third: str) -> bool {
@@ -1139,6 +1164,18 @@ fn run_json_golden_result(label: str, result: result<process_result, io_err>, go
     match result {
         Ok(status) => {
             return driver_json_matches_golden(label, status, golden_path);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_json_failure_golden_result(label: str, result: result<process_result, io_err>, golden_path: str) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_json_matches_golden_with_exit(label, status, golden_path, 1);
         },
         Err(err) => {
             eprint_line(io_err_text(err));
@@ -1715,6 +1752,72 @@ fn run_expected_check_failure(driver_path: str, path: str, expected_text: str) -
     }
 }
 
+fn m39_manifest_has_all_suite_entries(text: str) -> bool {
+    let mut suites: list<str> = list();
+    list_push(mutref suites, "test_ai_audit.py|");
+    list_push(mutref suites, "test_bootstrap.py|");
+    list_push(mutref suites, "test_borrow.py|");
+    list_push(mutref suites, "test_codegen.py|");
+    list_push(mutref suites, "test_contracts.py|");
+    list_push(mutref suites, "test_diagnostics_json.py|");
+    list_push(mutref suites, "test_field_assignment.py|");
+    list_push(mutref suites, "test_golden.py|");
+    list_push(mutref suites, "test_imports.py|");
+    list_push(mutref suites, "test_integration.py|");
+    list_push(mutref suites, "test_lexer.py|");
+    list_push(mutref suites, "test_parser.py|");
+    list_push(mutref suites, "test_patterns.py|");
+    list_push(mutref suites, "test_resolution.py|");
+    list_push(mutref suites, "test_review.py|");
+    list_push(mutref suites, "test_selfhost_borrow.py|");
+    list_push(mutref suites, "test_selfhost_c_emit.py|");
+    list_push(mutref suites, "test_selfhost_differential.py|");
+    list_push(mutref suites, "test_selfhost_handoff.py|");
+    list_push(mutref suites, "test_selfhost_ir.py|");
+    list_push(mutref suites, "test_selfhost_proof.py|");
+    list_push(mutref suites, "test_stage1_driver.py|");
+    list_push(mutref suites, "test_stage1_runtime.py|");
+    list_push(mutref suites, "test_teaching_corpus.py|");
+    list_push(mutref suites, "test_types.py|");
+    list_push(mutref suites, "test_verification_scripts.py|");
+    let mut index = 0;
+    while index < list_len(ref suites) {
+        let entry = list_get(ref suites, index);
+        match entry {
+            Some(name) => {
+                if not text_contains(text, name) {
+                    return false;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn run_m39_fixture_manifest_gate() -> bool {
+    let loaded = read_file("tests/fixtures/m39_fixture_manifest.txt");
+    match loaded {
+        Ok(manifest) => {
+            if not text_contains(manifest, "m39-fixture-manifest/v1") {
+                eprint_line("M39 fixture manifest version is missing");
+                return false;
+            }
+            if not m39_manifest_has_all_suite_entries(manifest) {
+                eprint_line("M39 fixture manifest is missing a frozen Python suite mapping");
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
 pub fn run_nauq_tests(driver_path: str) -> i32
 audit {
     intent("Run the Nauqtype-owned fixture, corpus, and selfhost test suite");
@@ -1722,10 +1825,16 @@ audit {
     effects(print, io);
 }
 {
+    if not run_m39_fixture_manifest_gate() {
+        return 1;
+    }
     if not run_quiet_result("fixture check hello", run_driver_check(driver_path, "examples/hello.nq")) {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {
+        return 1;
+    }
+    if not run_json_failure_golden_result("fixture stage1 diagnostics json", run_driver_check_json(driver_path, "tests/fixtures/diagnostics_failure.nq"), "tests/golden/stage1_diagnostics/check_failure.json") {
         return 1;
     }
     if not run_json_golden_result("fixture facts v2", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", "v2"), "tests/golden/facts/main-v2.json") {
