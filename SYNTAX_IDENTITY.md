@@ -64,7 +64,7 @@ Acceptance gate:
 
 ## Workspace Syntax Direction
 
-The following is a proposal for M42 and M43, not current Nauqtype syntax:
+M41 locks [WORKSPACE_CONTRACT.md](WORKSPACE_CONTRACT.md) as the implementation-facing contract for M42 and M43. The following is planned syntax, not current Nauqtype syntax:
 
 ```nauq
 use org::reporting::render as report;
@@ -79,7 +79,7 @@ fn main() -> i32 {
 The design intent is deliberate:
 
 - `::` scales explicit module provenance; `.` remains field access only.
-- A manifest resolves every package and module path to one canonical identity, source file, and content hash.
+- A manifest resolves every package and module path to one canonical identity and source file; M44 adds checked local-dependency content hashes.
 - Facts retain both the source spelling and resolved target identity.
 - Aliases are explicit and formatter-normalized.
 - No wildcard imports, implicit re-exports, hidden search paths, or automatic dependency fetching are permitted in the first workspace model.

@@ -391,3 +391,11 @@
 - Reason chosen: an active Python dependency conflicts with Nauqtype's ownership goal, while a host-C seed keeps the unavoidable trust boundary small, reviewable, and portable on Linux.
 - Consequences: no Python path may be removed until a clean checkout proves host C seed -> stage1 -> stage2 structural agreement and `nauqc test` covers active external behavior. Python implementation tests do not require one-for-one porting; their observable claims require Nauqtype cases or explicit archival rationale.
 - Reversible later: a future independently verified native seed can replace the C seed, but active Python fallback must not quietly return.
+
+## D050: Workspaces are manifest-authoritative and migration-visible
+
+- Decision: introduce nested workspace modules only through `nauqtype.workspace.json`, absolute `::` module paths, and a manifest-derived entrypoint. Legacy flat-root projects remain a separate compatibility mode until explicitly migrated.
+- Alternatives considered: infer project roots from the current directory, add relative imports, keep flat-root paths indefinitely, or add a registry/package manager first.
+- Reason chosen: dependency provenance is an authority boundary in Nauqtype. A manifest-owned module graph gives people, agents, facts, policy, and locks one reproducible source of truth without adding hidden filesystem or network behavior.
+- Consequences: `use` paths will be absolute inside a workspace, aliases must be explicit, duplicate module identities fail closed, and multi-segment paths are rejected in legacy flat-root mode. `WORKSPACE_CONTRACT.md` defines the exact M42/M43 boundary.
+- Reversible later: extensible through explicit local dependencies and locks; relative lookup, wildcard imports, implicit re-exports, registries, and cache discovery require separate decisions.

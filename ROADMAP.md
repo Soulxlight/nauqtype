@@ -602,7 +602,9 @@ Status:
 
 Status:
 
-- planned
+- done
+- [WORKSPACE_CONTRACT.md](WORKSPACE_CONTRACT.md) locks manifest authority, workspace/module identity, entrypoints, aliases, flat-root migration, evidence requirements, and the no-network/no-implicit-search boundary
+- [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) and D050 confirm that workspace syntax remains provenance syntax, not a package-manager or method-system expansion
 
 ### M42: Workspace Manifest And Nested Module Loading
 
