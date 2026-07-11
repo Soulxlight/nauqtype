@@ -203,9 +203,10 @@ primary       = literal
 
 qualified_name = IDENT "::" IDENT ;
 
-struct_literal = IDENT "{" field_init_list? "}" ;
+struct_literal = IDENT "{" [ field_init_list | record_update_init ] "}" ;
 field_init_list = field_init { "," field_init } [ "," ] ;
 field_init    = IDENT ":" expr ;
+record_update_init = "from" IDENT "," field_init_list ;
 
 list_literal  = "[" [ expr { "," expr } [ "," ] ] "]" ;
 
@@ -219,6 +220,7 @@ Parser note:
 - `IDENT "::" IDENT "(" ... ")"` is a Batch B direct module-qualified function call only.
 - Named arguments are Batch B function-call labels only; constructor payloads stay positional.
 - `IDENT "{" ... "}"` is a struct literal when the identifier resolves to a `type`.
+- `IDENT "{ from base, field: value }"` is a copy-only record update; `from` is contextual in this position and `base` must be a simple visible name that satisfies the record-update ownership and copy rules.
 - `[]` requires an expected `list<T>` context. Non-empty list literals infer from the first element unless an expected `list<T>` is available, and all elements must have one homogeneous type. Spreads, comprehensions, ranges, and const list initializers are not part of V1.
 - Statement `match` arms remain block-bodied; only `match_expr` arms are expression-bodied.
 - `let_else_stmt` is narrow in V1: only `Some(name)` and `Ok(name)` guard bindings are accepted, and the `else` block must exit explicitly.

@@ -30,6 +30,8 @@ Current bootstrap status:
 
 v0.1 status: the M23 language and tooling baseline remains stable. The current alpha surface extends that baseline through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
 
+The active roadmap now prioritizes a Nauqtype-owned test and bootstrap path before workspace syntax grows. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) records the Python-retirement contract, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) records the syntax-evolution discipline that future features must satisfy.
+
 ## Quick Start
 
 Install local bootstrap dependencies:

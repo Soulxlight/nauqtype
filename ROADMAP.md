@@ -552,6 +552,7 @@ Status:
 - inventory every active Python compiler, test, release, and proof responsibility
 - define the replacement path: Nauqtype-owned test execution plus a non-Python seed bootstrap contract
 - keep Python frozen while the replacement is proven; do not delete a known-good bootstrap before a clean-checkout replacement exists
+- use [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) as the required migration contract
 
 Status:
 
@@ -579,9 +580,10 @@ Status:
 
 ### M41: Workspace And Syntax Identity Checkpoint
 
-- publish the Nauqtype syntax-evolution SOP and the workspace/module design contract before new module syntax lands
+- validate the syntax-evolution SOP and the workspace/module design contract before new module syntax lands
 - test the contract against representative organizational tools: a CLI, shared libraries, and a supervised automation workspace
 - decide package identity, source roots, visibility, aliases, qualified paths, and migration rules without copying another language's package model by reflex
+- use [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) as the required language-design baseline
 
 Status:
 

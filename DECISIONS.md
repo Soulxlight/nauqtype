@@ -375,3 +375,19 @@
 - Reason chosen: literal and nested cases make ordinary classification code clearer for people and agents, while a visible fallback prevents the first refined-pattern slice from claiming exhaustiveness it cannot yet prove mechanically.
 - Consequences: `INT` and `-INT` patterns apply only to `i32`; nested constructors preserve their full checked pattern tree through IR and C lowering. Guards, ranges, non-integer literal patterns, and or-patterns remain deferred.
 - Reversible later: a richer exhaustiveness analysis can relax the fallback rule only with explicit proof and evidence updates.
+
+## D048: Syntax evolves through explicit authority and checked evidence
+
+- Decision: future Nauqtype syntax follows `SYNTAX_IDENTITY.md`: local value flow stays concise, while mutation, borrowing, fallibility, effects, provenance, ownership, dependencies, and policy remain explicit and compiler-evidenced.
+- Alternatives considered: grow through feature parity with established languages, accept several equivalent spellings for convenience, or postpone evidence work until after a syntax feature proves popular.
+- Reason chosen: Nauqtype is intended for AI-authored software under human supervision. A feature only improves that workflow when its shorter source remains legible to people and produces deterministic facts for tools and reviewers.
+- Consequences: every language proposal must document pressure, canonical spelling, semantics, authority/evidence impact, diagnostics, formatter behavior, teaching cases, migration, and acceptance evidence before implementation. Features that need hidden control flow, dependency search, conversion, or authority inference stay deferred.
+- Reversible later: the SOP can be revised by a recorded decision and proof-backed examples, but not bypassed for isolated syntax additions.
+
+## D049: Active bootstrap and testing retire Python through a C seed
+
+- Decision: Python remains a frozen historical reference only until M38-M40 establish a Nauqtype-owned test runner and a reproducible C seed bootstrap; the active toolchain target is host `cc` plus checked-in Nauqtype and runtime sources.
+- Alternatives considered: retain Python indefinitely as a convenient bootstrap, ship a platform-specific binary as the only seed, or delete Python before a replacement is proven.
+- Reason chosen: an active Python dependency conflicts with Nauqtype's ownership goal, while a host-C seed keeps the unavoidable trust boundary small, reviewable, and portable on Linux.
+- Consequences: no Python path may be removed until a clean checkout proves host C seed -> stage1 -> stage2 structural agreement and `nauqc test` covers active external behavior. Python implementation tests do not require one-for-one porting; their observable claims require Nauqtype cases or explicit archival rationale.
+- Reversible later: a future independently verified native seed can replace the C seed, but active Python fallback must not quietly return.
