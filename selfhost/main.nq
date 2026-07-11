@@ -171,11 +171,31 @@ fn emit_all(diags: ref list<diag>) -> unit {
     return;
 }
 
-fn read_module_source(name: str, workspace_root: str, entry_module: str, entry_path: str) -> result<source_file, io_err> {
+type module_source_result {
+    valid: bool,
+    file: source_file,
+    error_message: str,
+}
+
+fn make_module_source_result(valid: bool, file: source_file, error_message: str) -> module_source_result {
+    return module_source_result { valid: valid, file: file, error_message: error_message };
+}
+
+fn read_module_source(name: str, workspace_root: str, entry_module: str, entry_path: str) -> module_source_result {
     if entry_path != "" and name == entry_module {
-        return read_source_at_path(entry_path, entry_module);
+        match read_source_at_path(entry_path, entry_module) {
+            Ok(file) => { return make_module_source_result(true, file, ""); },
+            Err(err) => { return make_module_source_result(false, make_source_file(name, ""), io_err_text(err)); },
+        }
     }
-    return read_workspace_module(workspace_root, name);
+    let route = resolve_workspace_module_path(workspace_root, name);
+    if not route.valid {
+        return make_module_source_result(false, make_source_file(name, ""), route.error_message);
+    }
+    match read_source_at_path(route.source_path, name) {
+        Ok(file) => { return make_module_source_result(true, file, ""); },
+        Err(err) => { return make_module_source_result(false, make_source_file(name, ""), io_err_text(err)); },
+    }
 }
 
 fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_path: str, loading_path: str, seen_modules: mutref list<str>, loaded_modules: mutref list<str>, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, const_facts: mutref list<const_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, diags: mutref list<diag>) -> unit {
@@ -188,38 +208,36 @@ fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_pa
         return;
     }
     let loaded_file = read_module_source(name, workspace_root, entry_module, entry_path);
-    match loaded_file {
-        Ok(file) => {
-            let tokens = lex(file.text);
-            let imports = extract_uses(ref tokens);
-            let next_loading_path = str_concat(loading_path, stack_key);
-            let mut import_index = 0;
-            while import_index < list_len(ref imports) {
-                let entry = list_get(ref imports, import_index);
-                match entry {
-                    Some(import_name) => {
-                        load_module_graph(import_name, workspace_root, entry_module, entry_path, next_loading_path, mutref seen_modules, mutref loaded_modules, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
-                    },
-                    None => {
-                    },
-                }
-                import_index = import_index + 1;
-            }
-            if list_contains(ref seen_modules, name) {
-                return;
-            }
-            list_push(mutref seen_modules, name);
-            list_push(mutref loaded_modules, name);
-            list_push(mutref sources, file);
-            parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-            collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
-            collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
-            collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref diags);
-        },
-        Err(err) => {
-            list_push(mutref diags, make_diag(name, 0, io_err_text(err)));
-        },
+    if not loaded_file.valid {
+        list_push(mutref diags, make_diag(name, 0, loaded_file.error_message));
+        return;
     }
+    let file = loaded_file.file;
+    let tokens = lex(file.text);
+    let imports = extract_uses(ref tokens);
+    let next_loading_path = str_concat(loading_path, stack_key);
+    let mut import_index = 0;
+    while import_index < list_len(ref imports) {
+        let entry = list_get(ref imports, import_index);
+        match entry {
+            Some(import_name) => {
+                load_module_graph(import_name, workspace_root, entry_module, entry_path, next_loading_path, mutref seen_modules, mutref loaded_modules, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref diags);
+            },
+            None => {
+            },
+        }
+        import_index = import_index + 1;
+    }
+    if list_contains(ref seen_modules, name) {
+        return;
+    }
+    list_push(mutref seen_modules, name);
+    list_push(mutref loaded_modules, name);
+    list_push(mutref sources, file);
+    parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+    collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
+    collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref diags);
     return;
 }
 

@@ -349,6 +349,7 @@
 - [x] Migrate every mapped proof, corpus, diagnostic, and supervision fixture group to that runner or record its checked historical-reference rationale
 - [x] Prove a host-C seed bootstrap through stage1 and stage2 and retire Python from active workflows
 - [x] Validate the syntax-evolution SOP and workspace/module contract before module syntax implementation
-- [ ] Add explicit manifests, nested modules, qualified paths, evidence migration, local dependencies, and reproducible locking in that order
+- [x] Add explicit manifests, nested modules, locked local dependencies, and reproducible source locking
+- [ ] Complete qualified type/enum/variant evidence migration and source-level import alias design
 - [ ] Extend governance and semantic snapshots across package boundaries
 - [ ] Prove a real multi-package internal tool before selecting the next language-completeness batch

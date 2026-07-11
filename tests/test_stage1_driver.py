@@ -213,6 +213,137 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("workspace dependencies require nauqtype.workspace.lock.json", result.stdout)
 
+    def test_stage1_driver_rejects_multiple_workspace_source_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text)
+            self._write_project(
+                tmp,
+                {
+                    "nauqtype.workspace.json": """
+                        {
+                          "version": "workspace/v1",
+                          "workspace": {
+                            "name": "tests.multiple_roots",
+                            "source_roots": ["src", "other"]
+                          }
+                        }
+                    """,
+                    "src/main.nq": """
+                        fn main() -> i32 {
+                            return 0;
+                        }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "src" / "main.nq")])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("workspace manifest must declare exactly one source root", result.stdout)
+
+    def test_stage1_driver_loads_locked_local_dependency(self) -> None:
+        source = "tests/fixtures/workspace_local_dependency/src/app/main.nq"
+        result = self._run_driver(["check", source])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+        facts = self._run_driver(["facts", source, "--format", "v2"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        self.assertIn('"name": "reporting::render"', facts.stdout)
+        self.assertIn('"name": "reporting::values"', facts.stdout)
+        self.assertIn('"target_id": "fn:reporting::render::answer"', facts.stdout)
+
+    def test_stage1_driver_rejects_stale_local_dependency_source_hash(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "workspace_local_dependency"
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text) / "workspace"
+            shutil.copytree(fixture, tmp)
+            source_file = tmp / "vendor" / "reporting" / "src" / "values.nq"
+            source_file.write_text(source_file.read_text(encoding="utf-8") + "\n// stale lock probe\n", encoding="utf-8")
+            result = self._run_driver(["check", str(tmp / "src" / "app" / "main.nq")])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("workspace dependency source hash is stale: reporting", result.stdout)
+
+    def test_stage1_driver_rejects_mismatched_local_dependency_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text)
+            self._write_project(
+                tmp,
+                {
+                    "nauqtype.workspace.json": """
+                        {
+                          "version": "workspace/v1",
+                          "workspace": { "name": "tests.bad_lock", "source_roots": ["src"] },
+                          "dependencies": [
+                            { "alias": "reporting", "path": "vendor/reporting", "workspace": "tests.reporting" }
+                          ]
+                        }
+                    """,
+                    "nauqtype.workspace.lock.json": """
+                        {
+                          "version": "workspace-lock/v1",
+                          "workspace": "tests.bad_lock",
+                          "dependencies": [
+                            {
+                              "alias": "reporting",
+                              "path": "vendor/reporting",
+                              "workspace": "tests.wrong",
+                              "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                            }
+                          ]
+                        }
+                    """,
+                    "src/main.nq": """
+                        fn main() -> i32 {
+                            return 0;
+                        }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "src" / "main.nq")])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("workspace dependency lock does not match: reporting", result.stdout)
+
+    def test_stage1_driver_rejects_noncanonical_local_dependency_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text)
+            self._write_project(
+                tmp,
+                {
+                    "nauqtype.workspace.json": """
+                        {
+                          "version": "workspace/v1",
+                          "workspace": { "name": "tests.bad_path", "source_roots": ["src"] },
+                          "dependencies": [
+                            { "alias": "reporting", "path": "vendor/../reporting", "workspace": "tests.reporting" }
+                          ]
+                        }
+                    """,
+                    "nauqtype.workspace.lock.json": """
+                        {
+                          "version": "workspace-lock/v1",
+                          "workspace": "tests.bad_path",
+                          "dependencies": [
+                            {
+                              "alias": "reporting",
+                              "path": "vendor/../reporting",
+                              "workspace": "tests.reporting",
+                              "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                            }
+                          ]
+                        }
+                    """,
+                    "src/main.nq": """
+                        fn main() -> i32 {
+                            return 0;
+                        }
+                    """,
+                },
+            )
+            result = self._run_driver(["check", str(tmp / "src" / "main.nq")])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("workspace dependency requires alias, canonical relative path, and workspace identity", result.stdout)
+
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove-selfhost"], timeout=900)

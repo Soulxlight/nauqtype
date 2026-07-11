@@ -1,6 +1,6 @@
 # Nauqtype Workspace Contract v1
 
-Status: M41 design checkpoint. This contract is the required input to M42 implementation; it is not yet accepted source syntax.
+Status: M42/M44 implementation contract. Manifest-derived nested module loading and locked local dependency routing are active; alias syntax and cross-package governance evidence remain staged work.
 
 ## Goal
 
@@ -24,23 +24,21 @@ The canonical root manifest is `nauqtype.workspace.json`.
 - `workspace.name` is a dotted, lowercase identity used in evidence, locks, and policy. It is not source syntax.
 - A module identity is `workspace:<name>::module:<segment>::...`.
 - Module segments are ordinary Nauqtype identifiers. The module `app::main` maps deterministically to `src/app/main.nq`.
-- A workspace has one or more ordered `source_roots`; the manifest must reject duplicate module identities across them.
+- Workspace v1 accepts exactly one `source_roots` entry. Multiple roots fail closed until their ordering and duplicate-module diagnostics have a dedicated design.
 - An entrypoint is always named by a manifest key and a fully qualified local module path. There is no implicit `main.nq` selection in manifest mode.
 
-## Source Form Planned For M42/M43
+## Source Form
 
 ```nauq
-use app::render as render;
-use app::model::Summary;
+use app::render;
 
 fn main() -> i32 {
-    let report: Summary = render::build();
-    return 0;
+    return app::render::status();
 }
 ```
 
-- M42 implements manifest-derived nested entry modules and source-root loading while retaining the existing bare `use helper;` spelling for imported names. M43 adds absolute multi-segment `use` paths and aliases after their evidence migration is designed.
-- `as` creates the only local module alias spelling in v1. Without `as`, the final module segment is the visible module name.
+- M42 implements manifest-derived nested entry modules and source-root loading while retaining the existing bare `use helper;` spelling for imported names. M43 adds absolute multi-segment `use` paths; direct qualified function calls are active.
+- `as` import aliases remain deferred. A M44 dependency's manifest alias is the only currently active alias form, for example `use reporting::render;`.
 - `::` denotes module provenance only. `.` remains field access; it never triggers method lookup or module traversal.
 - Qualified values, types, enums, variants, and calls resolve through the same canonical module identity.
 - No wildcard imports, relative imports, implicit re-exports, chained package discovery, or hidden prelude are allowed.
@@ -57,9 +55,9 @@ This makes migration visible in facts and diffs instead of silently changing an 
 
 ## Evidence And Governance Contract
 
-- Facts use canonical workspace/package/module IDs while retaining the source spelling and alias at each reference.
-- Review, review-diff, change-report, policy-check, and refactor plans operate on canonical IDs, not filesystem text or caller-relative paths.
-- M43 adds move/rename plans only after cross-module definitions and references carry these identities.
+- Facts currently retain checked module identities, including the explicit dependency alias root, while M45 upgrades these to canonical workspace/package/module IDs.
+- Review, review-diff, change-report, policy-check, and refactor plans gain cross-package canonical-ID behavior only with M45; no filesystem-text fallback is permitted.
+- M43 move/rename work remains dependent on complete cross-module references.
 - [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md) locks the M44 local dependency and deterministic lock-file contract. The manifest itself never fetches code.
 - M45 extends ownership and policy checks across package boundaries; policy remains sidecar data, never hidden compiler authority.
 
@@ -81,6 +79,6 @@ The contract was tested against the organizational shapes Nauqtype must support 
 - Methods, member calls, package-qualified field syntax, or receiver rewriting.
 - General nested package managers beyond the declared local-workspace graph.
 
-## M42 Acceptance
+## M42/M44 Acceptance
 
-M42 may implement this contract only when manifest parsing, module mapping, flat-root rejection/migration diagnostics, nested facts, formatter behavior, and a runnable nested workspace fixture all agree.
+M42/M44 require manifest parsing, module mapping, flat-root rejection/migration diagnostics, nested facts, locked dependency routing, reproducible manifest/source hashes, and runnable nested/local-dependency fixtures to agree.

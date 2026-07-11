@@ -637,8 +637,10 @@ Status:
 
 Status:
 
-- in progress
-- dependency-bearing workspace manifests now require a matching `workspace-lock/v1` lock before module loading; the missing-lock fixture is a deterministic failure case
+- complete
+- dependency-bearing manifests now require a matching `workspace-lock/v1` lock before module loading
+- the stage1 loader validates unique alias/path records, dependency identity, and recomputed manifest/source-root SHA-256 values before routing `alias::module` imports into a local dependency source root
+- missing, mismatched, and stale-lock fixtures are deterministic failure cases; workspace-qualified facts and governance remain M45 work
 
 ### M45: Cross-Package Governance And Semantic Snapshots
 

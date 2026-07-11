@@ -8,19 +8,269 @@ pub type workspace_entry {
     error_message: str,
 }
 
+pub type workspace_module_path {
+    valid: bool,
+    source_path: str,
+    error_message: str,
+}
+
+type workspace_dependency {
+    found: bool,
+    alias: str,
+    path: str,
+    workspace_name: str,
+    manifest_sha256: str,
+    source_sha256: str,
+}
+
 fn make_workspace_entry(valid: bool, source_root: str, module_name: str, error_message: str) -> workspace_entry {
     return workspace_entry { valid: valid, source_root: source_root, module_name: module_name, error_message: error_message };
 }
 
+fn make_workspace_module_path(valid: bool, source_path: str, error_message: str) -> workspace_module_path {
+    return workspace_module_path { valid: valid, source_path: source_path, error_message: error_message };
+}
+
+fn no_workspace_dependency() -> workspace_dependency {
+    return workspace_dependency { found: false, alias: "", path: "", workspace_name: "", manifest_sha256: "", source_sha256: "" };
+}
+
 fn find_literal(text: str, pattern: str) -> i32 {
-    let mut index = 0;
-    while index + str_len(pattern) <= str_len(text) {
+    return find_literal_between(text, pattern, 0, str_len(text));
+}
+
+fn find_literal_between(text: str, pattern: str, start: i32, end: i32) -> i32 {
+    let mut index = start;
+    while index + str_len(pattern) <= end {
         if starts_with_at(text, index, pattern) {
             return index;
         }
         index = index + 1;
     }
     return -1;
+}
+
+fn find_char_between(value: str, start: i32, end: i32, wanted: i32) -> i32 {
+    let mut cursor = start;
+    while cursor < end {
+        if char_at(value, cursor) == wanted {
+            return cursor;
+        }
+        cursor = cursor + 1;
+    }
+    return -1;
+}
+
+fn json_string_field(value: str, start: i32, end: i32, field: str) -> str {
+    let field_at = find_literal_between(value, field, start, end);
+    if field_at < 0 {
+        return "";
+    }
+    let colon = find_char_between(value, field_at + str_len(field), end, 58);
+    if colon < 0 {
+        return "";
+    }
+    let quote = find_char_between(value, colon + 1, end, 34);
+    if quote < 0 {
+        return "";
+    }
+    let close = find_char_between(value, quote + 1, end, 34);
+    if close < 0 {
+        return "";
+    }
+    return slice_text(value, quote + 1, close);
+}
+
+fn json_object_end(value: str, start: i32, end: i32) -> i32 {
+    let mut cursor = start;
+    let mut depth = 0;
+    while cursor < end {
+        let ch = char_at(value, cursor);
+        if ch == 34 {
+            cursor = cursor + 1;
+            while cursor < end and char_at(value, cursor) != 34 {
+                cursor = cursor + 1;
+            }
+        } else {
+            if ch == 123 {
+                depth = depth + 1;
+            }
+            if ch == 125 {
+                depth = depth - 1;
+                if depth == 0 {
+                    return cursor;
+                }
+            }
+        }
+        cursor = cursor + 1;
+    }
+    return -1;
+}
+
+fn dependency_array_start(value: str) -> i32 {
+    let field = find_literal(value, "\"dependencies\"");
+    if field < 0 {
+        return -1;
+    }
+    return find_char_between(value, field + str_len("\"dependencies\""), str_len(value), 91);
+}
+
+fn dependency_array_end(value: str, start: i32) -> i32 {
+    if start < 0 {
+        return -1;
+    }
+    return find_char_between(value, start + 1, str_len(value), 93);
+}
+
+fn dependency_from_json(value: str, wanted_alias: str) -> workspace_dependency {
+    let start = dependency_array_start(value);
+    let end = dependency_array_end(value, start);
+    if start < 0 or end < 0 {
+        return no_workspace_dependency();
+    }
+    let mut cursor = start + 1;
+    while cursor < end {
+        let object_start = find_char_between(value, cursor, end, 123);
+        if object_start < 0 {
+            return no_workspace_dependency();
+        }
+        let object_end = json_object_end(value, object_start, end);
+        if object_end < 0 {
+            return no_workspace_dependency();
+        }
+        let alias = json_string_field(value, object_start, object_end, "\"alias\"");
+        if alias == wanted_alias {
+            return workspace_dependency {
+                found: true,
+                alias: alias,
+                path: json_string_field(value, object_start, object_end, "\"path\""),
+                workspace_name: json_string_field(value, object_start, object_end, "\"workspace\""),
+                manifest_sha256: json_string_field(value, object_start, object_end, "\"manifest_sha256\""),
+                source_sha256: json_string_field(value, object_start, object_end, "\"source_sha256\""),
+            };
+        }
+        cursor = object_end + 1;
+    }
+    return no_workspace_dependency();
+}
+
+fn dependency_value_count(value: str, field: str, wanted: str) -> i32 {
+    let start = dependency_array_start(value);
+    let end = dependency_array_end(value, start);
+    if start < 0 or end < 0 {
+        return 0;
+    }
+    let mut count = 0;
+    let mut cursor = start + 1;
+    while cursor < end {
+        let object_start = find_char_between(value, cursor, end, 123);
+        if object_start < 0 {
+            return count;
+        }
+        let object_end = json_object_end(value, object_start, end);
+        if object_end < 0 {
+            return count;
+        }
+        if json_string_field(value, object_start, object_end, field) == wanted {
+            count = count + 1;
+        }
+        cursor = object_end + 1;
+    }
+    return count;
+}
+
+fn is_lower_hex(ch: i32) -> bool {
+    return (ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102);
+}
+
+fn is_sha256_text(value: str) -> bool {
+    if str_len(value) != 64 {
+        return false;
+    }
+    let mut cursor = 0;
+    while cursor < str_len(value) {
+        if not is_lower_hex(char_at(value, cursor)) {
+            return false;
+        }
+        cursor = cursor + 1;
+    }
+    return true;
+}
+
+fn is_relative_dependency_path(value: str) -> bool {
+    if value == "" {
+        return false;
+    }
+    if char_at(value, 0) == 47 or char_at(value, 0) == 92 {
+        return false;
+    }
+    if str_len(value) >= 2 and char_at(value, 1) == 58 {
+        return false;
+    }
+    return true;
+}
+
+fn is_canonical_dependency_path(value: str) -> bool {
+    if not is_relative_dependency_path(value) {
+        return false;
+    }
+    if text_contains(value, "\\") or text_contains(value, "//") or str_starts_with(value, "./") or str_ends_with(value, "/.") or text_contains(value, "/./") {
+        return false;
+    }
+    let mut cursor = 0;
+    while starts_with_at(value, cursor, "../") {
+        cursor = cursor + 3;
+    }
+    if text_contains(slice_text(value, cursor, str_len(value)), "/..") {
+        return false;
+    }
+    return true;
+}
+
+fn sha256_from_output(output: str) -> str {
+    if str_len(output) < 64 {
+        return "";
+    }
+    let value = slice_text(output, 0, 64);
+    if not is_sha256_text(value) {
+        return "";
+    }
+    return value;
+}
+
+fn sha256_file(path: str) -> str {
+    let mut args: list<str> = list();
+    list_push(mutref args, path);
+    match run_process("sha256sum", ref args, ".") {
+        Ok(result) => {
+            if result.exit_code != 0 {
+                return "";
+            }
+            return sha256_from_output(result.stdout);
+        },
+        Err(_) => {
+            return "";
+        },
+    }
+}
+
+fn sha256_source_root(source_root: str) -> str {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-c");
+    list_push(mutref args, "find \"$1\" -type f -name '*.nq' -print0 | sort -z | xargs -0 cat | sha256sum");
+    list_push(mutref args, "nauqtype-workspace-lock");
+    list_push(mutref args, source_root);
+    match run_process("sh", ref args, ".") {
+        Ok(result) => {
+            if result.exit_code != 0 {
+                return "";
+            }
+            return sha256_from_output(result.stdout);
+        },
+        Err(_) => {
+            return "";
+        },
+    }
 }
 
 fn first_source_root(manifest: str) -> str {
@@ -39,6 +289,33 @@ fn first_source_root(manifest: str) -> str {
     return slice_text(manifest, start, cursor);
 }
 
+fn source_root_count(manifest: str) -> i32 {
+    let field = find_literal(manifest, "source_roots");
+    if field < 0 {
+        return 0;
+    }
+    let start = find_char_between(manifest, field + str_len("source_roots"), str_len(manifest), 91);
+    let end = dependency_array_end(manifest, start);
+    if start < 0 or end < 0 {
+        return 0;
+    }
+    let mut count = 0;
+    let mut cursor = start + 1;
+    while cursor < end {
+        let quote = find_char_between(manifest, cursor, end, 34);
+        if quote < 0 {
+            return count;
+        }
+        let close = find_char_between(manifest, quote + 1, end, 34);
+        if close < 0 {
+            return 0;
+        }
+        count = count + 1;
+        cursor = close + 1;
+    }
+    return count;
+}
+
 fn manifest_declares_dependencies(manifest: str) -> bool {
     return text_contains(manifest, "dependencies");
 }
@@ -47,18 +324,70 @@ fn lock_matches_workspace(manifest: str, lock: str) -> bool {
     if not text_contains(lock, "workspace-lock/v1") {
         return false;
     }
-    let name_at = find_literal(manifest, "name");
-    if name_at < 0 {
-        return false;
+    let workspace_name = json_string_field(manifest, 0, str_len(manifest), "\"name\"");
+    let locked_name = json_string_field(lock, 0, str_len(lock), "\"workspace\"");
+    return workspace_name != "" and workspace_name == locked_name;
+}
+
+fn validate_workspace_dependencies(root: str, manifest: str, lock: str) -> str {
+    if not lock_matches_workspace(manifest, lock) {
+        return "workspace dependency lock is missing its matching workspace identity";
     }
-    let mut cursor = name_at + str_len("name");
-    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
-    if cursor >= str_len(manifest) { return false; }
-    let start = cursor + 1;
-    cursor = start;
-    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
-    if cursor >= str_len(manifest) { return false; }
-    return text_contains(lock, slice_text(manifest, start, cursor));
+    let start = dependency_array_start(manifest);
+    let end = dependency_array_end(manifest, start);
+    if start < 0 or end < 0 {
+        return "workspace dependencies must be a JSON array";
+    }
+    let mut cursor = start + 1;
+    while cursor < end {
+        let object_start = find_char_between(manifest, cursor, end, 123);
+        if object_start < 0 {
+            return "";
+        }
+        let object_end = json_object_end(manifest, object_start, end);
+        if object_end < 0 {
+            return "workspace dependency entry has an unclosed object";
+        }
+        let alias = json_string_field(manifest, object_start, object_end, "\"alias\"");
+        let path = json_string_field(manifest, object_start, object_end, "\"path\"");
+        let workspace_name = json_string_field(manifest, object_start, object_end, "\"workspace\"");
+        if alias == "" or workspace_name == "" or not is_canonical_dependency_path(path) {
+            return "workspace dependency requires alias, canonical relative path, and workspace identity";
+        }
+        if dependency_value_count(manifest, "\"alias\"", alias) != 1 {
+            return str_concat("workspace dependency alias is duplicated: ", alias);
+        }
+        if dependency_value_count(manifest, "\"path\"", path) != 1 {
+            return str_concat("workspace dependency path is duplicated: ", path);
+        }
+        let locked = dependency_from_json(lock, alias);
+        if not locked.found or locked.path != path or locked.workspace_name != workspace_name {
+            return str_concat("workspace dependency lock does not match: ", alias);
+        }
+        if not is_sha256_text(locked.manifest_sha256) or not is_sha256_text(locked.source_sha256) {
+            return str_concat("workspace dependency lock has invalid hashes: ", alias);
+        }
+        match read_file(join_path(join_path(root, path), "nauqtype.workspace.json")) {
+            Ok(dep_manifest) => {
+                let declared_name = json_string_field(dep_manifest, 0, str_len(dep_manifest), "\"name\"");
+                if not text_contains(dep_manifest, "workspace/v1") or declared_name != workspace_name or source_root_count(dep_manifest) != 1 or first_source_root(dep_manifest) == "" {
+                    return str_concat("workspace dependency manifest does not match: ", alias);
+                }
+                let dep_root = join_path(root, path);
+                if sha256_file(join_path(dep_root, "nauqtype.workspace.json")) != locked.manifest_sha256 {
+                    return str_concat("workspace dependency manifest hash is stale: ", alias);
+                }
+                if sha256_source_root(join_path(dep_root, first_source_root(dep_manifest))) != locked.source_sha256 {
+                    return str_concat("workspace dependency source hash is stale: ", alias);
+                }
+            },
+            Err(_) => {
+                return str_concat("workspace dependency manifest is missing: ", alias);
+            },
+        }
+        cursor = object_end + 1;
+    }
+    return "";
 }
 
 fn manifest_root_for(path: str) -> str {
@@ -89,6 +418,78 @@ fn module_path_from_source(source_path: str, source_root: str) -> str {
     return out;
 }
 
+fn module_file_path(source_root: str, module_name: str) -> str {
+    let mut relative = "";
+    let mut index = 0;
+    while index < str_len(module_name) {
+        if starts_with_at(module_name, index, "::") {
+            relative = str_concat(relative, "/");
+            index = index + 2;
+        } else {
+            relative = str_concat(relative, slice_text(module_name, index, index + 1));
+            index = index + 1;
+        }
+    }
+    return join_path(source_root, str_concat(relative, ".nq"));
+}
+
+fn first_module_segment(module_name: str) -> str {
+    let separator = find_literal(module_name, "::");
+    if separator < 0 {
+        return module_name;
+    }
+    return slice_text(module_name, 0, separator);
+}
+
+fn module_suffix(module_name: str) -> str {
+    let separator = find_literal(module_name, "::");
+    if separator < 0 {
+        return "";
+    }
+    return slice_text(module_name, separator + 2, str_len(module_name));
+}
+
+pub fn resolve_workspace_module_path(workspace_root: str, module_name: str) -> workspace_module_path
+audit {
+    intent("Map one local or locked dependency module identity to its only manifest-authorized source file");
+    mutates();
+    effects(io);
+}
+{
+    let root = manifest_root_for(join_path(workspace_root, "__nauqtype_module__.nq"));
+    if root == "" {
+        return make_workspace_module_path(true, module_file_path(workspace_root, module_name), "");
+    }
+    match read_file(join_path(root, "nauqtype.workspace.json")) {
+        Ok(manifest) => {
+            let dependency = dependency_from_json(manifest, first_module_segment(module_name));
+            if not dependency.found {
+                return make_workspace_module_path(true, module_file_path(workspace_root, module_name), "");
+            }
+            let suffix = module_suffix(module_name);
+            if suffix == "" {
+                return make_workspace_module_path(false, "", "dependency import must name a module after its alias");
+            }
+            let dep_root = join_path(root, dependency.path);
+            match read_file(join_path(dep_root, "nauqtype.workspace.json")) {
+                Ok(dep_manifest) => {
+                    let source_root_name = first_source_root(dep_manifest);
+                    if source_root_name == "" {
+                        return make_workspace_module_path(false, "", str_concat("workspace dependency has no source root: ", dependency.alias));
+                    }
+                    return make_workspace_module_path(true, module_file_path(join_path(dep_root, source_root_name), suffix), "");
+                },
+                Err(_) => {
+                    return make_workspace_module_path(false, "", str_concat("workspace dependency manifest is missing: ", dependency.alias));
+                },
+            }
+        },
+        Err(_) => {
+            return make_workspace_module_path(false, "", "workspace manifest is unreadable during module loading");
+        },
+    }
+}
+
 pub fn resolve_workspace_entry(source_path: str) -> workspace_entry
 audit {
     intent("Resolve an explicit source path through an optional manifest-authoritative workspace root");
@@ -102,12 +503,13 @@ audit {
         Ok(manifest) => {
             if not text_contains(manifest, "workspace/v1") { return make_workspace_entry(false, "", "", "workspace manifest must declare version `workspace/v1`"); }
             let root_name = first_source_root(manifest);
-            if root_name == "" { return make_workspace_entry(false, "", "", "workspace manifest must declare one source root"); }
+            if source_root_count(manifest) != 1 or root_name == "" { return make_workspace_entry(false, "", "", "workspace manifest must declare exactly one source root"); }
             if manifest_declares_dependencies(manifest) {
                 match read_file(join_path(root, "nauqtype.workspace.lock.json")) {
                     Ok(lock) => {
-                        if not lock_matches_workspace(manifest, lock) {
-                            return make_workspace_entry(false, "", "", "workspace dependency lock is missing its matching workspace identity");
+                        let lock_error = validate_workspace_dependencies(root, manifest, lock);
+                        if lock_error != "" {
+                            return make_workspace_entry(false, "", "", lock_error);
                         }
                     },
                     Err(_) => { return make_workspace_entry(false, "", "", "workspace dependencies require nauqtype.workspace.lock.json"); },
