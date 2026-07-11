@@ -39,6 +39,28 @@ fn first_source_root(manifest: str) -> str {
     return slice_text(manifest, start, cursor);
 }
 
+fn manifest_declares_dependencies(manifest: str) -> bool {
+    return text_contains(manifest, "dependencies");
+}
+
+fn lock_matches_workspace(manifest: str, lock: str) -> bool {
+    if not text_contains(lock, "workspace-lock/v1") {
+        return false;
+    }
+    let name_at = find_literal(manifest, "name");
+    if name_at < 0 {
+        return false;
+    }
+    let mut cursor = name_at + str_len("name");
+    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
+    if cursor >= str_len(manifest) { return false; }
+    let start = cursor + 1;
+    cursor = start;
+    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
+    if cursor >= str_len(manifest) { return false; }
+    return text_contains(lock, slice_text(manifest, start, cursor));
+}
+
 fn manifest_root_for(path: str) -> str {
     let mut current = path_dir(path);
     while true {
@@ -81,6 +103,16 @@ audit {
             if not text_contains(manifest, "workspace/v1") { return make_workspace_entry(false, "", "", "workspace manifest must declare version `workspace/v1`"); }
             let root_name = first_source_root(manifest);
             if root_name == "" { return make_workspace_entry(false, "", "", "workspace manifest must declare one source root"); }
+            if manifest_declares_dependencies(manifest) {
+                match read_file(join_path(root, "nauqtype.workspace.lock.json")) {
+                    Ok(lock) => {
+                        if not lock_matches_workspace(manifest, lock) {
+                            return make_workspace_entry(false, "", "", "workspace dependency lock is missing its matching workspace identity");
+                        }
+                    },
+                    Err(_) => { return make_workspace_entry(false, "", "", "workspace dependencies require nauqtype.workspace.lock.json"); },
+                }
+            }
             let source_root = join_path(root, root_name);
             let module_name = module_path_from_source(source_path, source_root);
             if module_name == "" { return make_workspace_entry(false, "", "", "source path is not inside the declared workspace source root"); }

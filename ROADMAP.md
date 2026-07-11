@@ -637,7 +637,8 @@ Status:
 
 Status:
 
-- planned
+- in progress
+- dependency-bearing workspace manifests now require a matching `workspace-lock/v1` lock before module loading; the missing-lock fixture is a deterministic failure case
 
 ### M45: Cross-Package Governance And Semantic Snapshots
 

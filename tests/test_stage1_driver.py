@@ -207,6 +207,12 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertIn('"target_id": "fn:app::helper::answer"', facts.stdout)
         self.assertIn('"call_site": "call:app::main::main@61"', facts.stdout)
 
+    def test_stage1_driver_rejects_workspace_dependencies_without_lock(self) -> None:
+        source = "tests/fixtures/workspace_missing_lock/src/app/main.nq"
+        result = self._run_driver(["check", source])
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("workspace dependencies require nauqtype.workspace.lock.json", result.stdout)
+
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove-selfhost"], timeout=900)
