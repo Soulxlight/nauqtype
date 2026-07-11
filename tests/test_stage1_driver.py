@@ -316,6 +316,17 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(report_payload["after"]["module"], "app::main")
             self.assertGreaterEqual(report_payload["summary"]["changed_functions"], 1)
 
+    def test_stage1_driver_change_report_v2_reports_changed_dependency_callers(self) -> None:
+        before = "tests/fixtures/workspace_impact/before/src/app/main.nq"
+        after = "tests/fixtures/workspace_impact/after/src/app/main.nq"
+        result = self._run_driver(["change-report", before, after, "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        golden = self.root / "tests" / "golden" / "workspace_governance" / "change_report_v2.json"
+        self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
+        schema = json.loads((self.root / "schemas" / "change-report-v2.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(payload, schema)
+
     def test_stage1_driver_rejects_stale_local_dependency_source_hash(self) -> None:
         fixture = self.root / "tests" / "fixtures" / "workspace_local_dependency"
         with tempfile.TemporaryDirectory() as tmp_text:

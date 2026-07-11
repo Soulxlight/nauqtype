@@ -30,8 +30,8 @@ Source aliases remain reviewable spelling only. Policy, facts, change reports, a
 - A policy may target a direct local dependency only when that dependency is present in the checked lock.
 - Unknown workspace IDs and alias-only dependency targets are diagnostics; alias-only targets use `NQ-POLICY-007` and must be rewritten to the canonical workspace target.
 - Existing `policy-check` stays advisory unless an explicit future sidecar opts into enforcement.
-- A cross-package change report names added/removed dependency identities and impacted local callers.
+- `change-report --format v2` names added, removed, and changed dependency identities plus impacted root-workspace callers. It keeps the older v1 report unchanged for compatibility.
 
 ## M45 Acceptance
 
-M45 is complete only when one locked two-workspace fixture produces stable facts, review/change evidence, policy diagnostics for an unknown target, and a snapshot golden without invoking Python, a registry, or the network. The current facts-v3/policy slice is intentionally proof-gated, while the final cross-package impact summary remains in progress.
+M45 is complete when one locked two-workspace fixture produces stable facts, review/change evidence, policy diagnostics for an unknown target, and a snapshot golden without invoking Python, a registry, or the network. The stage1-owned `prove` gate now covers that fixture, including a changed dependency and its impacted local caller.

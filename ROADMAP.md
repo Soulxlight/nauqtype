@@ -650,10 +650,11 @@ Status:
 
 Status:
 
-- in progress
+- complete
 - `facts --format v3` now emits deterministic workspace-qualified module and export IDs, locked dependency hashes, and checked cross-package call edges without changing facts v1/v2
 - `policy-check` accepts canonical workspace targets, preserves root-local legacy targets for compatibility, and rejects dependency alias targets with `NQ-POLICY-007`
-- the stage1-owned `prove` gate locks the workspace facts/policy goldens and manifest-aware change-report behavior; broader cross-package impact summaries remain the next slice
+- `change-report --format v2` reports canonical before/after workspace identities, locked dependency additions/removals/changes, and impacted root callers from checked call edges
+- the stage1-owned `prove` gate locks workspace facts, policy, and cross-package impact goldens
 
 ### M46: v0.3 Organizational Alpha Gate
 

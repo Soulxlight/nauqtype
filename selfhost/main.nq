@@ -29,6 +29,7 @@ enum driver_mode {
     driver_review_diff,
     driver_review_diff_v2,
     driver_change_report,
+    driver_change_report_v2,
     driver_refactor_rename,
     driver_policy_check,
     driver_fmt,
@@ -274,7 +275,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -484,10 +485,16 @@ fn parse_driver_request() -> driver_request {
         }
         let flag = option_text(arg_get(format_flag_index));
         let format = option_text(arg_get(format_flag_index + 1));
-        if flag != "--format" or format != "v1" {
-            return invalid_request("expected change-report format `v1`");
+        if flag != "--format" {
+            return invalid_request("expected `--format` before the change-report format");
         }
-        return make_driver_request(driver_change_report, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
+        if format == "v1" {
+            return make_driver_request(driver_change_report, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
+        }
+        if format == "v2" {
+            return make_driver_request(driver_change_report_v2, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
+        }
+        return invalid_request("expected change-report format `v1` or `v2`");
     }
 
     if command == "refactor-rename" {
@@ -1167,7 +1174,7 @@ fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     return 0;
 }
 
-fn run_change_report(before_path: str, after_path: str, policy_path: str) -> i32 {
+fn run_change_report(before_path: str, after_path: str, policy_path: str, format_version: i32) -> i32 {
     let before_entry = resolve_workspace_entry(before_path);
     let after_entry = resolve_workspace_entry(after_path);
     if not before_entry.valid {
@@ -1232,6 +1239,13 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str) -> i32
         policy_summary = validate_policy_summary(after_workspace, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
     }
 
+    if format_version == 2 {
+        let workspace_summary = emit_workspace_change_report(before_workspace, before_module, ref before_items, ref before_uses, ref before_variants, ref before_calls, after_workspace, after_module, ref after_items, ref after_uses, ref after_variants, ref after_calls, policy_summary.provided, policy_path, policy_summary.target_count, policy_summary.error_count);
+        if policy_summary.error_count > 0 {
+            return 1;
+        }
+        return 0;
+    }
     let summary = emit_change_report(before_module, ref before_sources, ref before_uses, ref before_items, ref before_functions, ref before_variants, ref before_params, ref before_assignments, ref before_calls, ref before_locals, after_module, ref after_sources, ref after_uses, ref after_items, ref after_functions, ref after_variants, ref after_params, ref after_assignments, ref after_calls, ref after_locals, policy_summary.provided, policy_path, policy_summary.target_count, policy_summary.error_count, policy_summary.malformed);
     if summary.error_count > 0 {
         return 1;
@@ -1412,7 +1426,10 @@ fn main() -> i32 {
             return run_review_diff(request.entry_path, request.output_path, true);
         },
         driver_change_report => {
-            return run_change_report(request.entry_path, request.output_path, request.extra_text);
+            return run_change_report(request.entry_path, request.output_path, request.extra_text, 1);
+        },
+        driver_change_report_v2 => {
+            return run_change_report(request.entry_path, request.output_path, request.extra_text, 2);
         },
         driver_refactor_rename => {
             return run_refactor_rename(request.workspace_root, request.entry_module, request.entry_path, request.output_path, request.extra_text);

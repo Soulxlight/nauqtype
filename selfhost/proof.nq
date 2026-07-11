@@ -922,6 +922,16 @@ fn run_driver_change_report(driver_path: str, before_path: str, after_path: str,
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_change_report_v2(driver_path: str, before_path: str, after_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "change-report");
+    list_push(mutref args, before_path);
+    list_push(mutref args, after_path);
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v2");
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_driver_refactor_rename(driver_path: str, entry_path: str, target_id: str, new_name: str) -> result<process_result, io_err> {
     let mut args: list<str> = list();
     list_push(mutref args, "refactor-rename");
@@ -1306,6 +1316,10 @@ fn run_workspace_governance_gate(driver_path: str, failed_phase: mutref str) -> 
         return false;
     }
     if not run_json_contains_result("workspace change-report v1", run_driver_change_report(driver_path, source_path, source_path, ""), "\"module\": \"app::main\"", "\"identity_scheme\": \"nauqtype.semantic.v1\"", "\"changed_functions\": 0") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("workspace change-report v2", run_driver_change_report_v2(driver_path, "tests/fixtures/workspace_impact/before/src/app/main.nq", "tests/fixtures/workspace_impact/after/src/app/main.nq"), "tests/golden/workspace_governance/change_report_v2.json") {
         failed_phase = "tooling.golden";
         return false;
     }

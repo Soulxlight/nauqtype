@@ -2425,6 +2425,196 @@ audit {
     return make_facts_summary(list_len(ref modules), exports, 0, list_len(ref calls));
 }
 
+fn workspace_dependency_id(value: workspace_locked_dependency) -> str {
+    return str_concat("workspace:", value.workspace_name);
+}
+
+fn workspace_dependency_index(entries: ref list<workspace_locked_dependency>, workspace_id: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                if workspace_dependency_id(value) == workspace_id {
+                    return index;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn workspace_dependency_matches(left: workspace_locked_dependency, right: workspace_locked_dependency) -> bool {
+    return left.path == right.path and left.manifest_sha256 == right.manifest_sha256 and left.source_sha256 == right.source_sha256;
+}
+
+fn collect_workspace_dependency_changes(before: ref list<workspace_locked_dependency>, after: ref list<workspace_locked_dependency>, added: mutref list<str>, removed: mutref list<str>, changed: mutref list<str>) -> unit {
+    let mut after_index = 0;
+    while after_index < list_len(ref after) {
+        let entry = list_get(ref after, after_index);
+        match entry {
+            Some(value) => {
+                let id = workspace_dependency_id(value);
+                let before_index = workspace_dependency_index(ref before, id);
+                if before_index < 0 {
+                    list_push(mutref added, id);
+                } else {
+                    let before_entry = list_get(ref before, before_index);
+                    match before_entry {
+                        Some(before_value) => {
+                            if not workspace_dependency_matches(before_value, value) {
+                                list_push(mutref changed, id);
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        after_index = after_index + 1;
+    }
+    let mut before_index = 0;
+    while before_index < list_len(ref before) {
+        let entry = list_get(ref before, before_index);
+        match entry {
+            Some(value) => {
+                let id = workspace_dependency_id(value);
+                if workspace_dependency_index(ref after, id) < 0 {
+                    list_push(mutref removed, id);
+                }
+            },
+            None => {
+            },
+        }
+        before_index = before_index + 1;
+    }
+    return;
+}
+
+fn append_workspace_string_array(lines: mutref list<str>, name: str, values: ref list<str>, trailing_comma: bool) -> unit {
+    let mut suffix = "";
+    if trailing_comma {
+        suffix = ",";
+    }
+    list_push(mutref lines, concat3("    \"", name, "\": ["));
+    let mut index = 0;
+    while index < list_len(ref values) {
+        let entry = list_get(ref values, index);
+        match entry {
+            Some(value) => {
+                let mut item_suffix = "";
+                if index + 1 < list_len(ref values) {
+                    item_suffix = ",";
+                }
+                list_push(mutref lines, concat3("      ", json_quote(value), item_suffix));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, concat3("    ]", suffix, ""));
+    return;
+}
+
+fn collect_impacted_local_callers(workspace_root: str, entry_module: str, changed_dependencies: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, calls: ref list<call_fact>, impacted: mutref list<str>) -> unit {
+    let root_identity = resolve_workspace_module_identity(workspace_root, entry_module);
+    let empty_fields: list<field_fact> = list();
+    let empty_bindings: list<body_binding> = list();
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                let caller_module = resolve_workspace_module_identity(workspace_root, value.module);
+                let target = call_target(ref items, ref uses, ref variants, value);
+                let target_id = workspace_canonical_id_for_legacy(workspace_root, ref items, ref uses, ref variants, ref empty_fields, ref empty_bindings, target.id);
+                let mut dependency_index = 0;
+                while dependency_index < list_len(ref changed_dependencies) {
+                    let changed = list_get(ref changed_dependencies, dependency_index);
+                    match changed {
+                        Some(workspace_id) => {
+                            if caller_module.valid and caller_module.workspace_name == root_identity.workspace_name and str_starts_with(target_id, str_concat(workspace_id, "::module:")) {
+                                let caller = workspace_function_identity(workspace_root, value.module, value.function_name);
+                                if not list_contains(ref impacted, caller) {
+                                    list_push(mutref impacted, caller);
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    dependency_index = dependency_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+pub fn emit_workspace_change_report(before_workspace_root: str, before_entry_module: str, before_items: ref list<top_item>, before_uses: ref list<module_use>, before_variants: ref list<variant_fact>, before_calls: ref list<call_fact>, after_workspace_root: str, after_entry_module: str, after_items: ref list<top_item>, after_uses: ref list<module_use>, after_variants: ref list<variant_fact>, after_calls: ref list<call_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32) -> facts_summary
+audit {
+    intent("Emit canonical workspace dependency impact evidence for supervised organizational change review");
+    mutates();
+    effects(print, io);
+}
+{
+    let before_identity = resolve_workspace_module_identity(before_workspace_root, before_entry_module);
+    let after_identity = resolve_workspace_module_identity(after_workspace_root, after_entry_module);
+    let mut before_dependencies: list<workspace_locked_dependency> = list();
+    let mut after_dependencies: list<workspace_locked_dependency> = list();
+    if not before_identity.valid or not after_identity.valid or not append_workspace_locked_dependencies(before_workspace_root, mutref before_dependencies) or not append_workspace_locked_dependencies(after_workspace_root, mutref after_dependencies) {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    let mut added: list<str> = list();
+    let mut removed: list<str> = list();
+    let mut changed: list<str> = list();
+    let mut impacted: list<str> = list();
+    collect_workspace_dependency_changes(ref before_dependencies, ref after_dependencies, mutref added, mutref removed, mutref changed);
+    collect_impacted_local_callers(after_workspace_root, after_entry_module, ref changed, ref after_items, ref after_uses, ref after_variants, ref after_calls, mutref impacted);
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 2,");
+    list_push(mutref lines, "  \"command\": \"change-report\",");
+    list_push(mutref lines, concat3("  \"ok\": ", bool_text(policy_errors == 0), ","));
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.workspace.v1\",");
+    list_push(mutref lines, concat5("  \"before\": { \"workspace\": ", json_quote(before_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(before_workspace_root, before_entry_module)), " },"));
+    list_push(mutref lines, concat5("  \"after\": { \"workspace\": ", json_quote(after_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(after_workspace_root, after_entry_module)), " },"));
+    list_push(mutref lines, "  \"evidence\": { \"dependencies\": \"checked\", \"call_impact\": \"checked\", \"policy\": \"checked\" },");
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"added_dependencies\": ", i32_to_str(list_len(ref added)), ","));
+    list_push(mutref lines, concat3("    \"removed_dependencies\": ", i32_to_str(list_len(ref removed)), ","));
+    list_push(mutref lines, concat3("    \"changed_dependencies\": ", i32_to_str(list_len(ref changed)), ","));
+    list_push(mutref lines, concat3("    \"impacted_local_callers\": ", i32_to_str(list_len(ref impacted)), ","));
+    list_push(mutref lines, concat3("    \"policy_targets\": ", i32_to_str(policy_targets), ","));
+    list_push(mutref lines, concat3("    \"policy_errors\": ", i32_to_str(policy_errors), ""));
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"changes\": {");
+    append_workspace_string_array(mutref lines, "added_dependencies", ref added, true);
+    append_workspace_string_array(mutref lines, "removed_dependencies", ref removed, true);
+    append_workspace_string_array(mutref lines, "changed_dependencies", ref changed, true);
+    append_workspace_string_array(mutref lines, "impacted_local_callers", ref impacted, false);
+    list_push(mutref lines, "  },");
+    list_push(mutref lines, "  \"policy\": {");
+    list_push(mutref lines, concat3("    \"provided\": ", bool_text(policy_provided), ","));
+    list_push(mutref lines, concat5("    \"path\": ", json_quote(policy_path), ",", "", ""));
+    list_push(mutref lines, concat3("    \"targets\": ", i32_to_str(policy_targets), ","));
+    list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(policy_errors), ""));
+    list_push(mutref lines, "  }");
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return make_facts_summary(0, 0, list_len(ref impacted), list_len(ref changed));
+}
+
 fn root_workspace_name(workspace_root: str) -> str {
     let identity = resolve_workspace_module_identity(workspace_root, "__workspace_root__");
     if not identity.valid {
