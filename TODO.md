@@ -330,3 +330,17 @@
 - [x] Add `i32` literal patterns and recursively nested constructor patterns
 - [x] Require an explicit wildcard or binding fallback for refined matches
 - [x] Preserve refined patterns through stage0/stage1 checking, handoff, IR, C emission, facts, formatter, and locked corpus coverage
+
+## M37 v0.2 Supervised Alpha Gate
+
+- [ ] Run independent full-suite, proof, Linux alpha, stress-leg, schema, release-layout, policy-sidecar, and teaching-corpus gates
+- [ ] Resolve only proven release findings and record the alpha evidence checkpoint
+
+## M38-M46 v0.3 Runway
+
+- [ ] Cross-file fixed-effect evidence and opt-in policy enforcement
+- [ ] List `for` loop V1, followed by surgical standard-library/tooling helpers
+- [ ] Explicit `try` boundaries before expression-position propagation
+- [ ] Typed obligations, formatter write-mode foundation, and module-scale semantic snapshots
+- [ ] Error-set design checkpoint before any new error syntax
+- [ ] v0.3 scope gate driven by real organizational alpha usage rather than feature imitation

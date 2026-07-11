@@ -547,6 +547,96 @@ Status:
 
 - planned
 
+### M38: Cross-File Effect Evidence And Opt-In Policy Enforcement
+
+- export and validate fixed `io` effect summaries across direct imports
+- let policy sidecars enforce declared effect boundaries only when `enforce: true` is explicit
+- keep source-level effects fixed and coarse; do not add user-defined atoms or implicit capability rules
+
+Status:
+
+- planned
+
+### M39: List `for` Loop V1
+
+- add `for name in list_expr { ... }` over builtin `list<T>` only
+- lower through existing list operations and nearest-loop `break` / `continue` semantics
+- keep iterator protocols, loop values, labels, and broader loop families deferred
+
+Status:
+
+- planned
+
+### M40: Surgical Tooling And Standard Library Usability
+
+- add only pure helpers demonstrated by selfhost tooling, the locked corpus, or real internal-tool exercises
+- focus on path, text, list, and result-handling friction rather than prestige-library growth
+- keep maps, sets, networking, time, randomness, and broad OS APIs deferred
+
+Status:
+
+- planned
+
+### M41: Explicit `try` Boundaries And Expression Propagation
+
+- add expression-position `?` only within an explicit `try {}` boundary
+- preserve exact error types, `propagates(...)` evidence, and deterministic facts/review visibility
+- reject implicit conversion, `option<T>?`, panic-style unwrap, and hidden propagation paths
+
+Status:
+
+- planned
+
+### M42: Typed Obligations Design And V1
+
+- design and, if the evidence model stays small, add compiler-visible incomplete-work obligations for agent/human collaboration
+- make every obligation machine-readable, policy-visible, and impossible to confuse with a successful build
+- do not add model-driven repair, inferred intent, or hidden code generation
+
+Status:
+
+- planned
+
+### M43: Formatter Write-Mode Foundation
+
+- design lexer trivia and comment preservation before formatter output can mutate files
+- prove idempotence, comment safety, and no-loss behavior on selfhost and the teaching corpus
+- keep write mode disabled until the preservation contract is demonstrated
+
+Status:
+
+- planned
+
+### M44: Module-Scale Semantic Snapshots
+
+- make per-module facts, dependency evidence, and partial diagnostics useful for larger supervised workspaces
+- improve failure isolation and repeated-check performance without weakening semantic truth
+- defer a full language server, package manager, and broad incremental compilation redesign
+
+Status:
+
+- planned
+
+### M45: Error-Set Design Checkpoint
+
+- decide whether structured error sets improve explicit error flow and organizational APIs without reopening coercion or trait-like machinery
+- publish a design memo and corpus-backed decision before syntax implementation
+- keep implicit conversion, ad hoc exception paths, and opaque error transport rejected
+
+Status:
+
+- planned
+
+### M46: v0.3 Scope Gate
+
+- evaluate generics, methods, stronger borrow analysis, richer modules, and native-backend exploration only against real alpha usage evidence
+- choose the smallest next surface that unblocks organizational tooling rather than copying another language's feature ladder
+- require updated supervision, proof, Linux, and teaching-corpus contracts before admitting the next batch
+
+Status:
+
+- planned
+
 ## Feature Ordering
 
 Features required before first success:
@@ -567,14 +657,11 @@ Features explicitly not required before first success:
 - methods
 - loop families beyond bootstrap `while`
 
-## v0.2+ Candidates
+## Post-M46 Candidates
 
 - user-defined generics
 - methods / `impl`
-- `for`
 - labeled or valued `break` / `continue`
-- propagation sugar beyond statement-boundary evidence-backed `?`
-- typed holes / repair obligations
 - richer standard library
 - stronger borrow analysis
 - direct native backend exploration
