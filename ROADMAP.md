@@ -648,7 +648,7 @@ Status:
 
 Status:
 
-- planned
+- design locked in [CROSS_PACKAGE_GOVERNANCE.md](CROSS_PACKAGE_GOVERNANCE.md); implementation depends on M44 alias routing and locked dependency loading
 
 ### M46: v0.3 Organizational Alpha Gate
 
