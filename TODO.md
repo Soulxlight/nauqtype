@@ -336,11 +336,12 @@
 - [ ] Run independent full-suite, proof, Linux alpha, stress-leg, schema, release-layout, policy-sidecar, and teaching-corpus gates
 - [ ] Resolve only proven release findings and record the alpha evidence checkpoint
 
-## M38-M46 v0.3 Runway
+## M38-M46 v0.3 Organizational Runway
 
-- [ ] Cross-file fixed-effect evidence and opt-in policy enforcement
-- [ ] List `for` loop V1, followed by surgical standard-library/tooling helpers
-- [ ] Explicit `try` boundaries before expression-position propagation
-- [ ] Typed obligations, formatter write-mode foundation, and module-scale semantic snapshots
-- [ ] Error-set design checkpoint before any new error syntax
-- [ ] v0.3 scope gate driven by real organizational alpha usage rather than feature imitation
+- [ ] Define the Nauqtype-owned test and non-Python bootstrap replacement before deleting frozen Python paths
+- [ ] Migrate proof, corpus, diagnostic, and supervision fixtures to a Nauqtype-owned test runner
+- [ ] Prove a host-C seed bootstrap through stage1 and stage2 before retiring Python from active workflows
+- [ ] Lock the Nauqtype syntax-evolution SOP and workspace/module contract before module syntax implementation
+- [ ] Add explicit manifests, nested modules, qualified paths, evidence migration, local dependencies, and reproducible locking in that order
+- [ ] Extend governance and semantic snapshots across package boundaries
+- [ ] Prove a real multi-package internal tool before selecting the next language-completeness batch

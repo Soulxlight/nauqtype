@@ -547,91 +547,91 @@ Status:
 
 - planned
 
-### M38: Cross-File Effect Evidence And Opt-In Policy Enforcement
+### M38: Nauqtype-Owned Test And Bootstrap Architecture
 
-- export and validate fixed `io` effect summaries across direct imports
-- let policy sidecars enforce declared effect boundaries only when `enforce: true` is explicit
-- keep source-level effects fixed and coarse; do not add user-defined atoms or implicit capability rules
-
-Status:
-
-- planned
-
-### M39: List `for` Loop V1
-
-- add `for name in list_expr { ... }` over builtin `list<T>` only
-- lower through existing list operations and nearest-loop `break` / `continue` semantics
-- keep iterator protocols, loop values, labels, and broader loop families deferred
+- inventory every active Python compiler, test, release, and proof responsibility
+- define the replacement path: Nauqtype-owned test execution plus a non-Python seed bootstrap contract
+- keep Python frozen while the replacement is proven; do not delete a known-good bootstrap before a clean-checkout replacement exists
 
 Status:
 
 - planned
 
-### M40: Surgical Tooling And Standard Library Usability
+### M39: Nauqtype Test Runner And Fixture Migration
 
-- add only pure helpers demonstrated by selfhost tooling, the locked corpus, or real internal-tool exercises
-- focus on path, text, list, and result-handling friction rather than prestige-library growth
-- keep maps, sets, networking, time, randomness, and broad OS APIs deferred
-
-Status:
-
-- planned
-
-### M41: Explicit `try` Boundaries And Expression Propagation
-
-- add expression-position `?` only within an explicit `try {}` boundary
-- preserve exact error types, `propagates(...)` evidence, and deterministic facts/review visibility
-- reject implicit conversion, `option<T>?`, panic-style unwrap, and hidden propagation paths
+- add deterministic Nauqtype-owned test, fixture, golden, and failure-expectation execution
+- migrate proof, corpus, diagnostics, and supervision-output coverage before ordinary unit-style suites
+- keep Python tests as frozen migration references until the Nauqtype runner proves equivalent coverage
 
 Status:
 
 - planned
 
-### M42: Typed Obligations Design And V1
+### M40: C Seed Bootstrap And Python Retirement
 
-- design and, if the evidence model stays small, add compiler-visible incomplete-work obligations for agent/human collaboration
-- make every obligation machine-readable, policy-visible, and impossible to confuse with a successful build
-- do not add model-driven repair, inferred intent, or hidden code generation
-
-Status:
-
-- planned
-
-### M43: Formatter Write-Mode Foundation
-
-- design lexer trivia and comment preservation before formatter output can mutate files
-- prove idempotence, comment safety, and no-loss behavior on selfhost and the teaching corpus
-- keep write mode disabled until the preservation contract is demonstrated
+- establish a reproducible C seed path that a host C compiler can build without Python
+- prove seed -> stage1 -> stage2 structural agreement from a clean checkout
+- remove Python from active compiler, test, proof, and release workflows only after the seed and test runner are green; preserve historical provenance separately
 
 Status:
 
 - planned
 
-### M44: Module-Scale Semantic Snapshots
+### M41: Workspace And Syntax Identity Checkpoint
 
-- make per-module facts, dependency evidence, and partial diagnostics useful for larger supervised workspaces
-- improve failure isolation and repeated-check performance without weakening semantic truth
-- defer a full language server, package manager, and broad incremental compilation redesign
-
-Status:
-
-- planned
-
-### M45: Error-Set Design Checkpoint
-
-- decide whether structured error sets improve explicit error flow and organizational APIs without reopening coercion or trait-like machinery
-- publish a design memo and corpus-backed decision before syntax implementation
-- keep implicit conversion, ad hoc exception paths, and opaque error transport rejected
+- publish the Nauqtype syntax-evolution SOP and the workspace/module design contract before new module syntax lands
+- test the contract against representative organizational tools: a CLI, shared libraries, and a supervised automation workspace
+- decide package identity, source roots, visibility, aliases, qualified paths, and migration rules without copying another language's package model by reflex
 
 Status:
 
 - planned
 
-### M46: v0.3 Scope Gate
+### M42: Workspace Manifest And Nested Module Loading
 
-- evaluate generics, methods, stronger borrow analysis, richer modules, and native-backend exploration only against real alpha usage evidence
-- choose the smallest next surface that unblocks organizational tooling rather than copying another language's feature ladder
-- require updated supervision, proof, Linux, and teaching-corpus contracts before admitting the next batch
+- add an explicit, deterministic workspace manifest, source roots, package identity, and entrypoint selection
+- load nested modules from declared roots with no implicit search path or network behavior
+- preserve flat-root projects through a documented migration window and fail closed on ambiguous module identities
+
+Status:
+
+- planned
+
+### M43: Qualified Module Paths And Evidence Migration
+
+- support explicit multi-segment module paths for functions, types, enums, variants, and imports
+- carry package/module identity through facts, review, policy, change-report, and plan-only rename or move operations
+- keep wildcard imports, implicit re-exports, member calls, and hidden dependency resolution out of scope
+
+Status:
+
+- planned
+
+### M44: Local Dependencies And Reproducible Locking
+
+- add explicit local path dependencies and a deterministic lock file after nested module identity is stable
+- make dependency provenance, versions, and resolved source hashes visible to facts and policy checks
+- defer registries, implicit fetching, package scripts, and transitive magic until local workspaces prove the contract
+
+Status:
+
+- planned
+
+### M45: Cross-Package Governance And Semantic Snapshots
+
+- extend fixed-effect evidence, policy enforcement, ownership metadata, and partial facts across workspace package boundaries
+- make changed-module impact and dependency evidence fast enough for agent pairs and human reviewers to use routinely
+- defer a full language server and broad incremental compiler rewrite while preserving deterministic checked facts
+
+Status:
+
+- planned
+
+### M46: v0.3 Organizational Alpha Gate
+
+- prove a real multi-package internal tool from clean bootstrap through release, policy review, and supervised change evidence
+- use the observed friction to rank the first language-completeness batch: list `for`, surgical helpers, explicit `try`, error sets, typed obligations, or generic foundations
+- require updated supervision, proof, Linux, and teaching-corpus contracts before admitting that batch
 
 Status:
 
@@ -661,7 +661,11 @@ Features explicitly not required before first success:
 
 - user-defined generics
 - methods / `impl`
+- list `for` loops and surgical internal-tool helpers
 - labeled or valued `break` / `continue`
+- explicit `try` boundaries and expression-position propagation
+- typed obligations / repair contracts
+- structured error sets
 - richer standard library
 - stronger borrow analysis
 - direct native backend exploration
