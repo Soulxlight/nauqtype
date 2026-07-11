@@ -333,8 +333,8 @@
 
 ## M37 v0.2 Supervised Alpha Gate
 
-- [ ] Run independent full-suite, proof, Linux alpha, stress-leg, schema, release-layout, policy-sidecar, and teaching-corpus gates
-- [ ] Resolve only proven release findings and record the alpha evidence checkpoint
+- [x] Run independent full-suite, proof, Linux alpha, stress-leg, schema, release-layout, policy-sidecar, and teaching-corpus gates
+- [x] Resolve the release identity mismatch and record the v0.2 supervised alpha evidence checkpoint
 
 ## M38-M46 v0.3 Organizational Runway
 

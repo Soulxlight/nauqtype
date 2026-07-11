@@ -430,7 +430,7 @@ Status:
 Status:
 
 - done
-- the release layout now carries a repository `VERSION`, copied `share/nauqtype/VERSION`, and deterministic `share/nauqtype/release.json` identity as `nauqtype-0.1.0-alpha.1`
+- the initial RC1 release layout carried a repository `VERSION`, copied `share/nauqtype/VERSION`, and deterministic `share/nauqtype/release.json` identity as `nauqtype-0.1.0-alpha.1`; M37 advances the active alpha identity
 - `scripts/verify_linux_release.sh` validates executable placement, runtime files, docs, schemas, tracked examples, release identity, and generated-artifact exclusions against the copied layout
 - `scripts/check_linux_alpha.sh` now smoke-tests a copied release from a temporary project outside the repository root, proving the launcher/runtime path does not depend on the source checkout cwd
 - no distro packaging, source-language syntax, runtime helpers, public commands, or proof-chain widening were added
@@ -545,7 +545,12 @@ Status:
 
 Status:
 
-- planned
+- done
+- the independent Python reference suite passed all 240 tests
+- a fresh stage1 bootstrap passed `nauqc prove`, including selfhost, corpus, tooling, schema, and teaching-corpus checks
+- the standalone Linux alpha gate recreated and verified `nauqtype-0.2.0-alpha.1` outside the repository root
+- the standalone stress leg passed, and `policy-check selfhost/main.nq nauqtype.policy.json` validated all ten protected targets with no errors
+- this is the v0.2 supervised alpha baseline; M38 may replace active Python ownership only while preserving these observable claims
 
 ### M38: Nauqtype-Owned Test And Bootstrap Architecture
 

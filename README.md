@@ -28,7 +28,7 @@ Current bootstrap status:
 - compile-to-C backend with a tiny runtime
 - `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
 
-v0.1 status: the M23 language and tooling baseline remains stable. The current alpha surface extends that baseline through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
+v0.2 supervised alpha status: `nauqtype-0.2.0-alpha.1` is the current checked Linux alpha identity. The M23 language and tooling baseline remains stable, and the current alpha surface extends it through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
 
 The active roadmap now prioritizes a Nauqtype-owned test and bootstrap path before workspace syntax grows. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) records the Python-retirement contract, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) records the syntax-evolution discipline that future features must satisfy.
 
