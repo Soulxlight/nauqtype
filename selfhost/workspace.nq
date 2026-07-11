@@ -1,0 +1,91 @@
+use files;
+use text;
+
+pub type workspace_entry {
+    valid: bool,
+    source_root: str,
+    module_name: str,
+    error_message: str,
+}
+
+fn make_workspace_entry(valid: bool, source_root: str, module_name: str, error_message: str) -> workspace_entry {
+    return workspace_entry { valid: valid, source_root: source_root, module_name: module_name, error_message: error_message };
+}
+
+fn find_literal(text: str, pattern: str) -> i32 {
+    let mut index = 0;
+    while index + str_len(pattern) <= str_len(text) {
+        if starts_with_at(text, index, pattern) {
+            return index;
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn first_source_root(manifest: str) -> str {
+    let field = find_literal(manifest, "source_roots");
+    if field < 0 { return ""; }
+    let mut cursor = field + str_len("source_roots");
+    while cursor < str_len(manifest) and char_at(manifest, cursor) != 91 { cursor = cursor + 1; }
+    if cursor >= str_len(manifest) { return ""; }
+    cursor = cursor + 1;
+    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
+    if cursor >= str_len(manifest) { return ""; }
+    let start = cursor + 1;
+    cursor = start;
+    while cursor < str_len(manifest) and char_at(manifest, cursor) != 34 { cursor = cursor + 1; }
+    if cursor >= str_len(manifest) { return ""; }
+    return slice_text(manifest, start, cursor);
+}
+
+fn manifest_root_for(path: str) -> str {
+    let mut current = path_dir(path);
+    while true {
+        match read_file(join_path(current, "nauqtype.workspace.json")) {
+            Ok(_) => { return current; },
+            Err(_) => { },
+        }
+        let parent = path_dir(current);
+        if parent == current { return ""; }
+        current = parent;
+    }
+    return "";
+}
+
+fn module_path_from_source(source_path: str, source_root: str) -> str {
+    let prefix = str_concat(source_root, "/");
+    if not str_starts_with(source_path, prefix) or not str_ends_with(source_path, ".nq") { return ""; }
+    let stem = slice_text(source_path, str_len(prefix), str_len(source_path) - 3);
+    let mut out = "";
+    let mut index = 0;
+    while index < str_len(stem) {
+        let ch = char_at(stem, index);
+        if ch == 47 or ch == 92 { out = str_concat(out, "::"); } else { out = str_concat(out, slice_text(stem, index, index + 1)); }
+        index = index + 1;
+    }
+    return out;
+}
+
+pub fn resolve_workspace_entry(source_path: str) -> workspace_entry
+audit {
+    intent("Resolve an explicit source path through an optional manifest-authoritative workspace root");
+    mutates();
+    effects(io);
+}
+{
+    let root = manifest_root_for(source_path);
+    if root == "" { return make_workspace_entry(true, path_dir(source_path), path_stem(source_path), ""); }
+    match read_file(join_path(root, "nauqtype.workspace.json")) {
+        Ok(manifest) => {
+            if not text_contains(manifest, "workspace/v1") { return make_workspace_entry(false, "", "", "workspace manifest must declare version `workspace/v1`"); }
+            let root_name = first_source_root(manifest);
+            if root_name == "" { return make_workspace_entry(false, "", "", "workspace manifest must declare one source root"); }
+            let source_root = join_path(root, root_name);
+            let module_name = module_path_from_source(source_path, source_root);
+            if module_name == "" { return make_workspace_entry(false, "", "", "source path is not inside the declared workspace source root"); }
+            return make_workspace_entry(true, source_root, module_name, "");
+        },
+        Err(err) => { return make_workspace_entry(false, "", "", io_err_text(err)); },
+    }
+}

@@ -194,6 +194,17 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual([entry["code"] for entry in payload["diagnostics"]], ["NQ-STAGE1-001", "NQ-STAGE1-001"])
         self.assertTrue(all(entry["span"] is None for entry in payload["diagnostics"]))
 
+    def test_stage1_driver_checks_manifest_nested_workspace(self) -> None:
+        source = "tests/fixtures/workspace_nested/src/app/main.nq"
+        result = self._run_driver(["check", source])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+        facts = self._run_driver(["facts", source, "--format", "v2"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        self.assertIn('"name": "app::main"', facts.stdout)
+        self.assertIn('"target_id": "fn:helper::answer"', facts.stdout)
+
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove-selfhost"], timeout=900)

@@ -775,6 +775,7 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "text");
     list_push(mutref modules, "token");
     list_push(mutref modules, "typecheck");
+    list_push(mutref modules, "workspace");
     return;
 }
 
@@ -1862,6 +1863,9 @@ audit {
         return 1;
     }
     if not run_quiet_result("fixture check hello", run_driver_check(driver_path, "examples/hello.nq")) {
+        return 1;
+    }
+    if not run_quiet_result("fixture nested workspace", run_driver_check(driver_path, "tests/fixtures/workspace_nested/src/app/main.nq")) {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {

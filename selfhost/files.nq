@@ -157,7 +157,18 @@ audit {
     effects(io);
 }
 {
-    let path = join_path(workspace_root, str_concat(name, ".nq"));
+    let mut relative = "";
+    let mut index = 0;
+    while index < str_len(name) {
+        if starts_with_at(name, index, "::") {
+            relative = str_concat(relative, "/");
+            index = index + 2;
+        } else {
+            relative = str_concat(relative, slice_text(name, index, index + 1));
+            index = index + 1;
+        }
+    }
+    let path = join_path(workspace_root, str_concat(relative, ".nq"));
     return read_source_at_path(path, name);
 }
 

@@ -15,6 +15,7 @@ use resolve;
 use source;
 use text;
 use typecheck;
+use workspace;
 
 enum driver_mode {
     driver_legacy,
@@ -52,6 +53,29 @@ type driver_request {
 }
 
 fn make_driver_request(mode: driver_mode, entry_path: str, entry_module: str, workspace_root: str, output_path: str, extra_text: str, error_message: str) -> driver_request {
+    if entry_path != "" and entry_module != "" {
+        let resolved = resolve_workspace_entry(entry_path);
+        if not resolved.valid {
+            return driver_request {
+                mode: driver_invalid,
+                entry_path: "",
+                entry_module: "",
+                workspace_root: ".",
+                output_path: "",
+                extra_text: "",
+                error_message: resolved.error_message,
+            };
+        }
+        return driver_request {
+            mode: mode,
+            entry_path: entry_path,
+            entry_module: resolved.module_name,
+            workspace_root: resolved.source_root,
+            output_path: output_path,
+            extra_text: extra_text,
+            error_message: error_message,
+        };
+    }
     return driver_request {
         mode: mode,
         entry_path: entry_path,

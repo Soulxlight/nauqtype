@@ -39,7 +39,7 @@ fn main() -> i32 {
 }
 ```
 
-- `use` names an absolute module path from the current workspace or an explicitly declared dependency alias.
+- M42 implements manifest-derived nested entry modules and source-root loading while retaining the existing bare `use helper;` spelling for imported names. M43 adds absolute multi-segment `use` paths and aliases after their evidence migration is designed.
 - `as` creates the only local module alias spelling in v1. Without `as`, the final module segment is the visible module name.
 - `::` denotes module provenance only. `.` remains field access; it never triggers method lookup or module traversal.
 - Qualified values, types, enums, variants, and calls resolve through the same canonical module identity.
