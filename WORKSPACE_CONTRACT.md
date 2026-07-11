@@ -60,7 +60,7 @@ This makes migration visible in facts and diffs instead of silently changing an 
 - Facts use canonical workspace/package/module IDs while retaining the source spelling and alias at each reference.
 - Review, review-diff, change-report, policy-check, and refactor plans operate on canonical IDs, not filesystem text or caller-relative paths.
 - M43 adds move/rename plans only after cross-module definitions and references carry these identities.
-- M44 adds local dependency provenance and content hashes to a deterministic lock file. The manifest itself never fetches code.
+- [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md) locks the M44 local dependency and deterministic lock-file contract. The manifest itself never fetches code.
 - M45 extends ownership and policy checks across package boundaries; policy remains sidecar data, never hidden compiler authority.
 
 ## Representative Tool Checks
