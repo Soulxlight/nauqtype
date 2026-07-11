@@ -626,7 +626,8 @@ Status:
 
 Status:
 
-- planned
+- in progress
+- multi-segment qualified direct function calls now resolve through checked facts using canonical nested module identities
 
 ### M44: Local Dependencies And Reproducible Locking
 

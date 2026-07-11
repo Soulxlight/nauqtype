@@ -2451,35 +2451,21 @@ fn span_call_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
             },
         }
     }
-    if end - start >= 5 {
-        let first_colon = token_at(ref tokens, start + 1);
-        let second_colon = token_at(ref tokens, start + 2);
-        let name = token_at(ref tokens, start + 3);
-        let open = token_at(ref tokens, start + 4);
-        match first_colon.kind {
-            tk_colon => {
-                match second_colon.kind {
-                    tk_colon => {
-                        match name.kind {
-                            tk_ident => {
-                                match open.kind {
-                                    tk_lparen => {
-                                        return start + 4;
-                                    },
-                                    _ => {
-                                    },
-                                }
-                            },
-                            _ => {
-                            },
-                        }
-                    },
-                    _ => {
-                    },
-                }
-            },
-            _ => {
-            },
+    let mut cursor = start + 1;
+    let mut saw_qualifier = false;
+    while cursor + 2 < end {
+        let first_colon = token_at(ref tokens, cursor);
+        let second_colon = token_at(ref tokens, cursor + 1);
+        let segment = token_at(ref tokens, cursor + 2);
+        if not is_colon_token(first_colon) or not is_colon_token(second_colon) or not is_ident_token(segment) {
+            return -1;
+        }
+        saw_qualifier = true;
+        cursor = cursor + 3;
+        let open = token_at(ref tokens, cursor);
+        match open.kind {
+            tk_lparen => { return cursor; },
+            _ => { },
         }
     }
     return -1;
@@ -2487,8 +2473,8 @@ fn span_call_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
 
 fn span_call_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let open_index = span_call_open_index(ref tokens, start, end);
-    if open_index == start + 4 {
-        return start + 3;
+    if open_index > start + 1 {
+        return open_index - 1;
     }
     if open_index == start + 1 {
         return start;
@@ -2498,9 +2484,15 @@ fn span_call_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
 
 fn span_call_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
     let open_index = span_call_open_index(ref tokens, start, end);
-    if open_index == start + 4 {
-        let module_token = token_at(ref tokens, start);
-        return module_token.text;
+    if open_index > start + 1 {
+        let mut qualifier = token_at(ref tokens, start).text;
+        let mut cursor = start + 3;
+        while cursor < open_index - 1 {
+            let segment = token_at(ref tokens, cursor);
+            qualifier = str_concat(str_concat(qualifier, "::"), segment.text);
+            cursor = cursor + 3;
+        }
+        return qualifier;
     }
     return "";
 }
@@ -2632,22 +2624,23 @@ fn span_struct_open_index(tokens: ref list<token>, start: i32, end: i32) -> i32 
             },
         }
     }
-    if end - start >= 5 {
-        let first_colon = token_at(ref tokens, start + 1);
-        let second_colon = token_at(ref tokens, start + 2);
-        let name = token_at(ref tokens, start + 3);
-        let open = token_at(ref tokens, start + 4);
-        if is_colon_token(first_colon) and is_colon_token(second_colon) and is_ident_token(name) and is_lbrace_token(open) {
-            return start + 4;
-        }
+    let mut cursor = start + 1;
+    while cursor + 2 < end {
+        let first_colon = token_at(ref tokens, cursor);
+        let second_colon = token_at(ref tokens, cursor + 1);
+        let segment = token_at(ref tokens, cursor + 2);
+        if not is_colon_token(first_colon) or not is_colon_token(second_colon) or not is_ident_token(segment) { return -1; }
+        cursor = cursor + 3;
+        let open = token_at(ref tokens, cursor);
+        if is_lbrace_token(open) { return cursor; }
     }
     return -1;
 }
 
 fn span_struct_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let open_index = span_struct_open_index(ref tokens, start, end);
-    if open_index == start + 4 {
-        return start + 3;
+    if open_index > start + 1 {
+        return open_index - 1;
     }
     if open_index == start + 1 {
         return start;
@@ -2657,9 +2650,15 @@ fn span_struct_name_index(tokens: ref list<token>, start: i32, end: i32) -> i32 
 
 fn span_struct_qualifier(tokens: ref list<token>, start: i32, end: i32) -> str {
     let open_index = span_struct_open_index(ref tokens, start, end);
-    if open_index == start + 4 {
-        let module_token = token_at(ref tokens, start);
-        return module_token.text;
+    if open_index > start + 1 {
+        let mut qualifier = token_at(ref tokens, start).text;
+        let mut cursor = start + 3;
+        while cursor < open_index - 1 {
+            let segment = token_at(ref tokens, cursor);
+            qualifier = str_concat(str_concat(qualifier, "::"), segment.text);
+            cursor = cursor + 3;
+        }
+        return qualifier;
     }
     return "";
 }
