@@ -1291,6 +1291,142 @@ fn emit_user_struct(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
     return;
 }
 
+fn user_type_key(module_name: str, type_name: str) -> str {
+    return concat3(module_name, "::", type_name);
+}
+
+fn named_type_dependencies_emitted(type_shapes: ref list<ir_type_shape>, type_id: i32, emitted: ref list<str>) -> bool {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_named => {
+                    return list_contains(ref emitted, user_type_key(value.origin_module, value.name));
+                },
+                checked_type_ref => {
+                    return named_type_dependencies_emitted(ref type_shapes, value.arg1_id, ref emitted);
+                },
+                checked_type_list => {
+                    return named_type_dependencies_emitted(ref type_shapes, value.arg1_id, ref emitted);
+                },
+                checked_type_option => {
+                    return named_type_dependencies_emitted(ref type_shapes, value.arg1_id, ref emitted);
+                },
+                checked_type_result => {
+                    if not named_type_dependencies_emitted(ref type_shapes, value.arg1_id, ref emitted) {
+                        return false;
+                    }
+                    return named_type_dependencies_emitted(ref type_shapes, value.arg2_id, ref emitted);
+                },
+                _ => {
+                    return true;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn struct_dependencies_emitted(type_shapes: ref list<ir_type_shape>, struct_decl: ir_struct_decl, field_decls: ref list<ir_field_decl>, emitted: ref list<str>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, index);
+        match entry {
+            Some(value) => {
+                if value.struct_id == struct_decl.id {
+                    if not named_type_dependencies_emitted(ref type_shapes, value.type_id, ref emitted) {
+                        return false;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn enum_dependencies_emitted(type_shapes: ref list<ir_type_shape>, enum_decl: ir_enum_decl, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, emitted: ref list<str>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref variant_payload_decls) {
+        let entry = list_get(ref variant_payload_decls, index);
+        match entry {
+            Some(value) => {
+                let mut variant_index = 0;
+                while variant_index < list_len(ref variant_decls) {
+                    let variant_entry = list_get(ref variant_decls, variant_index);
+                    match variant_entry {
+                        Some(variant_value) => {
+                            if variant_value.id == value.variant_id and variant_value.enum_id == enum_decl.id {
+                                if not named_type_dependencies_emitted(ref type_shapes, value.type_id, ref emitted) {
+                                    return false;
+                                }
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    variant_index = variant_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn emit_user_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> unit {
+    let mut emitted: list<str> = list();
+    let total = list_len(ref struct_decls) + list_len(ref enum_decls);
+    while list_len(ref emitted) < total {
+        let mut progressed = false;
+        let mut enum_index = 0;
+        while enum_index < list_len(ref enum_decls) {
+            let entry = list_get(ref enum_decls, enum_index);
+            match entry {
+                Some(value) => {
+                    let key = user_type_key(value.module_name, value.name);
+                    if not list_contains(ref emitted, key) and enum_dependencies_emitted(ref type_shapes, value, ref variant_decls, ref variant_payload_decls, ref emitted) {
+                        emit_user_enum(mutref lines, ref type_shapes, value, ref variant_decls, ref variant_payload_decls);
+                        list_push(mutref emitted, key);
+                        progressed = true;
+                    }
+                },
+                None => {
+                },
+            }
+            enum_index = enum_index + 1;
+        }
+        let mut struct_index = 0;
+        while struct_index < list_len(ref struct_decls) {
+            let entry = list_get(ref struct_decls, struct_index);
+            match entry {
+                Some(value) => {
+                    let key = user_type_key(value.module_name, value.name);
+                    if not list_contains(ref emitted, key) and struct_dependencies_emitted(ref type_shapes, value, ref field_decls, ref emitted) {
+                        emit_user_struct(mutref lines, ref type_shapes, value, ref field_decls);
+                        list_push(mutref emitted, key);
+                        progressed = true;
+                    }
+                },
+                None => {
+                },
+            }
+            struct_index = struct_index + 1;
+        }
+        if not progressed {
+            push_c_error(mutref diags, "", 0, "cyclic by-value user type declarations cannot be emitted");
+            return;
+        }
+    }
+    return;
+}
+
 fn emit_const_decl(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, const_decl: ir_const_decl, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, const_decl.expr_id);
     match expr_entry {
@@ -3085,30 +3221,13 @@ audit {
     append_line(mutref lines_out, "#include \"runtime.h\"");
     append_line(mutref lines_out, "");
 
-    let mut enum_index = 0;
-    while enum_index < list_len(ref enum_decls) {
-        let entry = list_get(ref enum_decls, enum_index);
-        match entry {
-            Some(value) => {
-                emit_user_enum(mutref lines_out, ref type_shapes, value, ref variant_decls, ref variant_payload_decls);
-            },
-            None => {
-            },
-        }
-        enum_index = enum_index + 1;
-    }
-
-    let mut struct_index = 0;
-    while struct_index < list_len(ref struct_decls) {
-        let entry = list_get(ref struct_decls, struct_index);
-        match entry {
-            Some(value) => {
-                emit_user_struct(mutref lines_out, ref type_shapes, value, ref field_decls);
-            },
-            None => {
-            },
-        }
-        struct_index = struct_index + 1;
+    emit_user_declarations(mutref lines_out, ref type_shapes, ref struct_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, mutref diags);
+    if list_len(ref diags) > start_diag_count {
+        return make_c_emit_summary(
+            list_len(ref lines_out),
+            list_len(ref functions),
+            list_len(ref diags)
+        );
     }
 
     let mut option_index = 0;

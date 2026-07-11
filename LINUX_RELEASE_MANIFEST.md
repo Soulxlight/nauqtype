@@ -1,6 +1,6 @@
 # Nauqtype Linux Release Manifest
 
-This is the M30 Linux Alpha RC1 release layout contract. It is a copied development artifact, not a distro package.
+This is the M30 Linux Alpha RC1 release layout contract, reused by M46's v0.3 organizational-alpha proof. It is a copied development artifact, not a distro package.
 
 The repository version is stored in `VERSION`. The copied layout carries the same version in `share/nauqtype/VERSION` and a deterministic release identity in `share/nauqtype/release.json`.
 
@@ -22,7 +22,7 @@ The launcher runs from `lib/nauqtype` so `build` and `run` can find `stdlib/runt
 
 Generated artifacts under `examples/build/` and copied executable outputs such as `*.exe` are intentionally excluded from the release layout.
 
-`scripts/verify_linux_release.sh` validates the copied layout against this manifest. `scripts/check_linux_alpha.sh` also copies the generated layout into a temporary directory and runs `nauqc check` / `nauqc run` from a separate project directory, so the alpha gate proves the copied launcher works outside the source checkout root.
+`scripts/verify_linux_release.sh` validates the copied layout against this manifest. `scripts/check_linux_alpha.sh` also copies the generated layout into a temporary directory and runs `nauqc check` / `nauqc run` from a separate project directory, so the alpha gate proves the copied launcher works outside the source checkout root. `scripts/check_organizational_alpha.sh` extends that check with the locked two-workspace organizational tool, its facts v3 snapshot, policy sidecar, and checked cross-workspace impact report.
 
 Still out of scope:
 

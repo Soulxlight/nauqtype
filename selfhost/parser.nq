@@ -70,6 +70,25 @@ fn consume_module_path(tokens: ref list<token>, cursor: mutref i32, diags: mutre
     }
 }
 
+fn consume_optional_use_alias(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> str {
+    let marker = token_at(ref tokens, cursor);
+    match marker.kind {
+        tk_ident => {
+            if marker.text == "as" {
+                advance(mutref cursor);
+                let alias = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+                match alias.kind {
+                    tk_ident => { return alias.text; },
+                    _ => { return ""; },
+                }
+            }
+        },
+        _ => {
+        },
+    }
+    return "";
+}
+
 fn consume_type(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, type_refs: mutref list<type_ref>, context_name: str, kind: type_ref_kind) -> unit {
     let current = token_at(ref tokens, cursor);
     match current.kind {
@@ -1468,6 +1487,7 @@ audit {
                 let mut ignored: list<diag> = list();
                 let name = consume_module_path(ref tokens, mutref cursor, mutref ignored, "");
                 if name == "" { scanning = false; } else { list_push(mutref result, name); }
+                consume_optional_use_alias(ref tokens, mutref cursor, mutref ignored, "");
                 let end = token_at(ref tokens, cursor);
                 match end.kind {
                     tk_semi => {
@@ -1506,8 +1526,9 @@ audit {
                 advance(mutref cursor);
                 let use_at = token_at(ref tokens, cursor).start;
                 let name = consume_module_path(ref tokens, mutref cursor, mutref diags, file);
+                let alias = consume_optional_use_alias(ref tokens, mutref cursor, mutref diags, file);
                 if name != "" {
-                        list_push(mutref uses, make_module_use(file, name, use_at));
+                        list_push(mutref uses, make_module_use(file, name, alias, use_at));
                         use_count = use_count + 1;
                 }
                 let semi = token_at(ref tokens, cursor);
@@ -2526,6 +2547,7 @@ audit {
             tk_kw_use => {
                 advance(mutref cursor);
                 consume_module_path(ref tokens, mutref cursor, mutref diags, file);
+                consume_optional_use_alias(ref tokens, mutref cursor, mutref diags, file);
                 let semi = token_at(ref tokens, cursor);
                 match semi.kind {
                     tk_semi => {
@@ -3372,6 +3394,7 @@ audit {
             tk_kw_use => {
                 advance(mutref cursor);
                 consume_module_path(ref tokens, mutref cursor, mutref diags, file);
+                consume_optional_use_alias(ref tokens, mutref cursor, mutref diags, file);
                 let semi = token_at(ref tokens, cursor);
                 match semi.kind {
                     tk_semi => {
@@ -3910,6 +3933,7 @@ audit {
             tk_kw_use => {
                 advance(mutref cursor);
                 consume_module_path(ref tokens, mutref cursor, mutref diags, file);
+                consume_optional_use_alias(ref tokens, mutref cursor, mutref diags, file);
                 let semi = token_at(ref tokens, cursor);
                 match semi.kind {
                     tk_semi => {

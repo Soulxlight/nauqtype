@@ -5,8 +5,8 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 Current bootstrap status:
 
 - `stage0`: archived Python bootstrap/reference compiler; it is not on the active build, test, proof, release, or CI path
-- Linux alpha development is supported through the repo-local `bin/nauqc` stage1 launcher and the copied Alpha RC1 layout; see [LINUX.md](LINUX.md)
-- flat-root multi-file imports with one workspace root
+- Linux organizational-alpha development is supported through the repo-local `bin/nauqc` stage1 launcher and the copied release layout; see [LINUX.md](LINUX.md)
+- manifest-governed nested workspace modules and locked local dependencies, with legacy flat-root compatibility
 - explicit types at function boundaries
 - top-level `const` for small compile-time configuration values
 - nominal `type` and `enum`
@@ -17,7 +17,7 @@ Current bootstrap status:
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
 - fixed `effects(io)` contracts with checked read/write/create-directory/process evidence in v2 supervision outputs
-- named function arguments and direct module-qualified function/data names
+- named function arguments, direct module-qualified function/data names, and explicit module aliases
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
 - direct field assignment for owned `let mut` product locals
@@ -28,7 +28,7 @@ Current bootstrap status:
 - compile-to-C backend with a tiny runtime
 - `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
 
-v0.2 supervised alpha status: `nauqtype-0.2.0-alpha.1` is the current checked Linux alpha identity. The M23 language and tooling baseline remains stable, and the current alpha surface extends it through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
+v0.3 organizational alpha status: `nauqtype-0.3.0-alpha.1` proves a locked two-workspace internal tool from the C seed through stage1 proof, checked facts/policy/change evidence, and a copied Linux release outside the source checkout. The language surface remains stable; this milestone hardens reproducibility and supervision rather than adding syntax.
 
 The active roadmap now prioritizes a Nauqtype-owned test and bootstrap path before workspace syntax grows. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) records the Python-retirement contract, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) records the syntax-evolution discipline that future features must satisfy.
 
@@ -139,6 +139,14 @@ scripts/check_linux_alpha.sh
 
 The gate now verifies the Alpha RC1 copied layout, release identity, and an outside-repo smoke run for the copied `bin/nauqc` launcher.
 
+Run the organizational-alpha gate for the locked multi-workspace tool:
+
+```bash
+scripts/check_organizational_alpha.sh
+```
+
+This records a deterministic workspace facts snapshot and change-report evidence under `build/organizational-alpha/`, then checks, policy-validates, and runs the same tool from the copied release outside the repository root. See [M46_ORGANIZATIONAL_ALPHA.md](M46_ORGANIZATIONAL_ALPHA.md).
+
 For normal milestone work, use the layered verification commands in
 [VERIFICATION.md](VERIFICATION.md). `scripts/check_fast.sh` provides quick
 focused feedback, while `scripts/check_milestone.sh` runs the selfhost proof,
@@ -189,6 +197,7 @@ Example programs worth checking first:
 - `examples/qualified_call_chain.nq`: multi-module qualified call chain
 - `examples/qualified_calls.nq`: direct module-qualified function calls
 - `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names
+- `examples/import_aliases.nq`: an explicit source-local alias used for functions, struct literals, and enum variants
 - `examples/record_update.nq`: copy-only record update with explicit base provenance
 - `examples/record_update_nontrivial.nq`: record update over a computed owned base value
 - `examples/propagation_question.nq`: statement-boundary `?` with optional context-label and `propagates(...)` evidence
@@ -221,8 +230,9 @@ Current selfhost semantic coverage:
 - full-graph body resolution and current value-flow checking across the loaded selfhost module set
 - top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `bool` / `str` initializer subset
 - named function arguments for direct function calls, including modeled builtins and imported functions; arguments are exported to the backend in callee parameter order
-- direct `module::function(...)` calls for public functions from directly imported flat-root modules
-- direct module-qualified data names for public struct literals and enum variants from directly imported flat-root modules, preserving origin visibility for facts, handoff, IR, and C emission
+- direct `module::function(...)` calls for public functions from directly imported modules
+- direct module-qualified data names for public struct literals and enum variants from directly imported modules, preserving origin visibility for facts, handoff, IR, and C emission
+- explicit `use module_path as alias;` aliases for direct function/data qualification; facts retain the source alias while policy and backend targets retain the checked canonical module identity
 - copy-only record update for product types using explicit `Type { from base, field: value }` syntax; inherited non-copy fields keep the existing field-move safety boundary
 - minimal `break;` and `continue;` statements for the nearest enclosing `while`
 - differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary

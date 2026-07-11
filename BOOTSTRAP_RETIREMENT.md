@@ -48,7 +48,7 @@ Check in a versioned generated seed under `bootstrap/seed/`, including:
 
 - generated C for the seed compiler
 - matching runtime sources
-- a seed manifest with source identity, generator identity, and content hashes
+- a seed manifest with entry and deterministic full-selfhost-tree identities, generator identity, and content hashes
 - a small shell bootstrap that compiles the seed with `cc`
 
 The required proof is:

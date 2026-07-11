@@ -350,6 +350,12 @@
 - [x] Prove a host-C seed bootstrap through stage1 and stage2 and retire Python from active workflows
 - [x] Validate the syntax-evolution SOP and workspace/module contract before module syntax implementation
 - [x] Add explicit manifests, nested modules, locked local dependencies, and reproducible source locking
-- [ ] Complete qualified type/enum/variant evidence migration and source-level import alias design
+- [x] Complete qualified function/type-head/enum/variant evidence migration and explicit source-level module aliases
 - [x] Complete cross-package governance facts, policy targeting, semantic snapshots, and impact summaries
-- [ ] Prove a real multi-package internal tool before selecting the next language-completeness batch
+- [x] Prove a real multi-package internal tool through the C seed, copied Linux release, policy sidecar, facts snapshot, and changed-dependency impact report
+
+## Post-M46 P0 Backend Closure
+
+- [ ] Make a product field of `list<i32>`, `option<T>`, or `result<T, E>` lower with dependency-safe C carrier declarations
+- [ ] Preserve the actual field base when lowering `ref product.field` into list helper calls
+- [ ] Add a focused compile/run fixture for the reduced composite-field reproducer before new syntax work resumes

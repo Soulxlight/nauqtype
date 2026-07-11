@@ -28,6 +28,7 @@ These examples cover specific semantic features of Nauqtype.
 - [qualified_calls.nq](examples/qualified_calls.nq): Making direct module-qualified function calls across a flat-root module boundary.
 - [qualified_call_chain.nq](examples/qualified_call_chain.nq): Multi-module qualified call chains across several files.
 - [qualified_data_names.nq](examples/qualified_data_names.nq): Direct module-qualified struct literals and enum constructor names.
+- [import_aliases.nq](examples/import_aliases.nq): Using an explicit local module alias for functions, struct literals, and enum variants.
 - [top_level_const.nq](examples/top_level_const.nq): Defining and using stage1-owned top-level constants.
 - [break_continue.nq](examples/break_continue.nq): Minimal `break` and `continue` statement usage within the nearest enclosing `while` loop.
 - [nested_break_continue.nq](examples/nested_break_continue.nq): Using nested `break` and `continue` inside `if` conditionals within a `while` loop.
@@ -61,6 +62,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `fibonacci.nq`
 - `field_assignment.nq`
 - `hello.nq`
+- `import_aliases.nq`
 - `list_literals.nq`
 - `list_sum.nq`
 - `match_expr_let_else.nq`
@@ -92,6 +94,7 @@ These examples provide imported definitions for the runnable examples above. The
 - [qualified_call_chain_math.nq](examples/qualified_call_chain_math.nq)
 - [qualified_call_chain_mid.nq](examples/qualified_call_chain_mid.nq)
 - [qualified_data_helper.nq](examples/qualified_data_helper.nq)
+- [import_aliases_helper.nq](examples/import_aliases_helper.nq)
 
 ## Negative Diagnostics (Supervised Failure)
 

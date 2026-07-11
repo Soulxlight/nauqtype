@@ -207,6 +207,48 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertIn('"target_id": "fn:app::helper::answer"', facts.stdout)
         self.assertIn('"call_site": "call:app::main::main@61"', facts.stdout)
 
+    def test_stage1_driver_supports_explicit_module_aliases(self) -> None:
+        source = "tests/fixtures/workspace_alias/src/app/main.nq"
+        check = self._run_driver(["check", source])
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertEqual(check.stdout, "")
+        self.assertEqual(check.stderr, "")
+
+        run = self._run_driver(["run", source])
+        self.assertEqual(run.returncode, 7, run.stdout + run.stderr)
+        self.assertEqual(run.stdout, "")
+        self.assertEqual(run.stderr, "")
+
+        facts = self._run_driver(["facts", source, "--format", "v2"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        self.assertIn('"kind": "import"', facts.stdout)
+        self.assertIn('"name": "model"', facts.stdout)
+        self.assertIn('"target_id": "module:app::model"', facts.stdout)
+        self.assertIn('"target_id": "type:app::model::Box"', facts.stdout)
+        self.assertIn('"target_id": "variant:app::model::Choice::Keep"', facts.stdout)
+
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text)
+            self._write_project(
+                tmp,
+                {
+                    "nauqtype.workspace.json": '''
+                        {"version":"workspace/v1","workspace":{"name":"tests.alias_duplicate","source_roots":["src"]}}
+                    ''',
+                    "src/app/one.nq": "pub fn value() -> i32 { return 1; }",
+                    "src/app/two.nq": "pub fn value() -> i32 { return 2; }",
+                    "src/app/main.nq": '''
+                        use app::one as source;
+                        use app::two as source;
+
+                        fn main() -> i32 { return 0; }
+                    ''',
+                },
+            )
+            duplicate = self._run_driver(["check", str(tmp / "src" / "app" / "main.nq")])
+            self.assertEqual(duplicate.returncode, 1)
+            self.assertIn("duplicate import qualifier", duplicate.stdout)
+
     def test_stage1_driver_rejects_workspace_dependencies_without_lock(self) -> None:
         source = "tests/fixtures/workspace_missing_lock/src/app/main.nq"
         result = self._run_driver(["check", source])
@@ -326,6 +368,47 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
         schema = json.loads((self.root / "schemas" / "change-report-v2.schema.json").read_text(encoding="utf-8"))
         self._assert_schema_shape(payload, schema)
+
+    def test_stage1_driver_proves_organizational_tool_evidence(self) -> None:
+        source = "tests/fixtures/organizational_tool/src/app/main.nq"
+        before = "tests/fixtures/organizational_tool_before/src/app/main.nq"
+        policy = "tests/fixtures/organizational_tool/nauqtype.policy.json"
+
+        check = self._run_driver(["check", source])
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertEqual(check.stdout, "")
+        self.assertEqual(check.stderr, "")
+
+        run = self._run_driver(["run", source])
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertEqual(run.stdout, "operations: ready\n")
+        self.assertEqual(run.stderr, "")
+
+        facts = self._run_driver(["facts", source, "--format", "v3"])
+        self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
+        facts_payload = json.loads(facts.stdout)
+        facts_golden = self.root / "tests" / "golden" / "organizational_tool" / "facts_v3.json"
+        self.assertEqual(facts_payload, json.loads(facts_golden.read_text(encoding="utf-8")))
+        facts_schema = json.loads((self.root / "schemas" / "facts-v3.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(facts_payload, facts_schema)
+
+        policy_result = self._run_driver(["policy-check", source, policy])
+        self.assertEqual(policy_result.returncode, 0, policy_result.stdout + policy_result.stderr)
+        policy_payload = json.loads(policy_result.stdout)
+        policy_golden = self.root / "tests" / "golden" / "organizational_tool" / "policy_check_v1.json"
+        self.assertEqual(policy_payload, json.loads(policy_golden.read_text(encoding="utf-8")))
+        policy_schema = json.loads((self.root / "schemas" / "policy-check-v1.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(policy_payload, policy_schema)
+
+        report = self._run_driver(["change-report", before, source, "--format", "v2"])
+        self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+        report_payload = json.loads(report.stdout)
+        report_golden = self.root / "tests" / "golden" / "organizational_tool" / "change_report_v2.json"
+        self.assertEqual(report_payload, json.loads(report_golden.read_text(encoding="utf-8")))
+        report_schema = json.loads((self.root / "schemas" / "change-report-v2.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(report_payload, report_schema)
+        self.assertEqual(report_payload["summary"]["changed_dependencies"], 1)
+        self.assertEqual(report_payload["summary"]["impacted_local_callers"], 1)
 
     def test_stage1_driver_rejects_stale_local_dependency_source_hash(self) -> None:
         fixture = self.root / "tests" / "fixtures" / "workspace_local_dependency"

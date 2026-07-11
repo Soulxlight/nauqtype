@@ -1111,6 +1111,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("fibonacci", "examples/fibonacci.nq", 55, ""));
     list_push(mutref cases, make_corpus_case("field_assignment", "examples/field_assignment.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("hello", "examples/hello.nq", 0, "Hello, Nauqtype!\n"));
+    list_push(mutref cases, make_corpus_case("import_aliases", "examples/import_aliases.nq", 7, ""));
     list_push(mutref cases, make_corpus_case("list_literals", "examples/list_literals.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("list_sum", "examples/list_sum.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("match_expr_let_else", "examples/match_expr_let_else.nq", 0, ""));
@@ -1143,6 +1144,8 @@ fn push_locked_formatter_examples(paths: mutref list<str>) -> unit {
     list_push(mutref paths, "examples/fibonacci.nq");
     list_push(mutref paths, "examples/field_assignment.nq");
     list_push(mutref paths, "examples/hello.nq");
+    list_push(mutref paths, "examples/import_aliases.nq");
+    list_push(mutref paths, "examples/import_aliases_helper.nq");
     list_push(mutref paths, "examples/list_literals.nq");
     list_push(mutref paths, "examples/list_sum.nq");
     list_push(mutref paths, "examples/match_expr_let_else.nq");
@@ -1326,6 +1329,62 @@ fn run_workspace_governance_gate(driver_path: str, failed_phase: mutref str) -> 
     return true;
 }
 
+fn organizational_tool_run_ok(driver_path: str, source_path: str) -> bool {
+    let run_result = run_driver_run(driver_path, source_path);
+    match run_result {
+        Ok(status) => {
+            if status.exit_code != 0 {
+                eprint_line("organizational tool run returned unexpected exit code");
+                emit_process_output(status);
+                return false;
+            }
+            if status.stdout != "operations: ready\n" or status.stderr != "" {
+                eprint_line("organizational tool run produced unexpected output");
+                emit_process_output(status);
+                return false;
+            }
+            if has_stage1_failure_text(status) {
+                eprint_line("organizational tool run reported a stage1 failure");
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_organizational_alpha_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    let source_path = "tests/fixtures/organizational_tool/src/app/main.nq";
+    let policy_path = "tests/fixtures/organizational_tool/nauqtype.policy.json";
+    let before_path = "tests/fixtures/organizational_tool_before/src/app/main.nq";
+
+    if not run_quiet_result("organizational tool check", run_driver_check(driver_path, source_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not organizational_tool_run_ok(driver_path, source_path) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("organizational tool facts v3", run_driver_facts(driver_path, source_path, "v3"), "tests/golden/organizational_tool/facts_v3.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("organizational tool policy-check v1", run_driver_policy_check(driver_path, source_path, policy_path), "tests/golden/organizational_tool/policy_check_v1.json") {
+        failed_phase = "tooling.policy";
+        return false;
+    }
+    if not run_json_golden_result("organizational tool change-report v2", run_driver_change_report_v2(driver_path, before_path, source_path), "tests/golden/organizational_tool/change_report_v2.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    return true;
+}
+
 fn evidence_parity_run_ok(driver_path: str, after_path: str) -> bool {
     let run_result = run_driver_run(driver_path, after_path);
     match run_result {
@@ -1466,6 +1525,9 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         return false;
     }
     if not run_workspace_governance_gate(driver_path, mutref failed_phase) {
+        return false;
+    }
+    if not run_organizational_alpha_gate(driver_path, mutref failed_phase) {
         return false;
     }
     if not run_evidence_parity_gate(driver_path, mutref failed_phase) {

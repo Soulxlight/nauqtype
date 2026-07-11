@@ -2593,14 +2593,16 @@ fn function_return_borrow_mutable_from_origin(functions: ref list<function_fact>
     return false;
 }
 
-fn handoff_module_directly_imports(uses: ref list<module_use>, module_name: str, imported: str) -> bool {
+fn handoff_imported_module_for_qualifier(uses: ref list<module_use>, module_name: str, qualifier: str) -> str {
     let mut index = 0;
     while index < list_len(ref uses) {
         let entry = list_get(ref uses, index);
         match entry {
             Some(value) => {
-                if value.module == module_name and value.name == imported {
-                    return true;
+                if value.module == module_name {
+                    if value.name == qualifier or value.alias == qualifier {
+                        return value.name;
+                    }
                 }
             },
             None => {
@@ -2608,7 +2610,7 @@ fn handoff_module_directly_imports(uses: ref list<module_use>, module_name: str,
         }
         index = index + 1;
     }
-    return false;
+    return "";
 }
 
 fn handoff_module_exports_function(items: ref list<top_item>, module_name: str, function_name: str) -> bool {
@@ -2636,8 +2638,9 @@ fn handoff_module_exports_function(items: ref list<top_item>, module_name: str, 
 }
 
 fn qualified_function_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module_name: str, qualifier: str, function_name: str) -> str {
-    if handoff_module_directly_imports(ref uses, module_name, qualifier) and handoff_module_exports_function(ref items, qualifier, function_name) {
-        return qualifier;
+    let imported = handoff_imported_module_for_qualifier(ref uses, module_name, qualifier);
+    if imported != "" and handoff_module_exports_function(ref items, imported, function_name) {
+        return imported;
     }
     return "";
 }

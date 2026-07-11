@@ -1625,14 +1625,16 @@ fn visible_function_param_name(function_params: ref list<function_param_fact>, u
     return "";
 }
 
-fn module_directly_imports(uses: ref list<module_use>, module: str, imported: str) -> bool {
+fn imported_module_for_qualifier(uses: ref list<module_use>, module: str, qualifier: str) -> str {
     let mut use_index = 0;
     while use_index < list_len(ref uses) {
         let entry = list_get(ref uses, use_index);
         match entry {
             Some(value) => {
-                if value.module == module and value.name == imported {
-                    return true;
+                if value.module == module {
+                    if value.name == qualifier or value.alias == qualifier {
+                        return value.name;
+                    }
                 }
             },
             None => {
@@ -1640,37 +1642,41 @@ fn module_directly_imports(uses: ref list<module_use>, module: str, imported: st
         }
         use_index = use_index + 1;
     }
-    return false;
+    return "";
 }
 
 fn qualified_function_return_ctx(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str) -> expected_type_ctx {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
         return make_expected_type_ctx(
-            lookup_function_fact_return_name(ref functions, qualifier, function_name),
-            lookup_function_fact_return_arg1_name(ref functions, qualifier, function_name),
-            lookup_function_fact_return_arg2_name(ref functions, qualifier, function_name)
+            lookup_function_fact_return_name(ref functions, imported, function_name),
+            lookup_function_fact_return_arg1_name(ref functions, imported, function_name),
+            lookup_function_fact_return_arg2_name(ref functions, imported, function_name)
         );
     }
     return empty_expected_type_ctx();
 }
 
 fn qualified_function_param_ctx(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> expected_type_ctx {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
-        return lookup_function_param_ctx(ref function_params, qualifier, function_name, index);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
+        return lookup_function_param_ctx(ref function_params, imported, function_name, index);
     }
     return empty_expected_type_ctx();
 }
 
 fn qualified_function_param_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> str {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
-        return lookup_function_param_name(ref function_params, qualifier, function_name, index);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
+        return lookup_function_param_name(ref function_params, imported, function_name, index);
     }
     return "";
 }
 
 fn qualified_function_arity(functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str) -> i32 {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_function_name(ref items, qualifier, function_name) {
-        return lookup_function_fact_arity(ref functions, qualifier, function_name);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
+        return lookup_function_fact_arity(ref functions, imported, function_name);
     }
     return -1;
 }
@@ -1682,8 +1688,9 @@ audit {
     effects();
 }
 {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_variant_name(ref items, qualifier, variant_name) {
-        return lookup_variant_fact_enum_name(ref variants, qualifier, variant_name);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_variant_name(ref items, imported, variant_name) {
+        return lookup_variant_fact_enum_name(ref variants, imported, variant_name);
     }
     return "";
 }
@@ -1696,7 +1703,7 @@ audit {
 }
 {
     if qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name) != "" {
-        return qualifier;
+        return imported_module_for_qualifier(ref uses, module, qualifier);
     }
     return "";
 }
@@ -1708,8 +1715,9 @@ audit {
     effects();
 }
 {
-    if qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name) != "" {
-        return lookup_variant_payload_ctx(ref variant_payloads, qualifier, variant_name, index);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and qualified_variant_enum_name(ref variants, ref uses, ref items, module, qualifier, variant_name) != "" {
+        return lookup_variant_payload_ctx(ref variant_payloads, imported, variant_name, index);
     }
     return empty_expected_type_ctx();
 }
@@ -1725,7 +1733,8 @@ audit {
     if enum_name == "" {
         return empty_expected_type_ctx();
     }
-    let arity = lookup_variant_fact_arity(ref variants, qualifier, variant_name);
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    let arity = lookup_variant_fact_arity(ref variants, imported, variant_name);
     if arity != 0 {
         return empty_expected_type_ctx();
     }
@@ -1739,8 +1748,9 @@ audit {
     effects();
 }
 {
-    if module_directly_imports(ref uses, module, qualifier) and module_exports_type_name(ref items, qualifier, type_name) {
-        return qualifier;
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_type_name(ref items, imported, type_name) {
+        return imported;
     }
     return "";
 }

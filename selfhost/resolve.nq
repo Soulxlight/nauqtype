@@ -874,6 +874,43 @@ fn resolve_function_refs(scopes: ref list<body_scope>, bindings: ref list<body_b
     return;
 }
 
+fn import_qualifier(entry: module_use) -> str {
+    if entry.alias != "" {
+        return entry.alias;
+    }
+    return entry.name;
+}
+
+fn resolve_duplicate_import_qualifiers(uses: ref list<module_use>, diags: mutref list<diag>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref uses) {
+        let entry = list_get(ref uses, index);
+        match entry {
+            Some(current) => {
+                let qualifier = import_qualifier(current);
+                let mut previous_index = 0;
+                while previous_index < index {
+                    let previous = list_get(ref uses, previous_index);
+                    match previous {
+                        Some(value) => {
+                            if value.module == current.module and import_qualifier(value) == qualifier {
+                                push_diag(mutref diags, current.module, current.at, "duplicate import qualifier");
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    previous_index = previous_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 pub fn resolve_modules(modules: ref list<str>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> resolve_summary
 audit {
     intent("Resolve flat top-level item and import visibility facts for the current selfhost module graph");
@@ -882,6 +919,8 @@ audit {
 }
 {
     let start_diag_count = list_len(ref diags);
+
+    resolve_duplicate_import_qualifiers(ref uses, mutref diags);
 
     let mut item_index = 0;
     while item_index < list_len(ref items) {
@@ -1009,4 +1048,3 @@ audit {
 
     return make_body_resolve_summary(count_root_function_scopes(ref scopes), list_len(ref refs), list_len(ref diags) - start_diag_count);
 }
-

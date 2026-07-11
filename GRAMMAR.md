@@ -63,10 +63,11 @@ item_without_use = visibility? function_decl
 
 visibility    = "pub" ;
 
-use_decl      = "use" IDENT ";" ;
+use_decl      = "use" module_path [ "as" IDENT ] ";" ;
+module_path   = IDENT { "::" IDENT } ;
 ```
 
-`use` is active in stage1 and resolves against a single flat workspace root.
+`use` is active in stage1. In a manifest workspace, `module_path` resolves from the declared source root; legacy flat-root projects retain their existing one-segment form. `as` creates one explicit module alias local to the importing file, for example `use app::render as report;` followed by `report::status()`. It does not rename exported definitions or create an implicit re-export.
 
 ## Declarations
 

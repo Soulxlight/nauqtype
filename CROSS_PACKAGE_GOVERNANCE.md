@@ -35,3 +35,7 @@ Source aliases remain reviewable spelling only. Policy, facts, change reports, a
 ## M45 Acceptance
 
 M45 is complete when one locked two-workspace fixture produces stable facts, review/change evidence, policy diagnostics for an unknown target, and a snapshot golden without invoking Python, a registry, or the network. The stage1-owned `prove` gate now covers that fixture, including a changed dependency and its impacted local caller.
+
+## M46 Organizational Proof
+
+[M46_ORGANIZATIONAL_ALPHA.md](M46_ORGANIZATIONAL_ALPHA.md) applies this contract to a runnable two-workspace operations tool. It locks the tool's `facts --format v3` snapshot, policy result, and a changed-dependency report in the stage1-owned proof gate, then repeats the tool check from a copied Linux release outside the repository checkout.

@@ -614,9 +614,9 @@ Status:
 
 Status:
 
-- in progress
+- complete
 - manifest discovery, declared source-root entry identity, nested source-file loading, multi-segment `use` paths, a nested workspace fixture, and nested entry facts are implemented
-- aliases and multi-segment qualified value/type/constructor references remain M43 work
+- M43 closes the remaining explicit qualification and source-alias surface without adding package discovery or hidden imports
 
 ### M43: Qualified Module Paths And Evidence Migration
 
@@ -626,8 +626,10 @@ Status:
 
 Status:
 
-- in progress
-- multi-segment qualified direct function calls now resolve through checked facts using canonical nested module identities
+- complete
+- multi-segment direct function calls, struct-literal type heads, enum variants/patterns, and imports resolve through checked canonical module identities
+- `use module_path as alias;` provides an explicit source-local module alias, rejects duplicate qualifiers, and preserves source spelling in facts while handoff, IR, C emission, policy, change reports, and refactor targets retain the actual module identity
+- selective item aliases, qualified type annotations, wildcard imports, implicit re-exports, member calls, and hidden dependency resolution remain out of scope
 
 ### M44: Local Dependencies And Reproducible Locking
 
@@ -664,7 +666,10 @@ Status:
 
 Status:
 
-- planned
+- complete
+- `nauqtype-0.3.0-alpha.1` proves the locked `org.operations_tool` workspace through the C seed, stage1-owned proof, facts v3 snapshot, policy sidecar, and changed-dependency impact report
+- `scripts/check_organizational_alpha.sh` rebuilds the copied Linux release, copies the tool outside the checkout, and requires identical checked facts plus the expected runtime behavior
+- [M46_ORGANIZATIONAL_ALPHA.md](M46_ORGANIZATIONAL_ALPHA.md) records the proof contract and the evidence-based post-M46 language-completeness ranking
 
 ## Feature Ordering
 
@@ -688,13 +693,16 @@ Features explicitly not required before first success:
 
 ## Post-M46 Candidates
 
+- P0: close composite generic-field C lowering before new syntax: dependency-safe carrier declaration order for `list` / `option` / `result` fields and correct borrow lowering through a product field
+- list `for` loops
+- surgical internal-tool helpers
+- explicit `try` boundaries and expression-position propagation
+- structured error sets
+- generic foundations
+- typed obligations / repair contracts
 - user-defined generics
 - methods / `impl`
-- list `for` loops and surgical internal-tool helpers
 - labeled or valued `break` / `continue`
-- explicit `try` boundaries and expression-position propagation
-- typed obligations / repair contracts
-- structured error sets
 - richer standard library
 - stronger borrow analysis
 - direct native backend exploration

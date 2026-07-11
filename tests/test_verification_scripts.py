@@ -16,6 +16,7 @@ class VerificationScriptTests(unittest.TestCase):
             "check_fast.sh",
             "check_milestone.sh",
             "check_linux_alpha.sh",
+            "check_organizational_alpha.sh",
             "run_stress_leg.sh",
         ]:
             result = subprocess.run(
@@ -29,9 +30,10 @@ class VerificationScriptTests(unittest.TestCase):
 
     def test_verification_scripts_document_reuse_contracts(self) -> None:
         expected = {
-            "check_fast.sh": "focused, non-selfhost",
+            "check_fast.sh": "active Nauqtype-owned",
             "check_milestone.sh": "without repeating the same selfhost proof",
             "check_linux_alpha.sh": "--reuse-stage1",
+            "check_organizational_alpha.sh": "outside the",
             "run_stress_leg.sh": "--release-root",
         }
         for name, expected_text in expected.items():

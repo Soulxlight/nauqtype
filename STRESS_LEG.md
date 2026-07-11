@@ -79,3 +79,13 @@ The dense stress runner remains as milestone hygiene. It should be used periodic
 Stress-Leg 2 extended the dense runner to cover the copied Linux Alpha RC1 launcher outside the repository root. The existing dense program passed through both the repo-local launcher and the copied release launcher.
 
 No new compiler bugs were exposed in this leg, so there were no findings to reduce into focused fixtures. The added reusable coverage is the copied-release rerun inside `scripts/run_stress_leg.sh`.
+
+## M46 Exit-Audit Finding
+
+The organizational-alpha exit audit used a reduced existing-surface probe rather than adding a new language feature:
+
+```nauq
+type Bundle { values: list<i32> }
+```
+
+Stage1 accepts that declaration, but current C emission places the `list<i32>` carrier definition after the product declaration. A related `ref bundle.values` call does not yet preserve the field base during list-helper lowering. These are P0 backend correctness gaps recorded in `TODO.md` and `ROADMAP.md`; they must be reduced to a focused compile/run fixture and fixed before the next syntax batch begins.

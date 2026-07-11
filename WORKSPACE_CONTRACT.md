@@ -1,6 +1,6 @@
 # Nauqtype Workspace Contract v1
 
-Status: M42/M44 implementation contract. Manifest-derived nested module loading and locked local dependency routing are active; alias syntax and cross-package governance evidence remain staged work.
+Status: M42-M45 implementation contract. Manifest-derived nested module loading, explicit source aliases, locked local dependency routing, and cross-package governance evidence are active.
 
 ## Goal
 
@@ -30,15 +30,16 @@ The canonical root manifest is `nauqtype.workspace.json`.
 ## Source Form
 
 ```nauq
-use app::render;
+use app::render as report;
 
 fn main() -> i32 {
-    return app::render::status();
+    return report::status();
 }
 ```
 
-- M42 implements manifest-derived nested entry modules and source-root loading while retaining the existing bare `use helper;` spelling for imported names. M43 adds absolute multi-segment `use` paths; direct qualified function calls are active.
-- `as` import aliases remain deferred. A M44 dependency's manifest alias is the only currently active alias form, for example `use reporting::render;`.
+- M42 implements manifest-derived nested entry modules and source-root loading while retaining the existing bare `use helper;` spelling for imported names. M43 adds absolute multi-segment `use` paths and direct qualified function/data names.
+- `use module_path as alias;` creates one explicit local alias for that module path. The alias is source spelling only: checked facts, policy, change reports, and refactor targets retain the actual canonical module identity. Duplicate qualifiers fail closed.
+- `as` does not alias individual functions, types, variants, or fields. The M44 dependency manifest alias remains separate routing metadata, for example `use reporting::render;`.
 - `::` denotes module provenance only. `.` remains field access; it never triggers method lookup or module traversal.
 - Qualified values, types, enums, variants, and calls resolve through the same canonical module identity.
 - No wildcard imports, relative imports, implicit re-exports, chained package discovery, or hidden prelude are allowed.
@@ -57,7 +58,7 @@ This makes migration visible in facts and diffs instead of silently changing an 
 
 - Facts currently retain checked module identities, including the explicit dependency alias root, while M45 upgrades these to canonical workspace/package/module IDs.
 - Review, review-diff, change-report, policy-check, and refactor plans gain cross-package canonical-ID behavior only with M45; no filesystem-text fallback is permitted.
-- M43 move/rename work remains dependent on complete cross-module references.
+- M43 direct function calls, struct-literal type heads, enum variants/patterns, and imports retain their checked canonical module targets through facts, handoff, IR, C emission, and plan-only rename evidence. Qualified type annotations and selective-item aliases stay deferred rather than being guessed from source spelling.
 - [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md) locks the M44 local dependency and deterministic lock-file contract. The manifest itself never fetches code.
 - M45 extends ownership and policy checks across package boundaries; policy remains sidecar data, never hidden compiler authority.
 

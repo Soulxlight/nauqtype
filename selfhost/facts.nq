@@ -218,7 +218,17 @@ fn call_identity(call: call_fact) -> str {
 }
 
 fn use_identity(entry: module_use) -> str {
+    if entry.alias != "" {
+        return concat6("use:", entry.module, "->", concat3(entry.name, " as ", entry.alias), "@", i32_to_str(entry.at));
+    }
     return concat6("use:", entry.module, "->", entry.name, "@", i32_to_str(entry.at));
+}
+
+fn source_use_name(entry: module_use) -> str {
+    if entry.alias != "" {
+        return entry.alias;
+    }
+    return entry.name;
 }
 
 fn type_ref_identity(entry: type_ref) -> str {
@@ -1489,7 +1499,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
         let entry = list_get(ref uses, use_index);
         match entry {
             Some(value) => {
-                list_push(mutref resolved_out, make_fact_reference(use_identity(value), "import", value.module, module_identity(value.module), value.name, "module", module_identity(value.name), value.at, "declared", ""));
+                list_push(mutref resolved_out, make_fact_reference(use_identity(value), "import", value.module, module_identity(value.module), source_use_name(value), "module", module_identity(value.name), value.at, "declared", ""));
             },
             None => {
             },
