@@ -25,6 +25,7 @@ The replacement host contract is intentionally small: a Linux C11-compatible `cc
 - Define a deterministic test-case manifest, fixture convention, golden comparison rule, expected-failure rule, and archival rationale for claims that do not need one-for-one migration.
 - Separate historical AI-audit dependencies such as `tiktoken` from the active compiler toolchain.
 - Do not delete, move, or weaken the Python reference during this milestone.
+- `BOOTSTRAP_MIGRATION_MAP.md` is the required suite-level claim inventory and M40 exit checklist.
 
 ## M39: Nauqtype-Owned Test Runner
 

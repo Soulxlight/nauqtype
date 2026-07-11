@@ -336,12 +336,18 @@
 - [x] Run independent full-suite, proof, Linux alpha, stress-leg, schema, release-layout, policy-sidecar, and teaching-corpus gates
 - [x] Resolve the release identity mismatch and record the v0.2 supervised alpha evidence checkpoint
 
-## M38-M46 v0.3 Organizational Runway
+## M38 Nauqtype-Owned Test And Bootstrap Architecture
 
-- [ ] Define the Nauqtype-owned test and non-Python bootstrap replacement before deleting frozen Python paths
+- [x] Inventory the active Python compiler, test, proof, release, and CI responsibilities
+- [x] Map all 240 active Python test claims to a Nauqtype fixture target or archival rationale
+- [x] Lock the host-C seed, test migration, CI cutover, and historical archive contract
+- [x] Keep Python frozen pending the M39/M40 replacement proof
+
+## M39-M46 v0.3 Organizational Runway
+
 - [ ] Migrate proof, corpus, diagnostic, and supervision fixtures to a Nauqtype-owned test runner
 - [ ] Prove a host-C seed bootstrap through stage1 and stage2 before retiring Python from active workflows
-- [ ] Lock the Nauqtype syntax-evolution SOP and workspace/module contract before module syntax implementation
+- [ ] Validate the syntax-evolution SOP and workspace/module contract before module syntax implementation
 - [ ] Add explicit manifests, nested modules, qualified paths, evidence migration, local dependencies, and reproducible locking in that order
 - [ ] Extend governance and semantic snapshots across package boundaries
 - [ ] Prove a real multi-package internal tool before selecting the next language-completeness batch

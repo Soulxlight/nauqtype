@@ -558,10 +558,14 @@ Status:
 - define the replacement path: Nauqtype-owned test execution plus a non-Python seed bootstrap contract
 - keep Python frozen while the replacement is proven; do not delete a known-good bootstrap before a clean-checkout replacement exists
 - use [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) as the required migration contract
+- use [BOOTSTRAP_MIGRATION_MAP.md](BOOTSTRAP_MIGRATION_MAP.md) to preserve every active external test claim or record its archival rationale
 
 Status:
 
-- planned
+- done
+- `BOOTSTRAP_MIGRATION_MAP.md` inventories the 23-file Python compiler and all 240 active Python test claims by their observable replacement target
+- the host-C seed, stage1/stage2 fixed point, fixture migration, CI cutover, and archive rules are locked in `BOOTSTRAP_RETIREMENT.md`
+- Python remains frozen and active only as a reference while M39 builds the replacement runner; no active behavior was added to Python
 
 ### M39: Nauqtype Test Runner And Fixture Migration
 
