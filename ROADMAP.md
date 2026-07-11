@@ -671,6 +671,58 @@ Status:
 - `scripts/check_organizational_alpha.sh` rebuilds the copied Linux release, copies the tool outside the checkout, and requires identical checked facts plus the expected runtime behavior
 - [M46_ORGANIZATIONAL_ALPHA.md](M46_ORGANIZATIONAL_ALPHA.md) records the proof contract and the evidence-based post-M46 language-completeness ranking
 
+### M47: Composite Field Backend Closure
+
+- reduce the M46 exit-audit reproducer into focused compile/run fixtures for product fields declared as `list<T>`, `option<T>`, and `result<T, E>`
+- emit generic carrier declarations before every product declaration that needs them, preserving deterministic C declaration ordering
+- preserve the actual field base when lowering `ref product.field` into list helper calls
+- add the reproducer to the standing proof corpus before admitting new syntax
+
+Status:
+
+- planned
+- this is P0 existing-surface correctness work, not a language feature
+
+### M48: List `for` Loops
+
+- add `for name in list_expr { ... }` as explicit list-only iteration with an immutable per-iteration binding
+- lower through checked IR to the existing list operations while preserving nearest-loop `break` and `continue`
+- keep iterator protocols, ranges, loop expressions, and hidden ownership changes out of scope
+
+Status:
+
+- planned after M47 makes composite list values safe through the full backend
+
+### M49: Surgical Internal-Tool Helpers
+
+- add only small pure Nauqtype helper modules that remove demonstrated text, path, list, or evidence-reporting repetition in real workspaces
+- require every helper to be exercised by the compiler, organizational fixture, or canonical teaching corpus
+- keep new runtime builtins, a prestige standard library, package scripts, and network behavior out of scope
+
+Status:
+
+- planned after M48; this is practical library consolidation, not a broad standard-library push
+
+### M50: Explicit `try` Boundaries And Expression Propagation
+
+- introduce explicit result-returning `try { ... }` boundaries before widening `?` from its current statement-boundary form into expression position
+- preserve exact error-type matching, declared and inferred `propagates(...)` evidence, deterministic facts/review/change-report output, and no implicit conversion
+- retain `let-else` as the explicit alternative for mapping, logging, or recovering from errors locally
+
+Status:
+
+- planned after M49; the boundary must be visible to reviewers rather than silently returning from an arbitrary enclosing function
+
+### M51: Structured Error Sets
+
+- design and implement a small explicit error-set contract only if real workspace tools demonstrate that one named error type per boundary is too coarse
+- keep errors closed, checked, visible in propagation evidence, and free of implicit conversion or exception-like control flow
+- defer user-defined generic error machinery and broad algebraic effect systems
+
+Status:
+
+- planned after M50; its exact syntax remains a decision-record gate, not a precommitted imitation of another language
+
 ## Feature Ordering
 
 Features required before first success:
@@ -693,12 +745,12 @@ Features explicitly not required before first success:
 
 ## Post-M46 Candidates
 
-- P0: close composite generic-field C lowering before new syntax: dependency-safe carrier declaration order for `list` / `option` / `result` fields and correct borrow lowering through a product field
-- list `for` loops
-- surgical internal-tool helpers
-- explicit `try` boundaries and expression-position propagation
-- structured error sets
-- generic foundations
+- M47: close composite generic-field C lowering before new syntax: dependency-safe carrier declaration order for `list` / `option` / `result` fields and correct borrow lowering through a product field
+- M48: list `for` loops
+- M49: surgical internal-tool helpers
+- M50: explicit `try` boundaries and expression-position propagation
+- M51: structured error sets
+- M52 candidate: generic foundations
 - typed obligations / repair contracts
 - user-defined generics
 - methods / `impl`
