@@ -203,7 +203,8 @@ class Stage1DriverTests(unittest.TestCase):
         facts = self._run_driver(["facts", source, "--format", "v2"])
         self.assertEqual(facts.returncode, 0, facts.stdout + facts.stderr)
         self.assertIn('"name": "app::main"', facts.stdout)
-        self.assertIn('"target_id": "fn:helper::answer"', facts.stdout)
+        self.assertIn('"name": "app::helper"', facts.stdout)
+        self.assertIn('"target_id": "fn:app::helper::answer"', facts.stdout)
 
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()

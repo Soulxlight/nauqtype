@@ -615,8 +615,8 @@ Status:
 Status:
 
 - in progress
-- manifest discovery, declared source-root entry identity, nested source-file loading, a nested workspace fixture, and nested entry facts are implemented
-- multi-segment `use` paths, aliases, and qualified source references remain M43 work
+- manifest discovery, declared source-root entry identity, nested source-file loading, multi-segment `use` paths, a nested workspace fixture, and nested entry facts are implemented
+- aliases and multi-segment qualified value/type/constructor references remain M43 work
 
 ### M43: Qualified Module Paths And Evidence Migration
 
