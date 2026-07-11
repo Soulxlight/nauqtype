@@ -575,7 +575,9 @@ Status:
 
 Status:
 
-- planned
+- in progress
+- `nauqc test` now runs a Nauqtype-owned fixture suite covering successful checks, expected diagnostics, facts/review goldens, supervised policy/refactor evidence, formatter checks, the locked corpus, and copied-selfhost proof
+- the Python suite remains the comparison reference while M39 migrates the remaining mapped fixture groups
 
 ### M40: C Seed Bootstrap And Python Retirement
 

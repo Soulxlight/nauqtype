@@ -1692,3 +1692,62 @@ audit {
     print_line("nauqtype proof ok");
     return 0;
 }
+
+fn run_expected_check_failure(driver_path: str, path: str, expected_text: str) -> bool {
+    let result = run_driver_check(driver_path, path);
+    match result {
+        Ok(status) => {
+            if status.exit_code == 0 {
+                eprint_line(str_concat("test expected check failure: ", path));
+                return false;
+            }
+            if not text_contains(status.stdout, expected_text) and not text_contains(status.stderr, expected_text) {
+                eprint_line(str_concat("test failure diagnostic changed: ", path));
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+pub fn run_nauq_tests(driver_path: str) -> i32
+audit {
+    intent("Run the Nauqtype-owned fixture, corpus, and selfhost test suite");
+    mutates();
+    effects(print, io);
+}
+{
+    if not run_quiet_result("fixture check hello", run_driver_check(driver_path, "examples/hello.nq")) {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {
+        return 1;
+    }
+    if not run_json_golden_result("fixture facts v2", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", "v2"), "tests/golden/facts/main-v2.json") {
+        return 1;
+    }
+    if not run_json_golden_result("fixture review v2", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") {
+        return 1;
+    }
+    let mut failed_phase = "";
+    if not run_supervised_workflow_gate(driver_path, mutref failed_phase) {
+        return 1;
+    }
+    if not run_formatter_tooling_checks(driver_path, mutref failed_phase) {
+        return 1;
+    }
+    let mut failed_case = "";
+    if run_example_corpus_inner(driver_path, mutref failed_phase, mutref failed_case) != 0 {
+        return 1;
+    }
+    if run_selfhost_proof_inner(driver_path, mutref failed_phase) != 0 {
+        return 1;
+    }
+    print_line("nauqtype test ok");
+    return 0;
+}

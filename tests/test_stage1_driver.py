@@ -177,6 +177,12 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(self._phase_by_id(summary, "tooling.schema_golden")["group"], "tooling")
         self.assertEqual(set(self._phase_statuses(summary).values()), {"passed"})
 
+    def test_stage1_driver_test_runs_owned_fixture_suite(self) -> None:
+        result = self._run_driver(["test"], timeout=1200)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "nauqtype test ok\n")
+        self.assertEqual(result.stderr, "")
+
     def test_stage1_driver_prove_selfhost_writes_summary_without_changing_stdout(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove-selfhost"], timeout=900)

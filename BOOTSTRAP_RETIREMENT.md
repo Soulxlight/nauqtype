@@ -40,6 +40,8 @@ Extend the existing proof runner into `nauqc test`; do not create an unrelated f
 
 Migration order is proof and corpus first, then diagnostics and supervision outputs, then handoff/borrow/IR/C probes. The Python suite stays frozen as a comparison layer until every active behavior has a Nauqtype case or an archival rationale.
 
+The first shipped command is `nauqc test`. It runs representative check and expected-failure fixtures, facts/review JSON goldens, supervised workflow and policy fixtures, formatter checks, the locked runtime corpus, and the copied-selfhost proof. M39 expands that fixture manifest against `BOOTSTRAP_MIGRATION_MAP.md`; this initial command is not yet permission to retire the Python reference.
+
 ## M40: C Seed And Active Python Retirement
 
 Check in a versioned generated seed under `bootstrap/seed/`, including:

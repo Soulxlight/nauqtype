@@ -46,6 +46,12 @@ Run the full test suite:
 python3 -m unittest discover -s tests -v
 ```
 
+Run the active Nauqtype-owned fixture suite after bootstrapping stage1:
+
+```bash
+bin/nauqc test
+```
+
 Bootstrap the stage1 driver once:
 
 ```bash
