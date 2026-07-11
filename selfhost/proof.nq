@@ -1283,6 +1283,35 @@ fn run_supervised_workflow_gate(driver_path: str, failed_phase: mutref str) -> b
     return true;
 }
 
+fn run_workspace_governance_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    let source_path = "tests/fixtures/workspace_local_dependency/src/app/main.nq";
+    if not run_quiet_result("workspace governance check", run_driver_check(driver_path, source_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("workspace facts v3", run_driver_facts(driver_path, source_path, "v3"), "tests/golden/facts/workspace-local-dependency-v3.json") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_golden_result("workspace policy-check valid v1", run_driver_policy_check(driver_path, source_path, "tests/fixtures/workspace_local_dependency/policy.json"), "tests/golden/workspace_governance/policy_check_valid_v1.json") {
+        failed_phase = "tooling.policy";
+        return false;
+    }
+    if not run_json_failure_golden_result("workspace policy-check alias rejection v1", run_driver_policy_check(driver_path, source_path, "tests/fixtures/workspace_local_dependency/policy_alias_rejected.json"), "tests/golden/workspace_governance/policy_check_alias_rejected_v1.json") {
+        failed_phase = "tooling.policy";
+        return false;
+    }
+    if not run_json_failure_golden_result("workspace policy-check unknown workspace v1", run_driver_policy_check(driver_path, source_path, "tests/fixtures/workspace_local_dependency/policy_unknown_workspace.json"), "tests/golden/workspace_governance/policy_check_unknown_workspace_v1.json") {
+        failed_phase = "tooling.policy";
+        return false;
+    }
+    if not run_json_contains_result("workspace change-report v1", run_driver_change_report(driver_path, source_path, source_path, ""), "\"module\": \"app::main\"", "\"identity_scheme\": \"nauqtype.semantic.v1\"", "\"changed_functions\": 0") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    return true;
+}
+
 fn evidence_parity_run_ok(driver_path: str, after_path: str) -> bool {
     let run_result = run_driver_run(driver_path, after_path);
     match run_result {
@@ -1420,6 +1449,9 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         return false;
     }
     if not run_supervised_workflow_gate(driver_path, mutref failed_phase) {
+        return false;
+    }
+    if not run_workspace_governance_gate(driver_path, mutref failed_phase) {
         return false;
     }
     if not run_evidence_parity_gate(driver_path, mutref failed_phase) {

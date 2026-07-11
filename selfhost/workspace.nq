@@ -14,6 +14,21 @@ pub type workspace_module_path {
     error_message: str,
 }
 
+pub type workspace_module_identity {
+    valid: bool,
+    workspace_name: str,
+    module_name: str,
+    error_message: str,
+}
+
+pub type workspace_locked_dependency {
+    alias: str,
+    path: str,
+    workspace_name: str,
+    manifest_sha256: str,
+    source_sha256: str,
+}
+
 type workspace_dependency {
     found: bool,
     alias: str,
@@ -29,6 +44,14 @@ fn make_workspace_entry(valid: bool, source_root: str, module_name: str, error_m
 
 fn make_workspace_module_path(valid: bool, source_path: str, error_message: str) -> workspace_module_path {
     return workspace_module_path { valid: valid, source_path: source_path, error_message: error_message };
+}
+
+fn make_workspace_module_identity(valid: bool, workspace_name: str, module_name: str, error_message: str) -> workspace_module_identity {
+    return workspace_module_identity { valid: valid, workspace_name: workspace_name, module_name: module_name, error_message: error_message };
+}
+
+fn make_workspace_locked_dependency(alias: str, path: str, workspace_name: str, manifest_sha256: str, source_sha256: str) -> workspace_locked_dependency {
+    return workspace_locked_dependency { alias: alias, path: path, workspace_name: workspace_name, manifest_sha256: manifest_sha256, source_sha256: source_sha256 };
 }
 
 fn no_workspace_dependency() -> workspace_dependency {
@@ -447,6 +470,94 @@ fn module_suffix(module_name: str) -> str {
         return "";
     }
     return slice_text(module_name, separator + 2, str_len(module_name));
+}
+
+pub fn resolve_workspace_module_identity(workspace_root: str, module_name: str) -> workspace_module_identity
+audit {
+    intent("Resolve a loaded module name to the workspace-qualified identity used by governance evidence");
+    mutates();
+    effects(io);
+}
+{
+    let root = manifest_root_for(join_path(workspace_root, "__nauqtype_module__.nq"));
+    if root == "" {
+        return make_workspace_module_identity(true, "legacy", module_name, "");
+    }
+    match read_file(join_path(root, "nauqtype.workspace.json")) {
+        Ok(manifest) => {
+            let root_name = json_string_field(manifest, 0, str_len(manifest), "\"name\"");
+            if root_name == "" or source_root_count(manifest) != 1 {
+                return make_workspace_module_identity(false, "", "", "workspace manifest has no stable workspace identity");
+            }
+            let dependency = dependency_from_json(manifest, first_module_segment(module_name));
+            if not dependency.found {
+                return make_workspace_module_identity(true, root_name, module_name, "");
+            }
+            let suffix = module_suffix(module_name);
+            if suffix == "" {
+                return make_workspace_module_identity(false, "", "", "dependency module identity requires a module after its alias");
+            }
+            return make_workspace_module_identity(true, dependency.workspace_name, suffix, "");
+        },
+        Err(_) => {
+            return make_workspace_module_identity(false, "", "", "workspace manifest is unreadable during identity resolution");
+        },
+    }
+}
+
+pub fn append_workspace_locked_dependencies(workspace_root: str, out: mutref list<workspace_locked_dependency>) -> bool
+audit {
+    intent("Append locked direct dependency provenance in manifest order for deterministic workspace evidence");
+    mutates(out);
+    effects(io);
+}
+{
+    let root = manifest_root_for(join_path(workspace_root, "__nauqtype_module__.nq"));
+    if root == "" {
+        return true;
+    }
+    match read_file(join_path(root, "nauqtype.workspace.json")) {
+        Ok(manifest) => {
+            if not manifest_declares_dependencies(manifest) {
+                return true;
+            }
+            match read_file(join_path(root, "nauqtype.workspace.lock.json")) {
+                Ok(lock) => {
+                    let start = dependency_array_start(manifest);
+                    let end = dependency_array_end(manifest, start);
+                    if start < 0 or end < 0 {
+                        return false;
+                    }
+                    let mut cursor = start + 1;
+                    while cursor < end {
+                        let object_start = find_char_between(manifest, cursor, end, 123);
+                        if object_start < 0 {
+                            return true;
+                        }
+                        let object_end = json_object_end(manifest, object_start, end);
+                        if object_end < 0 {
+                            return false;
+                        }
+                        let alias = json_string_field(manifest, object_start, object_end, "\"alias\"");
+                        let declared = dependency_from_json(manifest, alias);
+                        let locked = dependency_from_json(lock, alias);
+                        if not declared.found or not locked.found {
+                            return false;
+                        }
+                        list_push(mutref out, make_workspace_locked_dependency(declared.alias, declared.path, declared.workspace_name, locked.manifest_sha256, locked.source_sha256));
+                        cursor = object_end + 1;
+                    }
+                    return true;
+                },
+                Err(_) => {
+                    return false;
+                },
+            }
+        },
+        Err(_) => {
+            return false;
+        },
+    }
 }
 
 pub fn resolve_workspace_module_path(workspace_root: str, module_name: str) -> workspace_module_path

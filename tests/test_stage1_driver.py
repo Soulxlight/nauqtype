@@ -251,6 +251,71 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertIn('"name": "reporting::values"', facts.stdout)
         self.assertIn('"target_id": "fn:reporting::render::answer"', facts.stdout)
 
+    def test_stage1_driver_facts_v3_exports_workspace_governance_evidence(self) -> None:
+        source = "tests/fixtures/workspace_local_dependency/src/app/main.nq"
+        result = self._run_driver(["facts", source, "--format", "v3"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        golden = self.root / "tests" / "golden" / "facts" / "workspace-local-dependency-v3.json"
+        self.assertEqual(payload, json.loads(golden.read_text(encoding="utf-8")))
+        schema = json.loads((self.root / "schemas" / "facts-v3.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "https://nauqtype.dev/schemas/facts-v3.schema.json")
+        self._assert_schema_shape(payload, schema)
+        self.assertEqual(payload["dependencies"][0]["alias"], "reporting")
+        self.assertEqual(
+            payload["call_graph"][1]["callee"],
+            "workspace:tests.reporting::module:render::fn:answer",
+        )
+
+    def test_stage1_driver_policy_check_requires_canonical_dependency_targets(self) -> None:
+        source = "tests/fixtures/workspace_local_dependency/src/app/main.nq"
+        valid = self._run_driver(["policy-check", source, "tests/fixtures/workspace_local_dependency/policy.json"])
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        valid_payload = json.loads(valid.stdout)
+        self.assertTrue(valid_payload["ok"])
+        self.assertTrue(all(entry["known"] for entry in valid_payload["targets"]))
+
+        alias = self._run_driver(["policy-check", source, "tests/fixtures/workspace_local_dependency/policy_alias_rejected.json"])
+        self.assertEqual(alias.returncode, 1)
+        alias_payload = json.loads(alias.stdout)
+        self.assertEqual(alias_payload["diagnostics"][0]["code"], "NQ-POLICY-007")
+
+        unknown = self._run_driver(["policy-check", source, "tests/fixtures/workspace_local_dependency/policy_unknown_workspace.json"])
+        self.assertEqual(unknown.returncode, 1)
+        unknown_payload = json.loads(unknown.stdout)
+        self.assertEqual(unknown_payload["diagnostics"][0]["code"], "NQ-POLICY-003")
+
+        schema = json.loads((self.root / "schemas" / "policy-check-v1.schema.json").read_text(encoding="utf-8"))
+        self._assert_schema_shape(valid_payload, schema)
+        self._assert_schema_shape(alias_payload, schema)
+        self._assert_schema_shape(unknown_payload, schema)
+
+    def test_stage1_driver_review_tools_keep_manifest_module_identity(self) -> None:
+        fixture = self.root / "tests" / "fixtures" / "workspace_local_dependency"
+        with tempfile.TemporaryDirectory() as tmp_text:
+            tmp = Path(tmp_text)
+            before = tmp / "before"
+            after = tmp / "after"
+            shutil.copytree(fixture, before)
+            shutil.copytree(fixture, after)
+            after_main = after / "src" / "app" / "main.nq"
+            after_main.write_text(after_main.read_text(encoding="utf-8").replace("return reporting::render::answer();", "return 7;"), encoding="utf-8")
+
+            before_source = before / "src" / "app" / "main.nq"
+            after_source = after / "src" / "app" / "main.nq"
+            review_diff = self._run_driver(["review-diff", str(before_source), str(after_source), "--format", "v2"])
+            self.assertEqual(review_diff.returncode, 0, review_diff.stdout + review_diff.stderr)
+            review_payload = json.loads(review_diff.stdout)
+            self.assertEqual(review_payload["before"]["module"], "app::main")
+            self.assertEqual(review_payload["after"]["module"], "app::main")
+
+            report = self._run_driver(["change-report", str(before_source), str(after_source), "--format", "v1"])
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            report_payload = json.loads(report.stdout)
+            self.assertEqual(report_payload["before"]["module"], "app::main")
+            self.assertEqual(report_payload["after"]["module"], "app::main")
+            self.assertGreaterEqual(report_payload["summary"]["changed_functions"], 1)
+
     def test_stage1_driver_rejects_stale_local_dependency_source_hash(self) -> None:
         fixture = self.root / "tests" / "fixtures" / "workspace_local_dependency"
         with tempfile.TemporaryDirectory() as tmp_text:

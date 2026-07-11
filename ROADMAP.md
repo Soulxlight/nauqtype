@@ -650,7 +650,10 @@ Status:
 
 Status:
 
-- design locked in [CROSS_PACKAGE_GOVERNANCE.md](CROSS_PACKAGE_GOVERNANCE.md); implementation depends on M44 alias routing and locked dependency loading
+- in progress
+- `facts --format v3` now emits deterministic workspace-qualified module and export IDs, locked dependency hashes, and checked cross-package call edges without changing facts v1/v2
+- `policy-check` accepts canonical workspace targets, preserves root-local legacy targets for compatibility, and rejects dependency alias targets with `NQ-POLICY-007`
+- the stage1-owned `prove` gate locks the workspace facts/policy goldens and manifest-aware change-report behavior; broader cross-package impact summaries remain the next slice
 
 ### M46: v0.3 Organizational Alpha Gate
 

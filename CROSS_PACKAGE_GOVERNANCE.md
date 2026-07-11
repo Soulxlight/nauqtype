@@ -23,15 +23,15 @@ Source aliases remain reviewable spelling only. Policy, facts, change reports, a
 - checked exported definitions and call edges grouped by workspace
 - advisory policy target status
 
-Snapshots are deterministic evidence for a reviewed workspace state. They neither approve a change nor replace `check`, `review`, or `policy-check`.
+`facts --format v3` is the current serialized snapshot surface: it carries the root workspace, locked direct dependencies, workspace-qualified modules, exported definitions, and checked call edges. Persisting that deterministic JSON as `nauqtype.workspace.snapshot.json` is a release/workflow action, not a hidden compiler write. Snapshots neither approve a change nor replace `check`, `review`, or `policy-check`.
 
 ## Policy Boundary
 
 - A policy may target a direct local dependency only when that dependency is present in the checked lock.
-- Unknown workspace IDs, unlocked dependencies, and alias-only targets are diagnostics.
+- Unknown workspace IDs and alias-only dependency targets are diagnostics; alias-only targets use `NQ-POLICY-007` and must be rewritten to the canonical workspace target.
 - Existing `policy-check` stays advisory unless an explicit future sidecar opts into enforcement.
 - A cross-package change report names added/removed dependency identities and impacted local callers.
 
 ## M45 Acceptance
 
-M45 is complete only when one locked two-workspace fixture produces stable facts, review/change evidence, policy diagnostics for an unknown target, and a snapshot golden without invoking Python, a registry, or the network.
+M45 is complete only when one locked two-workspace fixture produces stable facts, review/change evidence, policy diagnostics for an unknown target, and a snapshot golden without invoking Python, a registry, or the network. The current facts-v3/policy slice is intentionally proof-gated, while the final cross-package impact summary remains in progress.

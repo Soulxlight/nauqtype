@@ -351,5 +351,5 @@
 - [x] Validate the syntax-evolution SOP and workspace/module contract before module syntax implementation
 - [x] Add explicit manifests, nested modules, locked local dependencies, and reproducible source locking
 - [ ] Complete qualified type/enum/variant evidence migration and source-level import alias design
-- [ ] Extend governance and semantic snapshots across package boundaries
+- [ ] Complete cross-package impact summaries and semantic snapshots; workspace-qualified facts v3 and canonical policy targeting are active
 - [ ] Prove a real multi-package internal tool before selecting the next language-completeness batch

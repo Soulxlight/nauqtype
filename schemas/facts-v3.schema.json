@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/facts-v3.schema.json",
+  "title": "Nauqtype Workspace Facts v3",
+  "type": "object",
+  "required": ["version", "command", "identity_scheme", "workspace", "summary", "dependencies", "modules", "exports", "call_graph"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 3 },
+    "command": { "const": "facts" },
+    "identity_scheme": { "const": "nauqtype.workspace.v1" },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "entry_module"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "entry_module": { "type": "string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["modules", "exports", "call_edges", "dependencies"],
+      "additionalProperties": false,
+      "properties": {
+        "modules": { "type": "integer", "minimum": 0 },
+        "exports": { "type": "integer", "minimum": 0 },
+        "call_edges": { "type": "integer", "minimum": 0 },
+        "dependencies": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "dependencies": { "type": "array", "items": { "$ref": "#/$defs/dependency" } },
+    "modules": { "type": "array", "items": { "$ref": "#/$defs/module" } },
+    "exports": { "type": "array", "items": { "$ref": "#/$defs/export" } },
+    "call_graph": { "type": "array", "items": { "$ref": "#/$defs/call_edge" } }
+  },
+  "$defs": {
+    "dependency": {
+      "type": "object",
+      "required": ["alias", "workspace", "path", "manifest_sha256", "source_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "alias": { "type": "string" },
+        "workspace": { "type": "string" },
+        "path": { "type": "string" },
+        "manifest_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "source_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "module": {
+      "type": "object",
+      "required": ["id", "workspace", "module", "source_module", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "workspace": { "type": "string" },
+        "module": { "type": "string" },
+        "source_module": { "type": "string" },
+        "evidence": { "const": "checked" }
+      }
+    },
+    "export": {
+      "type": "object",
+      "required": ["id", "legacy_id", "kind", "name", "evidence", "span"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "legacy_id": { "type": "string" },
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "evidence": { "const": "checked" },
+        "span": { "$ref": "#/$defs/span" }
+      }
+    },
+    "call_edge": {
+      "type": "object",
+      "required": ["caller", "callee", "call_site", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "caller": { "type": "string" },
+        "callee": { "type": "string" },
+        "call_site": { "type": "string" },
+        "evidence": { "enum": ["checked", "builtin", "unresolved"] }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["start"],
+      "additionalProperties": false,
+      "properties": { "start": { "type": "integer", "minimum": 0 } }
+    }
+  }
+}

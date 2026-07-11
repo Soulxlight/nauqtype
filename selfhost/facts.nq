@@ -3,6 +3,7 @@ use files;
 use handoff;
 use source;
 use text;
+use workspace;
 
 pub type facts_summary {
     module_count: i32,
@@ -2146,6 +2147,395 @@ fn definition_id_exists(items: ref list<top_item>, uses: ref list<module_use>, v
     return false;
 }
 
+fn workspace_module_key(workspace_root: str, module: str) -> str {
+    let identity = resolve_workspace_module_identity(workspace_root, module);
+    if not identity.valid {
+        return concat3("workspace:unknown::module:", module, "");
+    }
+    return concat5("workspace:", identity.workspace_name, "::module:", identity.module_name, "");
+}
+
+fn workspace_function_identity(workspace_root: str, module: str, name: str) -> str {
+    return concat3(workspace_module_key(workspace_root, module), "::fn:", name);
+}
+
+fn workspace_type_identity(workspace_root: str, module: str, name: str) -> str {
+    return concat3(workspace_module_key(workspace_root, module), "::type:", name);
+}
+
+fn workspace_enum_identity(workspace_root: str, module: str, name: str) -> str {
+    return concat3(workspace_module_key(workspace_root, module), "::enum:", name);
+}
+
+fn workspace_variant_identity(workspace_root: str, module: str, enum_name: str, name: str) -> str {
+    return concat5(workspace_module_key(workspace_root, module), "::enum:", enum_name, "::variant:", name);
+}
+
+fn workspace_const_identity(workspace_root: str, module: str, name: str) -> str {
+    return concat3(workspace_module_key(workspace_root, module), "::const:", name);
+}
+
+fn workspace_field_identity(workspace_root: str, module: str, type_name: str, name: str) -> str {
+    return concat5(workspace_module_key(workspace_root, module), "::field:", type_name, "::", name);
+}
+
+fn workspace_binding_identity(workspace_root: str, binding: body_binding) -> str {
+    return concat5(workspace_module_key(workspace_root, binding.module), "::binding:", binding.function_name, ":", concat3(i32_to_str(binding.scope_id), ":", concat3(binding.name, "@", i32_to_str(binding.at))));
+}
+
+fn workspace_item_identity(workspace_root: str, item: top_item, variants: ref list<variant_fact>) -> str {
+    match item.kind {
+        item_fn => {
+            return workspace_function_identity(workspace_root, item.module, item.name);
+        },
+        item_type => {
+            return workspace_type_identity(workspace_root, item.module, item.name);
+        },
+        item_enum => {
+            return workspace_enum_identity(workspace_root, item.module, item.name);
+        },
+        item_variant => {
+            return workspace_variant_identity(workspace_root, item.module, variant_enum_name(ref variants, item.module, item.name), item.name);
+        },
+        item_const => {
+            return workspace_const_identity(workspace_root, item.module, item.name);
+        },
+    }
+}
+
+fn workspace_canonical_id_for_legacy(workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, legacy_id: str) -> str {
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                if item_identity(value, ref variants) == legacy_id {
+                    return workspace_item_identity(workspace_root, value, ref variants);
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                if field_identity(value.module, value.type_name, value.name) == legacy_id {
+                    return workspace_field_identity(workspace_root, value.module, value.type_name, value.name);
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and binding_identity(value) == legacy_id {
+                    return workspace_binding_identity(workspace_root, value);
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return legacy_id;
+}
+
+fn exported_definition_count(items: ref list<top_item>) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.is_public {
+                    count = count + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn append_workspace_modules(lines: mutref list<str>, workspace_root: str, modules: ref list<str>) -> unit {
+    list_push(mutref lines, "  \"modules\": [");
+    let mut index = 0;
+    while index < list_len(ref modules) {
+        let entry = list_get(ref modules, index);
+        match entry {
+            Some(value) => {
+                let identity = resolve_workspace_module_identity(workspace_root, value);
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"id\": ", json_quote(workspace_module_key(workspace_root, value)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"workspace\": ", json_quote(identity.workspace_name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"module\": ", json_quote(identity.module_name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"source_module\": ", json_quote(value), ",", "", ""));
+                list_push(mutref lines, "      \"evidence\": \"checked\"");
+                if index + 1 < list_len(ref modules) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_workspace_exports(lines: mutref list<str>, workspace_root: str, items: ref list<top_item>, variants: ref list<variant_fact>) -> unit {
+    list_push(mutref lines, "  \"exports\": [");
+    let total = exported_definition_count(ref items);
+    let mut emitted = 0;
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value.is_public {
+                    emitted = emitted + 1;
+                    list_push(mutref lines, "    {");
+                    list_push(mutref lines, concat5("      \"id\": ", json_quote(workspace_item_identity(workspace_root, value, ref variants)), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"legacy_id\": ", json_quote(item_identity(value, ref variants)), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"kind\": ", json_quote(item_kind_text(value.kind)), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
+                    list_push(mutref lines, "      \"evidence\": \"checked\",");
+                    append_span(mutref lines, "      ", value.at, false);
+                    if emitted < total {
+                        list_push(mutref lines, "    },");
+                    } else {
+                        list_push(mutref lines, "    }");
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+fn append_workspace_call_graph(lines: mutref list<str>, workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>) -> unit {
+    list_push(mutref lines, "  \"call_graph\": [");
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        let entry = list_get(ref calls, index);
+        match entry {
+            Some(value) => {
+                let target = call_target(ref items, ref uses, ref variants, value);
+                let target_id = workspace_canonical_id_for_legacy(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, target.id);
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"caller\": ", json_quote(workspace_function_identity(workspace_root, value.module, value.function_name)), ",", "", ""));
+                list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
+                list_push(mutref lines, concat5("      \"call_site\": ", json_quote(concat3(workspace_function_identity(workspace_root, value.module, value.function_name), "@", i32_to_str(value.at))), ",", "", ""));
+                list_push(mutref lines, concat5("      \"evidence\": ", json_quote(target.evidence), "", "", ""));
+                if index + 1 < list_len(ref calls) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ]");
+    return;
+}
+
+fn append_workspace_dependencies(lines: mutref list<str>, dependencies: ref list<workspace_locked_dependency>) -> unit {
+    list_push(mutref lines, "  \"dependencies\": [");
+    let mut index = 0;
+    while index < list_len(ref dependencies) {
+        let entry = list_get(ref dependencies, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat5("      \"alias\": ", json_quote(value.alias), ",", "", ""));
+                list_push(mutref lines, concat5("      \"workspace\": ", json_quote(value.workspace_name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"path\": ", json_quote(value.path), ",", "", ""));
+                list_push(mutref lines, concat5("      \"manifest_sha256\": ", json_quote(value.manifest_sha256), ",", "", ""));
+                list_push(mutref lines, concat5("      \"source_sha256\": ", json_quote(value.source_sha256), "", "", ""));
+                if index + 1 < list_len(ref dependencies) {
+                    list_push(mutref lines, "    },");
+                } else {
+                    list_push(mutref lines, "    }");
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref lines, "  ],");
+    return;
+}
+
+pub fn emit_workspace_facts(workspace_root: str, entry_module: str, modules: ref list<str>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>) -> facts_summary
+audit {
+    intent("Emit workspace-qualified semantic facts and locked dependency provenance for supervised organization-scale review");
+    mutates();
+    effects(print, io);
+}
+{
+    let entry_identity = resolve_workspace_module_identity(workspace_root, entry_module);
+    if not entry_identity.valid {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    let mut dependencies: list<workspace_locked_dependency> = list();
+    if not append_workspace_locked_dependencies(workspace_root, mutref dependencies) {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    let exports = exported_definition_count(ref items);
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 3,");
+    list_push(mutref lines, "  \"command\": \"facts\",");
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.workspace.v1\",");
+    list_push(mutref lines, concat5("  \"workspace\": { \"name\": ", json_quote(entry_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(workspace_root, entry_module)), " },"));
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"modules\": ", i32_to_str(list_len(ref modules)), ","));
+    list_push(mutref lines, concat3("    \"exports\": ", i32_to_str(exports), ","));
+    list_push(mutref lines, concat3("    \"call_edges\": ", i32_to_str(list_len(ref calls)), ","));
+    list_push(mutref lines, concat3("    \"dependencies\": ", i32_to_str(list_len(ref dependencies)), ""));
+    list_push(mutref lines, "  },");
+    append_workspace_dependencies(mutref lines, ref dependencies);
+    append_workspace_modules(mutref lines, workspace_root, ref modules);
+    append_workspace_exports(mutref lines, workspace_root, ref items, ref variants);
+    append_workspace_call_graph(mutref lines, workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, ref calls);
+    list_push(mutref lines, "}");
+    emit_lines(ref lines);
+    return make_facts_summary(list_len(ref modules), exports, 0, list_len(ref calls));
+}
+
+fn root_workspace_name(workspace_root: str) -> str {
+    let identity = resolve_workspace_module_identity(workspace_root, "__workspace_root__");
+    if not identity.valid {
+        return "";
+    }
+    return identity.workspace_name;
+}
+
+fn legacy_target_is_dependency(workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target_id: str) -> bool {
+    let root_name = root_workspace_name(workspace_root);
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                if item_identity(value, ref variants) == target_id {
+                    let identity = resolve_workspace_module_identity(workspace_root, value.module);
+                    return identity.valid and identity.workspace_name != root_name;
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                if field_identity(value.module, value.type_name, value.name) == target_id {
+                    let identity = resolve_workspace_module_identity(workspace_root, value.module);
+                    return identity.valid and identity.workspace_name != root_name;
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and binding_identity(value) == target_id {
+                    let identity = resolve_workspace_module_identity(workspace_root, value.module);
+                    return identity.valid and identity.workspace_name != root_name;
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return false;
+}
+
+fn canonical_policy_target_exists(workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target_id: str) -> bool {
+    let mut item_index = 0;
+    while item_index < list_len(ref items) {
+        let entry = list_get(ref items, item_index);
+        match entry {
+            Some(value) => {
+                if workspace_item_identity(workspace_root, value, ref variants) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        item_index = item_index + 1;
+    }
+    let mut field_index = 0;
+    while field_index < list_len(ref fields) {
+        let entry = list_get(ref fields, field_index);
+        match entry {
+            Some(value) => {
+                if workspace_field_identity(workspace_root, value.module, value.type_name, value.name) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+    let mut binding_index = 0;
+    while binding_index < list_len(ref bindings) {
+        let entry = list_get(ref bindings, binding_index);
+        match entry {
+            Some(value) => {
+                if binding_creates_local(value, ref items, ref uses) and workspace_binding_identity(workspace_root, value) == target_id {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        binding_index = binding_index + 1;
+    }
+    return false;
+}
+
+fn policy_target_exists(workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, target_id: str) -> bool {
+    if str_starts_with(target_id, "workspace:") {
+        return canonical_policy_target_exists(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, target_id);
+    }
+    return definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, target_id) and not legacy_target_is_dependency(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, target_id);
+}
+
 fn policy_target_duplicate(entries: ref list<policy_entry>, target_id: str, current_index: i32) -> bool {
     let mut index = 0;
     while index < current_index {
@@ -2189,7 +2579,7 @@ fn append_policy_target(lines: mutref list<str>, entry: policy_entry, known: boo
     return;
 }
 
-pub fn validate_policy_summary(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, policy_path: str) -> policy_validation_summary
+pub fn validate_policy_summary(workspace_root: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, policy_path: str) -> policy_validation_summary
 audit {
     intent("Validate sidecar policy metadata without emitting JSON so report commands can include policy status");
     mutates();
@@ -2219,7 +2609,7 @@ audit {
         let entry = list_get(ref entries, index);
         match entry {
             Some(value) => {
-                if not definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                if not policy_target_exists(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
                     error_count = error_count + 1;
                 }
                 if policy_target_duplicate(ref entries, value.target_id, index) {
@@ -2240,7 +2630,7 @@ audit {
     return make_policy_validation_summary(true, list_len(ref entries), error_count, false);
 }
 
-pub fn emit_policy_check(source_module: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, policy_path: str) -> i32
+pub fn emit_policy_check(workspace_root: str, source_module: str, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, policy_path: str) -> i32
 audit {
     intent("Validate sidecar ownership policy metadata against checked semantic facts");
     mutates();
@@ -2297,7 +2687,7 @@ audit {
         let entry = list_get(ref entries, index);
         match entry {
             Some(value) => {
-                if not definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                if not policy_target_exists(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
                     error_count = error_count + 1;
                 }
                 if policy_target_duplicate(ref entries, value.target_id, index) {
@@ -2333,7 +2723,7 @@ audit {
         let entry = list_get(ref entries, index);
         match entry {
             Some(value) => {
-                append_policy_target(mutref lines, value, definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id), policy_owner_ok(value.owner), policy_review_ok(value.review), policy_target_duplicate(ref entries, value.target_id, index), index + 1 < list_len(ref entries));
+                append_policy_target(mutref lines, value, policy_target_exists(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id), policy_owner_ok(value.owner), policy_review_ok(value.review), policy_target_duplicate(ref entries, value.target_id, index), index + 1 < list_len(ref entries));
             },
             None => {
             },
@@ -2348,9 +2738,13 @@ audit {
         let entry = list_get(ref entries, index);
         match entry {
             Some(value) => {
-                if not definition_id_exists(ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                if not policy_target_exists(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
                     emitted_diags = emitted_diags + 1;
-                    append_diagnostic(mutref lines, "NQ-POLICY-003", str_concat("unknown policy target: ", value.target_id), emitted_diags < error_count);
+                    if legacy_target_is_dependency(workspace_root, ref items, ref uses, ref variants, ref fields, ref bindings, value.target_id) {
+                        append_diagnostic(mutref lines, "NQ-POLICY-007", str_concat("dependency policy target must use a workspace-qualified ID: ", value.target_id), emitted_diags < error_count);
+                    } else {
+                        append_diagnostic(mutref lines, "NQ-POLICY-003", str_concat("unknown policy target: ", value.target_id), emitted_diags < error_count);
+                    }
                 }
                 if policy_target_duplicate(ref entries, value.target_id, index) {
                     emitted_diags = emitted_diags + 1;
