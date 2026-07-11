@@ -49,8 +49,7 @@ if "$reuse_stage1"; then
         exit 1
     fi
 else
-    python3 -m compiler.main run selfhost/main.nq
-    python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
+    scripts/build_stage1_from_seed.sh >/dev/null
 fi
 
 test -x scripts/make_linux_release.sh

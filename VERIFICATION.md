@@ -5,14 +5,14 @@ not repeat the same expensive selfhost and release proof several times.
 
 ## Fast Feedback
 
-Run focused compiler/reference tests plus any feature-specific test modules:
+Run the Nauqtype-owned fixture, corpus, and copied-selfhost gate:
 
 ```bash
-scripts/check_fast.sh tests.test_field_assignment
+scripts/check_fast.sh
 ```
 
-This excludes copied-selfhost proof and release-layout work. It is for rapid
-local feedback, not release approval.
+This is the active local confidence tier. The archived Python unit suite is not
+part of milestone or release verification.
 
 ## Milestone Gate
 
@@ -20,7 +20,7 @@ Run the selfhost proof once, build and smoke one Linux release, replay the
 stress leg against that same release, then run the fast tier:
 
 ```bash
-scripts/check_milestone.sh tests.test_field_assignment
+scripts/check_milestone.sh
 ```
 
 The command writes a timing and failure-localization artifact to
@@ -35,7 +35,7 @@ The final stable-surface gate remains deliberately redundant:
 bin/nauqc prove
 scripts/check_linux_alpha.sh
 scripts/run_stress_leg.sh
-python3 -m unittest discover -s tests -v
+scripts/check_seed_bootstrap.sh
 ```
 
 Run it for M37, release candidates, and any change that affects release

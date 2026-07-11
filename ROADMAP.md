@@ -588,7 +588,10 @@ Status:
 
 Status:
 
-- planned
+- done
+- checked-in `bootstrap/seed/` contains the generated C seed, copied runtime, source/generator manifest, and checksum lock
+- `scripts/check_seed_bootstrap.sh` proves `host cc -> seed -> stage1 -> stage2` with the existing Nauqtype structural-C normalizer
+- active shell gates, Linux alpha, and CI build stage1 through the seed; `bootstrap/python-reference.json` preserves the frozen Python capability boundary
 
 ### M41: Workspace And Syntax Identity Checkpoint
 

@@ -1,6 +1,6 @@
 # Removing Python From The Active Nauqtype Toolchain
 
-Status: M38 through M40 planning contract. No Python source is removed until this contract is proven from a clean checkout.
+Status: M40 complete. Python source remains in-repo as an archived historical reference and is not part of the active toolchain.
 
 ## Goal
 
@@ -40,7 +40,7 @@ Extend the existing proof runner into `nauqc test`; do not create an unrelated f
 
 Migration order is proof and corpus first, then diagnostics and supervision outputs, then handoff/borrow/IR/C probes. The Python suite stays frozen as a comparison layer until every active behavior has a Nauqtype case or an archival rationale.
 
-The first shipped command is `nauqc test`. It validates the M39 fixture manifest, then runs representative check and expected-failure fixtures, stage1 diagnostics JSON failure goldens, facts/review JSON goldens, supervised workflow and policy fixtures, formatter checks, the locked runtime corpus, and the copied-selfhost proof. M39 expands that fixture manifest against `BOOTSTRAP_MIGRATION_MAP.md`; this initial command is not yet permission to retire the Python reference.
+`nauqc test` validates the M39 fixture manifest, then runs representative check and expected-failure fixtures, stage1 diagnostics JSON failure goldens, facts/review JSON goldens, supervised workflow and policy fixtures, formatter checks, the locked runtime corpus, and the copied-selfhost proof. The fixed M39 ledger in `tests/fixtures/m39_fixture_manifest.txt` records every frozen suite as an owned gate, M40 seed coverage, or explicit historical-reference claim.
 
 ## M40: C Seed And Active Python Retirement
 
@@ -57,7 +57,7 @@ The required proof is:
 host cc -> seed compiler -> stage1 C -> stage1 executable -> stage2 C
 ```
 
-The seed-generated and stage2-generated C must match under the existing documented structural normalization. CI, release scripts, and Linux documentation then move to this path. Only after this gate passes can Python leave active commands.
+The seed-generated and stage2-generated C match under the existing documented structural normalization through `scripts/check_seed_bootstrap.sh`. CI, release scripts, and Linux documentation use this path. `bootstrap/python-reference.json` records the frozen Python reference boundary and capability scope.
 
 ## Seed Refresh Rule
 

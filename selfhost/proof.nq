@@ -1698,6 +1698,39 @@ audit {
     return result;
 }
 
+pub fn run_seed_structural_compare(stage1_c_path: str, stage2_c_path: str) -> i32
+audit {
+    intent("Compare seed-built stage1 and stage2 C through the checked structural normalizer");
+    mutates();
+    effects(print, io);
+}
+{
+    let stage1_read = read_file(stage1_c_path);
+    let stage2_read = read_file(stage2_c_path);
+    match stage1_read {
+        Ok(stage1_c) => {
+            match stage2_read {
+                Ok(stage2_c) => {
+                    if structural_c_equal(stage1_c, stage2_c) {
+                        print_line("seed structural proof ok");
+                        return 0;
+                    }
+                    eprint_line("seed structural proof failed: normalized structural C changed between stage1 and stage2");
+                    return 1;
+                },
+                Err(err) => {
+                    eprint_line(io_err_text(err));
+                    return 1;
+                },
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return 1;
+        },
+    }
+}
+
 pub fn run_all_proofs(driver_path: str) -> i32
 audit {
     intent("Run the stage1-owned transition proof and corpus gates");

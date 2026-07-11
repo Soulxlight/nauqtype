@@ -7,13 +7,12 @@ cd "$repo_root"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/check_fast.sh [unittest-module ...]
+Usage: scripts/check_fast.sh
 
-Run the focused, non-selfhost Python confidence tier. Optional unittest modules
-are appended for the feature currently under development.
+Run the active Nauqtype-owned fixture, corpus, and copied-selfhost confidence tier.
 
-This tier intentionally excludes proof, copied-selfhost, and release-layout
-tests. Those remain in check_milestone.sh and the M37 final gate.
+This command intentionally delegates to the stage1 driver. Historical Python
+tests are no longer an active milestone or release gate.
 EOF
 }
 
@@ -22,24 +21,12 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     exit 0
 fi
 
-base_tests=(
-    tests.test_ai_audit
-    tests.test_bootstrap
-    tests.test_borrow
-    tests.test_codegen
-    tests.test_contracts
-    tests.test_diagnostics_json
-    tests.test_field_assignment
-    tests.test_golden
-    tests.test_imports
-    tests.test_lexer
-    tests.test_parser
-    tests.test_patterns
-    tests.test_resolution
-    tests.test_review
-    tests.test_teaching_corpus
-    tests.test_types
-    tests.test_verification_scripts
-)
+if (( $# > 0 )); then
+    printf 'check_fast: no Python unittest module arguments are accepted after M40\n' >&2
+    exit 2
+fi
 
-python3 -m unittest -v "${base_tests[@]}" "$@"
+if [[ ! -x selfhost/build/nauqc ]]; then
+    scripts/build_stage1_from_seed.sh >/dev/null
+fi
+bin/nauqc test

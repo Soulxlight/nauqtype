@@ -10,7 +10,7 @@ release_id="nauqtype-$version"
 driver="$repo_root/selfhost/build/nauqc"
 if [[ ! -x "$driver" ]]; then
     printf 'make_linux_release: missing stage1 driver at %s\n' "$driver" >&2
-    printf 'make_linux_release: run python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc\n' >&2
+    printf 'make_linux_release: run scripts/build_stage1_from_seed.sh\n' >&2
     exit 1
 fi
 

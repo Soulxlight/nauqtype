@@ -7,11 +7,11 @@ cd "$repo_root"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/check_milestone.sh [unittest-module ...]
+Usage: scripts/check_milestone.sh
 
 Run one full milestone confidence pass without repeating the same selfhost proof
-and Linux release build in every sub-gate. Optional unittest modules should be
-the feature-specific suites for the current milestone.
+and Linux release build in every sub-gate. The active test surface is
+Nauqtype-owned and runs through `nauqc test`.
 
 The M37 final gate still runs the full test suite and standalone release gates.
 EOF
@@ -89,9 +89,9 @@ run_phase() {
     phase_seconds+=("$((SECONDS - phase_started))")
 }
 
-run_phase stage1.bootstrap python3 -m compiler.main run selfhost/main.nq
-run_phase stage1.driver python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
+run_phase seed_bootstrap scripts/check_seed_bootstrap.sh
+run_phase stage1.driver scripts/build_stage1_from_seed.sh
 run_phase proof bin/nauqc prove
 run_phase linux_alpha scripts/check_linux_alpha.sh --reuse-stage1 --skip-prove
 run_phase stress_leg scripts/run_stress_leg.sh --release-root build/linux-release/nauqtype
-run_phase focused_tests scripts/check_fast.sh "$@"
+run_phase owned_tests scripts/check_fast.sh

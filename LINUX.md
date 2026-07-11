@@ -6,7 +6,7 @@ Nauqtype is ready for Linux alpha development from this repository checkout. It 
 
 - The active compiler driver is the self-hosted stage1 binary at `selfhost/build/nauqc`.
 - The repo-local Linux launcher is `bin/nauqc`.
-- `bin/nauqc` runs the stage1 driver from the repository root so `stdlib/runtime.c`, `.deps/ziglang/zig`, and the Linux `cc` fallback are found consistently.
+- `bin/nauqc` runs the stage1 driver from the repository root so `stdlib/runtime.c` and the Linux `cc` fallback are found consistently.
 - Source and output paths passed through `bin/nauqc` are normalized from the caller's current directory before the stage1 driver runs.
 - `scripts/install_nauqtype.sh` installs a symlink to the launcher, defaulting to `$HOME/.local/bin/nauqc`.
 
@@ -15,9 +15,7 @@ Nauqtype is ready for Linux alpha development from this repository checkout. It 
 From the repository root:
 
 ```bash
-python3 scripts/setup_deps.py
-python3 -m compiler.main run selfhost/main.nq
-python3 -m compiler.main build selfhost/main.nq -o selfhost/build/nauqc
+scripts/build_stage1_from_seed.sh
 ```
 
 After that, use the stage1-owned driver:
@@ -68,7 +66,7 @@ Run:
 scripts/check_linux_alpha.sh
 ```
 
-The gate rebuilds the stage1 driver with the frozen bootstrap, checks and runs a small example through `bin/nauqc`, runs the stage1-owned `prove` gate, creates the copied alpha layout, verifies release identity and generated-artifact exclusions, then smoke-tests the copied launcher from a temporary project outside the repository root.
+The gate rebuilds the stage1 driver from the checked-in C seed, checks and runs a small example through `bin/nauqc`, runs the stage1-owned `prove` gate, creates the copied alpha layout, verifies release identity and generated-artifact exclusions, then smoke-tests the copied launcher from a temporary project outside the repository root.
 
 ## Not Distro-Ready Yet
 

@@ -4,7 +4,7 @@ Nauqtype is a small compiled language designed for AI-authored software under hu
 
 Current bootstrap status:
 
-- `stage0`: frozen Python bootstrap/reference compiler in the current workspace
+- `stage0`: archived Python bootstrap/reference compiler; it is not on the active build, test, proof, release, or CI path
 - Linux alpha development is supported through the repo-local `bin/nauqc` stage1 launcher and the copied Alpha RC1 layout; see [LINUX.md](LINUX.md)
 - flat-root multi-file imports with one workspace root
 - explicit types at function boundaries
@@ -26,7 +26,7 @@ Current bootstrap status:
 - minimal move / borrow checking
 - structural copy for all-copy user `type` / `enum`
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and now act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
 
 v0.2 supervised alpha status: `nauqtype-0.2.0-alpha.1` is the current checked Linux alpha identity. The M23 language and tooling baseline remains stable, and the current alpha surface extends it through explicit milestones, examples, proof coverage, and decision records rather than opportunistic syntax growth.
 
@@ -34,28 +34,16 @@ The active roadmap now prioritizes a Nauqtype-owned test and bootstrap path befo
 
 ## Quick Start
 
-Install local bootstrap dependencies:
+Build the stage1 driver from the checked-in C seed:
 
 ```bash
-python3 scripts/setup_deps.py
+scripts/build_stage1_from_seed.sh
 ```
 
-Run the full test suite:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Run the active Nauqtype-owned fixture suite after bootstrapping stage1:
+Run the active Nauqtype-owned fixture suite:
 
 ```bash
 bin/nauqc test
-```
-
-Bootstrap the stage1 driver once:
-
-```bash
-python3 -m compiler.main run selfhost/main.nq
 ```
 
 Use the active Nauqtype-owned driver for `check`:
@@ -181,7 +169,7 @@ The proof commands keep their quiet success stdout and also write deterministic 
 Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux alpha layouts use `lib/nauqtype/nauqc-stage1` behind the public `bin/nauqc` launcher.
 
-Frozen bootstrap/reference workflows that still exist during the cutover:
+Archived bootstrap/reference workflows are retained for historical comparison only and are not active gates:
 
 ```bash
 bin/nauqc check examples/hello.nq --diagnostics json
