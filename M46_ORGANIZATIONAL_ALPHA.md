@@ -38,7 +38,7 @@ host cc -> checked C seed -> stage1 -> stage2 structural proof
 
 The organizational tool proves the module, lock, evidence, policy, release, and supervision path. It deliberately avoids claiming that one small tool validates every future ergonomic feature. The next language-completeness candidates remain ranked by direct usefulness to real internal tooling and by their supervision cost:
 
-Before that batch, one M46 exit-audit backend correction is P0: a product field whose declared type is `list<i32>` currently type-checks but its C carrier is emitted after the product declaration, and `ref product.field` does not yet preserve the field base when lowering a list call. This is existing-surface correctness work, not new syntax. It must become a focused compile/run fixture before a new language feature is admitted.
+M47 closed the M46 exit-audit P0 before this batch: [composite_field_backend.nq](examples/composite_field_backend.nq) now proves dependency-safe carrier ordering for `list<T>`, `option<T>`, and `result<T, E>` product fields, plus correct `ref product.field` list-helper lowering. It is existing-surface correctness work, not new syntax.
 
 1. List `for` loops: remove manual index bookkeeping while retaining nearest-loop `break` / `continue` semantics.
 2. Surgical helper modules: remove repeated text/path/list plumbing without broad runtime or package growth.

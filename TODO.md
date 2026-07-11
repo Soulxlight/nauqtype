@@ -356,13 +356,13 @@
 
 ## Post-M46 P0 Backend Closure
 
-- [ ] Make a product field of `list<i32>`, `option<T>`, or `result<T, E>` lower with dependency-safe C carrier declarations
-- [ ] Preserve the actual field base when lowering `ref product.field` into list helper calls
-- [ ] Add a focused compile/run fixture for the reduced composite-field reproducer before new syntax work resumes
+- [x] Make a product field of `list<i32>`, `option<T>`, or `result<T, E>` lower with dependency-safe C carrier declarations
+- [x] Preserve the actual field base when lowering `ref product.field` into list helper calls
+- [x] Add a focused compile/run fixture for the reduced composite-field reproducer before new syntax work resumes
 
 ## M47-M51 Next Milestones
 
-- [ ] M47: Close the composite generic-field backend gap tracked directly above
+- [x] M47: Close the composite generic-field backend gap tracked directly above
 - [ ] M48: Add list-only `for` loops after M47 closes composite list backend correctness
 - [ ] M49: Add only exercised pure-Nauqtype internal-tool helper modules
 - [ ] M50: Add explicit `try` boundaries before expression-position `?`, preserving `propagates(...)` evidence

@@ -1380,9 +1380,106 @@ fn enum_dependencies_emitted(type_shapes: ref list<ir_type_shape>, enum_decl: ir
     return true;
 }
 
-fn emit_user_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, diags: mutref list<diag>) -> unit {
+fn type_declaration_emitted(type_shapes: ref list<ir_type_shape>, type_id: i32, emitted: ref list<str>) -> bool {
+    let entry = lookup_type_shape(ref type_shapes, type_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_type_named => {
+                    return list_contains(ref emitted, user_type_key(value.origin_module, value.name));
+                },
+                checked_type_option => {
+                    if is_runtime_native_option(ref type_shapes, value.arg1_id) {
+                        return true;
+                    }
+                    return list_contains(ref emitted, option_key(ref type_shapes, value.arg1_id));
+                },
+                checked_type_result => {
+                    if is_runtime_native_result(ref type_shapes, value.arg1_id, value.arg2_id) {
+                        return true;
+                    }
+                    return list_contains(ref emitted, result_key(ref type_shapes, value.arg1_id, value.arg2_id));
+                },
+                checked_type_list => {
+                    if is_runtime_native_list(ref type_shapes, value.arg1_id) {
+                        return true;
+                    }
+                    return list_contains(ref emitted, list_key(ref type_shapes, value.arg1_id));
+                },
+                checked_type_ref => {
+                    return type_declaration_emitted(ref type_shapes, value.arg1_id, ref emitted);
+                },
+                _ => {
+                    return true;
+                },
+            }
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn struct_declaration_dependencies_emitted(type_shapes: ref list<ir_type_shape>, struct_decl: ir_struct_decl, field_decls: ref list<ir_field_decl>, emitted: ref list<str>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref field_decls) {
+        let entry = list_get(ref field_decls, index);
+        match entry {
+            Some(value) => {
+                if value.struct_id == struct_decl.id and not type_declaration_emitted(ref type_shapes, value.type_id, ref emitted) {
+                    return false;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn enum_declaration_dependencies_emitted(type_shapes: ref list<ir_type_shape>, enum_decl: ir_enum_decl, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, emitted: ref list<str>) -> bool {
+    let mut index = 0;
+    while index < list_len(ref variant_payload_decls) {
+        let entry = list_get(ref variant_payload_decls, index);
+        match entry {
+            Some(value) => {
+                let mut variant_index = 0;
+                while variant_index < list_len(ref variant_decls) {
+                    let variant_entry = list_get(ref variant_decls, variant_index);
+                    match variant_entry {
+                        Some(variant_value) => {
+                            if variant_value.id == value.variant_id and variant_value.enum_id == enum_decl.id and not type_declaration_emitted(ref type_shapes, value.type_id, ref emitted) {
+                                return false;
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    variant_index = variant_index + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn list_definition_dependencies_emitted(type_shapes: ref list<ir_type_shape>, element_type_id: i32, emitted: ref list<str>) -> bool {
+    if not type_declaration_emitted(ref type_shapes, element_type_id, ref emitted) {
+        return false;
+    }
+    if is_runtime_native_option(ref type_shapes, element_type_id) {
+        return true;
+    }
+    return list_contains(ref emitted, option_key(ref type_shapes, element_type_id));
+}
+
+fn emit_ordered_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, struct_decls: ref list<ir_struct_decl>, field_decls: ref list<ir_field_decl>, enum_decls: ref list<ir_enum_decl>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, option_types: ref list<i32>, result_types: ref list<result_generic_entry>, list_types: ref list<i32>, expressions: ref list<ir_expr>, diags: mutref list<diag>) -> unit {
     let mut emitted: list<str> = list();
-    let total = list_len(ref struct_decls) + list_len(ref enum_decls);
+    let total = list_len(ref struct_decls) + list_len(ref enum_decls) + list_len(ref option_types) + list_len(ref result_types) + list_len(ref list_types);
     while list_len(ref emitted) < total {
         let mut progressed = false;
         let mut enum_index = 0;
@@ -1391,7 +1488,7 @@ fn emit_user_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type
             match entry {
                 Some(value) => {
                     let key = user_type_key(value.module_name, value.name);
-                    if not list_contains(ref emitted, key) and enum_dependencies_emitted(ref type_shapes, value, ref variant_decls, ref variant_payload_decls, ref emitted) {
+                    if not list_contains(ref emitted, key) and enum_declaration_dependencies_emitted(ref type_shapes, value, ref variant_decls, ref variant_payload_decls, ref emitted) {
                         emit_user_enum(mutref lines, ref type_shapes, value, ref variant_decls, ref variant_payload_decls);
                         list_push(mutref emitted, key);
                         progressed = true;
@@ -1408,7 +1505,7 @@ fn emit_user_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type
             match entry {
                 Some(value) => {
                     let key = user_type_key(value.module_name, value.name);
-                    if not list_contains(ref emitted, key) and struct_dependencies_emitted(ref type_shapes, value, ref field_decls, ref emitted) {
+                    if not list_contains(ref emitted, key) and struct_declaration_dependencies_emitted(ref type_shapes, value, ref field_decls, ref emitted) {
                         emit_user_struct(mutref lines, ref type_shapes, value, ref field_decls);
                         list_push(mutref emitted, key);
                         progressed = true;
@@ -1419,8 +1516,63 @@ fn emit_user_declarations(lines: mutref list<str>, type_shapes: ref list<ir_type
             }
             struct_index = struct_index + 1;
         }
+
+        let mut option_index = 0;
+        while option_index < list_len(ref option_types) {
+            let entry = list_get(ref option_types, option_index);
+            match entry {
+                Some(value) => {
+                    let key = option_key(ref type_shapes, value);
+                    if not list_contains(ref emitted, key) and type_declaration_emitted(ref type_shapes, value, ref emitted) {
+                        emit_option_definition(mutref lines, ref type_shapes, value);
+                        list_push(mutref emitted, key);
+                        progressed = true;
+                    }
+                },
+                None => {
+                },
+            }
+            option_index = option_index + 1;
+        }
+
+        let mut result_index = 0;
+        while result_index < list_len(ref result_types) {
+            let entry = list_get(ref result_types, result_index);
+            match entry {
+                Some(value) => {
+                    let key = result_key(ref type_shapes, value.ok_type_id, value.err_type_id);
+                    if not list_contains(ref emitted, key) and type_declaration_emitted(ref type_shapes, value.ok_type_id, ref emitted) and type_declaration_emitted(ref type_shapes, value.err_type_id, ref emitted) {
+                        emit_result_definition(mutref lines, ref type_shapes, value.ok_type_id, value.err_type_id);
+                        list_push(mutref emitted, key);
+                        progressed = true;
+                    }
+                },
+                None => {
+                },
+            }
+            result_index = result_index + 1;
+        }
+
+        let mut list_index = 0;
+        while list_index < list_len(ref list_types) {
+            let entry = list_get(ref list_types, list_index);
+            match entry {
+                Some(value) => {
+                    let key = list_key(ref type_shapes, value);
+                    if not list_contains(ref emitted, key) and list_definition_dependencies_emitted(ref type_shapes, value, ref emitted) {
+                        emit_list_definition(mutref lines, ref type_shapes, value, list_literal_uses_element_type(ref expressions, ref type_shapes, value));
+                        list_push(mutref emitted, key);
+                        progressed = true;
+                    }
+                },
+                None => {
+                },
+            }
+            list_index = list_index + 1;
+        }
+
         if not progressed {
-            push_c_error(mutref diags, "", 0, "cyclic by-value user type declarations cannot be emitted");
+            push_c_error(mutref diags, "", 0, "cyclic by-value declaration dependencies cannot be emitted");
             return;
         }
     }
@@ -1628,6 +1780,80 @@ fn emit_variant_constructor(type_shapes: ref list<ir_type_shape>, variant_decls:
     }
 }
 
+fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr: ir_expr, diags: mutref list<diag>) -> str {
+    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+    let child_entry = list_get(ref child_ids, 0);
+    match child_entry {
+        Some(child_id) => {
+            let child_expr_entry = lookup_expression(ref expressions, child_id);
+            match child_expr_entry {
+                Some(child_expr) => {
+                    match child_expr.kind {
+                        ir_expr_name => {
+                            let local_entry = lookup_local(ref locals, child_expr.local_id);
+                            match local_entry {
+                                Some(local_value) => {
+                                    let local_name = binding_name(local_value);
+                                    if local_value.is_ref_param {
+                                        return local_name;
+                                    }
+                                    return concat3("&", local_name, "");
+                                },
+                                None => {
+                                    push_c_error(mutref diags, "", expr.at, "missing local identity for borrow expression");
+                                    return "0";
+                                },
+                            }
+                        },
+                        _ => {
+                            return concat3("&(", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")");
+                        },
+                    }
+                },
+                None => {
+                    push_c_error(mutref diags, "", expr.at, "missing borrow child expression");
+                    return "0";
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", expr.at, "missing borrow child expression");
+            return "0";
+        },
+    }
+}
+
+fn emit_list_first_argument(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
+    let expr_entry = lookup_expression(ref expressions, expr_id);
+    match expr_entry {
+        Some(value) => {
+            match value.kind {
+                ir_expr_name => {
+                    let local_entry = lookup_local(ref locals, value.local_id);
+                    match local_entry {
+                        Some(local_value) => {
+                            if local_value.is_ref_param {
+                                return binding_name(local_value);
+                            }
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", value.at, "missing local identity for list argument");
+                            return "0";
+                        },
+                    }
+                },
+                _ => {
+                },
+            }
+        },
+        None => {
+            push_c_error(mutref diags, "", 0, "missing list argument expression");
+            return "0";
+        },
+    }
+    return emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, mutref diags);
+}
+
 fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
@@ -1668,20 +1894,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return const_name(expr.target_origin_module, expr.name);
                 },
                 ir_expr_borrow => {
-                    let local_entry = lookup_local(ref locals, expr.local_id);
-                    match local_entry {
-                        Some(local_value) => {
-                            let local_name = binding_name(local_value);
-                            if local_value.is_ref_param {
-                                return local_name;
-                            }
-                            return concat3("&", local_name, "");
-                        },
-                        None => {
-                            push_c_error(mutref diags, "", expr.at, "missing local identity for borrow expression");
-                            return "0";
-                        },
-                    }
+                    return emit_borrow_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
                 },
                 ir_expr_not => {
                     let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
@@ -2057,11 +2270,17 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
                     let mut args = "";
                     let mut arg_index = 0;
+                    let is_list_call = expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get";
                     while arg_index < list_len(ref child_ids) {
                         let child_entry = list_get(ref child_ids, arg_index);
                         match child_entry {
                             Some(child_id) => {
-                                let arg_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                let mut arg_text = "";
+                                if is_list_call and arg_index == 0 {
+                                    arg_text = emit_list_first_argument(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                } else {
+                                    arg_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                }
                                 if args == "" {
                                     args = arg_text;
                                 } else {
@@ -3221,52 +3440,13 @@ audit {
     append_line(mutref lines_out, "#include \"runtime.h\"");
     append_line(mutref lines_out, "");
 
-    emit_user_declarations(mutref lines_out, ref type_shapes, ref struct_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, mutref diags);
+    emit_ordered_declarations(mutref lines_out, ref type_shapes, ref struct_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref option_types, ref result_types, ref list_types, ref expressions, mutref diags);
     if list_len(ref diags) > start_diag_count {
         return make_c_emit_summary(
             list_len(ref lines_out),
             list_len(ref functions),
             list_len(ref diags)
         );
-    }
-
-    let mut option_index = 0;
-    while option_index < list_len(ref option_types) {
-        let entry = list_get(ref option_types, option_index);
-        match entry {
-            Some(value) => {
-                emit_option_definition(mutref lines_out, ref type_shapes, value);
-            },
-            None => {
-            },
-        }
-        option_index = option_index + 1;
-    }
-
-    let mut result_index = 0;
-    while result_index < list_len(ref result_types) {
-        let entry = list_get(ref result_types, result_index);
-        match entry {
-            Some(value) => {
-                emit_result_definition(mutref lines_out, ref type_shapes, value.ok_type_id, value.err_type_id);
-            },
-            None => {
-            },
-        }
-        result_index = result_index + 1;
-    }
-
-    let mut list_index = 0;
-    while list_index < list_len(ref list_types) {
-        let entry = list_get(ref list_types, list_index);
-        match entry {
-            Some(value) => {
-                emit_list_definition(mutref lines_out, ref type_shapes, value, list_literal_uses_element_type(ref expressions, ref type_shapes, value));
-            },
-            None => {
-            },
-        }
-        list_index = list_index + 1;
     }
 
     let mut const_index = 0;

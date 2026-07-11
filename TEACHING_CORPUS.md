@@ -19,6 +19,7 @@ These examples introduce the core structure, syntax, and flow control of Nauqtyp
 These examples cover specific semantic features of Nauqtype.
 
 - [list_literals.nq](examples/list_literals.nq): Using square brackets to construct homogeneous `list<T>` literals.
+- [composite_field_backend.nq](examples/composite_field_backend.nq): Storing `list<T>`, `option<T>`, and `result<T, E>` values in a product type and borrowing a list field directly for a helper call.
 - [enum_match.nq](examples/enum_match.nq): Using `enum` types and the statement-level `match` block.
 - [match_expr_let_else.nq](examples/match_expr_let_else.nq): Using `match` as an expression to yield values, and the `let-else` guard binding.
 - [record_update.nq](examples/record_update.nq): Copy-only record update using the explicit `Type { from base, field: value }` syntax.
@@ -57,6 +58,7 @@ Runnable examples that act as the `main` entrypoint for multi-file operations.
 The following runnable `.nq` examples make up the core locked corpus. They participate in the `prove-corpus` check, which guarantees they successfully undergo semantic checking, C emission, building, and runtime execution with the expected output:
 
 - `break_continue.nq`
+- `composite_field_backend.nq`
 - `enum_match.nq`
 - `fallible_function.nq`
 - `fibonacci.nq`

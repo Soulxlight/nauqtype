@@ -80,7 +80,7 @@ Stress-Leg 2 extended the dense runner to cover the copied Linux Alpha RC1 launc
 
 No new compiler bugs were exposed in this leg, so there were no findings to reduce into focused fixtures. The added reusable coverage is the copied-release rerun inside `scripts/run_stress_leg.sh`.
 
-## M46 Exit-Audit Finding
+## M46 Exit-Audit Finding: Resolved In M47
 
 The organizational-alpha exit audit used a reduced existing-surface probe rather than adding a new language feature:
 
@@ -88,4 +88,4 @@ The organizational-alpha exit audit used a reduced existing-surface probe rather
 type Bundle { values: list<i32> }
 ```
 
-Stage1 accepts that declaration, but current C emission places the `list<i32>` carrier definition after the product declaration. A related `ref bundle.values` call does not yet preserve the field base during list-helper lowering. These are P0 backend correctness gaps recorded in `TODO.md` and `ROADMAP.md`; they must be reduced to a focused compile/run fixture and fixed before the next syntax batch begins.
+M47 reduced and fixed this P0 before new syntax: [composite_field_backend.nq](examples/composite_field_backend.nq) covers named `list<T>`, non-runtime `option<T>`, and `result<T, io_err>` fields. The C emitter now schedules required carrier declarations before their product declaration and renders `ref bundle.values` from the checked field expression. The example is a formatter-gated locked corpus compile/run case.

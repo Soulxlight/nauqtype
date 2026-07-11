@@ -2593,6 +2593,31 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
 
+    def test_stage1_driver_m47_composite_field_generics_compile_and_borrow_the_field(self) -> None:
+        source = self.root / "examples" / "composite_field_backend.nq"
+        result = self._run_driver(["run", str(source)])
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = Path(tmp_dir) / "composite.c"
+            emitted = self._run_driver(["emit-c", str(source), "-o", str(output)])
+            self.assertEqual(emitted.returncode, 0, emitted.stdout + emitted.stderr)
+            c_text = output.read_text(encoding="utf-8")
+            bundle_at = c_text.index("typedef struct NQ_composite_field_backend__Bundle")
+            for declaration in (
+                "typedef struct NQ_Option__bool",
+                "typedef struct NQ_Option__composite_field_backend__Marker",
+                "typedef struct NQ_Result__composite_field_backend__Marker__io_err",
+                "typedef struct NQ_List__composite_field_backend__Marker",
+            ):
+                self.assertLess(c_text.index(declaration), bundle_at)
+            self.assertRegex(
+                c_text,
+                r"values_len\(&\(\(\(nqv_\d+_bundle\)\)\.values\)\);",
+            )
+
     def test_stage1_driver_batch_d_record_update_facts_v2_matches_golden(self) -> None:
         result = self._run_driver(["facts", str(self.root / "examples" / "record_update.nq"), "--format", "v2"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

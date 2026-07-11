@@ -680,8 +680,11 @@ Status:
 
 Status:
 
-- planned
-- this is P0 existing-surface correctness work, not a language feature
+- complete
+- `examples/composite_field_backend.nq` is a focused compile/run regression for named `list<T>`, non-runtime `option<T>`, and `result<T, io_err>` product fields
+- declaration scheduling moves a generated carrier ahead of a pending product or enum declaration only when that declaration needs it, while preserving the prior declaration order otherwise
+- `ref product.field` now renders from its checked child expression, and list helpers preserve a ref-parameter pointer instead of dereferencing it before the call
+- the example is formatter-gated and the 29th locked corpus case; the refreshed C seed passes the clean host-C to stage1 to stage2 structural proof
 
 ### M48: List `for` Loops
 
