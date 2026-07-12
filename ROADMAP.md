@@ -707,7 +707,10 @@ Status:
 
 Status:
 
-- planned after M48; this is practical library consolidation, not a broad standard-library push
+- complete
+- `selfhost/text.nq` now owns the repeated five/six-part concatenation and bounded line-buffer rendering used by facts, review, proof, and C emission
+- existing `selfhost/files.nq` path helpers remain the single path surface; the audit found no demonstrated need for new runtime, collection, package-script, or network helpers
+- the helper changes preserve locked JSON/C/proof output and are exercised directly by active compiler commands rather than a prestige-only library fixture
 
 ### M50: Explicit `try` Boundaries And Expression Propagation
 

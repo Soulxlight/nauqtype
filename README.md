@@ -268,7 +268,7 @@ Current remaining gaps:
 
 Near-term focus:
 
-- consolidate only demonstrated internal-tool helper repetition in M49 before widening propagation in M50
+- preserve the completed surgical helper consolidation while designing explicit `try` boundaries and expression-position propagation in M50
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows

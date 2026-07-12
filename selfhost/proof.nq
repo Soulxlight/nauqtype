@@ -24,28 +24,6 @@ type corpus_case {
     expected_stdout: str,
 }
 
-fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
-    return str_concat(a, concat4(b, c, d, e));
-}
-
-fn lines_to_text(lines: ref list<str>) -> str {
-    let mut out = "";
-    let mut index = 0;
-    while index < list_len(ref lines) {
-        let entry = list_get(ref lines, index);
-        match entry {
-            Some(line) => {
-                out = str_concat(out, line);
-                out = str_concat(out, "\n");
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return out;
-}
-
 fn proof_summary_path() -> str {
     return "build/proof/summary.json";
 }
@@ -441,7 +419,7 @@ fn write_proof_summary(command: str, ok: bool, failed_phase: str, failed_case: s
     list_push(mutref lines, "    ]");
     list_push(mutref lines, "  }");
     list_push(mutref lines, "}");
-    let write_result = write_file(path, lines_to_text(ref lines));
+    let write_result = write_file(path, lines_text(ref lines, 64));
     match write_result {
         Ok(_) => {
             return true;

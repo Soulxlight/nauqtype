@@ -38,14 +38,6 @@ fn push_c_error(diags: mutref list<diag>, file: str, at: i32, detail: str) -> un
     return;
 }
 
-fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
-    return str_concat(str_concat(str_concat(a, b), str_concat(c, d)), e);
-}
-
-fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
-    return str_concat(str_concat(str_concat(a, b), str_concat(c, d)), str_concat(e, f));
-}
-
 fn concat7(a: str, b: str, c: str, d: str, e: str, f: str, g: str) -> str {
     return str_concat(concat6(a, b, c, d, e, f), g);
 }
@@ -3584,45 +3576,7 @@ audit {
     effects();
 }
 {
-    let mut chunks: list<str> = list();
-    let mut current_chunk = "";
-    let mut current_count = 0;
-    let mut index = 0;
-    while index < list_len(ref lines) {
-        let entry = list_get(ref lines, index);
-        match entry {
-            Some(value) => {
-                current_chunk = str_concat(current_chunk, value);
-                current_chunk = str_concat(current_chunk, "\n");
-                current_count = current_count + 1;
-                if current_count >= 128 {
-                    list_push(mutref chunks, current_chunk);
-                    current_chunk = "";
-                    current_count = 0;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    if current_count > 0 or current_chunk != "" {
-        list_push(mutref chunks, current_chunk);
-    }
-    let mut rendered = "";
-    let mut chunk_index = 0;
-    while chunk_index < list_len(ref chunks) {
-        let entry = list_get(ref chunks, chunk_index);
-        match entry {
-            Some(value) => {
-                rendered = str_concat(rendered, value);
-            },
-            None => {
-            },
-        }
-        chunk_index = chunk_index + 1;
-    }
-    return rendered;
+    return lines_text(ref lines, 128);
 }
 
 pub fn c_emit_render_type_text(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str

@@ -94,14 +94,6 @@ fn make_review_io_kind_fact(function_id: str, kind: str) -> review_io_kind_fact 
     };
 }
 
-fn concat5(a: str, b: str, c: str, d: str, e: str) -> str {
-    return str_concat(a, concat4(b, c, d, e));
-}
-
-fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str {
-    return str_concat(a, concat5(b, c, d, e, f));
-}
-
 fn token_at(tokens: ref list<token>, index: i32) -> token {
     let found = list_get(ref tokens, index);
     match found {
@@ -144,49 +136,6 @@ fn call_identity(module: str, function_name: str, at: i32) -> str {
 
 fn propagation_identity(module: str, function_name: str, at: i32) -> str {
     return concat6("propagation:", module, "::", function_name, "@", i32_to_str(at));
-}
-
-fn render_lines(lines: ref list<str>) -> str {
-    let mut chunks: list<str> = list();
-    let mut current = "";
-    let mut current_count = 0;
-    let mut index = 0;
-    while index < list_len(ref lines) {
-        let entry = list_get(ref lines, index);
-        match entry {
-            Some(value) => {
-                current = str_concat(current, value);
-                current = str_concat(current, "\n");
-                current_count = current_count + 1;
-                if current_count >= 64 {
-                    list_push(mutref chunks, current);
-                    current = "";
-                    current_count = 0;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    if current != "" {
-        list_push(mutref chunks, current);
-    }
-
-    let mut rendered = "";
-    let mut chunk_index = 0;
-    while chunk_index < list_len(ref chunks) {
-        let entry = list_get(ref chunks, chunk_index);
-        match entry {
-            Some(value) => {
-                rendered = str_concat(rendered, value);
-            },
-            None => {
-            },
-        }
-        chunk_index = chunk_index + 1;
-    }
-    return rendered;
 }
 
 fn emit_lines(lines: ref list<str>) -> unit {

@@ -407,3 +407,11 @@
 - Reason chosen: daily Nauqtype tooling needs concise collection traversal, but an open iteration protocol would introduce generic and method machinery before the language has justified either. A dedicated checked statement preserves source identity and evidence without hiding ownership behavior.
 - Consequences: the iterable is evaluated once, checked as `list<T>`, and lowered through a dedicated handoff/IR node to the existing list helpers. The binding has a stable semantic ID, cannot be assigned, and does not escape the loop body. Ranges, custom iterables, loop values, implicit element borrowing, and iterator methods remain out of scope.
 - Reversible later: a future protocol can generalize iteration only if its dispatch, ownership, evidence, and supervision rules are explicit; this syntax does not imply such a protocol.
+
+## D052: Internal helpers graduate only from measured repetition
+
+- Decision: centralize repeated pure compiler helpers only when current Nauqtype tooling has multiple concrete callers; M49 promotes five/six-part concatenation and bounded line rendering into `selfhost/text.nq` and adds no runtime surface.
+- Alternatives considered: create a broad standard library, add generic collection helpers speculatively, keep private copies indefinitely, or expose convenience builtins through the runtime.
+- Reason chosen: the compiler, proof runner, and evidence renderers already paid maintenance and consistency costs for these exact helpers. Other proposed helpers lacked comparable usage pressure.
+- Consequences: facts, review, proof, and C emission share deterministic text construction while `selfhost/files.nq` remains the existing path authority. New helpers still require real tool or corpus use; package scripts, network APIs, and prestige modules remain deferred.
+- Reversible later: helper modules can grow or reorganize when usage proves a clearer boundary, but runtime widening and generic abstractions remain separate decisions.

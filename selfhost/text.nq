@@ -18,6 +18,79 @@ audit {
     return str_concat(str_concat(a, b), str_concat(c, d));
 }
 
+pub fn concat5(a: str, b: str, c: str, d: str, e: str) -> str
+audit {
+    intent("Concatenate five strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(a, concat4(b, c, d, e));
+}
+
+pub fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str
+audit {
+    intent("Concatenate six strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(a, concat5(b, c, d, e, f));
+}
+
+pub fn lines_text(lines: ref list<str>, chunk_limit: i32) -> str
+audit {
+    intent("Render lines with trailing newlines while bounding intermediate string growth");
+    mutates();
+    effects();
+}
+{
+    let mut limit = chunk_limit;
+    if limit <= 0 {
+        limit = 64;
+    }
+    let mut chunks: list<str> = list();
+    let mut current = "";
+    let mut current_count = 0;
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                current = str_concat(current, value);
+                current = str_concat(current, "\n");
+                current_count = current_count + 1;
+                if current_count >= limit {
+                    list_push(mutref chunks, current);
+                    current = "";
+                    current_count = 0;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if current != "" {
+        list_push(mutref chunks, current);
+    }
+
+    let mut rendered = "";
+    let mut chunk_index = 0;
+    while chunk_index < list_len(ref chunks) {
+        let entry = list_get(ref chunks, chunk_index);
+        match entry {
+            Some(value) => {
+                rendered = str_concat(rendered, value);
+            },
+            None => {
+            },
+        }
+        chunk_index = chunk_index + 1;
+    }
+    return rendered;
+}
+
 pub fn slice_text(text: str, start: i32, end: i32) -> str
 audit {
     intent("Return a string slice or an empty string when the slice is invalid");
