@@ -190,6 +190,7 @@ Example programs worth checking first:
 - `examples/hello.nq`: minimal print path
 - `examples/while_counter.nq`: bootstrap-track `while` loop semantics
 - `examples/fibonacci.nq`: functions plus mutable locals and `while`
+- `examples/for_list.nq`: list-only `for` iteration with immutable bindings and nearest-loop control
 - `examples/top_level_const.nq`: stage1-owned top-level constants
 - `examples/named_arguments.nq`: Batch B named function arguments
 - `examples/nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
@@ -263,11 +264,11 @@ Current remaining gaps:
 - non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
 - broader proof hardening beyond the current copied-selfhost and locked-corpus checkpoints
 - Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- the first live-in-the-language ergonomics batch now covers top-level `const`, list literals, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls, minimal nearest-`while` loop control, direct module-qualified data names, and copy-only record update; the next semantic feature batch should stay attached to concrete examples and differential or stage1-owned coverage
+- the live-in-the-language surface now covers top-level `const`, list literals, list-only `for`, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls and data names, nearest-loop `break` / `continue`, field assignment on owned mutable products, and copy-only record update; future semantic work stays attached to concrete examples and stage1-owned evidence
 
 Near-term focus:
 
-- build on the completed M28 evidence-parity lock before adding more source-language surface
+- consolidate only demonstrated internal-tool helper repetition in M49 before widening propagation in M50
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows

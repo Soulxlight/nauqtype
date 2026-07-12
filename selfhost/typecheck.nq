@@ -1133,6 +1133,48 @@ fn visible_mutable_local_stmt(statements: ref list<stmt_fact>, scopes: ref list<
     return false;
 }
 
+fn visible_assignment_target_is_for_binding(statements: ref list<stmt_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut best_at = -1;
+    let mut best_is_for = false;
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    let mut declaration_scope_id = -1;
+                    let mut declaration_is_for = false;
+                    match value.kind {
+                        stmt_local => {
+                            declaration_scope_id = value.scope_id;
+                        },
+                        stmt_let_else => {
+                            declaration_scope_id = value.scope_id;
+                        },
+                        stmt_propagate => {
+                            declaration_scope_id = value.scope_id;
+                        },
+                        stmt_for => {
+                            declaration_scope_id = value.child_scope_id;
+                            declaration_is_for = true;
+                        },
+                        _ => {
+                        },
+                    }
+                    if declaration_scope_id >= 0 and value.at > best_at and scope_is_visible(ref scopes, module, function_name, scope_id, declaration_scope_id) {
+                        best_at = value.at;
+                        best_is_for = declaration_is_for;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return best_is_for;
+}
+
 fn exact_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
     let mut index = list_len(ref typed_bindings) - 1;
     while index >= 0 {
@@ -1261,6 +1303,69 @@ fn clone_match_arms_for_function(source: ref list<match_arm_fact>, module: str, 
             },
         }
         index = index + 1;
+    }
+    return copied;
+}
+
+fn clone_for_statements_for_function(source: ref list<stmt_fact>, module: str, function_name: str) -> list<stmt_fact> {
+    let mut copied: list<stmt_fact> = list();
+    let mut wanted_count = 0;
+    let mut count_index = 0;
+    while count_index < list_len(ref source) {
+        let entry = list_get(ref source, count_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    match value.kind {
+                        stmt_for => {
+                            wanted_count = wanted_count + 1;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        count_index = count_index + 1;
+    }
+
+    let mut last_at = -1;
+    while list_len(ref copied) < wanted_count and last_at < 2147483647 {
+        let mut best_index = -1;
+        let mut best_at = 2147483647;
+        let mut index = 0;
+        while index < list_len(ref source) {
+            let entry = list_get(ref source, index);
+            match entry {
+                Some(value) => {
+                    if value.module == module and value.function_name == function_name and value.at > last_at and value.at < best_at {
+                        match value.kind {
+                            stmt_for => {
+                                best_index = index;
+                                best_at = value.at;
+                            },
+                            _ => {
+                            },
+                        }
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+        let best_entry = list_get(ref source, best_index);
+        match best_entry {
+            Some(value) => {
+                list_push(mutref copied, value);
+                last_at = value.at;
+            },
+            None => {
+                last_at = 2147483647;
+            },
+        }
     }
     return copied;
 }
@@ -4500,9 +4605,33 @@ fn propagation_typecheck_payload_ctx(actual_ctx: expected_type_ctx, return_ctx: 
     return result_ok_payload_ctx(actual_ctx);
 }
 
+fn list_iteration_element_ctx(list_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
+    if list_ctx.head != "list" {
+        push_diag(mutref diags, module, at, "`for` iterable must have type `list<T>`");
+        return empty_expected_type_ctx();
+    }
+    if list_ctx.arg1_name == "" {
+        push_diag(mutref diags, module, at, "cannot determine `for` loop element type from list iterable");
+        return empty_expected_type_ctx();
+    }
+    if list_ctx.arg1_name == "option" and list_ctx.arg2_name != "" {
+        return make_expected_type_ctx("option", list_ctx.arg2_name, "");
+    }
+    return make_expected_type_ctx(list_ctx.arg1_name, "", "");
+}
+
+fn typecheck_for_binding(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, tokens: ref list<token>, current: stmt_fact, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
+    let iterable_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, empty_expected_type_ctx(), mutref diags);
+    let element_ctx = list_iteration_element_ctx(iterable_ctx, current.module, current.at, mutref diags);
+    if current.name != "" and has_known_type_ctx(element_ctx) {
+        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false));
+    }
+    return;
+}
+
 pub fn typecheck_value_facts_with_stmt_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, statements: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
 audit {
-    intent("Run the selfhost type-checker slice over value flow and direct owned-local field assignments");
+    intent("Run the selfhost type-checker slice over value flow, list iteration, and direct owned-local field assignments");
     mutates(diags);
     effects();
 }
@@ -4528,12 +4657,15 @@ audit {
                                 let function_assignments = clone_assignments_for_function(ref assignments, current_function.module, current_function.name);
                                 let function_returns = clone_returns_for_function(ref returns, current_function.module, current_function.name);
                                 let function_conditions = clone_conditions_for_function(ref conditions, current_function.module, current_function.name);
+                                let function_for_statements = clone_for_statements_for_function(ref statements, current_function.module, current_function.name);
 
                                 let mut local_index = 0;
                                 let mut arm_index = 0;
-                                while local_index < list_len(ref function_locals) or arm_index < list_len(ref function_match_arms) {
+                                let mut for_index = 0;
+                                while local_index < list_len(ref function_locals) or arm_index < list_len(ref function_match_arms) or for_index < list_len(ref function_for_statements) {
                                     let mut next_local_at = 2147483647;
                                     let mut next_arm_at = 2147483647;
+                                    let mut next_for_at = 2147483647;
                                     let local_entry = list_get(ref function_locals, local_index);
                                     match local_entry {
                                         Some(value) => {
@@ -4550,7 +4682,25 @@ audit {
                                         None => {
                                         },
                                     }
+                                    let for_entry = list_get(ref function_for_statements, for_index);
+                                    match for_entry {
+                                        Some(value) => {
+                                            next_for_at = value.at;
+                                        },
+                                        None => {
+                                        },
+                                    }
 
+                                    if next_for_at <= next_local_at and next_for_at <= next_arm_at {
+                                        match for_entry {
+                                            Some(current) => {
+                                                typecheck_for_binding(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref field_facts, ref uses, ref items, ref tokens, current, mutref resolved_bindings, mutref diags);
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                        for_index = for_index + 1;
+                                    } else {
                                     if next_arm_at <= next_local_at {
                                         match arm_entry {
                                             Some(current) => {
@@ -4614,6 +4764,7 @@ audit {
                                         }
                                         local_index = local_index + 1;
                                     }
+                                    }
                                 }
 
                                 let mut assignment_index = 0;
@@ -4622,6 +4773,9 @@ audit {
                                     match assignment_entry {
                                         Some(current) => {
                                             let expected_ctx = visible_typed_binding_ctx(ref resolved_bindings, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at);
+                                            if visible_assignment_target_is_for_binding(ref statements, ref scopes, current.module, current.function_name, current.scope_id, current.target_name, current.at) {
+                                                push_diag(mutref diags, current.module, current.at, "`for` loop bindings are immutable");
+                                            }
                                             if expected_ctx.head != "" {
                                                 let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                 if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
@@ -4758,7 +4912,7 @@ audit {
     return typecheck_value_facts_with_stmt_facts(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref locals, ref returns, ref conditions, ref assignments, ref empty_statements, ref uses, ref items, ref sources, mutref diags);
 }
 
-pub fn collect_resolved_binding_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, resolved_bindings_out: mutref list<typed_binding_fact>, pattern_bindings_out: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> resolved_binding_summary
+pub fn collect_resolved_binding_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, statements: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, resolved_bindings_out: mutref list<typed_binding_fact>, pattern_bindings_out: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> resolved_binding_summary
 audit {
     intent("Materialize resolved binding and typed pattern facts for the structured checked handoff");
     mutates(resolved_bindings_out, pattern_bindings_out, diags);
@@ -4783,12 +4937,15 @@ audit {
                                 let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
                                 let function_match_arms = clone_match_arms_for_function(ref match_arms, current_function.module, current_function.name);
                                 let function_locals = clone_local_inits_for_function(ref locals, current_function.module, current_function.name);
+                                let function_for_statements = clone_for_statements_for_function(ref statements, current_function.module, current_function.name);
 
                                 let mut local_index = 0;
                                 let mut arm_index = 0;
-                                while local_index < list_len(ref function_locals) or arm_index < list_len(ref function_match_arms) {
+                                let mut for_index = 0;
+                                while local_index < list_len(ref function_locals) or arm_index < list_len(ref function_match_arms) or for_index < list_len(ref function_for_statements) {
                                     let mut next_local_at = 2147483647;
                                     let mut next_arm_at = 2147483647;
+                                    let mut next_for_at = 2147483647;
                                     let local_entry = list_get(ref function_locals, local_index);
                                     match local_entry {
                                         Some(value) => {
@@ -4805,7 +4962,25 @@ audit {
                                         None => {
                                         },
                                     }
+                                    let for_entry = list_get(ref function_for_statements, for_index);
+                                    match for_entry {
+                                        Some(value) => {
+                                            next_for_at = value.at;
+                                        },
+                                        None => {
+                                        },
+                                    }
 
+                                    if next_for_at <= next_local_at and next_for_at <= next_arm_at {
+                                        match for_entry {
+                                            Some(current) => {
+                                                typecheck_for_binding(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref field_facts, ref uses, ref items, ref tokens, current, mutref resolved_bindings, mutref diags);
+                                            },
+                                            None => {
+                                            },
+                                        }
+                                        for_index = for_index + 1;
+                                    } else {
                                     if next_arm_at <= next_local_at {
                                         match arm_entry {
                                             Some(current) => {
@@ -4857,6 +5032,7 @@ audit {
                                             },
                                         }
                                         local_index = local_index + 1;
+                                    }
                                     }
                                 }
 

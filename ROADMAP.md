@@ -694,7 +694,10 @@ Status:
 
 Status:
 
-- planned after M47 makes composite list values safe through the full backend
+- complete
+- `examples/for_list.nq` proves list-only iteration, immutable element bindings, and nested nearest-loop `continue` / `break` through checked facts, handoff, borrow checking, IR, deterministic C, and runtime execution
+- the C backend evaluates the iterable once and uses a native index loop over existing list helpers, so `continue` cannot skip index advancement
+- iterator protocols, ranges, mutable loop bindings, loop expressions, and hidden ownership changes remain deferred
 
 ### M49: Surgical Internal-Tool Helpers
 

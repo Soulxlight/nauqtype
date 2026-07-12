@@ -3351,6 +3351,51 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
             emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
             append_line(mutref lines, concat3(prefix, "}", ""));
         },
+        ir_stmt_for => {
+            let expr_entry = lookup_expression(ref expressions, stmt.expr_id);
+            let local_entry = lookup_local(ref locals, stmt.target_local_id);
+            match expr_entry {
+                Some(iterable_expr) => {
+                    let shape_entry = lookup_type_shape(ref type_shapes, iterable_expr.type_id);
+                    match shape_entry {
+                        Some(list_shape) => {
+                            match list_shape.kind {
+                                checked_type_list => {
+                                    match local_entry {
+                                        Some(local_value) => {
+                                            temp_index = temp_index + 1;
+                                            let list_temp = concat3("nq_for_items_", i32_to_str(temp_index), "");
+                                            let index_temp = concat3("nq_for_index_", i32_to_str(temp_index), "");
+                                            let helper = list_helper_prefix(ref type_shapes, list_shape.arg1_id);
+                                            append_line(mutref lines, concat6(prefix, c_type(ref type_shapes, iterable_expr.type_id), " ", list_temp, " = ", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, mutref diags), ";")));
+                                            let mut loop_line = concat7(prefix, "for (int32_t ", index_temp, " = 0; ", index_temp, " < ", helper);
+                                            loop_line = str_concat(loop_line, concat6("_len(&", list_temp, "); ", index_temp, " += 1) {", ""));
+                                            append_line(mutref lines, loop_line);
+                                            let item_value = concat6(helper, "_get(&", list_temp, ", ", index_temp, ").data.Some._0");
+                                            append_line(mutref lines, concat6(indent(level + 1), c_type(ref type_shapes, local_value.type_id), " ", binding_name(local_value), " = ", str_concat(item_value, ";")));
+                                            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+                                            append_line(mutref lines, concat3(prefix, "}", ""));
+                                        },
+                                        None => {
+                                            push_c_error(mutref diags, "", stmt.at, "missing local identity for for-loop binding");
+                                        },
+                                    }
+                                },
+                                _ => {
+                                    push_c_error(mutref diags, "", stmt.at, "for-loop iterable IR type is not a list");
+                                },
+                            }
+                        },
+                        None => {
+                            push_c_error(mutref diags, "", stmt.at, "missing for-loop iterable type truth");
+                        },
+                    }
+                },
+                None => {
+                    push_c_error(mutref diags, "", stmt.at, "missing for-loop iterable expression");
+                },
+            }
+        },
         ir_stmt_match => {
             emit_match_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt, level, mutref temp_index, mutref diags);
         },

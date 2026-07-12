@@ -399,3 +399,11 @@
 - Reason chosen: dependency provenance is an authority boundary in Nauqtype. A manifest-owned module graph gives people, agents, facts, policy, and locks one reproducible source of truth without adding hidden filesystem or network behavior.
 - Consequences: `use` paths will be absolute inside a workspace, aliases must be explicit, duplicate module identities fail closed, and multi-segment paths are rejected in legacy flat-root mode. `WORKSPACE_CONTRACT.md` defines the exact M42/M43 boundary.
 - Reversible later: extensible through explicit local dependencies and locks; relative lookup, wildcard imports, implicit re-exports, registries, and cache discovery require separate decisions.
+
+## D051: List iteration is direct, bounded, and identity-preserving
+
+- Decision: support `for name in list_expr { ... }` only for `list<T>`, with one immutable body-scoped binding and nearest-loop `break` / `continue`.
+- Alternatives considered: an iterator protocol, range syntax, parser desugaring into user-visible helper calls, mutable loop variables, or retaining only manual index loops.
+- Reason chosen: daily Nauqtype tooling needs concise collection traversal, but an open iteration protocol would introduce generic and method machinery before the language has justified either. A dedicated checked statement preserves source identity and evidence without hiding ownership behavior.
+- Consequences: the iterable is evaluated once, checked as `list<T>`, and lowered through a dedicated handoff/IR node to the existing list helpers. The binding has a stable semantic ID, cannot be assigned, and does not escape the loop body. Ranges, custom iterables, loop values, implicit element borrowing, and iterator methods remain out of scope.
+- Reversible later: a future protocol can generalize iteration only if its dispatch, ownership, evidence, and supervision rules are explicit; this syntax does not imply such a protocol.

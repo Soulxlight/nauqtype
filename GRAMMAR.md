@@ -5,7 +5,7 @@
 - The grammar is intentionally small and suitable for a hand-written lexer plus recursive-descent / Pratt parser.
 - Whitespace is insignificant except as a token separator.
 - Newlines are not syntactic separators.
-- The current stage0 compiler includes one controlled bootstrap-track extension to the original v0.1 freeze: statement-form `while` loops only.
+- The frozen stage0 reference includes statement-form `while`; the active stage1 surface also includes list-only `for` iteration and nearest-loop control.
 
 ## Lexical Grammar
 
@@ -37,7 +37,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 ### Keywords
 
-`and`, `audit`, `break`, `const`, `continue`, `else`, `enum`, `false`, `fn`, `if`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
+`and`, `audit`, `break`, `const`, `continue`, `else`, `enum`, `false`, `fn`, `for`, `if`, `in`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
 
 ## Tokens
 
@@ -140,6 +140,7 @@ stmt          = let_stmt
               | field_assign_stmt
               | if_stmt
               | while_stmt
+              | for_stmt
               | match_stmt
               | break_stmt
               | continue_stmt
@@ -157,6 +158,7 @@ expr_stmt     = expr ";" ;
 
 if_stmt       = "if" expr block [ "else" block ] ;
 while_stmt    = "while" expr block ;
+for_stmt      = "for" IDENT "in" expr block ;
 break_stmt    = "break" ";" ;
 continue_stmt = "continue" ";" ;
 
@@ -263,6 +265,6 @@ Pattern meaning is resolved semantically:
 - No newline significance
 - No implicit last-expression returns
 - No general block expressions
-- No loop grammar beyond bootstrap `while` and Batch B `break;` / `continue;`
+- No loop grammar beyond `while`, list-only `for`, and nearest-loop `break;` / `continue;`
 - AI Contracts use a fixed clause order instead of free-form annotations
 - No generic parameter declarations in v0.1

@@ -19,6 +19,7 @@ These examples introduce the core structure, syntax, and flow control of Nauqtyp
 These examples cover specific semantic features of Nauqtype.
 
 - [list_literals.nq](examples/list_literals.nq): Using square brackets to construct homogeneous `list<T>` literals.
+- [for_list.nq](examples/for_list.nq): Iterating directly over `list<T>` with an immutable per-iteration binding and nearest-loop `break` / `continue`.
 - [composite_field_backend.nq](examples/composite_field_backend.nq): Storing `list<T>`, `option<T>`, and `result<T, E>` values in a product type and borrowing a list field directly for a helper call.
 - [enum_match.nq](examples/enum_match.nq): Using `enum` types and the statement-level `match` block.
 - [match_expr_let_else.nq](examples/match_expr_let_else.nq): Using `match` as an expression to yield values, and the `let-else` guard binding.
@@ -63,6 +64,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `fallible_function.nq`
 - `fibonacci.nq`
 - `field_assignment.nq`
+- `for_list.nq`
 - `hello.nq`
 - `import_aliases.nq`
 - `list_literals.nq`

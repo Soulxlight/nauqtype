@@ -1075,6 +1075,32 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
             parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
+        tk_kw_for => {
+            advance(mutref cursor);
+            let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+            let in_token = token_at(ref tokens, cursor);
+            match in_token.kind {
+                tk_kw_in => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
+                },
+            }
+            let iterable_start = cursor;
+            skip_until_block(ref tokens, mutref cursor);
+            push_unsupported_question_diag(ref tokens, iterable_start, cursor, mutref diags, file);
+            scan_value_expr_names(ref tokens, iterable_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+            let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
+            match name.kind {
+                tk_ident => {
+                    push_binding(mutref bindings, file, function_name, body_scope_id, name.text, name.start, bind_let);
+                },
+                _ => {
+                },
+            }
+            parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
+        },
         tk_kw_match => {
             parse_match(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
@@ -1087,7 +1113,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
         },
         tk_kw_break => {
             if loop_depth <= 0 {
-                push_diag(mutref diags, file, current, "`break` is only valid inside `while`");
+                push_diag(mutref diags, file, current, "`break` is only valid inside a loop");
             }
             advance(mutref cursor);
             let semi = token_at(ref tokens, cursor);
@@ -1102,7 +1128,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
         },
         tk_kw_continue => {
             if loop_depth <= 0 {
-                push_diag(mutref diags, file, current, "`continue` is only valid inside `while`");
+                push_diag(mutref diags, file, current, "`continue` is only valid inside a loop");
             }
             advance(mutref cursor);
             let semi = token_at(ref tokens, cursor);
@@ -2090,6 +2116,23 @@ fn collect_typecheck_stmt_facts(tokens: ref list<token>, cursor: mutref i32, dia
             let condition_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             scan_value_expr_calls(ref tokens, condition_start, cursor, file, function_name, mutref calls, mutref patterns);
+            collect_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, mutref calls, mutref patterns);
+        },
+        tk_kw_for => {
+            advance(mutref cursor);
+            consume_ident(ref tokens, mutref cursor, mutref diags, file);
+            let in_token = token_at(ref tokens, cursor);
+            match in_token.kind {
+                tk_kw_in => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
+                },
+            }
+            let iterable_start = cursor;
+            skip_until_block(ref tokens, mutref cursor);
+            scan_value_expr_calls(ref tokens, iterable_start, cursor, file, function_name, mutref calls, mutref patterns);
             collect_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, mutref calls, mutref patterns);
         },
         tk_kw_match => {
@@ -3221,6 +3264,22 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
             collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
         },
+        tk_kw_for => {
+            advance(mutref cursor);
+            consume_ident(ref tokens, mutref cursor, mutref diags, file);
+            let in_token = token_at(ref tokens, cursor);
+            match in_token.kind {
+                tk_kw_in => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
+                },
+            }
+            skip_until_block(ref tokens, mutref cursor);
+            let body_scope_id = next_value_scope_id(mutref next_scope_id);
+            collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
+        },
         tk_kw_match => {
             collect_value_match_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, current.start, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
         },
@@ -3739,6 +3798,25 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
             collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, mutref next_scope_id, mutref statements);
             list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, current.start, stmt_while, "", condition_start, condition_end, classify_expr_kind(ref tokens, condition_start, condition_end), classify_expr_name(ref tokens, condition_start, condition_end), classify_expr_member_name(ref tokens, condition_start, condition_end), body_scope_id, -1));
+        },
+        tk_kw_for => {
+            advance(mutref cursor);
+            let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+            let in_token = token_at(ref tokens, cursor);
+            match in_token.kind {
+                tk_kw_in => {
+                    advance(mutref cursor);
+                },
+                _ => {
+                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
+                },
+            }
+            let iterable_start = cursor;
+            skip_until_block(ref tokens, mutref cursor);
+            let iterable_end = cursor;
+            let body_scope_id = next_value_scope_id(mutref next_scope_id);
+            list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, name.start, stmt_for, name.text, iterable_start, iterable_end, classify_expr_kind(ref tokens, iterable_start, iterable_end), classify_expr_name(ref tokens, iterable_start, iterable_end), classify_expr_member_name(ref tokens, iterable_start, iterable_end), body_scope_id, -1));
+            collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, mutref next_scope_id, mutref statements);
         },
         tk_kw_match => {
             collect_stmt_match_facts(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, loop_depth, current.start, mutref next_scope_id, mutref statements);

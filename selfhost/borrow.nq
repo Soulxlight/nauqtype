@@ -315,6 +315,17 @@ fn is_stmt_while(kind: checked_stmt_kind) -> bool {
     }
 }
 
+fn is_stmt_for(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_for => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_stmt_match(kind: checked_stmt_kind) -> bool {
     match kind {
         checked_stmt_match => {
@@ -1536,17 +1547,27 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                     current = merge_states(ref current, ref then_state, ref else_state);
                                 }
                             } else {
-                                if is_stmt_while(stmt.kind) {
+                                if is_stmt_while(stmt.kind) or is_stmt_for(stmt.kind) {
                                     if stmt.child_block_id <= 0 {
-                                        push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked while block");
+                                        push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked loop block");
                                     } else {
                                         let mut condition_entry = project_state(ref current, ref current);
+                                        if is_stmt_for(stmt.kind) {
+                                            if stmt.target_binding_id > 0 {
+                                                set_moved_or_limit(mutref condition_entry, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                            } else {
+                                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked for-loop binding");
+                                            }
+                                        }
                                         let mut stable = false;
                                         while not stable {
                                             let mut after_condition = clone_move_state(ref condition_entry);
                                             walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, false, mutref diags);
                                             let body_end = check_block(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, false, mutref diags);
-                                            let next_entry = merge_visible_states(ref current, ref body_end);
+                                            let mut next_entry = merge_visible_states(ref current, ref body_end);
+                                            if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
+                                                set_moved_or_limit(mutref next_entry, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                            }
                                             if state_equals(ref next_entry, ref condition_entry) {
                                                 stable = true;
                                             } else {
@@ -1555,8 +1576,14 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                         }
                                         let mut after_condition = clone_move_state(ref condition_entry);
                                         walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, emit_diagnostics, mutref diags);
+                                        if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
+                                            set_moved_or_limit(mutref after_condition, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                        }
                                         let ignored_loop_state = check_block(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, emit_diagnostics, mutref diags);
                                         current = project_state(ref current, ref after_condition);
+                                        if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
+                                            set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                        }
                                     }
                                 } else {
                                     if is_stmt_match(stmt.kind) {

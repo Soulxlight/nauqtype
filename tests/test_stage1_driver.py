@@ -2618,6 +2618,77 @@ class Stage1DriverTests(unittest.TestCase):
                 r"values_len\(&\(\(\(nqv_\d+_bundle\)\)\.values\)\);",
             )
 
+    def test_stage1_driver_m48_list_for_runs_and_emits_single_evaluation_loop(self) -> None:
+        source = self.root / "examples" / "for_list.nq"
+        result = self._run_driver(["run", str(source)])
+        self.assertEqual(result.returncode, 35, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = Path(tmp_dir) / "for_list.c"
+            emitted = self._run_driver(["emit-c", str(source), "-o", str(output)])
+            self.assertEqual(emitted.returncode, 0, emitted.stdout + emitted.stderr)
+            c_text = output.read_text(encoding="utf-8")
+            self.assertEqual(c_text.count("NQ_List__i32 nq_for_items_"), 1)
+            self.assertRegex(c_text, r"for \(int32_t nq_for_index_\d+ = 0;")
+            self.assertRegex(c_text, r"nq_list__i32_get\(&nq_for_items_\d+, nq_for_index_\d+\)\.data\.Some\._0")
+
+    def test_stage1_driver_m48_list_for_exports_stable_binding_evidence(self) -> None:
+        source = self.root / "examples" / "for_list.nq"
+        result = self._run_driver(["facts", str(source), "--format", "v2"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        loop_definition = next(
+            entry
+            for entry in payload["definitions"]
+            if entry["kind"] == "local" and entry["name"] == "value"
+        )
+        self.assertGreater(loop_definition["scope_id"], 1)
+        self.assertEqual(loop_definition["evidence"], "checked")
+        self.assertTrue(
+            any(
+                entry["name"] == "value"
+                and entry["target_id"] == loop_definition["id"]
+                and entry["evidence"] == "checked"
+                for entry in payload["references"]
+            )
+        )
+
+    def test_stage1_driver_m48_list_for_rejects_non_list_and_immutable_assignment(self) -> None:
+        cases = {
+            "non_list": (
+                "for value in 42 { return value; } return 0;",
+                "`for` iterable must have type `list<T>`",
+            ),
+            "immutable": (
+                "let values: list<i32> = [1]; for value in values { value = 2; } return 0;",
+                "`for` loop bindings are immutable",
+            ),
+            "out_of_scope": (
+                "let values: list<i32> = [1]; for value in values { } return value;",
+                "unknown name in function body",
+            ),
+        }
+        for name, (body, expected) in cases.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tmp = Path(tmp_dir)
+                    self._write_project(
+                        tmp,
+                        {
+                            "main.nq": f"""
+                            fn main() -> i32 {{
+                                {body}
+                            }}
+                            """,
+                        },
+                    )
+                    result = self._run_driver(["check", str(tmp / "main.nq")])
+                    combined = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, combined)
+                    self.assertIn(expected, combined)
+
     def test_stage1_driver_batch_d_record_update_facts_v2_matches_golden(self) -> None:
         result = self._run_driver(["facts", str(self.root / "examples" / "record_update.nq"), "--format", "v2"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -2832,7 +2903,7 @@ class Stage1DriverTests(unittest.TestCase):
             result = self._run_driver(["check", str(tmp / "main.nq")])
             combined = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, combined)
-            self.assertIn("`break` is only valid inside `while`", combined)
+            self.assertIn("`break` is only valid inside a loop", combined)
 
     def test_stage1_driver_batch_b_facts_see_qualified_call_target(self) -> None:
         result = self._run_driver(["facts", str(self.root / "examples" / "qualified_calls.nq"), "--format", "v2"])
