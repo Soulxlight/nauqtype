@@ -45,6 +45,7 @@ These examples demonstrate Nauqtype's unique AI supervision surfaces, contract e
 - [result_handling.nq](examples/result_handling.nq): Handling `Ok` and `Err` branches using `match`.
 - [read_file_len.nq](examples/read_file_len.nq): Reading files and demonstrating the inferred `effects(io)` audit atom.
 - [propagation_question.nq](examples/propagation_question.nq): Statement-boundary `?` operator usage with a `?[context_label]` provenance label and required `propagates(...)` audit evidence.
+- [try_expression.nq](examples/try_expression.nq): Expression-position `?` captured at an explicitly typed local `try` boundary, with local evidence but no function-level propagation claim.
 
 ## Multi-File Entrypoints
 
@@ -86,6 +87,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `review_contracts.nq`
 - `simple_add.nq`
 - `top_level_const.nq`
+- `try_expression.nq`
 - `user_record.nq`
 - `while_counter.nq`
 
@@ -110,3 +112,5 @@ To teach supervised failure to a model:
 3. **Invalid Exact Error:** Try using `?` on an `io_err` inside a function returning `result<str, parse_err>` in `examples/fallible_function.nq` to see the exact matching rules reject the code (`NQ-PROPAGATE-003`).
 4. **Restricted Field Mutation:** Remove `mut` from `score` in `examples/field_assignment.nq`, or try assigning through a `mutref` parameter, to see direct field writes rejected outside owned mutable product locals.
 5. **Refined Pattern Fallback:** Remove the `_` arm from `examples/nested_patterns.nq` to see refined patterns rejected until their fallback path is explicit.
+6. **Ambiguous Try Boundary:** Remove the `result<i32, io_err>` annotation from `measured` in `examples/try_expression.nq` to see `NQ-TRY-001` require explicit boundary truth.
+7. **Unsafe Try Control Flow:** Put a propagated call on the right side of `and` inside `try` to see `NQ-TRY-004` preserve short-circuit semantics rather than hoisting the call.

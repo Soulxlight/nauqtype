@@ -471,6 +471,28 @@ fn is_lbrace_token(tok: token) -> bool {
     }
 }
 
+fn is_lbracket_token(tok: token) -> bool {
+    match tok.kind {
+        tk_lbracket => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn is_rbracket_token(tok: token) -> bool {
+    match tok.kind {
+        tk_rbracket => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn is_comma_token(tok: token) -> bool {
     match tok.kind {
         tk_comma => {
@@ -577,6 +599,175 @@ fn expr_contains_question_token(tokens: ref list<token>, start: i32, end: i32) -
     return false;
 }
 
+fn expr_contains_try_token(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_kw_try => {
+                return true;
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn expr_is_direct_try(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let expr_start = expr_first_token_index(ref tokens, start, end);
+    if expr_start + 3 > end {
+        return false;
+    }
+    let first = token_at(ref tokens, expr_start);
+    let open = token_at(ref tokens, expr_start + 1);
+    let close = token_at(ref tokens, end - 1);
+    match first.kind {
+        tk_kw_try => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match close.kind {
+        tk_rbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    return true;
+}
+
+fn try_question_operand_start(tokens: ref list<token>, try_inner_start: i32, question_index: i32) -> i32 {
+    if question_index <= try_inner_start {
+        return -1;
+    }
+    let last = token_at(ref tokens, question_index - 1);
+    match last.kind {
+        tk_rparen => {
+        },
+        _ => {
+            return -1;
+        },
+    }
+    let mut depth = 0;
+    let mut index = question_index - 1;
+    let mut open_index = -1;
+    while index >= try_inner_start and open_index < 0 {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_rparen => {
+                depth = depth + 1;
+            },
+            tk_lparen => {
+                depth = depth - 1;
+                if depth == 0 {
+                    open_index = index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index - 1;
+    }
+    if open_index <= try_inner_start {
+        return -1;
+    }
+    let name = token_at(ref tokens, open_index - 1);
+    match name.kind {
+        tk_ident => {
+        },
+        _ => {
+            return -1;
+        },
+    }
+    let mut operand_start = open_index - 1;
+    let mut scanning = true;
+    while scanning and operand_start - 3 >= try_inner_start {
+        let second_colon = token_at(ref tokens, operand_start - 1);
+        let first_colon = token_at(ref tokens, operand_start - 2);
+        let qualifier = token_at(ref tokens, operand_start - 3);
+        match second_colon.kind {
+            tk_colon => {
+                match first_colon.kind {
+                    tk_colon => {
+                        match qualifier.kind {
+                            tk_ident => {
+                                operand_start = operand_start - 3;
+                            },
+                            _ => {
+                                scanning = false;
+                            },
+                        }
+                    },
+                    _ => {
+                        scanning = false;
+                    },
+                }
+            },
+            _ => {
+                scanning = false;
+            },
+        }
+    }
+    return operand_start;
+}
+
+fn collect_try_propagation_facts(tokens: ref list<token>, start: i32, end: i32, file: str, function_name: str, scope_id: i32, locals: mutref list<local_init_fact>, diags: mutref list<diag>) -> unit {
+    let expr_start = expr_first_token_index(ref tokens, start, end);
+    if not expr_is_direct_try(ref tokens, start, end) {
+        return;
+    }
+    let inner_start = expr_start + 2;
+    let inner_end = end - 1;
+    let mut index = inner_start;
+    while index < inner_end {
+        let current = token_at(ref tokens, index);
+        if is_question_token(current) {
+            let operand_start = try_question_operand_start(ref tokens, inner_start, index);
+            if operand_start < 0 {
+                push_diag(mutref diags, file, current, "NQ-TRY-002: expression `?` inside `try` must apply to a direct function call in V1");
+            } else {
+                let mut label = "";
+                let open_label = token_at(ref tokens, index + 1);
+                let label_token = token_at(ref tokens, index + 2);
+                let close_label = token_at(ref tokens, index + 3);
+                match open_label.kind {
+                    tk_lbracket => {
+                        match label_token.kind {
+                            tk_ident => {
+                                match close_label.kind {
+                                    tk_rbracket => {
+                                        label = label_token.text;
+                                    },
+                                    _ => {
+                                    },
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, "", current.start, "", false, operand_start, index, expr_call, classify_expr_name(ref tokens, operand_start, index), "try_propagate", label));
+            }
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn push_unsupported_question_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
     let mut index = start;
     while index < end {
@@ -584,6 +775,23 @@ fn push_unsupported_question_diag(tokens: ref list<token>, start: i32, end: i32,
         if is_question_token(current) {
             push_diag(mutref diags, file, current, "stage1 limitation: `?` is only supported in `let name = result_expr?;`");
             return;
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn push_unsupported_try_placement_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_kw_try => {
+                push_diag(mutref diags, file, current, "NQ-TRY-006: `try` V1 is only supported as the direct initializer of an explicitly annotated local");
+                return;
+            },
+            _ => {
+            },
         }
         index = index + 1;
     }
@@ -647,6 +855,10 @@ fn scan_expr_names(tokens: ref list<token>, start: i32, end: i32, module: str, f
             tk_ident => {
                 let previous = token_at(ref tokens, index - 1);
                 let next = token_at(ref tokens, index + 1);
+                let before_previous = token_at(ref tokens, index - 2);
+                if is_lbracket_token(previous) and is_question_token(before_previous) and is_rbracket_token(next) {
+                    index = index + 1;
+                } else {
                 if current.text == "from" and is_ident_token(next) and (is_lbrace_token(previous) or is_comma_token(previous)) {
                     index = index + 1;
                 } else {
@@ -663,6 +875,7 @@ fn scan_expr_names(tokens: ref list<token>, start: i32, end: i32, module: str, f
                         }
                     }
                     index = index + 1;
+                }
                 }
                 }
             },
@@ -1042,8 +1255,11 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let expr_start = cursor;
             skip_until_semi(ref tokens, mutref cursor);
             let expr_end = propagation_expr_end(ref tokens, expr_start, cursor - 1);
-            if expr_contains_question_token(ref tokens, expr_start, expr_end) {
+            if expr_contains_question_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
                 push_unsupported_question_diag(ref tokens, expr_start, expr_end, mutref diags, file);
+            }
+            if expr_contains_try_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
+                push_unsupported_try_placement_diag(ref tokens, expr_start, expr_end, mutref diags, file);
             }
             scan_value_expr_names(ref tokens, expr_start, expr_end, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
@@ -1052,6 +1268,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let condition_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             push_unsupported_question_diag(ref tokens, condition_start, cursor, mutref diags, file);
+            push_unsupported_try_placement_diag(ref tokens, condition_start, cursor, mutref diags, file);
             scan_value_expr_names(ref tokens, condition_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let then_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
             parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, then_scope_id, loop_depth, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
@@ -1071,6 +1288,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let condition_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             push_unsupported_question_diag(ref tokens, condition_start, cursor, mutref diags, file);
+            push_unsupported_try_placement_diag(ref tokens, condition_start, cursor, mutref diags, file);
             scan_value_expr_names(ref tokens, condition_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
             parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
@@ -1090,6 +1308,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let iterable_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             push_unsupported_question_diag(ref tokens, iterable_start, cursor, mutref diags, file);
+            push_unsupported_try_placement_diag(ref tokens, iterable_start, cursor, mutref diags, file);
             scan_value_expr_names(ref tokens, iterable_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
             match name.kind {
@@ -1109,6 +1328,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let expr_start = cursor;
             skip_until_semi(ref tokens, mutref cursor);
             push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
+            push_unsupported_try_placement_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
             scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
         tk_kw_break => {
@@ -1154,6 +1374,7 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
                 let expr_start = cursor + 4;
                 skip_until_semi(ref tokens, mutref cursor);
                 push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
+                push_unsupported_try_placement_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
                 scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             } else {
             if is_ident_token(current) and is_eq_token(next) {
@@ -1161,11 +1382,13 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
                 let expr_start = cursor + 2;
                 skip_until_semi(ref tokens, mutref cursor);
                 push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
+                push_unsupported_try_placement_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
                 scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             } else {
                 let expr_start = cursor;
                 skip_until_semi(ref tokens, mutref cursor);
                 push_unsupported_question_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
+                push_unsupported_try_placement_diag(ref tokens, expr_start, cursor - 1, mutref diags, file);
                 scan_value_expr_names(ref tokens, expr_start, cursor - 1, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
             }
             }
@@ -2905,6 +3128,9 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
         tk_kw_match => {
             return expr_match;
         },
+        tk_kw_try => {
+            return expr_try;
+        },
         tk_ident => {
             let next = token_at(ref tokens, expr_start + 1);
             if expr_starts_qualified_call(ref tokens, expr_start, end) {
@@ -3236,6 +3462,7 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
                     member_name = "propagate";
                 }
                 list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_is_borrow, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name, propagation_label));
+                collect_try_propagation_facts(ref tokens, expr_start, expr_end, file, function_name, scope_id, mutref locals, mutref diags);
             }
         },
         tk_kw_if => {

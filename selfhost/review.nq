@@ -954,7 +954,7 @@ fn propagation_site_count(locals: ref list<local_init_fact>) -> i32 {
         let entry = list_get(ref locals, index);
         match entry {
             Some(value) => {
-                if value.expr_member_name == "propagate" {
+                if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
                     count = count + 1;
                 }
             },
@@ -1124,7 +1124,7 @@ fn propagation_contexts(locals: ref list<local_init_fact>, module: str, function
         let entry = list_get(ref locals, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name and value.expr_member_name == "propagate" and value.propagation_label != "" {
+                if value.module == module and value.function_name == function_name and (value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate") and value.propagation_label != "" {
                     list_push(mutref contexts, concat3(propagation_identity(value.module, value.function_name, value.at), "=", value.propagation_label));
                 }
             },
@@ -2092,7 +2092,7 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
         let entry = list_get(ref locals, index);
         match entry {
             Some(value) => {
-                if value.expr_member_name == "propagate" {
+                if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
                     let error_name = propagation_error_name(ref function_facts, ref functions, ref uses, value);
                     let target_kind = propagation_target_kind(ref items, ref uses, value.module, error_name);
                     let target_id = propagation_target_id(ref items, ref uses, value.module, error_name);

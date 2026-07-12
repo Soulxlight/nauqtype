@@ -37,7 +37,7 @@ LINE_COMMENT = "//" { any character except newline } ;
 
 ### Keywords
 
-`and`, `audit`, `break`, `const`, `continue`, `else`, `enum`, `false`, `fn`, `for`, `if`, `in`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `type`, `use`, `while`
+`and`, `audit`, `break`, `const`, `continue`, `else`, `enum`, `false`, `fn`, `for`, `if`, `in`, `let`, `match`, `mut`, `mutref`, `not`, `or`, `pub`, `ref`, `return`, `true`, `try`, `type`, `use`, `while`
 
 ## Tokens
 
@@ -134,6 +134,7 @@ In the current bootstrap compiler, generic arguments are semantically valid only
 block         = "{" { stmt } "}" ;
 
 stmt          = let_stmt
+              | let_try_stmt
               | let_propagate_stmt
               | let_else_stmt
               | assign_stmt
@@ -148,6 +149,7 @@ stmt          = let_stmt
               | expr_stmt ;
 
 let_stmt      = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr ";" ;
+let_try_stmt  = "let" [ "mut" ] IDENT ":" result_type "=" try_expr ";" ;
 let_propagate_stmt = "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr "?" [ "[" IDENT "]" ] ";" ;
 let_else_stmt = "let" let_else_pattern "=" expr "else" block ";" ;
 let_else_pattern = ( "Some" | "Ok" ) "(" IDENT ")" ;
@@ -170,6 +172,8 @@ match_arm     = pattern "=>" block ;
 
 Expressions are parsed with Pratt precedence or equivalent recursive-descent layering.
 
+`try` V1 is deliberately narrower than the grammar envelope: it must be the direct initializer of an explicitly annotated `result<T, E>` local. A postfix propagation suffix inside that expression must apply to a direct function call. Short-circuit logic and `match` success expressions are rejected inside V1 boundaries.
+
 ```ebnf
 expr          = logical_or ;
 
@@ -187,9 +191,10 @@ unary         = ( "-" | "not" ) unary
 borrow_expr   = "ref" IDENT
               | "mutref" IDENT ;
 
-postfix       = primary { call_suffix | field_suffix } ;
+postfix       = primary { call_suffix | field_suffix | propagation_suffix } ;
 call_suffix   = "(" argument_list? ")" ;
 field_suffix  = "." IDENT ;
+propagation_suffix = "?" [ "[" IDENT "]" ] ;
 
 argument_list = positional_arguments | named_arguments ;
 positional_arguments = expr { "," expr } [ "," ] ;
@@ -202,7 +207,10 @@ primary       = literal
               | struct_literal
               | list_literal
               | match_expr
+              | try_expr
               | "(" expr ")" ;
+
+try_expr      = "try" "{" expr "}" ;
 
 qualified_name = IDENT "::" IDENT ;
 

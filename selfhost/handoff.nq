@@ -65,6 +65,8 @@ pub enum checked_expr_kind {
     checked_expr_and,
     checked_expr_or,
     checked_expr_match,
+    checked_expr_try,
+    checked_expr_propagate,
 }
 
 pub enum checked_type_shape_kind {
@@ -953,6 +955,26 @@ fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) 
         checked_expr_match => {
             match right {
                 checked_expr_match => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_try => {
+            match right {
+                checked_expr_try => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
+        checked_expr_propagate => {
+            match right {
+                checked_expr_propagate => {
                     return true;
                 },
                 _ => {
@@ -2990,6 +3012,82 @@ fn binary_expr_kind(op: token_kind) -> checked_expr_kind {
     }
 }
 
+fn handoff_trailing_question_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    if end - start >= 4 {
+        let close = token_at(ref tokens, end - 1);
+        let label = token_at(ref tokens, end - 2);
+        let open = token_at(ref tokens, end - 3);
+        let question = token_at(ref tokens, end - 4);
+        match close.kind {
+            tk_rbracket => {
+                match label.kind {
+                    tk_ident => {
+                        match open.kind {
+                            tk_lbracket => {
+                                match question.kind {
+                                    tk_question => {
+                                        return end - 4;
+                                    },
+                                    _ => {
+                                    },
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            _ => {
+            },
+        }
+    }
+    if end > start {
+        let last = token_at(ref tokens, end - 1);
+        match last.kind {
+            tk_question => {
+                return end - 1;
+            },
+            _ => {
+            },
+        }
+    }
+    return -1;
+}
+
+fn handoff_span_is_try_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 4 {
+        return false;
+    }
+    let first = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    let close = token_at(ref tokens, end - 1);
+    match first.kind {
+        tk_kw_try => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match close.kind {
+        tk_rbrace => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
 fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, bindings: ref list<checked_binding>, resolved_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, function_id: i32, module_name: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, expr_children: mutref list<checked_expr_child>, struct_fields: mutref list<checked_struct_field_init>, diags: mutref list<diag>) -> i32 {
     let diag_count_before = list_len(ref diags);
     let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, module_name, function_name, scope_id, ref tokens, start, end, at, expected_ctx, mutref diags);
@@ -3013,6 +3111,28 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
     }
     if expr_start >= expr_end {
         return build_literal_expr(function_id, module_name, function_name, scope_id, at, start, end, checked_expr_unit, "unit", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+    }
+
+    if handoff_span_is_try_expr(ref tokens, expr_start, expr_end) {
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_try, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let success_ctx = make_expected_type_ctx(exported_ctx.arg1_name, "", "");
+        let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 2, expr_end - 1, at, success_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if child_id < 0 {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing checked try-boundary value expression");
+        }
+        push_expr_child(mutref expr_children, expr_id, 0, child_id);
+        return expr_id;
+    }
+
+    let question_index = handoff_trailing_question_index(ref tokens, expr_start, expr_end);
+    if question_index >= 0 {
+        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_propagate, exported_ctx, false, false, -1, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let child_id = build_expr_tree(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start, question_index, at, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+        if child_id < 0 {
+            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing checked expression-propagation operand");
+        }
+        push_expr_child(mutref expr_children, expr_id, 0, child_id);
+        return expr_id;
     }
 
     let expr_head = token_at(ref tokens, expr_start);
@@ -5289,6 +5409,41 @@ audit {
         index = index + 1;
     }
     return false;
+}
+
+pub fn handoff_has_try_boundary_exprs(expressions: ref list<checked_expr>, module_name: str, function_name: str) -> bool
+audit {
+    intent("Check whether a checked handoff captured a local try boundary and expression propagation");
+    mutates();
+    effects();
+}
+{
+    let mut saw_try = false;
+    let mut saw_propagate = false;
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.function_name == function_name {
+                    match value.kind {
+                        checked_expr_try => {
+                            saw_try = true;
+                        },
+                        checked_expr_propagate => {
+                            saw_propagate = true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return saw_try and saw_propagate;
 }
 
 pub fn handoff_has_borrow_expr(expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, module_name: str, function_name: str, kind: checked_expr_kind, borrowed_name: str) -> bool

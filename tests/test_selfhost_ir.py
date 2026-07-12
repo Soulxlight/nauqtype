@@ -217,6 +217,37 @@ class SelfhostIRTests(unittest.TestCase):
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
+    def test_ir_lowers_local_try_boundary_and_propagation(self) -> None:
+        modules = {
+            "main": """
+            fn ready() -> result<i32, io_err> {
+                return Ok(42);
+            }
+
+            fn main() -> i32 {
+                let outcome: result<i32, io_err> = try { ready()?[ready_value] };
+                match outcome {
+                    Ok(value) => { return value; },
+                    Err(_) => { return 0; },
+                }
+            }
+            """,
+        }
+        assertions = [
+            '                let main_id = ir_lookup_function_id(ref ir_functions, "main::main");',
+            "                if main_id < 0 {",
+            '                    print_line("missing main function id");',
+            "                    failures = failures + 1;",
+            "                } else {",
+            "                    if not ir_has_try_boundary_exprs(ref ir_expressions, main_id) {",
+            '                        print_line("missing ir try boundary expressions");',
+            "                        failures = failures + 1;",
+            "                    }",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_ir_lowers_control_flow_and_metadata(self) -> None:
         modules = {
             "util": """

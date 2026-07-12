@@ -103,12 +103,14 @@ The canonical fixture for this loop lives under `tests/fixtures/supervised_workf
 
 ## Propagation Contract
 
-Statement-boundary `?` propagation extends the same compiler-evidence model, not hidden Rust-style control flow.
+Statement-boundary `?` and explicit local `try` boundaries extend the same compiler-evidence model, not hidden Rust-style control flow.
 
 - `let name = result_expr?;` forwards unchanged `result<T, E>` errors only when the enclosing function returns `result<_, E>`.
 - Accepted `?` sites infer exact error-type propagation into `propagates(...)`.
+- `let value: result<T, E> = try { expression }` captures failure locally; its sites remain checked evidence but do not inflate function-level `propagates(...)`.
+- Local-boundary propagation order is deterministic, depth-first, and left-to-right. The boundary is visible in source rather than silently targeting an enclosing function.
 - Propagation evidence uses explicit versioned facts/review/change-report surfaces instead of silently changing locked schemas.
-- Expression-position `?`, `option<T>?`, implicit error conversion, and custom propagation protocols remain deferred.
+- Function-scoped expression `?`, multi-statement `try`, `option<T>?`, implicit error conversion, and custom propagation protocols remain deferred.
 
 See [PROPAGATION.md](PROPAGATION.md) for the locked design direction.
 

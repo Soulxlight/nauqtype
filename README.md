@@ -16,6 +16,7 @@ Current bootstrap status:
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
+- explicit annotated-local `try { expression }` boundaries that capture expression-position propagation without silently returning from the function
 - fixed `effects(io)` contracts with checked read/write/create-directory/process evidence in v2 supervision outputs
 - named function arguments, direct module-qualified function/data names, and explicit module aliases
 - minimal nearest-`while` `break` / `continue`
@@ -202,6 +203,7 @@ Example programs worth checking first:
 - `examples/record_update.nq`: copy-only record update with explicit base provenance
 - `examples/record_update_nontrivial.nq`: record update over a computed owned base value
 - `examples/propagation_question.nq`: statement-boundary `?` with optional context-label and `propagates(...)` evidence
+- `examples/try_expression.nq`: expression-position `?` captured by a visible local `try` boundary
 - `examples/break_continue.nq`: minimal loop control
 - `examples/review_contracts.nq`: AI Contracts and `review` workflow
 
@@ -268,13 +270,14 @@ Current remaining gaps:
 
 Near-term focus:
 
-- preserve the completed surgical helper consolidation while designing explicit `try` boundaries and expression-position propagation in M50
+- preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
 - keep formatter-lite and the canonical teaching corpus locked as syntax grows
 - keep semantic evidence/refactor surfaces aligned with the syntax already shipped
 - add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
 - keep statement-boundary `?` propagation evidence visible through facts v2, review v2, and change-report v1
+- revisit structured error sets only after a real workspace demonstrates that one named error type per public boundary is too coarse
 
 Current AI-first compiler output:
 

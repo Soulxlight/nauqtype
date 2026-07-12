@@ -365,5 +365,5 @@
 - [x] M47: Close the composite generic-field backend gap tracked directly above
 - [x] M48: Add list-only `for` loops after M47 closes composite list backend correctness
 - [x] M49: Add only exercised pure-Nauqtype internal-tool helper modules
-- [ ] M50: Add explicit `try` boundaries before expression-position `?`, preserving `propagates(...)` evidence
-- [ ] M51: Decide and implement structured error sets only from demonstrated workspace-tool pressure
+- [x] M50: Add explicit local `try` boundaries for evidence-backed expression-position `?`
+- [x] M51 decision gate: Defer structured error sets because current workspace tools do not demonstrate the required mixed-error pressure

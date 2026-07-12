@@ -1111,6 +1111,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("review_contracts", "examples/review_contracts.nq", 42, "Hello, contracts!\n"));
     list_push(mutref cases, make_corpus_case("simple_add", "examples/simple_add.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("top_level_const", "examples/top_level_const.nq", 0, "Hello from top-level const!\n"));
+    list_push(mutref cases, make_corpus_case("try_expression", "examples/try_expression.nq", 7, ""));
     list_push(mutref cases, make_corpus_case("user_record", "examples/user_record.nq", 32, ""));
     list_push(mutref cases, make_corpus_case("while_counter", "examples/while_counter.nq", 5, ""));
     return;
@@ -1151,6 +1152,7 @@ fn push_locked_formatter_examples(paths: mutref list<str>) -> unit {
     list_push(mutref paths, "examples/review_contracts.nq");
     list_push(mutref paths, "examples/simple_add.nq");
     list_push(mutref paths, "examples/top_level_const.nq");
+    list_push(mutref paths, "examples/try_expression.nq");
     list_push(mutref paths, "examples/user_record.nq");
     list_push(mutref paths, "examples/while_counter.nq");
     return;
@@ -1959,6 +1961,9 @@ audit {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/try_short_circuit_failure.nq", "NQ-TRY-004") {
         return 1;
     }
     if not run_json_failure_golden_result("fixture stage1 diagnostics json", run_driver_check_json(driver_path, "tests/fixtures/diagnostics_failure.nq"), "tests/golden/stage1_diagnostics/check_failure.json") {

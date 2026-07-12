@@ -2,7 +2,7 @@
 
 This note packages the accepted design direction for `?` support. The goal is not to clone Rust. Nauqtype should make fallible code less wordy while increasing compiler-visible evidence for human supervisors and agent pairs.
 
-Current implementation status: statement-boundary `let name = result_expr?;`, optional `?[context_label]` provenance labels, exact error typing, C emission, `propagates(E)` audit validation, and the versioned facts/review/change-report evidence surface are implemented.
+Current implementation status: statement-boundary `let name = result_expr?;`, optional `?[context_label]` provenance labels, exact error typing, C emission, `propagates(E)` audit validation, versioned facts/review/change-report evidence, and explicit local `try` boundaries with expression-position propagation are implemented.
 
 ## Core Decision
 
@@ -49,7 +49,7 @@ match read_file(path) {
 
 but it must remain visible as a propagation site in facts/review/change-report outputs.
 
-## V1 Rules
+## Function-Boundary Rules
 
 - Allow `?` only in `let name = result_expr?;`.
 - Require `result_expr` to have type `result<T, E>`.
@@ -63,6 +63,23 @@ but it must remain visible as a propagation site in facts/review/change-report o
 - Reject traits, custom propagation protocols, and overloads.
 - Reject expression-position `?`, including call arguments, binary expressions, conditions, and `return Ok(expr?);`.
 - Reject `option<T>?` in the first version.
+
+## Local Try-Boundary Rules
+
+M50 adds a separate local capture form:
+
+```nauq
+let measured: result<i32, io_err> = try {
+    str_len(read_file(path)?[config_read])
+};
+```
+
+- The boundary must be the direct initializer of an explicitly annotated `result<T, E>` local.
+- Each `?` operand must be a direct function call returning `result<U, E>` with the exact boundary error type.
+- Failure assigns `Err(error)` to the local and exits only the visible boundary; it never returns from the function.
+- Success sites are unwrapped depth-first and left-to-right, then the final value expression is wrapped in `Ok(...)`.
+- Local sites remain visible in facts v2 and review v2 but do not contribute to inferred function `propagates(...)`.
+- Short-circuit logic, match success expressions, multi-statement bodies, function-scoped expression propagation, and implicit conversion remain rejected.
 
 The teaching rule is simple: use `?` when this function forwards the same error unchanged; use `match` or `let-else` when the function handles, maps, logs, or explains the error locally.
 
@@ -135,6 +152,15 @@ Deterministic propagation diagnostics:
 - `NQ-PROPAGATE-004`: inferred propagation missing from `propagates(...)`
 - `NQ-PROPAGATE-005`: overdeclared propagation in `propagates(...)`
 
+Deterministic local-boundary diagnostics:
+
+- `NQ-TRY-001`: missing explicit `result<T, E>` boundary type
+- `NQ-TRY-002`: missing value expression or a `?` operand that is not a direct call in V1
+- `NQ-TRY-003`: success expression does not match the boundary payload type
+- `NQ-TRY-004`: propagation would cross short-circuit `and` / `or`
+- `NQ-TRY-005`: a match expression requires control-flow lowering not supported by V1
+- `NQ-TRY-006`: `try` appears outside a direct annotated-local initializer
+
 Diagnostics should point users toward explicit `match` or `let-else` when propagation is not the right tool.
 
 `NQ-PROPAGATE-003` is especially important for teaching. When a function returns `result<_, BuildError>` but the propagated expression has type `result<_, LexError>`, the diagnostic should say there is no implicit conversion and point users toward explicit handling, for example:
@@ -160,8 +186,9 @@ That lack of an escape hatch is intentional. Nauqtype should make unchanged prop
 
 - Policy rules requiring labels for public APIs or `effects(io)` functions.
 - `option<T>?` inside functions returning `option<U>`.
-- Expression-position `?`.
-- `try { ... }` blocks to bound propagation scope before expression-position `?` grows.
+- Function-scoped expression `?` without a visible local boundary.
+- Multi-statement `try { ... }` blocks and general block expressions.
+- Short-circuit or match-expression propagation inside a local boundary.
 - Explicit error mapping syntax.
 
 ## Rejected For This Path

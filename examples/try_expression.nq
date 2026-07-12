@@ -1,0 +1,20 @@
+fn main() -> i32
+audit {
+    intent("Capture expression propagation at an explicit local try boundary");
+    mutates();
+    effects(io);
+    propagates();
+}
+{
+    let measured: result<i32, io_err> = try {
+        str_len(read_file("build/try-expression-missing.txt")?[read_source])
+    };
+    match measured {
+        Ok(length) => {
+            return length;
+        },
+        Err(_) => {
+            return 7;
+        },
+    }
+}

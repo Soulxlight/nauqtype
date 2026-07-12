@@ -1215,6 +1215,183 @@ class Stage1DriverTests(unittest.TestCase):
             self.assertEqual(review.returncode, 0, review.stdout + review.stderr)
             self.assertEqual(review.stderr, "")
 
+    def test_stage1_driver_m50_try_expression_captures_error_at_visible_boundary(self) -> None:
+        source = self.root / "examples" / "try_expression.nq"
+        result = self._run_driver(["run", str(source)])
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = Path(tmp_dir) / "try_expression.c"
+            emitted = self._run_driver(["emit-c", str(source), "-o", str(output)])
+            self.assertEqual(emitted.returncode, 0, emitted.stdout + emitted.stderr)
+            c_text = output.read_text(encoding="utf-8")
+            self.assertIn("nq_try_result_", c_text)
+            self.assertIn("goto nq_try_end_", c_text)
+            self.assertIn("NQ_Result__i32__io_err_Tag_Err", c_text)
+
+    def test_stage1_driver_m50_try_expression_exports_local_propagation_evidence(self) -> None:
+        source = self.root / "examples" / "try_expression.nq"
+        facts_result = self._run_driver(["facts", str(source), "--format", "v2"])
+        self.assertEqual(facts_result.returncode, 0, facts_result.stdout + facts_result.stderr)
+        facts = json.loads(facts_result.stdout)
+        site = next(entry for entry in facts["references"] if entry["kind"] == "propagation_site")
+        self.assertEqual(site["name"], "io_err")
+        self.assertEqual(site["context"], "read_source")
+        self.assertEqual(site["evidence"], "builtin")
+
+        review_result = self._run_driver(["review", str(source), "--format", "v2"])
+        self.assertEqual(review_result.returncode, 0, review_result.stdout + review_result.stderr)
+        review = json.loads(review_result.stdout)
+        function = next(entry for entry in review["functions"] if entry["name"] == "main")
+        self.assertEqual(function["audit"]["propagates"], [])
+        self.assertEqual(function["inferred"]["propagates"], [])
+        self.assertEqual(review["propagation_sites"][0]["context"], "read_source")
+
+    def test_stage1_driver_m50_try_context_change_is_supervised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            before = tmp / "before"
+            after = tmp / "after"
+            template = """
+                fn main() -> i32
+                audit {
+                    intent("Capture one local read failure");
+                    mutates();
+                    effects(io);
+                    propagates();
+                }
+                {
+                    let outcome: result<str, io_err> = try {
+                        read_file("missing.txt")?[%s]
+                    };
+                    match outcome {
+                        Ok(_) => { return 0; },
+                        Err(_) => { return 1; },
+                    }
+                }
+            """
+            self._write_project(before, {"main.nq": template % "config_read"})
+            self._write_project(after, {"main.nq": template % "cache_read"})
+
+            review_diff = self._run_driver(
+                ["review-diff", str(before / "main.nq"), str(after / "main.nq"), "--format", "v2"]
+            )
+            self.assertEqual(review_diff.returncode, 0, review_diff.stdout + review_diff.stderr)
+            review_payload = json.loads(review_diff.stdout)
+            self.assertEqual(review_payload["changes"]["changed_functions"], ["fn:main::main"])
+
+            report = self._run_driver(
+                ["change-report", str(before / "main.nq"), str(after / "main.nq"), "--format", "v1"]
+            )
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            report_payload = json.loads(report.stdout)
+            self.assertEqual(report_payload["changes"]["changed_functions"], ["fn:main::main"])
+
+    def test_stage1_driver_m50_try_expression_sequences_multiple_nested_sites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            self._write_project(
+                tmp,
+                {
+                    "main.nq": """
+                    fn first() -> result<i32, io_err> {
+                        return Ok(2);
+                    }
+
+                    fn second(value: i32) -> result<i32, io_err> {
+                        return Ok(value + 3);
+                    }
+
+                    fn main() -> i32 {
+                        let measured: result<i32, io_err> = try {
+                            second(first()?[first_value])?[second_value]
+                        };
+                        match measured {
+                            Ok(value) => { return value; },
+                            Err(_) => { return 99; },
+                        }
+                    }
+                    """,
+                },
+            )
+            result = self._run_driver(["run", str(tmp / "main.nq")])
+            self.assertEqual(result.returncode, 5, result.stdout + result.stderr)
+
+            facts_result = self._run_driver(["facts", str(tmp / "main.nq"), "--format", "v2"])
+            self.assertEqual(facts_result.returncode, 0, facts_result.stdout + facts_result.stderr)
+            facts = json.loads(facts_result.stdout)
+            contexts = [
+                entry["context"]
+                for entry in facts["references"]
+                if entry["kind"] == "propagation_site"
+            ]
+            self.assertEqual(contexts, ["first_value", "second_value"])
+
+    def test_stage1_driver_m50_try_expression_rejects_ambiguous_or_mismatched_boundaries(self) -> None:
+        cases = {
+            "unannotated": (
+                "let measured = try { read_file(\"missing\")? }; return 0;",
+                "NQ-TRY-001",
+                "",
+            ),
+            "non_result": (
+                "let measured: result<i32, io_err> = try { value()? }; return 0;",
+                "NQ-PROPAGATE-001",
+                "fn value() -> i32 { return 1; }",
+            ),
+            "error_mismatch": (
+                "let measured: result<i32, io_err> = try { parse_value()? }; return 0;",
+                "NQ-PROPAGATE-003",
+                "enum ParseErr { Bad } fn parse_value() -> result<i32, ParseErr> { return Err(Bad); }",
+            ),
+            "success_mismatch": (
+                "let measured: result<str, io_err> = try { str_len(read_file(\"missing\")?) }; return 0;",
+                "NQ-TRY-003",
+                "",
+            ),
+            "non_call_operand": (
+                "let ready: result<i32, io_err> = Ok(1); let measured: result<i32, io_err> = try { ready? }; return 0;",
+                "NQ-TRY-002",
+                "",
+            ),
+            "short_circuit": (
+                "let measured: result<bool, io_err> = try { false and ready()? }; return 0;",
+                "NQ-TRY-004",
+                "fn ready() -> result<bool, io_err> { return Ok(true); }",
+            ),
+            "match_success": (
+                "let measured: result<i32, io_err> = try { match Some(1) { Some(value) => value, None => 0 } }; return 0;",
+                "NQ-TRY-005",
+                "",
+            ),
+            "unsupported_placement": (
+                "return try { 1 };",
+                "NQ-TRY-006",
+                "",
+            ),
+        }
+        for name, (body, expected, prelude) in cases.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tmp = Path(tmp_dir)
+                    self._write_project(
+                        tmp,
+                        {
+                            "main.nq": f"""
+                            {prelude}
+                            fn main() -> i32 {{
+                                {body}
+                            }}
+                            """,
+                        },
+                    )
+                    result = self._run_driver(["check", str(tmp / "main.nq")])
+                    combined = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, combined)
+                    self.assertIn(expected, combined)
+
     def test_stage1_driver_question_exports_propagation_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

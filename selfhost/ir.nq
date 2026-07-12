@@ -45,6 +45,8 @@ pub enum ir_expr_kind {
     ir_expr_and,
     ir_expr_or,
     ir_expr_match,
+    ir_expr_try,
+    ir_expr_propagate,
 }
 
 pub enum ir_pattern_kind {
@@ -449,6 +451,12 @@ fn checked_expr_to_ir_kind(expr: checked_expr) -> ir_expr_kind {
         },
         checked_expr_match => {
             return ir_expr_match;
+        },
+        checked_expr_try => {
+            return ir_expr_try;
+        },
+        checked_expr_propagate => {
+            return ir_expr_propagate;
         },
     }
 }
@@ -1521,6 +1529,7 @@ audit {
     mutates();
     effects();
 }
+
 {
     let mut index = 0;
     while index < list_len(ref expressions) {
@@ -1585,6 +1594,41 @@ audit {
         index = index + 1;
     }
     return false;
+}
+
+pub fn ir_has_try_boundary_exprs(expressions: ref list<ir_expr>, function_id: i32) -> bool
+audit {
+    intent("Check whether stage1 IR contains a local try boundary and expression propagation");
+    mutates();
+    effects();
+}
+{
+    let mut saw_try = false;
+    let mut saw_propagate = false;
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id {
+                    match value.kind {
+                        ir_expr_try => {
+                            saw_try = true;
+                        },
+                        ir_expr_propagate => {
+                            saw_propagate = true;
+                        },
+                        _ => {
+                        },
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return saw_try and saw_propagate;
 }
 
 pub fn ir_has_pattern_local(patterns: ref list<ir_pattern>, function_id: i32, name: str) -> bool

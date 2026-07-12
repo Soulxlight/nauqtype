@@ -1279,6 +1279,24 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                     apply_move_state(mutref state, ref merged, expr.module_name, expr.at, mutref diags);
                     return;
                 },
+                checked_expr_try => {
+                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
+                    if child_id < 0 {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing a value child for checked try expression");
+                        return;
+                    }
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, false, emit_diagnostics, mutref diags);
+                    return;
+                },
+                checked_expr_propagate => {
+                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
+                    if child_id < 0 {
+                        push_borrow_limitation(mutref diags, expr.module_name, expr.at, "is missing an operand child for checked expression propagation");
+                        return;
+                    }
+                    walk_expr(function, ref bindings, ref params, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, true, false, emit_diagnostics, mutref diags);
+                    return;
+                },
                 _ => {
                 },
             }

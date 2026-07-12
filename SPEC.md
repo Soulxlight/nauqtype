@@ -68,6 +68,7 @@ Reserved keywords in v0.1:
 - `ref`
 - `return`
 - `true`
+- `try`
 - `type`
 - `use`
 - `while`
@@ -149,6 +150,27 @@ Rules:
 - The success pattern introduces the payload binding after the statement.
 - The `else` block must exit explicitly, such as with `return`.
 - Pattern guards, chained `if let`, and hidden propagation are not part of `let-else` V1. Statement-boundary `?` is a separate evidence-backed propagation feature.
+
+### Local `try` Boundaries
+
+M50 adds one visible expression-propagation boundary:
+
+```nauq
+let measured: result<i32, io_err> = try {
+    str_len(read_file(path)?[read_source])
+};
+```
+
+Rules:
+
+- V1 permits `try { value_expr }` only as the direct initializer of an explicitly annotated `result<T, E>` local.
+- The success expression must have type `T`; the boundary wraps it in `Ok(...)`.
+- Each postfix `?` must apply to a direct function call returning `result<U, E>` with the exact same `E`.
+- A failed site stores `Err(error)` in the local boundary and skips the remaining success expression; it does not return from the function.
+- Sites are evaluated depth-first and left-to-right before the final success expression, making their order deterministic and visible in evidence.
+- Local-boundary sites appear in facts v2 and review v2, but do not add to function-level inferred `propagates(...)` because the error does not leave the function.
+- Short-circuit `and` / `or`, match success expressions, multi-statement bodies, implicit error conversion, and `option<T>?` are not supported in V1.
+- Use `let-else` or `match` when mapping, logging, recovering, or otherwise handling an error explicitly.
 
 ### Top-Level Constants
 
@@ -332,7 +354,7 @@ Rules:
 
 Supported statements:
 
-- local binding
+- local binding, including an explicitly typed local `try` boundary
 - statement-boundary propagation binding: `let name = result_expr?;`
 - `let-else` guard binding for `option` / `result` success patterns
 - assignment to a mutable local
@@ -519,11 +541,11 @@ Rules:
 
 - fallible operations return `result<T, E>`
 - absent values use `option<T>`
-- errors are handled explicitly with `match` or the narrow `let Ok(value) = result else { return ...; };` guard form
+- errors are handled explicitly with `match`, the narrow `let Ok(value) = result else { return ...; };` guard form, or a visible local `try` boundary
 - unchanged `result<T, E>` errors may be forwarded with statement-boundary `let value = result_expr?;` when the enclosing function returns `result<_, E>` and declares `propagates(E)`
 - `?` performs no implicit error conversion; use `let-else` or `match` when mapping one error type into another
 - there are no exceptions
-- expression-position `?`, `option<T>?`, `try` blocks, and custom propagation protocols are not supported
+- function-scoped expression `?`, multi-statement `try` blocks, `option<T>?`, implicit error conversion, and custom propagation protocols are not supported
 
 Example:
 
@@ -623,7 +645,7 @@ These are warnings, not hard errors.
 
 - methods
 - traits
-- loop families beyond bootstrap `while`
+- loop families beyond bootstrap `while` and list-only `for`
 - labeled or valued `break` / `continue`
 - user-defined generics
 - broader constant expressions beyond the v1 pure literal/operator subset

@@ -1219,7 +1219,7 @@ fn clone_local_inits_for_function(source: ref list<local_init_fact>, module: str
         let entry = list_get(ref source, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name {
+                if value.module == module and value.function_name == function_name and value.expr_member_name != "try_propagate" {
                     list_push(mutref copied, value);
                 }
             },
@@ -3947,6 +3947,221 @@ fn infer_match_expr_type_ctx(functions: ref list<function_fact>, function_params
     return result_ctx;
 }
 
+fn trailing_expression_question_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    if end - start >= 4 {
+        let close = token_at(ref tokens, end - 1);
+        let label = token_at(ref tokens, end - 2);
+        let open = token_at(ref tokens, end - 3);
+        let question = token_at(ref tokens, end - 4);
+        match close.kind {
+            tk_rbracket => {
+                match label.kind {
+                    tk_ident => {
+                        match open.kind {
+                            tk_lbracket => {
+                                match question.kind {
+                                    tk_question => {
+                                        return end - 4;
+                                    },
+                                    _ => {
+                                    },
+                                }
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            _ => {
+            },
+        }
+    }
+    if end > start {
+        let last = token_at(ref tokens, end - 1);
+        match last.kind {
+            tk_question => {
+                return end - 1;
+            },
+            _ => {
+            },
+        }
+    }
+    return -1;
+}
+
+fn span_is_try_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    if end - start < 4 {
+        return false;
+    }
+    let first = token_at(ref tokens, start);
+    let open = token_at(ref tokens, start + 1);
+    let close = token_at(ref tokens, end - 1);
+    match first.kind {
+        tk_kw_try => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match open.kind {
+        tk_lbrace => {
+        },
+        _ => {
+            return false;
+        },
+    }
+    match close.kind {
+        tk_rbrace => {
+            return true;
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn try_question_operand_start(tokens: ref list<token>, inner_start: i32, question_index: i32) -> i32 {
+    if question_index <= inner_start {
+        return -1;
+    }
+    let last = token_at(ref tokens, question_index - 1);
+    match last.kind {
+        tk_rparen => {
+        },
+        _ => {
+            return -1;
+        },
+    }
+    let mut depth = 0;
+    let mut index = question_index - 1;
+    let mut open_index = -1;
+    while index >= inner_start and open_index < 0 {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_rparen => {
+                depth = depth + 1;
+            },
+            tk_lparen => {
+                depth = depth - 1;
+                if depth == 0 {
+                    open_index = index;
+                }
+            },
+            _ => {
+            },
+        }
+        index = index - 1;
+    }
+    if open_index <= inner_start {
+        return -1;
+    }
+    let name = token_at(ref tokens, open_index - 1);
+    match name.kind {
+        tk_ident => {
+        },
+        _ => {
+            return -1;
+        },
+    }
+    let mut operand_start = open_index - 1;
+    let mut scanning = true;
+    while scanning and operand_start - 3 >= inner_start {
+        let second_colon = token_at(ref tokens, operand_start - 1);
+        let first_colon = token_at(ref tokens, operand_start - 2);
+        let qualifier = token_at(ref tokens, operand_start - 3);
+        if is_colon_token(second_colon) and is_colon_token(first_colon) and is_ident_token(qualifier) {
+            operand_start = operand_start - 3;
+        } else {
+            scanning = false;
+        }
+    }
+    return operand_start;
+}
+
+fn validate_try_question_sites(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, inner_start: i32, inner_end: i32, boundary_error: str, diags: mutref list<diag>) -> unit {
+    let mut index = inner_start;
+    while index < inner_end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_question => {
+                let operand_start = try_question_operand_start(ref tokens, inner_start, index);
+                if operand_start >= 0 {
+                    let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, operand_start, index, current.start, empty_expected_type_ctx(), mutref diags);
+                    if actual_ctx.head != "result" {
+                        push_diag(mutref diags, module, current.start, "NQ-PROPAGATE-001: `?` requires `result<T, E>`");
+                    } else {
+                        if not type_names_match(actual_ctx.arg2_name, boundary_error) {
+                            push_diag(mutref diags, module, current.start, "NQ-PROPAGATE-003: propagated error type must match the enclosing `try` boundary exactly; use let-else for explicit mapping");
+                        }
+                    }
+                }
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn span_contains_question_token(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_question => {
+                return true;
+            },
+            _ => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn infer_try_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
+    if expected_ctx.head != "result" or expected_ctx.arg1_name == "" or expected_ctx.arg2_name == "" {
+        push_diag(mutref diags, module, at, "NQ-TRY-001: `try` requires an explicit `result<T, E>` expected type");
+        return unsupported_type_ctx();
+    }
+    let inner_start = start + 2;
+    let inner_end = end - 1;
+    if inner_start >= inner_end {
+        push_diag(mutref diags, module, at, "NQ-TRY-002: `try` requires one value expression");
+        return unsupported_type_ctx();
+    }
+    if span_contains_question_token(ref tokens, inner_start, inner_end) and (find_root_or_operator(ref tokens, inner_start, inner_end) >= 0 or find_root_and_operator(ref tokens, inner_start, inner_end) >= 0) {
+        push_diag(mutref diags, module, at, "NQ-TRY-004: expression propagation inside short-circuit logic is not supported in `try` V1");
+        return unsupported_type_ctx();
+    }
+    let mut value_start = inner_start;
+    let mut value_end = inner_end;
+    while span_is_wrapped_in_parens(ref tokens, value_start, value_end) {
+        value_start = value_start + 1;
+        value_end = value_end - 1;
+    }
+    let value_head = token_at(ref tokens, value_start);
+    match value_head.kind {
+        tk_kw_match => {
+            push_diag(mutref diags, module, at, "NQ-TRY-005: match expressions are not supported as `try` V1 success expressions");
+            return unsupported_type_ctx();
+        },
+        _ => {
+        },
+    }
+    validate_try_question_sites(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, inner_start, inner_end, expected_ctx.arg2_name, mutref diags);
+    let success_ctx = make_expected_type_ctx(expected_ctx.arg1_name, "", "");
+    let actual_success = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, inner_start, inner_end, at, success_ctx, mutref diags);
+    if has_known_type_ctx(actual_success) and not type_ctx_matches(success_ctx, actual_success) {
+        push_diag(mutref diags, module, at, "NQ-TRY-003: `try` success expression does not match the annotated result payload type");
+    }
+    return expected_ctx;
+}
+
 pub fn infer_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx
 audit {
     intent("Infer the type context of a trusted-subset expression for selfhost semantic checks");
@@ -3962,6 +4177,19 @@ audit {
     }
     if expr_start >= expr_end {
         return make_expected_type_ctx("unit", "", "");
+    }
+
+    if span_is_try_expr(ref tokens, expr_start, expr_end) {
+        return infer_try_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, expr_end, at, expected_ctx, mutref diags);
+    }
+
+    let question_index = trailing_expression_question_index(ref tokens, expr_start, expr_end);
+    if question_index >= 0 {
+        let result_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, question_index, at, empty_expected_type_ctx(), mutref diags);
+        if result_ctx.head == "result" and result_ctx.arg1_name != "" {
+            return make_expected_type_ctx(result_ctx.arg1_name, "", "");
+        }
+        return unsupported_type_ctx();
     }
 
     let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);

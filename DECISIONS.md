@@ -415,3 +415,11 @@
 - Reason chosen: the compiler, proof runner, and evidence renderers already paid maintenance and consistency costs for these exact helpers. Other proposed helpers lacked comparable usage pressure.
 - Consequences: facts, review, proof, and C emission share deterministic text construction while `selfhost/files.nq` remains the existing path authority. New helpers still require real tool or corpus use; package scripts, network APIs, and prestige modules remain deferred.
 - Reversible later: helper modules can grow or reorganize when usage proves a clearer boundary, but runtime widening and generic abstractions remain separate decisions.
+
+## D053: Expression propagation exits to a visible local boundary
+
+- Decision: add expression-position `?` only inside `let value: result<T, E> = try { expression };`, where failure populates the local boundary instead of silently returning from the function.
+- Alternatives considered: Rust-style function-scoped expression propagation, general multi-statement try blocks, implicit error conversion, or retaining statement-boundary propagation only.
+- Reason chosen: nested fallible expressions become materially less wordy, while the source still names the control-flow destination and facts/review preserve every propagation site for human and agent supervision.
+- Consequences: V1 requires exact error matching and direct-call operands, evaluates propagation sites depth-first and left-to-right before wrapping the final value in `Ok`, and excludes short-circuit logic and match success expressions until their lowering can preserve control flow. Local sites are checked evidence but do not enlarge function-level `propagates(...)`.
+- Reversible later: multi-statement boundaries or broader expression contexts may be proposed separately, but they must preserve visible authority, deterministic evaluation, and versioned evidence rather than treating this syntax as precedent for hidden returns.

@@ -345,7 +345,7 @@ Status:
 - require exact `result<T, E>` to `result<U, E>` propagation with no implicit conversion
 - add `propagates(E)` as an audit-contract clause inferred from `?` sites
 - expose checked propagation sites through an explicit versioned facts/review/change-report surface
-- keep expression-position `?`, `option<T>?`, optional context labels, and `try` blocks deferred
+- at the M25 checkpoint, keep expression-position `?`, `option<T>?`, optional context labels, and `try` blocks deferred; M33 later added labels and M50 later added the narrow local boundary
 
 Status:
 
@@ -720,7 +720,11 @@ Status:
 
 Status:
 
-- planned after M49; the boundary must be visible to reviewers rather than silently returning from an arbitrary enclosing function
+- complete
+- `let value: result<T, E> = try { expression };` creates a visible local capture boundary: propagated `Err(E)` values populate that local rather than returning from the function, while success is wrapped in `Ok`
+- postfix `?` is supported on direct call results inside the eager success expression, with exact error matching, optional context labels, deterministic depth-first/left-to-right site order, and checked facts/review evidence
+- local sites do not inflate function-level inferred `propagates(...)`; short-circuit logic, match success expressions, multi-statement bodies, function-scoped expression propagation, and implicit conversion remain rejected
+- `examples/try_expression.nq` is formatter-gated and locked into the runtime proof corpus
 
 ### M51: Structured Error Sets
 
@@ -730,7 +734,9 @@ Status:
 
 Status:
 
-- planned after M50; its exact syntax remains a decision-record gate, not a precommitted imitation of another language
+- deferred at the decision gate, not implemented
+- the current compiler, organizational workspace, and canonical corpus use one exact error type per boundary (`io_err`, `str`, or another already-named type) and do not demonstrate a mixed closed-error boundary that justifies new syntax or type machinery
+- revisit only when a real workspace needs to preserve multiple independently meaningful error families across one public boundary; do not manufacture pressure from hypothetical examples
 
 ## Feature Ordering
 
