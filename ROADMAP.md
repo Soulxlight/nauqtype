@@ -738,6 +738,89 @@ Status:
 - the current compiler, organizational workspace, and canonical corpus use one exact error type per boundary (`io_err`, `str`, or another already-named type) and do not demonstrate a mixed closed-error boundary that justifies new syntax or type machinery
 - revisit only when a real workspace needs to preserve multiple independently meaningful error families across one public boundary; do not manufacture pressure from hypothetical examples
 
+### M52: Stable Contract And Agent Operating Gate
+
+- define what feature-complete Linux terminal work and practical native
+  application development mean for Nauqtype
+- install an always-read repository protocol for lead agents, workers,
+  researchers, test agents, audits, and descendant-agent approval
+- lock the release path without widening syntax, semantics, ownership, runtime,
+  or machine-readable schemas
+- restore clean-checkout executability for nested Linux gate scripts
+
+Status:
+
+- complete
+- [AGENTS.md](AGENTS.md) assigns critical-path, integration, verification,
+  commit, and push ownership to the lead while allowing disciplined parallel
+  research, disjoint implementation, and trailing audits
+- [STABLE_RELEASE.md](STABLE_RELEASE.md) defines the terminal/application
+  contracts, engineering rules, M52-M61 order, and stable release evidence
+- shell gates invoked by CI now preserve executable mode in git instead of
+  relying on permissions left over in one working tree
+
+### M53: Release Truth And Foundational Values
+
+- add stable help/version behavior and truthful phase-specific diagnostics with
+  source spans
+- add bytes plus a width-safe integer/duration foundation before binary files,
+  metadata, or time depend on them
+- define deterministic reclamation for owned heap-backed values before
+  long-running applications
+- lock clean-checkout CI plus compiler/test/proof time and memory budgets
+
+### M54: Linux Input And Filesystem Foundation
+
+- add stdin, environment, cwd, path metadata, traversal, removal/rename,
+  temporary locations, binary I/O, and atomic replacement
+- keep runtime primitives narrow and build ordinary conveniences as Nauqtype
+  modules with checked IO evidence
+
+### M55: Structured Process, Time, And Cancellation
+
+- add explicit process environment/stdin/output/timeout behavior
+- add wall time, monotonic time, sleep, and deadline support
+- prove cleanup, cancellation, and deterministic failures on Linux
+
+### M56: Generic Reuse Foundation
+
+- add explicit function and user-type generics with deterministic
+  monomorphization
+- keep traits, overloads, implicit constraints, and method dispatch out of the
+  first form
+
+### M57: Collections And Data Interchange
+
+- build reusable map/set facilities with an explicit checked key strategy
+- add deterministic general JSON values, parsing, and writing
+
+### M58: Native Library And Linux ABI Boundary
+
+- define auditable C imports/exports, link declarations, and FFI ownership
+- build reusable libraries as well as executables
+
+### M59: Bounded Applications And Daily Tooling
+
+- add explicit task start/join/cancel and channel-style communication
+- avoid an implicit global executor and prove bounded shutdown behavior
+- add comment-preserving formatter write mode, editor semantic support,
+  workspace test ergonomics, checked API documentation, and enforceable
+  performance budgets
+
+### M60: Linux Packaging And Compatibility Freeze
+
+- add versioned archives/package installation, relocation, uninstall, upgrade,
+  rollback, and supported-host contracts
+- add checksums/signatures, sanitizer/fuzz gates, and an explicit architecture,
+  libc, and host-compiler compatibility matrix
+
+### M61: v1.0 Stable Linux Gate
+
+- independently prove bootstrap, compiler, runtime, terminal/app corpus,
+  diagnostics, evidence schemas, FFI, performance, release layout,
+  installation, upgrade, and rollback
+- freeze and publish only the contracts that pass the stable matrix
+
 ## Feature Ordering
 
 Features required before first success:
@@ -758,22 +841,18 @@ Features explicitly not required before first success:
 - methods
 - loop families beyond bootstrap `while`
 
-## Post-M46 Candidates
+## Historical Post-M46 Candidate Record
 
 - M47: close composite generic-field C lowering before new syntax: dependency-safe carrier declaration order for `list` / `option` / `result` fields and correct borrow lowering through a product field
 - M48: list `for` loops
 - M49: surgical internal-tool helpers
 - M50: explicit `try` boundaries and expression-position propagation
 - M51: structured error sets
-- M52 candidate: generic foundations
-- typed obligations / repair contracts
-- user-defined generics
-- methods / `impl`
-- labeled or valued `break` / `continue`
-- richer standard library
-- stronger borrow analysis
-- direct native backend exploration
-- richer module/package tooling beyond flat-root imports
+- M51 stopped at its evidence gate because real mixed-error pressure was absent
+- the active post-M51 sequence is M52-M61 in [STABLE_RELEASE.md](STABLE_RELEASE.md)
+- typed obligations, methods / `impl`, labeled or valued `break` / `continue`,
+  stronger borrow analysis, and direct native backend exploration remain
+  outside the stable Linux critical path until real programs justify them
 
 ## Testing Milestones
 

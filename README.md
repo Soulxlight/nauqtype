@@ -31,7 +31,15 @@ Current bootstrap status:
 
 v0.3 organizational alpha status: `nauqtype-0.3.0-alpha.1` proves a locked two-workspace internal tool from the C seed through stage1 proof, checked facts/policy/change evidence, and a copied Linux release outside the source checkout. The language surface remains stable; this milestone hardens reproducibility and supervision rather than adding syntax.
 
-The active roadmap now prioritizes a Nauqtype-owned test and bootstrap path before workspace syntax grows. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md) records the Python-retirement contract, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) records the syntax-evolution discipline that future features must satisfy.
+The active compiler, tests, proof, and release path are Nauqtype-owned and the
+Python bootstrap is archived. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md)
+records that completed cutover, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md)
+records the discipline future features must satisfy.
+
+The post-v0.3 program now targets a stable Linux release for terminal tools and
+practical native applications. [STABLE_RELEASE.md](STABLE_RELEASE.md) defines
+that scope and the M52-M61 sequence; [AGENTS.md](AGENTS.md) is the required
+multi-agent operating contract for work in this repository.
 
 ## Quick Start
 

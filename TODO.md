@@ -367,3 +367,19 @@
 - [x] M49: Add only exercised pure-Nauqtype internal-tool helper modules
 - [x] M50: Add explicit local `try` boundaries for evidence-backed expression-position `?`
 - [x] M51 decision gate: Defer structured error sets because current workspace tools do not demonstrate the required mixed-error pressure
+
+## Stable Linux Release Program
+
+- [x] M52: add the repository multi-agent operating protocol
+- [x] M52: define terminal and practical native-application completeness
+- [x] M52: lock the dependency-ordered M53-M61 stable release path
+- [x] M52: restore executable metadata for clean-checkout Linux gate scripts
+- [ ] M53: lock CLI/diagnostic truth, bytes, width-safe values, reclamation, CI, and performance baselines
+- [ ] M54: add Linux stdin/environment/cwd and filesystem foundations
+- [ ] M55: add structured process, time, timeout, and cancellation foundations
+- [ ] M56: add explicit generic reuse without trait or method-system drift
+- [ ] M57: add reusable collections and deterministic general JSON
+- [ ] M58: add an auditable native library and Linux C ABI boundary
+- [ ] M59: add bounded tasks and complete daily formatter/editor/test/documentation workflows
+- [ ] M60: freeze secure Linux packaging, installation, relocation, compatibility, and sanitizer/fuzz gates
+- [ ] M61: pass and publish the v1.0 stable Linux gate
