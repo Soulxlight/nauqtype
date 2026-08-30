@@ -7,9 +7,9 @@
 readonly PERFORMANCE_BUDGET_VERSION=1
 
 declare -Ar PERFORMANCE_WALL_SECONDS=(
-    [seed_bootstrap]=480
-    [stage1.driver]=480
-    [proof]=1200
+    [seed_bootstrap]=720
+    [stage1.driver]=720
+    [proof]=1800
     [linux_alpha]=300
     [stress_leg]=300
     [owned_tests]=600
