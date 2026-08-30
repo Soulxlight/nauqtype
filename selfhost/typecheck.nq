@@ -2,6 +2,8 @@ use ast;
 use diag;
 use lexer;
 use source;
+use text;
+use type_text;
 use token;
 
 pub type expected_type_ctx {
@@ -34,8 +36,119 @@ audit {
     return make_expected_type_ctx("", "", "");
 }
 
+fn expected_type_ctx_from_text(value: str) -> expected_type_ctx {
+    if value == "" {
+        return empty_expected_type_ctx();
+    }
+    return make_expected_type_ctx(type_text_head(value), type_text_arg1(value), type_text_arg2(value));
+}
+
+fn clone_type_keys(values: ref list<str>) -> list<str> {
+    let mut result: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref values) {
+        let entry = list_get(ref values, index);
+        match entry {
+            Some(value) => { list_push(mutref result, value); },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn type_ctx_is_copy(ctx: expected_type_ctx, module: str, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, visiting: ref list<str>) -> bool {
+    if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" {
+        return true;
+    }
+    if ctx.head == "list" or ctx.head == "bytes" {
+        return false;
+    }
+    if ctx.head == "option" {
+        return type_ctx_is_copy(expected_type_ctx_from_text(ctx.arg1_name), module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting);
+    }
+    if ctx.head == "result" {
+        return type_ctx_is_copy(expected_type_ctx_from_text(ctx.arg1_name), module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting)
+            and type_ctx_is_copy(expected_type_ctx_from_text(ctx.arg2_name), module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting);
+    }
+    if ctx.head == "" {
+        return false;
+    }
+
+    let origin = visible_type_origin_module(ref uses, ref items, module, ctx.head);
+    if origin == "" {
+        return false;
+    }
+    let key = str_concat(str_concat(origin, "::"), ctx.head);
+    if list_contains_str(ref visiting, key) {
+        return false;
+    }
+    let mut next_visiting = clone_type_keys(ref visiting);
+    list_push(mutref next_visiting, key);
+
+    let mut field_index = 0;
+    while field_index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, field_index);
+        match entry {
+            Some(field) => {
+                if field.module == origin and field.type_name == ctx.head {
+                    let field_ctx = make_expected_type_ctx(field.field_type_name, field.field_type_arg1_name, field.field_type_arg2_name);
+                    if field.field_is_borrow or not type_ctx_is_copy(field_ctx, origin, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref next_visiting) {
+                        return field.field_is_borrow;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+
+    let mut variant_index = 0;
+    while variant_index < list_len(ref variants) {
+        let variant_entry = list_get(ref variants, variant_index);
+        match variant_entry {
+            Some(variant) => {
+                if variant.module == origin and variant.enum_name == ctx.head {
+                    let mut payload_index = 0;
+                    while payload_index < list_len(ref variant_payloads) {
+                        let payload_entry = list_get(ref variant_payloads, payload_index);
+                        match payload_entry {
+                            Some(payload) => {
+                                if payload.module == origin and payload.variant_name == variant.name {
+                                    let payload_ctx = make_expected_type_ctx(payload.type_name, payload.type_arg1_name, payload.type_arg2_name);
+                                    if payload.is_borrow or not type_ctx_is_copy(payload_ctx, origin, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref next_visiting) {
+                                        return payload.is_borrow;
+                                    }
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        payload_index = payload_index + 1;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        variant_index = variant_index + 1;
+    }
+    return true;
+}
+
+fn push_error(diags: mutref list<diag>, file: str, at: i32, code: str, category: diag_category, message: str) -> unit {
+    let mut end = at;
+    if at >= 0 {
+        end = at + 1;
+    }
+    list_push(mutref diags, make_error(code, category, file, at, end, message));
+    return;
+}
+
 fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit {
-    list_push(mutref diags, make_diag(file, at, message));
+    push_error(mutref diags, file, at, "NQ-TYPE-042", diag_type, message);
     return;
 }
 
@@ -49,6 +162,22 @@ fn token_at(tokens: ref list<token>, index: i32) -> token {
             return eof_token(index);
         },
     }
+}
+
+fn push_token_range_error(diags: mutref list<diag>, file: str, tokens: ref list<token>, start: i32, end: i32, code: str, message: str) -> unit {
+    if start >= 0 and start < end {
+        let first = token_at(ref tokens, start);
+        let last = token_at(ref tokens, end - 1);
+        list_push(mutref diags, make_error(code, diag_type, file, first.start, last.end, message));
+        return;
+    }
+    push_error(mutref diags, file, -1, code, diag_type, message);
+    return;
+}
+
+fn push_token_range_diag(diags: mutref list<diag>, file: str, tokens: ref list<token>, start: i32, end: i32, message: str) -> unit {
+    push_token_range_error(mutref diags, file, ref tokens, start, end, "NQ-TYPE-042", message);
+    return;
 }
 
 fn is_function_item(item: top_item) -> bool {
@@ -266,6 +395,12 @@ fn builtin_function_arity(name: str) -> i32 {
             return 2;
         }
         return 3;
+    }
+    if name == "bytes_from_str" or name == "bytes_len" {
+        return 1;
+    }
+    if name == "bytes_get" {
+        return 2;
     }
     if name == "list" {
         return 0;
@@ -510,6 +645,15 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "str_get" or name == "str_slice" {
         return "option";
     }
+    if name == "bytes_from_str" {
+        return "bytes";
+    }
+    if name == "bytes_len" {
+        return "i64";
+    }
+    if name == "bytes_get" {
+        return "option";
+    }
     if name == "list" {
         return "list";
     }
@@ -546,6 +690,9 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     }
     if name == "str_slice" {
         return "str";
+    }
+    if name == "bytes_get" {
+        return "i32";
     }
     return "";
 }
@@ -1401,9 +1548,6 @@ fn type_ctx_matches(expected: expected_type_ctx, actual: expected_type_ctx) -> b
         if not type_ctx_arg_matches(expected.arg1_name, actual.arg1_name) {
             return false;
         }
-        if expected.head == "option" and expected.arg1_name == "option" {
-            return type_ctx_arg_matches(expected.arg2_name, actual.arg2_name);
-        }
         return true;
     }
     if expected.head == "result" {
@@ -1501,6 +1645,19 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
         }
         if index == 1 or index == 2 {
             return "i32";
+        }
+    }
+    if function_name == "bytes_from_str" {
+        if index == 0 {
+            return "str";
+        }
+    }
+    if function_name == "bytes_len" or function_name == "bytes_get" {
+        if index == 0 {
+            return "bytes";
+        }
+        if function_name == "bytes_get" and index == 1 {
+            return "i64";
         }
     }
     if function_name == "list_push" {
@@ -1661,6 +1818,24 @@ fn builtin_function_param_name(function_name: str, index: i32) -> str {
         }
         if index == 2 {
             return "end";
+        }
+    }
+    if function_name == "bytes_from_str" {
+        if index == 0 {
+            return "text";
+        }
+    }
+    if function_name == "bytes_len" {
+        if index == 0 {
+            return "value";
+        }
+    }
+    if function_name == "bytes_get" {
+        if index == 0 {
+            return "value";
+        }
+        if index == 1 {
+            return "index";
         }
     }
     if function_name == "list_push" {
@@ -2011,7 +2186,158 @@ fn is_int_like(type_name: str) -> bool {
     if type_name == "int" {
         return true;
     }
-    return type_name == "i32";
+    return type_name == "i32" or type_name == "i64";
+}
+
+fn integer_expected_ctx(expected_ctx: expected_type_ctx) -> expected_type_ctx {
+    if expected_ctx.head == "i64" {
+        return make_expected_type_ctx("i64", "", "");
+    }
+    if expected_ctx.head == "i32" or expected_ctx.head == "int" {
+        return make_expected_type_ctx("i32", "", "");
+    }
+    return empty_expected_type_ctx();
+}
+
+fn decimal_char_at(text_value: str, index: i32) -> i32 {
+    let entry = str_get(text_value, index);
+    match entry {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+fn decimal_magnitude_fits(text_value: str, limit: str) -> bool {
+    let mut first = 0;
+    let mut scanning = true;
+    while scanning and first + 1 < str_len(text_value) {
+        if decimal_char_at(text_value, first) == 48 {
+            first = first + 1;
+        } else {
+            scanning = false;
+        }
+    }
+    let magnitude_len = str_len(text_value) - first;
+    let limit_len = str_len(limit);
+    if magnitude_len < limit_len {
+        return true;
+    }
+    if magnitude_len > limit_len {
+        return false;
+    }
+    let mut index = 0;
+    while index < limit_len {
+        let actual = decimal_char_at(text_value, first + index);
+        let allowed = decimal_char_at(limit, index);
+        if actual < allowed {
+            return true;
+        }
+        if actual > allowed {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn push_integer_range_diag(diags: mutref list<diag>, module: str, tokens: ref list<token>, start: i32, end: i32, type_name: str) -> unit {
+    if start >= 0 and start < end {
+        let first = token_at(ref tokens, start);
+        let last = token_at(ref tokens, end - 1);
+        let mut index = 0;
+        while index < list_len(ref diags) {
+            let entry = list_get(ref diags, index);
+            match entry {
+                Some(value) => {
+                    if value.code == "NQ-TYPE-043" and value.source_name == module and value.start == first.start and value.end == last.end {
+                        return;
+                    }
+                },
+                None => {
+                },
+            }
+            index = index + 1;
+        }
+    }
+    push_token_range_error(mutref diags, module, ref tokens, start, end, "NQ-TYPE-043", str_concat("integer literal is out of range for `", str_concat(type_name, "`")));
+    return;
+}
+
+fn integer_literal_ctx(text_value: str, negative: bool, expected_ctx: expected_type_ctx, module: str, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> expected_type_ctx {
+    let selected = integer_expected_ctx(expected_ctx);
+    let mut type_name = "i32";
+    if selected.head == "i64" {
+        type_name = "i64";
+    }
+    let mut limit = "2147483647";
+    if negative {
+        limit = "2147483648";
+    }
+    if type_name == "i64" {
+        limit = "9223372036854775807";
+        if negative {
+            limit = "9223372036854775808";
+        }
+    }
+    if not decimal_magnitude_fits(text_value, limit) {
+        push_integer_range_diag(mutref diags, module, ref tokens, start, end, type_name);
+    }
+    return make_expected_type_ctx(type_name, "", "");
+}
+
+fn span_is_contextual_integer_expr(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut expr_start = start;
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return false;
+    }
+    if expr_start + 1 == expr_end {
+        let current = token_at(ref tokens, expr_start);
+        match current.kind {
+            tk_int_lit => {
+                return true;
+            },
+            _ => {
+                return false;
+            },
+        }
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_minus => {
+            return span_is_contextual_integer_expr(ref tokens, expr_start + 1, expr_end);
+        },
+        _ => {
+        },
+    }
+    let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
+    if additive_index >= 0 {
+        return span_is_contextual_integer_expr(ref tokens, expr_start, additive_index) and span_is_contextual_integer_expr(ref tokens, additive_index + 1, expr_end);
+    }
+    let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
+    if multiplicative_index >= 0 {
+        return span_is_contextual_integer_expr(ref tokens, expr_start, multiplicative_index) and span_is_contextual_integer_expr(ref tokens, multiplicative_index + 1, expr_end);
+    }
+    return false;
+}
+
+fn arithmetic_result_ctx(expected_ctx: expected_type_ctx, left_ctx: expected_type_ctx, right_ctx: expected_type_ctx) -> expected_type_ctx {
+    let selected = integer_expected_ctx(expected_ctx);
+    if selected.head != "" {
+        return selected;
+    }
+    if left_ctx.head == "i64" or right_ctx.head == "i64" {
+        return make_expected_type_ctx("i64", "", "");
+    }
+    return make_expected_type_ctx("i32", "", "");
 }
 
 fn expr_content_start(tokens: ref list<token>, start: i32, end: i32) -> i32 {
@@ -3127,16 +3453,13 @@ fn builtin_variant_payload_ctx(call_name: str, return_ctx: expected_type_ctx, in
         return empty_expected_type_ctx();
     }
     if call_name == "Some" {
-        if return_ctx.head == "option" and return_ctx.arg1_name == "option" and return_ctx.arg2_name != "" {
-            return make_expected_type_ctx("option", return_ctx.arg2_name, "");
-        }
-        return make_expected_type_ctx(return_ctx.arg1_name, "", "");
+        return expected_type_ctx_from_text(return_ctx.arg1_name);
     }
     if call_name == "Ok" {
-        return make_expected_type_ctx(return_ctx.arg1_name, "", "");
+        return expected_type_ctx_from_text(return_ctx.arg1_name);
     }
     if call_name == "Err" {
-        return make_expected_type_ctx(return_ctx.arg2_name, "", "");
+        return expected_type_ctx_from_text(return_ctx.arg2_name);
     }
     return empty_expected_type_ctx();
 }
@@ -3224,7 +3547,7 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                     expected_arg_ctx = make_expected_type_ctx("list", "", "");
                 } else {
                     if arg_index == 1 and first_arg_ctx.head == "list" and first_arg_ctx.arg1_name != "" {
-                        expected_arg_ctx = make_expected_type_ctx(first_arg_ctx.arg1_name, "", "");
+                expected_arg_ctx = expected_type_ctx_from_text(first_arg_ctx.arg1_name);
                     } else {
                         expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
                     }
@@ -3278,7 +3601,7 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                         expected_arg_ctx = make_expected_type_ctx("list", "", "");
                     } else {
                         if arg_index == 1 and first_arg_ctx.head == "list" and first_arg_ctx.arg1_name != "" {
-                            expected_arg_ctx = make_expected_type_ctx(first_arg_ctx.arg1_name, "", "");
+                            expected_arg_ctx = expected_type_ctx_from_text(first_arg_ctx.arg1_name);
                         } else {
                             expected_arg_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module, call_name, arg_index);
                         }
@@ -3333,6 +3656,11 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
 
     if call_return_ctx.head != "" {
         if call_name == "list_get" and first_arg_ctx.head == "list" {
+            let element_ctx = expected_type_ctx_from_text(first_arg_ctx.arg1_name);
+            let visiting: list<str> = list();
+            if not type_ctx_is_copy(element_ctx, module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting) {
+                push_diag(mutref diags, module, head.start, "list_get requires a copy element type; move-only list elements must stay owned by the list");
+            }
             return make_expected_type_ctx("option", first_arg_ctx.arg1_name, "");
         }
         return call_return_ctx;
@@ -3443,7 +3771,7 @@ fn infer_list_expr_type_ctx(functions: ref list<function_fact>, function_params:
 
     let mut declared_element_ctx = empty_expected_type_ctx();
     if expected_ctx.head == "list" and expected_ctx.arg1_name != "" {
-        declared_element_ctx = make_expected_type_ctx(expected_ctx.arg1_name, "", "");
+        declared_element_ctx = expected_type_ctx_from_text(expected_ctx.arg1_name);
     }
 
     let mut first_element_ctx = empty_expected_type_ctx();
@@ -3757,7 +4085,7 @@ fn match_expr_patterns_include_variant(tokens: ref list<token>, start: i32, end:
 }
 
 fn match_expr_is_exhaustive(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, tokens: ref list<token>, start: i32, end: i32, scrutinee_ctx: expected_type_ctx) -> bool {
-    if scrutinee_ctx.head == "i32" {
+    if scrutinee_ctx.head == "i32" or scrutinee_ctx.head == "i64" {
         return match_expr_patterns_have_default(ref variants, ref uses, ref items, module, ref tokens, start, end);
     }
     if match_expr_patterns_have_refined(ref tokens, start, end) {
@@ -3801,7 +4129,7 @@ fn match_expr_is_exhaustive(variants: ref list<variant_fact>, uses: ref list<mod
 }
 
 fn match_expr_scrutinee_is_supported(variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, scrutinee_ctx: expected_type_ctx) -> bool {
-    if scrutinee_ctx.head == "i32" {
+    if scrutinee_ctx.head == "i32" or scrutinee_ctx.head == "i64" {
         return true;
     }
     if scrutinee_ctx.head == "option" or scrutinee_ctx.head == "result" {
@@ -4091,10 +4419,10 @@ fn validate_try_question_sites(functions: ref list<function_fact>, function_para
                 if operand_start >= 0 {
                     let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, operand_start, index, current.start, empty_expected_type_ctx(), mutref diags);
                     if actual_ctx.head != "result" {
-                        push_diag(mutref diags, module, current.start, "NQ-PROPAGATE-001: `?` requires `result<T, E>`");
+                        push_error(mutref diags, module, current.start, "NQ-PROPAGATE-001", diag_propagate, "`?` requires `result<T, E>`");
                     } else {
                         if not type_names_match(actual_ctx.arg2_name, boundary_error) {
-                            push_diag(mutref diags, module, current.start, "NQ-PROPAGATE-003: propagated error type must match the enclosing `try` boundary exactly; use let-else for explicit mapping");
+                            push_error(mutref diags, module, current.start, "NQ-PROPAGATE-003", diag_propagate, "propagated error type must match the enclosing `try` boundary exactly; use let-else for explicit mapping");
                         }
                     }
                 }
@@ -4125,17 +4453,17 @@ fn span_contains_question_token(tokens: ref list<token>, start: i32, end: i32) -
 
 fn infer_try_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
     if expected_ctx.head != "result" or expected_ctx.arg1_name == "" or expected_ctx.arg2_name == "" {
-        push_diag(mutref diags, module, at, "NQ-TRY-001: `try` requires an explicit `result<T, E>` expected type");
+        push_error(mutref diags, module, at, "NQ-TRY-001", diag_try, "`try` requires an explicit `result<T, E>` expected type");
         return unsupported_type_ctx();
     }
     let inner_start = start + 2;
     let inner_end = end - 1;
     if inner_start >= inner_end {
-        push_diag(mutref diags, module, at, "NQ-TRY-002: `try` requires one value expression");
+        push_error(mutref diags, module, at, "NQ-TRY-002", diag_try, "`try` requires one value expression");
         return unsupported_type_ctx();
     }
     if span_contains_question_token(ref tokens, inner_start, inner_end) and (find_root_or_operator(ref tokens, inner_start, inner_end) >= 0 or find_root_and_operator(ref tokens, inner_start, inner_end) >= 0) {
-        push_diag(mutref diags, module, at, "NQ-TRY-004: expression propagation inside short-circuit logic is not supported in `try` V1");
+        push_error(mutref diags, module, at, "NQ-TRY-004", diag_try, "expression propagation inside short-circuit logic is not supported in `try` V1");
         return unsupported_type_ctx();
     }
     let mut value_start = inner_start;
@@ -4147,17 +4475,17 @@ fn infer_try_expr_type_ctx(functions: ref list<function_fact>, function_params: 
     let value_head = token_at(ref tokens, value_start);
     match value_head.kind {
         tk_kw_match => {
-            push_diag(mutref diags, module, at, "NQ-TRY-005: match expressions are not supported as `try` V1 success expressions");
+            push_error(mutref diags, module, at, "NQ-TRY-005", diag_try, "match expressions are not supported as `try` V1 success expressions");
             return unsupported_type_ctx();
         },
         _ => {
         },
     }
     validate_try_question_sites(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, inner_start, inner_end, expected_ctx.arg2_name, mutref diags);
-    let success_ctx = make_expected_type_ctx(expected_ctx.arg1_name, "", "");
+    let success_ctx = expected_type_ctx_from_text(expected_ctx.arg1_name);
     let actual_success = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, inner_start, inner_end, at, success_ctx, mutref diags);
     if has_known_type_ctx(actual_success) and not type_ctx_matches(success_ctx, actual_success) {
-        push_diag(mutref diags, module, at, "NQ-TRY-003: `try` success expression does not match the annotated result payload type");
+        push_error(mutref diags, module, at, "NQ-TRY-003", diag_try, "`try` success expression does not match the annotated result payload type");
     }
     return expected_ctx;
 }
@@ -4187,7 +4515,7 @@ audit {
     if question_index >= 0 {
         let result_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, question_index, at, empty_expected_type_ctx(), mutref diags);
         if result_ctx.head == "result" and result_ctx.arg1_name != "" {
-            return make_expected_type_ctx(result_ctx.arg1_name, "", "");
+            return expected_type_ctx_from_text(result_ctx.arg1_name);
         }
         return unsupported_type_ctx();
     }
@@ -4220,8 +4548,15 @@ audit {
 
     let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
     if compare_index >= 0 {
-        let left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref diags);
-        let right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+        let mut left_type_ctx = empty_expected_type_ctx();
+        let mut right_type_ctx = empty_expected_type_ctx();
+        if span_is_contextual_integer_expr(ref tokens, expr_start, compare_index) {
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, integer_expected_ctx(right_type_ctx), mutref diags);
+        } else {
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, compare_index, at, empty_expected_type_ctx(), mutref diags);
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, integer_expected_ctx(left_type_ctx), mutref diags);
+        }
         if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
             push_diag(mutref diags, module, at, "comparison operands must have matching types");
         }
@@ -4230,28 +4565,58 @@ audit {
 
     let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
     if additive_index >= 0 {
-        let left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, empty_expected_type_ctx(), mutref diags);
-        let right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+        let operand_expected = integer_expected_ctx(expected_ctx);
+        let mut left_type_ctx = empty_expected_type_ctx();
+        let mut right_type_ctx = empty_expected_type_ctx();
+        if operand_expected.head == "" and span_is_contextual_integer_expr(ref tokens, expr_start, additive_index) {
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, integer_expected_ctx(right_type_ctx), mutref diags);
+        } else {
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, additive_index, at, operand_expected, mutref diags);
+            let mut right_expected = operand_expected;
+            if right_expected.head == "" {
+                right_expected = integer_expected_ctx(left_type_ctx);
+            }
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, right_expected, mutref diags);
+        }
         if has_known_type_ctx(left_type_ctx) and not is_int_like(left_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
         if has_known_type_ctx(right_type_ctx) and not is_int_like(right_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        return make_expected_type_ctx("i32", "", "");
+        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_int_like(left_type_ctx.head) and is_int_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
+            push_diag(mutref diags, module, at, "arithmetic operands must have matching types");
+        }
+        return arithmetic_result_ctx(expected_ctx, left_type_ctx, right_type_ctx);
     }
 
     let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
     if multiplicative_index >= 0 {
-        let left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, empty_expected_type_ctx(), mutref diags);
-        let right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+        let operand_expected = integer_expected_ctx(expected_ctx);
+        let mut left_type_ctx = empty_expected_type_ctx();
+        let mut right_type_ctx = empty_expected_type_ctx();
+        if operand_expected.head == "" and span_is_contextual_integer_expr(ref tokens, expr_start, multiplicative_index) {
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, empty_expected_type_ctx(), mutref diags);
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, integer_expected_ctx(right_type_ctx), mutref diags);
+        } else {
+            left_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start, multiplicative_index, at, operand_expected, mutref diags);
+            let mut right_expected = operand_expected;
+            if right_expected.head == "" {
+                right_expected = integer_expected_ctx(left_type_ctx);
+            }
+            right_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, right_expected, mutref diags);
+        }
         if has_known_type_ctx(left_type_ctx) and not is_int_like(left_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
         if has_known_type_ctx(right_type_ctx) and not is_int_like(right_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        return make_expected_type_ctx("i32", "", "");
+        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_int_like(left_type_ctx.head) and is_int_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
+            push_diag(mutref diags, module, at, "arithmetic operands must have matching types");
+        }
+        return arithmetic_result_ctx(expected_ctx, left_type_ctx, right_type_ctx);
     }
 
     if span_is_list_expr(ref tokens, expr_start, expr_end) {
@@ -4277,11 +4642,31 @@ audit {
             return make_expected_type_ctx("bool", "", "");
         },
         tk_minus => {
-            let inner_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref diags);
+            let mut literal_start = expr_start + 1;
+            let mut literal_end = expr_end;
+            while span_is_wrapped_in_parens(ref tokens, literal_start, literal_end) {
+                literal_start = literal_start + 1;
+                literal_end = literal_end - 1;
+            }
+            if literal_start + 1 == literal_end {
+                let literal = token_at(ref tokens, literal_start);
+                match literal.kind {
+                    tk_int_lit => {
+                        return integer_literal_ctx(literal.text, true, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
+                    },
+                    _ => {
+                    },
+                }
+            }
+            let numeric_expected = integer_expected_ctx(expected_ctx);
+            let inner_type_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, numeric_expected, mutref diags);
             if has_known_type_ctx(inner_type_ctx) and not is_int_like(inner_type_ctx.head) {
                 push_diag(mutref diags, module, current.start, "arithmetic operand must have integer type");
             }
-            return make_expected_type_ctx("i32", "", "");
+            if is_int_like(inner_type_ctx.head) {
+                return make_expected_type_ctx(inner_type_ctx.head, "", "");
+            }
+            return arithmetic_result_ctx(expected_ctx, inner_type_ctx, empty_expected_type_ctx());
         },
         tk_kw_true => {
             if expr_start + 1 == expr_end {
@@ -4295,7 +4680,7 @@ audit {
         },
         tk_int_lit => {
             if expr_start + 1 == expr_end {
-                return make_expected_type_ctx("i32", "", "");
+                return integer_literal_ctx(current.text, false, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
             }
         },
         tk_string_lit => {
@@ -4419,10 +4804,10 @@ fn is_const_safe_type(type_name: str, arg1_name: str, arg2_name: str, is_borrow:
     if arg1_name != "" or arg2_name != "" {
         return false;
     }
-    return type_name == "i32" or type_name == "bool" or type_name == "str";
+    return type_name == "i32" or type_name == "i64" or type_name == "bool" or type_name == "str";
 }
 
-fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
+fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
     let mut expr_start = expr_content_start(ref tokens, start, end);
     let mut expr_end = end;
     while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
@@ -4436,8 +4821,9 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, modu
 
     let or_index = find_root_or_operator(ref tokens, expr_start, expr_end);
     if or_index >= 0 {
-        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, or_index, module, at, mutref diags);
-        let right_type = infer_const_expr_type_ctx(ref tokens, or_index + 1, expr_end, module, at, mutref diags);
+        let bool_ctx = make_expected_type_ctx("bool", "", "");
+        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, or_index, bool_ctx, module, at, mutref diags);
+        let right_type = infer_const_expr_type_ctx(ref tokens, or_index + 1, expr_end, bool_ctx, module, at, mutref diags);
         if has_known_type_ctx(left_type) and left_type.head != "bool" {
             push_diag(mutref diags, module, at, "const logical operand must have type `bool`");
         }
@@ -4449,8 +4835,9 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, modu
 
     let and_index = find_root_and_operator(ref tokens, expr_start, expr_end);
     if and_index >= 0 {
-        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, and_index, module, at, mutref diags);
-        let right_type = infer_const_expr_type_ctx(ref tokens, and_index + 1, expr_end, module, at, mutref diags);
+        let bool_ctx = make_expected_type_ctx("bool", "", "");
+        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, and_index, bool_ctx, module, at, mutref diags);
+        let right_type = infer_const_expr_type_ctx(ref tokens, and_index + 1, expr_end, bool_ctx, module, at, mutref diags);
         if has_known_type_ctx(left_type) and left_type.head != "bool" {
             push_diag(mutref diags, module, at, "const logical operand must have type `bool`");
         }
@@ -4462,8 +4849,15 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, modu
 
     let compare_index = find_root_compare_operator(ref tokens, expr_start, expr_end);
     if compare_index >= 0 {
-        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, compare_index, module, at, mutref diags);
-        let right_type = infer_const_expr_type_ctx(ref tokens, compare_index + 1, expr_end, module, at, mutref diags);
+        let mut left_type = empty_expected_type_ctx();
+        let mut right_type = empty_expected_type_ctx();
+        if span_is_contextual_integer_expr(ref tokens, expr_start, compare_index) {
+            right_type = infer_const_expr_type_ctx(ref tokens, compare_index + 1, expr_end, empty_expected_type_ctx(), module, at, mutref diags);
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, compare_index, integer_expected_ctx(right_type), module, at, mutref diags);
+        } else {
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, compare_index, empty_expected_type_ctx(), module, at, mutref diags);
+            right_type = infer_const_expr_type_ctx(ref tokens, compare_index + 1, expr_end, integer_expected_ctx(left_type), module, at, mutref diags);
+        }
         if has_known_type_ctx(left_type) and has_known_type_ctx(right_type) and not type_ctx_matches(left_type, right_type) {
             push_diag(mutref diags, module, at, "const comparison operands must have matching types");
         }
@@ -4478,45 +4872,94 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, modu
 
     let additive_index = find_root_additive_operator(ref tokens, expr_start, expr_end);
     if additive_index >= 0 {
-        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, additive_index, module, at, mutref diags);
-        let right_type = infer_const_expr_type_ctx(ref tokens, additive_index + 1, expr_end, module, at, mutref diags);
+        let operand_expected = integer_expected_ctx(expected_ctx);
+        let mut left_type = empty_expected_type_ctx();
+        let mut right_type = empty_expected_type_ctx();
+        if operand_expected.head == "" and span_is_contextual_integer_expr(ref tokens, expr_start, additive_index) {
+            right_type = infer_const_expr_type_ctx(ref tokens, additive_index + 1, expr_end, empty_expected_type_ctx(), module, at, mutref diags);
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, additive_index, integer_expected_ctx(right_type), module, at, mutref diags);
+        } else {
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, additive_index, operand_expected, module, at, mutref diags);
+            let mut right_expected = operand_expected;
+            if right_expected.head == "" {
+                right_expected = integer_expected_ctx(left_type);
+            }
+            right_type = infer_const_expr_type_ctx(ref tokens, additive_index + 1, expr_end, right_expected, module, at, mutref diags);
+        }
         if has_known_type_ctx(left_type) and not is_int_like(left_type.head) {
             push_diag(mutref diags, module, at, "const arithmetic operand must have integer type");
         }
         if has_known_type_ctx(right_type) and not is_int_like(right_type.head) {
             push_diag(mutref diags, module, at, "const arithmetic operand must have integer type");
         }
-        return make_expected_type_ctx("i32", "", "");
+        if has_known_type_ctx(left_type) and has_known_type_ctx(right_type) and is_int_like(left_type.head) and is_int_like(right_type.head) and not type_ctx_matches(left_type, right_type) {
+            push_diag(mutref diags, module, at, "const arithmetic operands must have matching types");
+        }
+        return arithmetic_result_ctx(expected_ctx, left_type, right_type);
     }
 
     let multiplicative_index = find_root_multiplicative_operator(ref tokens, expr_start, expr_end);
     if multiplicative_index >= 0 {
-        let left_type = infer_const_expr_type_ctx(ref tokens, expr_start, multiplicative_index, module, at, mutref diags);
-        let right_type = infer_const_expr_type_ctx(ref tokens, multiplicative_index + 1, expr_end, module, at, mutref diags);
+        let operand_expected = integer_expected_ctx(expected_ctx);
+        let mut left_type = empty_expected_type_ctx();
+        let mut right_type = empty_expected_type_ctx();
+        if operand_expected.head == "" and span_is_contextual_integer_expr(ref tokens, expr_start, multiplicative_index) {
+            right_type = infer_const_expr_type_ctx(ref tokens, multiplicative_index + 1, expr_end, empty_expected_type_ctx(), module, at, mutref diags);
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, multiplicative_index, integer_expected_ctx(right_type), module, at, mutref diags);
+        } else {
+            left_type = infer_const_expr_type_ctx(ref tokens, expr_start, multiplicative_index, operand_expected, module, at, mutref diags);
+            let mut right_expected = operand_expected;
+            if right_expected.head == "" {
+                right_expected = integer_expected_ctx(left_type);
+            }
+            right_type = infer_const_expr_type_ctx(ref tokens, multiplicative_index + 1, expr_end, right_expected, module, at, mutref diags);
+        }
         if has_known_type_ctx(left_type) and not is_int_like(left_type.head) {
             push_diag(mutref diags, module, at, "const arithmetic operand must have integer type");
         }
         if has_known_type_ctx(right_type) and not is_int_like(right_type.head) {
             push_diag(mutref diags, module, at, "const arithmetic operand must have integer type");
         }
-        return make_expected_type_ctx("i32", "", "");
+        if has_known_type_ctx(left_type) and has_known_type_ctx(right_type) and is_int_like(left_type.head) and is_int_like(right_type.head) and not type_ctx_matches(left_type, right_type) {
+            push_diag(mutref diags, module, at, "const arithmetic operands must have matching types");
+        }
+        return arithmetic_result_ctx(expected_ctx, left_type, right_type);
     }
 
     let current = token_at(ref tokens, expr_start);
     match current.kind {
         tk_kw_not => {
-            let inner = infer_const_expr_type_ctx(ref tokens, expr_start + 1, expr_end, module, current.start, mutref diags);
+            let inner = infer_const_expr_type_ctx(ref tokens, expr_start + 1, expr_end, make_expected_type_ctx("bool", "", ""), module, current.start, mutref diags);
             if has_known_type_ctx(inner) and inner.head != "bool" {
                 push_diag(mutref diags, module, current.start, "const logical operand must have type `bool`");
             }
             return make_expected_type_ctx("bool", "", "");
         },
         tk_minus => {
-            let inner = infer_const_expr_type_ctx(ref tokens, expr_start + 1, expr_end, module, current.start, mutref diags);
+            let mut literal_start = expr_start + 1;
+            let mut literal_end = expr_end;
+            while span_is_wrapped_in_parens(ref tokens, literal_start, literal_end) {
+                literal_start = literal_start + 1;
+                literal_end = literal_end - 1;
+            }
+            if literal_start + 1 == literal_end {
+                let literal = token_at(ref tokens, literal_start);
+                match literal.kind {
+                    tk_int_lit => {
+                        return integer_literal_ctx(literal.text, true, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
+                    },
+                    _ => {
+                    },
+                }
+            }
+            let inner = infer_const_expr_type_ctx(ref tokens, expr_start + 1, expr_end, integer_expected_ctx(expected_ctx), module, current.start, mutref diags);
             if has_known_type_ctx(inner) and not is_int_like(inner.head) {
                 push_diag(mutref diags, module, current.start, "const arithmetic operand must have integer type");
             }
-            return make_expected_type_ctx("i32", "", "");
+            if is_int_like(inner.head) {
+                return make_expected_type_ctx(inner.head, "", "");
+            }
+            return arithmetic_result_ctx(expected_ctx, inner, empty_expected_type_ctx());
         },
         tk_kw_true => {
             if expr_start + 1 == expr_end {
@@ -4530,7 +4973,7 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, modu
         },
         tk_int_lit => {
             if expr_start + 1 == expr_end {
-                return make_expected_type_ctx("i32", "", "");
+                return integer_literal_ctx(current.text, false, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
             }
         },
         tk_string_lit => {
@@ -4560,12 +5003,12 @@ audit {
         match entry {
             Some(value) => {
                 if not is_const_safe_type(value.type_name, value.type_arg1_name, value.type_arg2_name, value.is_borrow) {
-                    push_diag(mutref diags, value.module, value.at, "top-level const supports only non-borrow i32, bool, or str in v1");
+                    push_diag(mutref diags, value.module, value.at, "top-level const supports only non-borrow i32, i64, bool, or str in v1");
                 }
                 let text = module_source_text(ref sources, value.module);
                 let tokens = lex(text);
-                let actual = infer_const_expr_type_ctx(ref tokens, value.expr_start, value.expr_end, value.module, value.at, mutref diags);
                 let expected = make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                let actual = infer_const_expr_type_ctx(ref tokens, value.expr_start, value.expr_end, expected, value.module, value.at, mutref diags);
                 if has_known_type_ctx(actual) and not type_ctx_matches(expected, actual) {
                     push_diag(mutref diags, value.module, value.at, "const initializer does not match declared type");
                 }
@@ -4599,6 +5042,8 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
     match current.kind {
         tk_int_lit => {
             if pattern_start + 1 == pattern_end {
+                let i32_ctx = make_expected_type_ctx("i32", "", "");
+                integer_literal_ctx(current.text, false, i32_ctx, module, ref tokens, pattern_start, pattern_end, mutref diags);
                 if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "i32" {
                     push_diag(mutref diags, module, current.start, "integer literal patterns require an `i32` scrutinee");
                 }
@@ -4610,6 +5055,8 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
             match value.kind {
                 tk_int_lit => {
                     if pattern_start + 2 == pattern_end {
+                        let i32_ctx = make_expected_type_ctx("i32", "", "");
+                        integer_literal_ctx(value.text, true, i32_ctx, module, ref tokens, pattern_start, pattern_end, mutref diags);
                         if has_known_type_ctx(scrutinee_ctx) and scrutinee_ctx.head != "i32" {
                             push_diag(mutref diags, module, current.start, "integer literal patterns require an `i32` scrutinee");
                         }
@@ -4781,10 +5228,7 @@ fn let_else_payload_ctx(variant_name: str, scrutinee_ctx: expected_type_ctx, mod
             return empty_expected_type_ctx();
         }
         if scrutinee_ctx.head == "option" {
-            if scrutinee_ctx.arg1_name == "option" and scrutinee_ctx.arg2_name != "" {
-                return make_expected_type_ctx("option", scrutinee_ctx.arg2_name, "");
-            }
-            return make_expected_type_ctx(scrutinee_ctx.arg1_name, "", "");
+            return expected_type_ctx_from_text(scrutinee_ctx.arg1_name);
         }
         return empty_expected_type_ctx();
     }
@@ -4794,7 +5238,7 @@ fn let_else_payload_ctx(variant_name: str, scrutinee_ctx: expected_type_ctx, mod
             return empty_expected_type_ctx();
         }
         if scrutinee_ctx.head == "result" {
-            return make_expected_type_ctx(scrutinee_ctx.arg1_name, "", "");
+            return expected_type_ctx_from_text(scrutinee_ctx.arg1_name);
         }
         return empty_expected_type_ctx();
     }
@@ -4812,22 +5256,22 @@ fn local_init_is_propagate(local: local_init_fact) -> bool {
 
 fn result_ok_payload_ctx(result_ctx: expected_type_ctx) -> expected_type_ctx {
     if result_ctx.head == "result" {
-        return make_expected_type_ctx(result_ctx.arg1_name, "", "");
+        return expected_type_ctx_from_text(result_ctx.arg1_name);
     }
     return empty_expected_type_ctx();
 }
 
 fn propagation_typecheck_payload_ctx(actual_ctx: expected_type_ctx, return_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
     if actual_ctx.head != "result" {
-        push_diag(mutref diags, module, at, "NQ-PROPAGATE-001: `?` requires `result<T, E>`");
+        push_error(mutref diags, module, at, "NQ-PROPAGATE-001", diag_propagate, "`?` requires `result<T, E>`");
         return empty_expected_type_ctx();
     }
     if return_ctx.head != "result" {
-        push_diag(mutref diags, module, at, "NQ-PROPAGATE-002: `?` requires an enclosing function that returns `result<_, E>`");
+        push_error(mutref diags, module, at, "NQ-PROPAGATE-002", diag_propagate, "`?` requires an enclosing function that returns `result<_, E>`");
         return empty_expected_type_ctx();
     }
     if not type_names_match(actual_ctx.arg2_name, return_ctx.arg2_name) {
-        push_diag(mutref diags, module, at, "NQ-PROPAGATE-003: propagated error type must match exactly; use let-else and return an explicitly mapped error");
+        push_error(mutref diags, module, at, "NQ-PROPAGATE-003", diag_propagate, "propagated error type must match exactly; use let-else and return an explicitly mapped error");
         return empty_expected_type_ctx();
     }
     return result_ok_payload_ctx(actual_ctx);
@@ -4842,15 +5286,16 @@ fn list_iteration_element_ctx(list_ctx: expected_type_ctx, module: str, at: i32,
         push_diag(mutref diags, module, at, "cannot determine `for` loop element type from list iterable");
         return empty_expected_type_ctx();
     }
-    if list_ctx.arg1_name == "option" and list_ctx.arg2_name != "" {
-        return make_expected_type_ctx("option", list_ctx.arg2_name, "");
-    }
-    return make_expected_type_ctx(list_ctx.arg1_name, "", "");
+    return expected_type_ctx_from_text(list_ctx.arg1_name);
 }
 
 fn typecheck_for_binding(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, tokens: ref list<token>, current: stmt_fact, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
     let iterable_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, empty_expected_type_ctx(), mutref diags);
     let element_ctx = list_iteration_element_ctx(iterable_ctx, current.module, current.at, mutref diags);
+    let visiting: list<str> = list();
+    if has_known_type_ctx(element_ctx) and not type_ctx_is_copy(element_ctx, current.module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting) {
+        push_diag(mutref diags, current.module, current.at, "for over list<T> requires a copy element type in V1");
+    }
     if current.name != "" and has_known_type_ctx(element_ctx) {
         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false));
     }
@@ -4966,7 +5411,7 @@ audit {
                                                         let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
                                                         if current.expected_type_name != "" {
                                                             if expected_ctx.head != "" and has_known_type_ctx(payload_ctx) and not type_ctx_matches(expected_ctx, payload_ctx) {
-                                                                push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                                                push_token_range_diag(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type");
                                                             }
                                                         }
                                                         if current.name != "" and has_known_type_ctx(payload_ctx) {
@@ -4976,7 +5421,7 @@ audit {
                                                         if current.expected_type_name != "" {
                                                             if not current.expected_is_borrow {
                                                                 if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
-                                                                    push_diag(mutref diags, current.module, current.at, "annotated local initializer does not match declared type");
+                                                                    push_token_range_diag(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type");
                                                                 }
                                                             }
                                                         } else {

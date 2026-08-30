@@ -260,6 +260,34 @@ audit {
     return "false";
 }
 
+fn hex_digit_text(value: i32) -> str {
+    if value < 10 {
+        return digit_text(value);
+    }
+    if value == 10 {
+        return "a";
+    }
+    if value == 11 {
+        return "b";
+    }
+    if value == 12 {
+        return "c";
+    }
+    if value == 13 {
+        return "d";
+    }
+    if value == 14 {
+        return "e";
+    }
+    return "f";
+}
+
+fn json_control_escape(ch: i32) -> str {
+    let high = ch / 16;
+    let low = ch - (high * 16);
+    return concat4("\\u00", hex_digit_text(high), hex_digit_text(low), "");
+}
+
 pub fn json_escape(text: str) -> str
 audit {
     intent("Escape a string for deterministic JSON output");
@@ -283,7 +311,23 @@ audit {
                     if ch == 9 {
                         escaped = str_concat(escaped, "\\t");
                     } else {
-                        escaped = str_concat(escaped, slice_text(text, index, index + 1));
+                        if ch == 13 {
+                            escaped = str_concat(escaped, "\\r");
+                        } else {
+                            if ch == 8 {
+                                escaped = str_concat(escaped, "\\b");
+                            } else {
+                                if ch == 12 {
+                                    escaped = str_concat(escaped, "\\f");
+                                } else {
+                                    if ch >= 0 and ch < 32 {
+                                        escaped = str_concat(escaped, json_control_escape(ch));
+                                    } else {
+                                        escaped = str_concat(escaped, slice_text(text, index, index + 1));
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

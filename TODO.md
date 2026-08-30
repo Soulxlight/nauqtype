@@ -374,7 +374,7 @@
 - [x] M52: define terminal and practical native-application completeness
 - [x] M52: lock the dependency-ordered M53-M61 stable release path
 - [x] M52: restore executable metadata for clean-checkout Linux gate scripts
-- [ ] M53: lock CLI/diagnostic truth, bytes, width-safe values, reclamation, CI, and performance baselines
+- [x] M53: lock CLI/diagnostic truth, bytes, width-safe values, reclamation, CI, and performance baselines
 - [ ] M54: add Linux stdin/environment/cwd and filesystem foundations
 - [ ] M55: add structured process, time, timeout, and cancellation foundations
 - [ ] M56: add explicit generic reuse without trait or method-system drift

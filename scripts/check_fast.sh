@@ -9,10 +9,12 @@ usage() {
     cat <<'EOF'
 Usage: scripts/check_fast.sh
 
-Run the active Nauqtype-owned fixture, corpus, and copied-selfhost confidence tier.
+Run the active Nauqtype-owned fixture and tooling confidence tier.
 
 This command intentionally delegates to the stage1 driver. Historical Python
-tests are no longer an active milestone or release gate.
+tests are no longer an active milestone or release gate. Copied-selfhost and
+corpus proof claims remain owned by `nauqc prove` so composed gates do not run
+them twice.
 EOF
 }
 

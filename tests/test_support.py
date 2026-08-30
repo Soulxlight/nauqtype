@@ -119,6 +119,23 @@ def run_stage0_selfhost_and_capture_c(workspace: Path, *, timeout: int = 240) ->
     return result, emitted_c.read_text(encoding="utf-8")
 
 
+def run_stage1_selfhost(workspace: Path, *, timeout: int = SELFHOST_REFERENCE_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    driver = ROOT / "selfhost" / "build" / "nauqc"
+    if not driver.is_file():
+        raise AssertionError(
+            "copied selfhost trust checks require the active stage1 driver; "
+            "run scripts/build_stage1_from_seed.sh first"
+        )
+    (workspace / "build").mkdir(exist_ok=True)
+    return subprocess.run(
+        [str(driver), "check", "main.nq"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def compile_c_only(c_path: Path, *, exe_path: Path | None = None) -> Path:
     ensure_bootstrap_deps()
     exe_path = exe_path if exe_path is not None else c_path.with_suffix(".exe")
@@ -147,12 +164,13 @@ def compile_and_run_c(c_path: Path, *, cwd: Path | None = None) -> subprocess.Co
 
 
 def run_copied_selfhost(timeout: int = SELFHOST_REFERENCE_TIMEOUT) -> subprocess.CompletedProcess[str]:
-    # Several trust tests only inspect the process result; avoid rerunning the same copied selfhost build.
+    # Several trust tests only inspect active semantic phases; avoid rebuilding
+    # through the frozen Python reference or rerunning C emission.
     cached = _COPIED_SELFHOST_CACHE.get(timeout)
     if cached is not None:
         return cached
     with copied_selfhost_workspace() as tmp:
-        result = run_stage0_selfhost(tmp, timeout=timeout)
+        result = run_stage1_selfhost(tmp, timeout=timeout)
     _COPIED_SELFHOST_CACHE[timeout] = result
     return result
 

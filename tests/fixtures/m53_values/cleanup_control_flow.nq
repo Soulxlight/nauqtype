@@ -1,0 +1,61 @@
+fn propagate_missing(path: str) -> result<i32, io_err>
+audit {
+    intent("Exercise cleanup before an unchanged propagated error.");
+    mutates();
+    effects(io);
+    propagates(io_err);
+}
+{
+    let prefix = str_concat("before-", "propagation");
+    let content = read_file(path)?[missing_file];
+    return Ok(str_len(prefix) + str_len(content));
+}
+
+fn match_and_return() -> i32 {
+    let selected: option<str> = Some(str_concat("arm-", "value"));
+    match selected {
+        Some(payload) => {
+            let arm_text = str_concat(payload, "-used");
+            if arm_text == "arm-value-used" {
+                return 0;
+            }
+            return 1;
+        },
+        None => {
+            return 2;
+        },
+    }
+}
+
+fn main() -> i32 {
+    let mut index = 0;
+    while index < 4 {
+        let loop_text = str_concat("loop-", "value");
+        index = index + 1;
+        if index == 1 {
+            if loop_text != "loop-value" {
+                return 3;
+            }
+            continue;
+        }
+        if index == 2 {
+            if loop_text != "loop-value" {
+                return 4;
+            }
+            break;
+        }
+    }
+
+    if match_and_return() != 0 {
+        return 5;
+    }
+    let propagated = propagate_missing("m53-values-intentionally-missing.txt");
+    match propagated {
+        Ok(_) => {
+            return 6;
+        },
+        Err(_) => {
+            return 0;
+        },
+    }
+}

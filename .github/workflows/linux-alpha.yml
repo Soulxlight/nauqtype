@@ -9,7 +9,17 @@ on:
 jobs:
   linux-alpha:
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Run Linux alpha gate
-        run: scripts/check_linux_alpha.sh
+      # Keep one composed job: splitting these phases would rebuild the same
+      # stage1/proof/release artifacts in multiple runners.
+      - name: Run budgeted milestone gate
+        run: scripts/check_milestone.sh
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-alpha-verification
+          path: build/verification/*.json
+          if-no-files-found: warn

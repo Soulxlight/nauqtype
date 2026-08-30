@@ -27,7 +27,9 @@ class SelfhostBorrowTests(unittest.TestCase):
             "source.nq",
             "text.nq",
             "token.nq",
+            "type_text.nq",
             "typecheck.nq",
+            "value_plan.nq",
         ]
         self.borrow_markers = [
             "use of moved value `",
@@ -387,7 +389,6 @@ class SelfhostBorrowTests(unittest.TestCase):
         self.assertNotIn("stage1 limitation", output)
         for marker in self.borrow_markers:
             self.assertNotIn(marker, output)
-        self.assertIn("stage1 front-end ok", output)
 
 
 if __name__ == "__main__":

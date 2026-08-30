@@ -1,4 +1,5 @@
 use ast;
+use diag;
 use lexer;
 use source;
 use text;
@@ -238,7 +239,7 @@ fn is_builtin_function(name: str) -> bool {
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
         return true;
     }
-    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" {
+    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" {
         return true;
     }
     if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
@@ -2152,6 +2153,35 @@ fn collect_review_fact_lists(sources: ref list<source_file>, functions_out: mutr
             },
         }
         source_index = source_index + 1;
+    }
+    return;
+}
+
+pub fn append_check_contract_diagnostics(sources: ref list<source_file>, diags: mutref list<diag>) -> unit
+audit {
+    intent("Append existing public audit-contract warnings to the stable check diagnostic stream");
+    mutates(diags);
+    effects();
+}
+{
+    let mut functions: list<review_function_fact> = list();
+    let mut decls: list<review_decl_entry> = list();
+    collect_review_fact_lists(ref sources, mutref functions, mutref decls);
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.is_public and not value.has_audit {
+                    let message = concat5("public function `", value.name, "` is missing an `audit` block", "", "");
+                    let help = "Add `audit { intent(...); mutates(...); effects(...); }` before the function body.";
+                    list_push(mutref diags, make_diagnostic("NQ-CONTRACT-001", diag_contract, diag_warning, value.module, value.at, value.at + str_len(value.name), message, "", help));
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
     }
     return;
 }

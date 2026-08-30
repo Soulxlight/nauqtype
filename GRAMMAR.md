@@ -90,7 +90,7 @@ variant_decl  = IDENT [ "(" type_list? ")" ] ;
 type_list     = type_expr { "," type_expr } [ "," ] ;
 ```
 
-`const_expr` is deliberately narrower than general `expr` in the first stage1 implementation: literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or` over non-borrow `i32` / `bool` / `str` constants only. String and boolean equality are intentionally rejected in const initializers until there is an explicit compile-time evaluator.
+`const_expr` is deliberately narrower than general `expr` in the first stage1 implementation: literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or` over non-borrow `i32` / `i64` / `bool` / `str` constants only. String and boolean equality are intentionally rejected in const initializers until there is an explicit compile-time evaluator.
 
 ## Audit Grammar
 
@@ -120,6 +120,7 @@ borrow_type   = "ref" named_type
 named_type    = IDENT [ generic_args ]
               | "bool"
               | "i32"
+              | "i64"
               | "str"
               | "unit" ;
 

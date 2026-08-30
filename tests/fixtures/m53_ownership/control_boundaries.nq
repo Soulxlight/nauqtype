@@ -1,0 +1,125 @@
+enum Wrapped {
+    Keep(str),
+    Empty,
+}
+
+fn unwrap_or(value: option<str>) -> str {
+    let Some(text) = value else {
+        return str_concat("fall", "back");
+    };
+    let decorated = str_concat(text, "!");
+    return decorated;
+}
+
+fn inspect_nested(value: option<result<Wrapped, str>>) -> i32 {
+    match value {
+        Some(Ok(Keep(text))) => {
+            let observed = str_concat(text, "-nested");
+            if observed == "payload-nested" {
+                return 0;
+            }
+            return 1;
+        },
+        _ => {
+            return 2;
+        },
+    }
+}
+
+fn local_try() -> i32
+audit {
+    intent("Exercise cleanup at an explicit local propagation boundary.");
+    mutates();
+    effects(io);
+    propagates();
+}
+{
+    let before = str_concat("before-", "try");
+    let measured: result<i32, io_err> = try {
+        str_len(read_file("m53-ownership-intentionally-missing.txt")?[ownership_read])
+    };
+    if before != "before-try" {
+        return 3;
+    }
+    match measured {
+        Ok(_) => {
+            return 4;
+        },
+        Err(err) => {
+            let first = io_err_text(err);
+            let second = io_err_text(err);
+            if str_len(first) == 0 or str_len(second) == 0 {
+                return 5;
+            }
+            return 0;
+        },
+    }
+}
+
+fn run_child() -> i32
+audit {
+    intent("Exercise owned process-result fields and their cleanup.");
+    mutates(args);
+    effects(io);
+    propagates();
+}
+{
+    let mut args: list<str> = ["-c", "printf ownership-process"];
+    let outcome = run_process("/bin/sh", ref args, ".");
+    match outcome {
+        Ok(child) => {
+            let copied = child.stdout;
+            if copied != "ownership-process" or child.stdout != "ownership-process" {
+                return 6;
+            }
+            if child.stderr != "" or child.exit_code != 0 {
+                return 7;
+            }
+            return 0;
+        },
+        Err(err) => {
+            let message = io_err_text(err);
+            if str_len(message) == 0 {
+                return 8;
+            }
+            return 9;
+        },
+    }
+}
+
+fn nested_scope() -> i32 {
+    let outer = str_concat("outer-", "value");
+    if true {
+        let inner = str_concat("inner-", "value");
+        if inner != "inner-value" {
+            return 10;
+        }
+    }
+    if outer != "outer-value" {
+        return 11;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let success = unwrap_or(Some(str_concat("good", "")));
+    let fallback = unwrap_or(None);
+    if success != "good!" or fallback != "fallback" {
+        return 12;
+    }
+
+    let nested: option<result<Wrapped, str>> = Some(Ok(Keep(str_concat("pay", "load"))));
+    if inspect_nested(nested) != 0 {
+        return 13;
+    }
+    if nested_scope() != 0 {
+        return 14;
+    }
+    if local_try() != 0 {
+        return 15;
+    }
+    if run_child() != 0 {
+        return 16;
+    }
+    return 0;
+}

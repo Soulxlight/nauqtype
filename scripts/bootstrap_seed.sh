@@ -20,5 +20,5 @@ if [[ -f "$seed_dir/SHA256SUMS" ]]; then
 fi
 
 mkdir -p "$(dirname -- "$output_path")"
-"$cc_bin" -std=c11 -D_POSIX_C_SOURCE=200809L -I"$seed_dir" "$seed_dir/nauqc-seed.c" "$seed_dir/runtime.c" -o "$output_path"
+"$cc_bin" -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I"$seed_dir" "$seed_dir/nauqc-seed.c" "$seed_dir/runtime.c" -o "$output_path"
 printf '%s\n' "$output_path"

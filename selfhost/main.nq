@@ -1,5 +1,6 @@
 use ast;
 use borrow;
+use build_info;
 use c_emit;
 use files;
 use handoff;
@@ -15,10 +16,13 @@ use resolve;
 use source;
 use text;
 use typecheck;
+use value_plan;
 use workspace;
 
 enum driver_mode {
     driver_legacy,
+    driver_help,
+    driver_version,
     driver_check,
     driver_emit_c,
     driver_facts,
@@ -145,7 +149,7 @@ fn detect_import_cycles(modules: ref list<str>, uses: ref list<module_use>, diag
         match entry {
             Some(module_name) => {
                 if module_reaches_start(module_name, ref uses) {
-                    list_push(mutref diags, make_diag(module_name, 0, "import cycle detected"));
+                    push_driver_error(mutref diags, "NQ-IMPORT-002", diag_import, module_name, -1, -1, "import cycle detected");
                     return;
                 }
             },
@@ -170,6 +174,27 @@ fn emit_all(diags: ref list<diag>) -> unit {
         }
         index = index + 1;
     }
+    return;
+}
+
+fn emit_all_with_sources(diags: ref list<diag>, sources: ref list<source_file>) -> unit {
+    let mut index = 0;
+    while index < list_len(ref diags) {
+        let entry = list_get(ref diags, index);
+        match entry {
+            Some(value) => {
+                emit_diag_with_sources(value, ref sources);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn push_driver_error(diags: mutref list<diag>, code: str, category: diag_category, source_name: str, start: i32, end: i32, message: str) -> unit {
+    list_push(mutref diags, make_error(code, category, source_name, start, end, message));
     return;
 }
 
@@ -206,12 +231,12 @@ fn load_module_graph(name: str, workspace_root: str, entry_module: str, entry_pa
     }
     let stack_key = str_concat(str_concat("|", name), "|");
     if text_contains(loading_path, stack_key) {
-        list_push(mutref diags, make_diag(name, 0, "import cycle detected"));
+        push_driver_error(mutref diags, "NQ-IMPORT-002", diag_import, name, -1, -1, "import cycle detected");
         return;
     }
     let loaded_file = read_module_source(name, workspace_root, entry_module, entry_path);
     if not loaded_file.valid {
-        list_push(mutref diags, make_diag(name, 0, loaded_file.error_message));
+        push_driver_error(mutref diags, "NQ-IO-001", diag_io, name, -1, -1, loaded_file.error_message);
         return;
     }
     let file = loaded_file.file;
@@ -326,6 +351,20 @@ fn parse_driver_request() -> driver_request {
     }
 
     let command = option_text(arg_get(1));
+    if command == "help" or command == "--help" or command == "-h" {
+        if argc != 2 {
+            return invalid_request(usage_text());
+        }
+        return make_driver_request(driver_help, "", "", ".", "", "", "");
+    }
+
+    if command == "version" or command == "--version" or command == "-V" {
+        if argc != 2 {
+            return invalid_request(usage_text());
+        }
+        return make_driver_request(driver_version, "", "", ".", "", "", "");
+    }
+
     if command == "check" {
         if argc != 3 and argc != 5 {
             return invalid_request(usage_text());
@@ -637,7 +676,7 @@ fn write_c_output(output_path: str, rendered_c: str, diags: mutref list<diag>) -
         Ok(_) => {
         },
         Err(err) => {
-            list_push(mutref diags, make_diag(output_path, 0, io_err_text(err)));
+            push_driver_error(mutref diags, "NQ-IO-002", diag_io, output_path, -1, -1, io_err_text(err));
             return;
         },
     }
@@ -647,7 +686,7 @@ fn write_c_output(output_path: str, rendered_c: str, diags: mutref list<diag>) -
         Ok(_) => {
         },
         Err(err) => {
-            list_push(mutref diags, make_diag(output_path, 0, io_err_text(err)));
+            push_driver_error(mutref diags, "NQ-IO-002", diag_io, output_path, -1, -1, io_err_text(err));
         },
     }
     return;
@@ -686,6 +725,8 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut checked_params: list<checked_param> = list();
     let mut checked_consts: list<checked_const_decl> = list();
     let mut checked_type_shapes: list<checked_type_shape> = list();
+    let mut checked_type_properties: list<checked_type_property> = list();
+    let mut checked_value_uses: list<checked_value_use> = list();
     let mut checked_type_decls: list<checked_type_decl> = list();
     let mut checked_field_decls: list<checked_field_decl> = list();
     let mut checked_enum_decls: list<checked_enum_decl> = list();
@@ -729,64 +770,133 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, entry_module, true, mutref diags);
     typecheck_const_facts(ref const_facts, ref sources, mutref diags);
     typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
+    append_check_contract_diagnostics(ref sources, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
 
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
-    let borrow_summary = check_checked_handoff_borrows(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
-    let ir_summary = build_ir_program_for_entry(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_consts, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+
+    seen = list();
+    loaded = list();
+    items = list();
+    uses = list();
+    scopes = list();
+    bindings = list();
+    refs = list();
+    type_refs = list();
+    function_facts = list();
+    function_param_facts = list();
+    variant_facts = list();
+    variant_payload_facts = list();
+    const_facts = list();
+    call_facts = list();
+    pattern_facts = list();
+    typed_bindings = list();
+    field_facts = list();
+    match_arms = list();
+    local_inits = list();
+    return_facts = list();
+    condition_facts = list();
+    assignment_facts = list();
+    stmt_facts = list();
+    resolved_bindings = list();
+    pattern_bindings = list();
+
+    let value_property_summary = build_checked_type_properties(ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref checked_type_properties, mutref diags);
+    let value_use_summary = plan_checked_value_uses(ref checked_functions, ref checked_params, ref checked_type_properties, ref checked_statements, ref checked_match_arms, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref checked_value_uses, mutref diags);
+    let borrow_summary = check_checked_handoff_borrows_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_properties, ref checked_value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+    let ir_summary = build_ir_program_for_entry_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_consts, ref checked_type_shapes, ref checked_type_properties, ref checked_value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+
+    checked_modules = list();
+    checked_functions = list();
+    checked_bindings = list();
+    checked_params = list();
+    checked_consts = list();
+    checked_type_shapes = list();
+    checked_type_properties = list();
+    checked_value_uses = list();
+    checked_type_decls = list();
+    checked_field_decls = list();
+    checked_enum_decls = list();
+    checked_variant_decls = list();
+    checked_variant_payload_decls = list();
+    checked_blocks = list();
+    checked_statements = list();
+    checked_match_arms = list();
+    checked_patterns = list();
+    checked_pattern_children = list();
+    checked_pattern_bindings = list();
+    checked_expressions = list();
+    checked_expr_children = list();
+    checked_struct_fields = list();
+
     let mut c_summary = make_c_emit_summary(0, 0, 0);
     if write_output {
         c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_consts, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
     }
 
-    if list_len(ref diags) == 0 and write_output {
+    ir_programs = list();
+    ir_function_sigs = list();
+    ir_functions = list();
+    ir_locals = list();
+    ir_consts = list();
+    ir_blocks = list();
+    ir_statements = list();
+    ir_match_arms = list();
+    ir_patterns = list();
+    ir_pattern_children = list();
+    ir_expressions = list();
+    ir_expr_children = list();
+    ir_field_values = list();
+    ir_type_shapes = list();
+    ir_struct_decls = list();
+    ir_field_decls = list();
+    ir_enum_decls = list();
+    ir_variant_decls = list();
+    ir_variant_payload_decls = list();
+
+    if not diagnostics_have_errors(ref diags) and write_output {
         let rendered_c = render_c_lines(ref c_lines);
         write_c_output(output_path, rendered_c, mutref diags);
     }
 
-    if list_len(ref diags) > 0 {
-        if diagnostics_json {
-            emit_diagnostics_json(ref diags);
-        } else {
-            emit_all(ref diags);
+    if not diagnostics_have_errors(ref diags) {
+        if checked_summary.function_count < 1 {
+            push_driver_error(mutref diags, "NQ-INTERNAL-002", diag_internal, entry_module, -1, -1, "stage1 internal error: checked handoff has no functions");
         }
-        return 1;
-    }
-
-    if checked_summary.function_count < 1 {
-        eprint_line("stage1 internal error: checked handoff has no functions");
-        return 1;
-    }
-    if checked_summary.block_count < 1 {
-        eprint_line("stage1 internal error: checked handoff has no blocks");
-        return 1;
-    }
-    if borrow_summary.function_count < checked_summary.function_count {
-        eprint_line("stage1 internal error: borrow pass skipped checked functions");
-        return 1;
-    }
-    if ir_summary.function_count < checked_summary.function_count {
-        eprint_line("stage1 internal error: IR lowering skipped checked functions");
-        return 1;
-    }
-    if write_output {
-        if c_summary.function_count < ir_summary.function_count {
-            eprint_line("stage1 internal error: C emission skipped IR functions");
-            return 1;
+        if checked_summary.block_count < 1 {
+            push_driver_error(mutref diags, "NQ-INTERNAL-003", diag_internal, entry_module, -1, -1, "stage1 internal error: checked handoff has no blocks");
         }
-        if c_summary.line_count < 1 {
-            eprint_line("stage1 internal error: C emission produced no lines");
-            return 1;
+        if value_property_summary.type_property_count < checked_summary.type_shape_count {
+            push_driver_error(mutref diags, "NQ-INTERNAL-010", diag_internal, entry_module, -1, -1, "stage1 internal error: value planning skipped checked type identities");
+        }
+        if value_use_summary.value_use_count < checked_summary.expression_count {
+            push_driver_error(mutref diags, "NQ-INTERNAL-011", diag_internal, entry_module, -1, -1, "stage1 internal error: value planning skipped checked expressions");
+        }
+        if borrow_summary.function_count < checked_summary.function_count {
+            push_driver_error(mutref diags, "NQ-INTERNAL-004", diag_internal, entry_module, -1, -1, "stage1 internal error: borrow pass skipped checked functions");
+        }
+        if ir_summary.function_count < checked_summary.function_count {
+            push_driver_error(mutref diags, "NQ-INTERNAL-005", diag_internal, entry_module, -1, -1, "stage1 internal error: IR lowering skipped checked functions");
+        }
+        if write_output {
+            if c_summary.function_count < ir_summary.function_count {
+                push_driver_error(mutref diags, "NQ-INTERNAL-006", diag_internal, entry_module, -1, -1, "stage1 internal error: C emission skipped IR functions");
+            }
+            if c_summary.line_count < 1 {
+                push_driver_error(mutref diags, "NQ-INTERNAL-007", diag_internal, entry_module, -1, -1, "stage1 internal error: C emission produced no lines");
+            }
         }
     }
 
     if diagnostics_json {
-        print_line("{");
-        print_line("  \"version\": \"diagnostics/v1\",");
-        print_line("  \"command\": \"check\",");
-        print_line("  \"ok\": true,");
-        print_line("  \"diagnostics\": []");
-        print_line("}");
+        emit_diagnostics_json(ref diags, ref sources);
+    } else {
+        if list_len(ref diags) > 0 {
+            emit_all_with_sources(ref diags, ref sources);
+        }
+    }
+    if diagnostics_have_errors(ref diags) {
+        return 1;
     }
     if success_message != "" {
         print_line(success_message);
@@ -926,7 +1036,7 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
         return false;
     }
     if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {
-        list_push(mutref diags, make_diag(entry_module, 0, "stage1 internal error: tooling facts safety pass skipped checked functions"));
+        push_driver_error(mutref diags, "NQ-INTERNAL-008", diag_internal, entry_module, -1, -1, "stage1 internal error: tooling facts safety pass skipped checked functions");
         return false;
     }
     return true;
@@ -1035,7 +1145,7 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
         return false;
     }
     if checked_summary.function_count < 1 or borrow_summary.function_count < checked_summary.function_count {
-        list_push(mutref diags, make_diag(entry_module, 0, "stage1 internal error: review safety pass skipped checked functions"));
+        push_driver_error(mutref diags, "NQ-INTERNAL-009", diag_internal, entry_module, -1, -1, "stage1 internal error: review safety pass skipped checked functions");
         return false;
     }
     return true;
@@ -1308,6 +1418,7 @@ fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_er
 
     let mut cc_args: list<str> = list();
     list_push(mutref cc_args, "-std=c11");
+    list_push(mutref cc_args, "-O2");
     list_push(mutref cc_args, "-D_POSIX_C_SOURCE=200809L");
     list_push(mutref cc_args, "-Istdlib");
     list_push(mutref cc_args, c_path);
@@ -1323,6 +1434,7 @@ fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_er
             let mut zig_args: list<str> = list();
             list_push(mutref zig_args, "cc");
             list_push(mutref zig_args, "-std=c11");
+            list_push(mutref zig_args, "-O2");
             list_push(mutref zig_args, "-D_POSIX_C_SOURCE=200809L");
             list_push(mutref zig_args, "-Istdlib");
             list_push(mutref zig_args, c_path);
@@ -1397,6 +1509,14 @@ fn main() -> i32 {
     match request.mode {
         driver_legacy => {
             return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, request.output_path, true, false, "stage1 front-end ok");
+        },
+        driver_help => {
+            print_line(compiler_help_text());
+            return 0;
+        },
+        driver_version => {
+            print_line(compiler_version_text());
+            return 0;
         },
         driver_check => {
             return run_pipeline(request.workspace_root, request.entry_module, request.entry_path, "", false, request.extra_text == "json", "");

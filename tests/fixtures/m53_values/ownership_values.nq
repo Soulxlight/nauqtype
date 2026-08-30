@@ -1,0 +1,60 @@
+type Holder {
+    text: str,
+}
+
+fn make_slice() -> str {
+    let mut source = str_concat("prefix-", "payload-suffix");
+    let copied = source;
+    let sliced = str_slice(copied, 7, 14);
+    source = "replacement";
+    match sliced {
+        Some(value) => {
+            return value;
+        },
+        None => {
+            return "missing";
+        },
+    }
+}
+
+fn make_holder() -> Holder {
+    let source = str_concat("held-", "value");
+    return Holder { text: source };
+}
+
+fn main() -> i32 {
+    let escaped = make_slice();
+    if escaped != "payload" {
+        return 1;
+    }
+
+    let holder = make_holder();
+    let optional: option<Holder> = Some(holder);
+    let resolved: result<Holder, str> = Ok(holder);
+    if holder.text != "held-value" {
+        return 2;
+    }
+
+    match optional {
+        Some(value) => {
+            if value.text != "held-value" {
+                return 3;
+            }
+        },
+        None => {
+            return 4;
+        },
+    }
+
+    match resolved {
+        Ok(value) => {
+            if value.text != "held-value" {
+                return 5;
+            }
+        },
+        Err(_) => {
+            return 6;
+        },
+    }
+    return 0;
+}

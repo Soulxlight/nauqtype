@@ -11,7 +11,8 @@ Current bootstrap status:
 - top-level `const` for small compile-time configuration values
 - nominal `type` and `enum`
 - `option<T>` and `result<T, E>`
-- builtin `io_err` and `list<T>` with narrow list literals
+- exact `i32` / `i64` integers with no implicit numeric conversion
+- builtin `io_err`, move-only `bytes`, and `list<T>` with narrow list literals
 - explicit `match`
 - match expressions for value-producing exhaustive branches
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
@@ -24,8 +25,9 @@ Current bootstrap status:
 - direct field assignment for owned `let mut` product locals
 - integer literal and nested constructor patterns with an explicit fallback arm
 - bootstrap file input and string helpers
-- minimal move / borrow checking
+- minimal move / borrow checking backed by canonical checked value-use facts
 - structural copy for all-copy user `type` / `enum`
+- deterministic clone/move/drop lowering for owned heap-backed values
 - compile-to-C backend with a tiny runtime
 - `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
 
@@ -40,6 +42,16 @@ The post-v0.3 program now targets a stable Linux release for terminal tools and
 practical native applications. [STABLE_RELEASE.md](STABLE_RELEASE.md) defines
 that scope and the M52-M61 sequence; [AGENTS.md](AGENTS.md) is the required
 multi-agent operating contract for work in this repository.
+
+The active driver also exposes stable `help` / `version` behavior, producer-owned
+diagnostic identities and spans, and checked milestone resource budgets. These
+are release contracts rather than best-effort presentation details.
+
+M53 is complete: exact `i64`, move-only `bytes`, canonical checked value-use
+truth, deterministic generated cleanup, the refreshed fixed-point C seed, and
+the composed Linux performance gate are landed. M54 is the next active release
+milestone and adds the narrow Linux input/filesystem foundation on top of these
+value semantics.
 
 ## Quick Start
 
@@ -239,7 +251,7 @@ Current selfhost semantic coverage:
 - field-access-aware local/return inference including imported type facts in the loaded graph
 - match scrutinee typing plus pattern-bound payload typing for the current enum / `option` / `result` subset
 - full-graph body resolution and current value-flow checking across the loaded selfhost module set
-- top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `bool` / `str` initializer subset
+- top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `i64` / `bool` / `str` initializer subset
 - named function arguments for direct function calls, including modeled builtins and imported functions; arguments are exported to the backend in callee parameter order
 - direct `module::function(...)` calls for public functions from directly imported modules
 - direct module-qualified data names for public struct literals and enum variants from directly imported modules, preserving origin visibility for facts, handoff, IR, and C emission
@@ -264,7 +276,7 @@ Architecture checkpoint:
 - the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
 - that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
 - stage1 now materializes a deterministic structured checked handoff from the trusted semantic outputs
-- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, recursive type-shape truth with origin-aware named types, checked pattern trees, and fail-closed export diagnostics for the trusted subset
+- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, recursive type-shape truth with origin-aware named types, canonical `is_copy` / `needs_drop` properties, checked value-use plans, checked pattern trees, and fail-closed export diagnostics for the trusted subset
 - genuine parity work now continues from that checked handoff boundary rather than the flat fact lists
 - see `SELFHOST_HANDOFF.md` for the required downstream contract
 
@@ -278,6 +290,9 @@ Current remaining gaps:
 
 Near-term focus:
 
+- implement M54 stdin, environment, cwd, path metadata, traversal, binary I/O,
+  and atomic replacement through narrow checked runtime primitives plus ordinary
+  Nauqtype helper modules
 - preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints

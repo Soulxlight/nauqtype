@@ -149,7 +149,8 @@ v0.1 simplifications:
 
 Input:
 
-- typed AST
+- structured checked handoff
+- canonical checked type properties and value-use plan
 
 Output:
 
@@ -161,6 +162,7 @@ Responsibilities:
 - ensure `mutref` is only taken from mutable locals
 - ensure temporary borrow rules are respected per call
 - prevent aliasing combinations within a call such as two `mutref` borrows of the same local
+- consume stable binding and expression identities without rediscovering ownership from names or spans
 
 v0.1 simplifications:
 
@@ -173,7 +175,7 @@ v0.1 simplifications:
 
 Input:
 
-- checked AST
+- structured checked handoff plus canonical checked value truth
 
 Output:
 
@@ -184,6 +186,7 @@ Responsibilities:
 - linearize control flow enough for deterministic C emission
 - make enum construction and match lowering explicit
 - preserve source location links where practical
+- preserve binding identity and copy/move/drop requirements for C emission
 
 IR design goals:
 
@@ -205,6 +208,7 @@ Responsibilities:
 
 - emit readable C
 - generate runtime types for `str`, `option`, `result`, structs, and enums
+- emit type-directed clone/move/drop operations and cleanup on normal control-flow exits
 - emit a simple `main` wrapper if needed
 - keep naming deterministic
 

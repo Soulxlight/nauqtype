@@ -14,6 +14,21 @@ if [[ ! -x "$driver" ]]; then
     exit 1
 fi
 
+identity_actual="$(mktemp)"
+identity_expected="$(mktemp)"
+trap 'rm -f "$identity_actual" "$identity_expected"' EXIT
+printf 'nauqc %s\n' "$version" > "$identity_expected"
+if ! (cd "$repo_root" && "$driver" version) > "$identity_actual"; then
+    printf 'make_linux_release: stage1 version command failed\n' >&2
+    exit 1
+fi
+if ! cmp -s "$identity_expected" "$identity_actual"; then
+    printf 'make_linux_release: stage1 version identity does not match VERSION\n' >&2
+    exit 1
+fi
+rm -f "$identity_actual" "$identity_expected"
+trap - EXIT
+
 release_root="$repo_root/build/linux-release/nauqtype"
 rm -rf "$release_root"
 mkdir -p "$release_root/bin"

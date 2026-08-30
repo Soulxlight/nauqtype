@@ -92,6 +92,10 @@ The application contract requires:
 
 ### M53: Release Truth And Foundational Values
 
+Status: complete. Stable CLI identity, truthful diagnostics, exact `i64`,
+move-only `bytes`, canonical value semantics, deterministic generated cleanup,
+the refreshed C seed, and checked Linux resource budgets are now in place.
+
 - add stable `help` and `version` behavior;
 - replace generic/null-span stage1 diagnostics with truthful stable diagnostic
   identity and locations;

@@ -75,23 +75,29 @@ Reserved keywords in v0.1:
 
 ## Primitive Types
 
-Locked v0.1 primitive types:
+Current primitive types:
 
 - `bool`
 - `i32`
+- `i64`
 - `str`
 - `unit`
 
 Deferred numeric types:
 
-- `i64`
 - `u32`
 - `u64`
 - `f32`
 - `f64`
 - `char`
 
-`str` is an immutable runtime string view in v0.1.
+`i32` and `i64` are exact integer types. Unsuffixed literals default to `i32`
+unless an expected `i64` context selects `i64`; arithmetic never performs an
+implicit width conversion.
+
+`str` is immutable at the source level. Runtime-owned strings use reference
+counting so source-level copies remain safe while generated code reclaims owned
+storage deterministically.
 
 ## Built-in Utility Types
 
@@ -99,6 +105,8 @@ Deferred numeric types:
 - `result<T, E>`
 - `list<T>`
 - `io_err`
+- `bytes`
+- `process_result`
 
 Built-in constructors:
 
@@ -186,7 +194,7 @@ Rules:
 
 - constants are private by default
 - `pub const` is visible through flat-root `use`
-- v1 constants support only non-borrow `i32`, `bool`, and `str`
+- v1 constants support only non-borrow `i32`, `i64`, `bool`, and `str`
 - v1 initializers support literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or`
 - calls, constructors, lists, borrows, I/O, and const-to-const initializer references are intentionally rejected for now
 - constants can be referenced in function bodies as values, but cannot be called, borrowed, or assigned
@@ -500,14 +508,17 @@ Copy types in v0.1:
 
 - `bool`
 - `i32`
+- `i64`
 - `str`
 - `unit`
 - `io_err`
+- `process_result`
 - any user-defined `type` or `enum` whose fields/payloads are all copy
 
 Move types in v0.1:
 
 - `list<T>`
+- `bytes`
 - `option<T>` when `T` is non-copy
 - `result<T, E>` when either side is non-copy
 
@@ -516,6 +527,9 @@ Rules:
 - using a moved non-copy value is a compile error
 - passing a non-copy value to an owning parameter moves it
 - assigning a non-copy value into a new binding moves it
+- every checked type carries canonical `is_copy` and `needs_drop` properties
+- every checked expression carries a read/copy/move/borrow use decision before IR lowering
+- generated C deterministically drops owned locals, parameters, aggregates, and temporaries on replacement and every normal control-flow exit
 
 ## Ownership And Borrowing
 
@@ -568,6 +582,8 @@ fn parse_flag(text: str) -> result<bool, str> {
 - `result<T, E>`
 - `list<T>`
 - `io_err`
+- `bytes`
+- `process_result`
 - minimal printing intrinsic:
 
 ```nauq
@@ -588,15 +604,22 @@ fn list() -> list<T>;            // requires expected context
 fn list_push(items: mutref list<T>, value: T) -> unit;
 fn list_len(items: ref list<T>) -> i32;
 fn list_get(items: ref list<T>, index: i32) -> option<T>;
+fn bytes_from_str(text: str) -> bytes;
+fn bytes_len(value: ref bytes) -> i64;
+fn bytes_get(value: ref bytes, index: i64) -> option<i32>;
 ```
 
 `[]` is the literal equivalent of an empty `list<T>` and follows the same expected-context rule as `list()`.
 
-### Out Of Scope For v0.1
+The active compiler driver also uses a deliberately narrow tooling runtime
+surface for arguments, directory creation, and captured process execution.
+Those builtins are toolchain-enabling authority, not a general OS API.
+
+### Out Of Scope For The Current Surface
 
 - formatting machinery
 - mutable strings
-- environment/process APIs
+- broad environment/process APIs beyond the narrow checked tooling surface
 
 ## Entry Point
 

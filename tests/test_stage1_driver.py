@@ -143,6 +143,26 @@ class Stage1DriverTests(unittest.TestCase):
         self.assertNotIn("stage1 limitation", combined)
         self.assertTrue((self.driver_workspace / "build" / "main.c").exists())
 
+    def test_stage1_driver_help_aliases_match_stable_golden(self) -> None:
+        expected = (self.root / "tests" / "golden" / "cli" / "help.txt").read_text(encoding="utf-8")
+        for command in ("help", "--help", "-h"):
+            with self.subTest(command=command):
+                result = self._run_driver([command])
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, "")
+
+    def test_stage1_driver_version_aliases_match_version_source(self) -> None:
+        expected = (self.root / "tests" / "golden" / "cli" / "version.txt").read_text(encoding="utf-8")
+        version = (self.root / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(expected, f"nauqc {version}\n")
+        for command in ("version", "--version", "-V"):
+            with self.subTest(command=command):
+                result = self._run_driver([command])
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, "")
+
     def test_stage1_driver_prove_runs_owned_transition_gate(self) -> None:
         self._clear_proof_summary()
         result = self._run_driver(["prove"], timeout=1200)
@@ -191,8 +211,8 @@ class Stage1DriverTests(unittest.TestCase):
         schema = json.loads((self.root / "schemas" / "diagnostics-v1.schema.json").read_text(encoding="utf-8"))
         self._assert_schema_shape(payload, schema)
         self.assertFalse(payload["ok"])
-        self.assertEqual([entry["code"] for entry in payload["diagnostics"]], ["NQ-STAGE1-001", "NQ-STAGE1-001"])
-        self.assertTrue(all(entry["span"] is None for entry in payload["diagnostics"]))
+        self.assertEqual([entry["code"] for entry in payload["diagnostics"]], ["NQ-TYPE-042", "NQ-TYPE-042"])
+        self.assertTrue(all(entry["span"] is not None for entry in payload["diagnostics"]))
 
     def test_stage1_driver_checks_manifest_nested_workspace(self) -> None:
         source = "tests/fixtures/workspace_nested/src/app/main.nq"

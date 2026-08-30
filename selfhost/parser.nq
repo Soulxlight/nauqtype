@@ -1,6 +1,7 @@
 use ast;
 use diag;
 use token;
+use type_text;
 
 fn token_at(tokens: ref list<token>, index: i32) -> token {
     let found = list_get(ref tokens, index);
@@ -14,8 +15,13 @@ fn token_at(tokens: ref list<token>, index: i32) -> token {
     }
 }
 
+fn push_error(diags: mutref list<diag>, file: str, tok: token, code: str, category: diag_category, message: str) -> unit {
+    list_push(mutref diags, make_error(code, category, file, tok.start, tok.end, message));
+    return;
+}
+
 fn push_diag(diags: mutref list<diag>, file: str, tok: token, message: str) -> unit {
-    list_push(mutref diags, make_diag(file, tok.start, message));
+    push_error(mutref diags, file, tok, "NQ-PARSE-003", diag_parse, message);
     return;
 }
 
@@ -735,7 +741,7 @@ fn collect_try_propagation_facts(tokens: ref list<token>, start: i32, end: i32, 
         if is_question_token(current) {
             let operand_start = try_question_operand_start(ref tokens, inner_start, index);
             if operand_start < 0 {
-                push_diag(mutref diags, file, current, "NQ-TRY-002: expression `?` inside `try` must apply to a direct function call in V1");
+                push_error(mutref diags, file, current, "NQ-TRY-002", diag_try, "expression `?` inside `try` must apply to a direct function call in V1");
             } else {
                 let mut label = "";
                 let open_label = token_at(ref tokens, index + 1);
@@ -787,7 +793,7 @@ fn push_unsupported_try_placement_diag(tokens: ref list<token>, start: i32, end:
         let current = token_at(ref tokens, index);
         match current.kind {
             tk_kw_try => {
-                push_diag(mutref diags, file, current, "NQ-TRY-006: `try` V1 is only supported as the direct initializer of an explicitly annotated local");
+                push_error(mutref diags, file, current, "NQ-TRY-006", diag_try, "`try` V1 is only supported as the direct initializer of an explicitly annotated local");
                 return;
             },
             _ => {
@@ -1952,16 +1958,13 @@ fn consume_type_shape(tokens: ref list<token>, cursor: mutref i32, diags: mutref
                 tk_lt => {
                     advance(mutref cursor);
                     let first_arg = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
-                    arg1_name = first_arg.head;
-                    if head == "option" and first_arg.head == "option" and first_arg.arg1_name != "" {
-                        arg2_name = first_arg.arg1_name;
-                    }
+                    arg1_name = render_type_text(first_arg.head, first_arg.arg1_name, first_arg.arg2_name, first_arg.is_borrow, first_arg.borrow_mutable);
                     let maybe_comma = token_at(ref tokens, cursor);
                     match maybe_comma.kind {
                         tk_comma => {
                             advance(mutref cursor);
                             let second_arg = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
-                            arg2_name = second_arg.head;
+                            arg2_name = render_type_text(second_arg.head, second_arg.arg1_name, second_arg.arg2_name, second_arg.is_borrow, second_arg.borrow_mutable);
                         },
                         _ => {
                         },

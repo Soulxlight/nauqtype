@@ -1,0 +1,101 @@
+type Pair {
+    left: str,
+    right: str,
+}
+
+type OwnedBox {
+    label: str,
+    values: list<i32>,
+}
+
+fn echo(value: str) -> str {
+    return value;
+}
+
+fn consume_words(words: list<str>) -> i32 {
+    let first = list_get(ref words, 0);
+    let second = list_get(ref words, 1);
+    let third = list_get(ref words, 2);
+    match first {
+        Some(value) => {
+            if value != "alpha" {
+                return 20;
+            }
+        },
+        None => {
+            return 21;
+        },
+    }
+    match second {
+        Some(value) => {
+            if value != "alpha" {
+                return 22;
+            }
+        },
+        None => {
+            return 23;
+        },
+    }
+    match third {
+        Some(value) => {
+            if value != "beta" {
+                return 24;
+            }
+        },
+        None => {
+            return 25;
+        },
+    }
+    return 3;
+}
+
+fn main() -> i32 {
+    let source = str_concat("al", "pha");
+    let echoed = echo(source);
+    if source != "alpha" or echoed != "alpha" {
+        return 1;
+    }
+
+    let mut words: list<str> = [source];
+    list_push(mutref words, echoed);
+    list_push(mutref words, str_concat("be", "ta"));
+    if source != "alpha" or echoed != "alpha" {
+        return 2;
+    }
+
+    let original = Pair {
+        left: source,
+        right: str_concat("inherited-", "text"),
+    };
+    let updated = Pair { from original, left: echoed };
+    if original.left != "alpha" or original.right != "inherited-text" {
+        return 3;
+    }
+    if updated.left != "alpha" or updated.right != "inherited-text" {
+        return 4;
+    }
+
+    let mut replacement = str_concat("old-", "local");
+    replacement = str_concat("new-", "local");
+    if replacement != "new-local" {
+        return 5;
+    }
+
+    let mut box = OwnedBox {
+        label: str_concat("old-", "field"),
+        values: [1, 2],
+    };
+    box.label = str_concat("new-", "field");
+    box.values = [40, 2];
+    if box.label != "new-field" or list_len(ref box.values) != 2 {
+        return 6;
+    }
+
+    str_concat("discarded-", "owned-value");
+
+    let consumed = consume_words(words);
+    if consumed != 3 {
+        return 7;
+    }
+    return 0;
+}

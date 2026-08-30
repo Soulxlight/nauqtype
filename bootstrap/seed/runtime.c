@@ -18,6 +18,35 @@
 static int nq_process_argc = 0;
 static char** nq_process_argv = NULL;
 
+struct NQStrOwner {
+    size_t ref_count;
+    char* storage;
+};
+
+static NQStr nq_owned_str_take(char* storage, intptr_t len) {
+    NQStrOwner* owner = (NQStrOwner*)malloc(sizeof(NQStrOwner));
+    if (owner == NULL) {
+        free(storage);
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    owner->ref_count = 1;
+    owner->storage = storage;
+    return (NQStr){ .data = storage, .len = len, .owner = owner };
+}
+
+static NQStr nq_owned_str_copy(const char* data, intptr_t len) {
+    char* storage = (char*)malloc((size_t)len + 1);
+    if (storage == NULL) {
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    memcpy(storage, data, (size_t)len);
+    storage[len] = '\0';
+    return nq_owned_str_take(storage, len);
+}
+
+#ifdef _WIN32
 static char* nq_dup_cstr(const char* text) {
     size_t len = strlen(text);
     char* copy = (char*)malloc(len + 1);
@@ -28,6 +57,7 @@ static char* nq_dup_cstr(const char* text) {
     memcpy(copy, text, len + 1);
     return copy;
 }
+#endif
 
 static char* nq_str_to_cstr(NQStr text) {
     char* copy = (char*)malloc((size_t)text.len + 1);
@@ -58,7 +88,7 @@ static NQ_Result__process_result__io_err nq_process_ok(int32_t exit_code, NQStr 
 }
 
 static NQStr nq_empty_str(void) {
-    return (NQStr){ .data = "", .len = 0 };
+    return (NQStr){ .data = "", .len = 0, .owner = NULL };
 }
 
 void* nq_realloc(void* ptr, size_t size) {
@@ -73,6 +103,178 @@ void* nq_realloc(void* ptr, size_t size) {
 void nq_init_process_args(int argc, char** argv) {
     nq_process_argc = argc;
     nq_process_argv = argv;
+}
+
+NQStr nq_str_clone(NQStr text) {
+    if (text.owner != NULL) {
+        text.owner->ref_count += 1;
+    }
+    return text;
+}
+
+NQBytes nq_bytes_from_str(NQStr text) {
+    NQBytes bytes = { .data = NULL, .len = 0, .cap = 0 };
+    if (text.len <= 0) {
+        return bytes;
+    }
+    bytes.data = (unsigned char*)malloc((size_t)text.len);
+    if (bytes.data == NULL) {
+        fputs("nauqtype runtime: out of memory\n", stderr);
+        exit(1);
+    }
+    memcpy(bytes.data, text.data, (size_t)text.len);
+    bytes.len = (int64_t)text.len;
+    bytes.cap = (int64_t)text.len;
+    return bytes;
+}
+
+int64_t nq_bytes_len(const NQBytes* bytes) {
+    return bytes->len;
+}
+
+NQ_Option__i32 nq_bytes_get(const NQBytes* bytes, int64_t index) {
+    if (index < 0 || index >= bytes->len) {
+        return (NQ_Option__i32){
+            .tag = NQ_Option__i32_Tag_None,
+            .data.None = NQ_UNIT,
+        };
+    }
+    return (NQ_Option__i32){
+        .tag = NQ_Option__i32_Tag_Some,
+        .data.Some = { ._0 = (int32_t)bytes->data[index] },
+    };
+}
+
+void nq_bytes_drop(NQBytes* bytes) {
+    if (bytes == NULL) {
+        return;
+    }
+    free(bytes->data);
+    bytes->data = NULL;
+    bytes->len = 0;
+    bytes->cap = 0;
+}
+
+void nq_str_drop(NQStr* text) {
+    if (text == NULL) {
+        return;
+    }
+    if (text->owner != NULL) {
+        if (text->owner->ref_count == 0) {
+            fputs("nauqtype runtime: invalid string reference count\n", stderr);
+            abort();
+        }
+        text->owner->ref_count -= 1;
+        if (text->owner->ref_count == 0) {
+            free(text->owner->storage);
+            free(text->owner);
+        }
+    }
+    *text = nq_empty_str();
+}
+
+NQIoErr nq_io_err_clone(NQIoErr err) {
+    err.text = nq_str_clone(err.text);
+    return err;
+}
+
+void nq_io_err_drop(NQIoErr* err) {
+    if (err == NULL) {
+        return;
+    }
+    nq_str_drop(&err->text);
+    err->code = 0;
+}
+
+NQ_process_result nq_process_result_clone(NQ_process_result value) {
+    value.stdout = nq_str_clone(value.stdout);
+    value.stderr = nq_str_clone(value.stderr);
+    return value;
+}
+
+void nq_process_result_drop(NQ_process_result* value) {
+    if (value == NULL) {
+        return;
+    }
+    nq_str_drop(&value->stdout);
+    nq_str_drop(&value->stderr);
+    value->exit_code = 0;
+}
+
+NQ_Option__str nq_option__str_clone(NQ_Option__str value) {
+    if (value.tag == NQ_Option__str_Tag_Some) {
+        value.data.Some._0 = nq_str_clone(value.data.Some._0);
+    }
+    return value;
+}
+
+void nq_option__str_drop(NQ_Option__str* value) {
+    if (value == NULL) {
+        return;
+    }
+    if (value->tag == NQ_Option__str_Tag_Some) {
+        nq_str_drop(&value->data.Some._0);
+    }
+    memset(value, 0, sizeof(*value));
+}
+
+NQ_Result__str__io_err nq_result__str__io_err_clone(NQ_Result__str__io_err value) {
+    if (value.tag == NQ_Result__str__io_err_Tag_Ok) {
+        value.data.Ok._0 = nq_str_clone(value.data.Ok._0);
+    } else {
+        value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    }
+    return value;
+}
+
+void nq_result__str__io_err_drop(NQ_Result__str__io_err* value) {
+    if (value == NULL) {
+        return;
+    }
+    if (value->tag == NQ_Result__str__io_err_Tag_Ok) {
+        nq_str_drop(&value->data.Ok._0);
+    } else {
+        nq_io_err_drop(&value->data.Err._0);
+    }
+    memset(value, 0, sizeof(*value));
+}
+
+NQ_Result__unit__io_err nq_result__unit__io_err_clone(NQ_Result__unit__io_err value) {
+    if (value.tag == NQ_Result__unit__io_err_Tag_Err) {
+        value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    }
+    return value;
+}
+
+void nq_result__unit__io_err_drop(NQ_Result__unit__io_err* value) {
+    if (value == NULL) {
+        return;
+    }
+    if (value->tag == NQ_Result__unit__io_err_Tag_Err) {
+        nq_io_err_drop(&value->data.Err._0);
+    }
+    memset(value, 0, sizeof(*value));
+}
+
+NQ_Result__process_result__io_err nq_result__process_result__io_err_clone(NQ_Result__process_result__io_err value) {
+    if (value.tag == NQ_Result__process_result__io_err_Tag_Ok) {
+        value.data.Ok._0 = nq_process_result_clone(value.data.Ok._0);
+    } else {
+        value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    }
+    return value;
+}
+
+void nq_result__process_result__io_err_drop(NQ_Result__process_result__io_err* value) {
+    if (value == NULL) {
+        return;
+    }
+    if (value->tag == NQ_Result__process_result__io_err_Tag_Ok) {
+        nq_process_result_drop(&value->data.Ok._0);
+    } else {
+        nq_io_err_drop(&value->data.Err._0);
+    }
+    memset(value, 0, sizeof(*value));
 }
 
 NQUnit nq_print_line(NQStr text) {
@@ -92,15 +294,12 @@ NQUnit nq_eprint_line(NQStr text) {
 NQIoErr nq_make_io_err(int32_t code, const char* text) {
     return (NQIoErr){
         .code = code,
-        .text = {
-            .data = nq_dup_cstr(text),
-            .len = (intptr_t)strlen(text),
-        },
+        .text = nq_owned_str_copy(text, (intptr_t)strlen(text)),
     };
 }
 
 NQStr nq_io_err_text(NQIoErr err) {
-    return err.text;
+    return nq_str_clone(err.text);
 }
 
 NQ_List__str nq_list__str_make(void) {
@@ -146,8 +345,23 @@ NQ_Option__str nq_list__str_get(const NQ_List__str* items, int32_t index) {
     }
     return (NQ_Option__str){
         .tag = NQ_Option__str_Tag_Some,
-        .data.Some = { ._0 = items->data[index] },
+        .data.Some = { ._0 = nq_str_clone(items->data[index]) },
     };
+}
+
+void nq_list__str_drop(NQ_List__str* items) {
+    int32_t index = 0;
+    if (items == NULL) {
+        return;
+    }
+    while (index < items->len) {
+        nq_str_drop(&items->data[index]);
+        index += 1;
+    }
+    free(items->data);
+    items->data = NULL;
+    items->len = 0;
+    items->cap = 0;
 }
 
 int32_t nq_str_len(NQStr text) {
@@ -163,10 +377,7 @@ NQStr nq_str_concat(NQStr left, NQStr right) {
     memcpy(buffer, left.data, (size_t)left.len);
     memcpy(buffer + left.len, right.data, (size_t)right.len);
     buffer[left.len + right.len] = '\0';
-    return (NQStr){
-        .data = buffer,
-        .len = left.len + right.len,
-    };
+    return nq_owned_str_take(buffer, left.len + right.len);
 }
 
 NQ_Result__str__io_err nq_read_file(NQStr path) {
@@ -230,10 +441,7 @@ NQ_Result__str__io_err nq_read_file(NQStr path) {
     return (NQ_Result__str__io_err){
         .tag = NQ_Result__str__io_err_Tag_Ok,
         .data.Ok = {
-            ._0 = {
-                .data = buffer,
-                .len = (intptr_t)file_size,
-            },
+            ._0 = nq_owned_str_take(buffer, (intptr_t)file_size),
         },
     };
 }
@@ -363,6 +571,7 @@ static bool nq_try_read_text_file(const char* path, NQStr* out_text, NQIoErr* ou
     NQ_Result__str__io_err result = nq_read_file((NQStr){
         .data = path,
         .len = (intptr_t)strlen(path),
+        .owner = NULL,
     });
     if (result.tag == NQ_Result__str__io_err_Tag_Ok) {
         *out_text = result.data.Ok._0;
@@ -564,6 +773,7 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         };
     }
     if (!nq_try_read_text_file(stderr_path, &stderr_text, &io_err)) {
+        nq_str_drop(&stdout_text);
         free(program_cstr);
         free(cwd_cstr);
         free(command);
@@ -671,12 +881,14 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         close(error_pipe[0]);
         if (cwd_cstr[0] != '\0' && chdir(cwd_cstr) != 0) {
             int err = errno;
-            write(error_pipe[1], &err, sizeof(err));
+            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
+            (void)ignored;
             _exit(127);
         }
         if (dup2(stdout_fd, STDOUT_FILENO) < 0 || dup2(stderr_fd, STDERR_FILENO) < 0) {
             int err = errno;
-            write(error_pipe[1], &err, sizeof(err));
+            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
+            (void)ignored;
             _exit(127);
         }
         close(stdout_fd);
@@ -684,7 +896,8 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         execvp(program_cstr, argv);
         {
             int err = errno;
-            write(error_pipe[1], &err, sizeof(err));
+            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
+            (void)ignored;
         }
         _exit(127);
     }
@@ -722,6 +935,7 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         };
     }
     if (!nq_try_read_text_file(stderr_template, &stderr_text, &io_err)) {
+        nq_str_drop(&stdout_text);
         unlink(stdout_template);
         unlink(stderr_template);
         free(program_cstr);
@@ -760,19 +974,22 @@ NQ_Option__i32 nq_str_get(NQStr text, int32_t index) {
 }
 
 NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end) {
+    NQStr slice;
     if (start < 0 || end < start || end > (int32_t)text.len) {
         return (NQ_Option__str){
             .tag = NQ_Option__str_Tag_None,
             .data.None = NQ_UNIT,
         };
     }
+    slice = (NQStr){
+        .data = text.data + start,
+        .len = (intptr_t)(end - start),
+        .owner = text.owner,
+    };
     return (NQ_Option__str){
         .tag = NQ_Option__str_Tag_Some,
         .data.Some = {
-            ._0 = {
-                .data = text.data + start,
-                .len = (intptr_t)(end - start),
-            },
+            ._0 = nq_str_clone(slice),
         },
     };
 }

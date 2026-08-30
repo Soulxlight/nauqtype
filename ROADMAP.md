@@ -761,13 +761,24 @@ Status:
 
 ### M53: Release Truth And Foundational Values
 
-- add stable help/version behavior and truthful phase-specific diagnostics with
-  source spans
-- add bytes plus a width-safe integer/duration foundation before binary files,
-  metadata, or time depend on them
-- define deterministic reclamation for owned heap-backed values before
-  long-running applications
-- lock clean-checkout CI plus compiler/test/proof time and memory budgets
+Status: complete.
+
+- stable `help` / `version` aliases now come from one checked compiler identity,
+  and release assembly verifies that identity against `VERSION`
+- diagnostics JSON v1 now carries producer-owned codes, categories, severities,
+  physical paths, and UTF-8 byte spans without a schema reset
+- exact `i64`, move-only `bytes`, canonical `is_copy` / `needs_drop` type truth,
+  and a checked read/copy/move/borrow value-use plan now reach handoff, borrow,
+  IR, and C emission
+- generated C now performs deterministic clone/move/drop cleanup for owned
+  strings, lists, bytes, process results, user aggregates, temporaries, normal
+  exits, propagation, and loop control; moving a non-copy field remains rejected
+- owned-temporary field reads are snapshotted before base cleanup, preserving
+  locked facts v1 identities and preventing use-after-drop
+- the frozen C seed and runtime are refreshed to the ownership-aware fixed point
+- the composed Linux milestone gate records wall/RSS evidence, builds stage1
+  once, and reuses it for seed fixed-point proof instead of repeating seed emit
+- M54 is next; M53 does not add broad filesystem, environment, or process APIs
 
 ### M54: Linux Input And Filesystem Foundation
 

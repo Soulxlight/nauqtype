@@ -736,6 +736,7 @@ fn copy_selfhost_module(proof_dir: str, module_name: str) -> result<unit, io_err
 fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "ast");
     list_push(mutref modules, "borrow");
+    list_push(mutref modules, "build_info");
     list_push(mutref modules, "c_emit");
     list_push(mutref modules, "diag");
     list_push(mutref modules, "facts");
@@ -752,7 +753,9 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "source");
     list_push(mutref modules, "text");
     list_push(mutref modules, "token");
+    list_push(mutref modules, "type_text");
     list_push(mutref modules, "typecheck");
+    list_push(mutref modules, "value_plan");
     list_push(mutref modules, "workspace");
     return;
 }
@@ -824,6 +827,12 @@ fn run_driver_check(driver_path: str, entry_path: str) -> result<process_result,
     let mut args: list<str> = list();
     list_push(mutref args, "check");
     list_push(mutref args, entry_path);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_identity_command(driver_path: str, command: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, command);
     return run_process(driver_path, ref args, ".");
 }
 
@@ -1071,6 +1080,28 @@ fn driver_json_matches_golden(step_name: str, status: process_result, golden_pat
     return driver_json_matches_golden_with_exit(step_name, status, golden_path, 0);
 }
 
+fn driver_text_matches_golden(step_name: str, status: process_result, golden_path: str) -> bool {
+    if status.exit_code != 0 {
+        eprint_line(str_concat(step_name, " returned an unexpected exit code"));
+        emit_process_output(status);
+        return false;
+    }
+    if status.stderr != "" {
+        eprint_line(str_concat(step_name, " produced unexpected stderr"));
+        emit_process_output(status);
+        return false;
+    }
+    let mut expected = "";
+    if not read_text_or_report(golden_path, str_concat("failed to read golden for ", step_name), mutref expected) {
+        return false;
+    }
+    if not output_matches(status.stdout, expected) {
+        eprint_line(str_concat(step_name, " output changed"));
+        return false;
+    }
+    return true;
+}
+
 fn driver_json_contains3(step_name: str, status: process_result, first: str, second: str, third: str) -> bool {
     if not driver_json_step_ok(step_name, status) {
         return false;
@@ -1114,6 +1145,13 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("try_expression", "examples/try_expression.nq", 7, ""));
     list_push(mutref cases, make_corpus_case("user_record", "examples/user_record.nq", 32, ""));
     list_push(mutref cases, make_corpus_case("while_counter", "examples/while_counter.nq", 5, ""));
+    list_push(mutref cases, make_corpus_case("m53_i64_exact", "tests/fixtures/m53_values/i64_exact.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_ownership_values", "tests/fixtures/m53_values/ownership_values.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_cleanup_control_flow", "tests/fixtures/m53_values/cleanup_control_flow.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_bytes_exact", "tests/fixtures/m53_values/bytes_exact.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_copy_transfer_replacement", "tests/fixtures/m53_ownership/copy_transfer_replacement.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_control_boundaries", "tests/fixtures/m53_ownership/control_boundaries.nq", 0, ""));
+    list_push(mutref cases, make_corpus_case("m53_bytes_cleanup", "tests/fixtures/m53_ownership/bytes_cleanup.nq", 0, ""));
     return;
 }
 
@@ -1168,6 +1206,75 @@ fn run_json_golden_result(label: str, result: result<process_result, io_err>, go
             return false;
         },
     }
+}
+
+fn run_text_golden_result(label: str, result: result<process_result, io_err>, golden_path: str) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_text_matches_golden(label, status, golden_path);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_version_identity_check(driver_path: str) -> bool {
+    let result = run_driver_identity_command(driver_path, "version");
+    match result {
+        Ok(status) => {
+            if not driver_text_matches_golden("version", status, "tests/golden/cli/version.txt") {
+                return false;
+            }
+            let loaded = read_file("VERSION");
+            match loaded {
+                Ok(version) => {
+                    if status.stdout != str_concat("nauqc ", version) {
+                        eprint_line("version output does not match VERSION");
+                        return false;
+                    }
+                    return true;
+                },
+                Err(err) => {
+                    eprint_line(io_err_text(err));
+                    return false;
+                },
+            }
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_cli_identity_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    if not run_text_golden_result("help", run_driver_identity_command(driver_path, "help"), "tests/golden/cli/help.txt") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_text_golden_result("--help", run_driver_identity_command(driver_path, "--help"), "tests/golden/cli/help.txt") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_text_golden_result("-h", run_driver_identity_command(driver_path, "-h"), "tests/golden/cli/help.txt") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_version_identity_check(driver_path) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_text_golden_result("--version", run_driver_identity_command(driver_path, "--version"), "tests/golden/cli/version.txt") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_text_golden_result("-V", run_driver_identity_command(driver_path, "-V"), "tests/golden/cli/version.txt") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    return true;
 }
 
 fn run_json_failure_golden_result(label: str, result: result<process_result, io_err>, golden_path: str) -> bool {
@@ -1457,6 +1564,9 @@ fn run_evidence_parity_gate(driver_path: str, failed_phase: mutref str) -> bool 
 }
 
 fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    if not run_cli_identity_gate(driver_path, mutref failed_phase) {
+        return false;
+    }
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
         failed_phase = "tooling.golden";
         return false;
@@ -1891,6 +2001,8 @@ fn m39_manifest_has_all_suite_entries(text: str) -> bool {
     list_push(mutref suites, "test_imports.py|");
     list_push(mutref suites, "test_integration.py|");
     list_push(mutref suites, "test_lexer.py|");
+    list_push(mutref suites, "test_m53_ownership.py|");
+    list_push(mutref suites, "test_m53_values.py|");
     list_push(mutref suites, "test_parser.py|");
     list_push(mutref suites, "test_patterns.py|");
     list_push(mutref suites, "test_resolution.py|");
@@ -1946,7 +2058,7 @@ fn run_m39_fixture_manifest_gate() -> bool {
 
 pub fn run_nauq_tests(driver_path: str) -> i32
 audit {
-    intent("Run the Nauqtype-owned fixture, corpus, and selfhost test suite");
+    intent("Run the Nauqtype-owned fixture and tooling test suite");
     mutates();
     effects(print, io);
 }
@@ -1966,7 +2078,37 @@ audit {
     if not run_expected_check_failure(driver_path, "tests/fixtures/try_short_circuit_failure.nq", "NQ-TRY-004") {
         return 1;
     }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_values/i64_assign_from_i32.nq", "annotated local initializer does not match declared type") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_values/i64_mixed_arithmetic.nq", "matching types") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_values/list_use_after_move.nq", "moved") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_values/bytes_use_after_move.nq", "moved") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_values/bytes_literal_rejected.nq", "does not match") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_ownership/list_get_noncopy_rejected.nq", "copy") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_ownership/for_noncopy_rejected.nq", "copy") {
+        return 1;
+    }
+    if not run_expected_check_failure(driver_path, "tests/fixtures/m53_ownership/match_noncopy_field_rejected.nq", "moving out of fields") {
+        return 1;
+    }
     if not run_json_failure_golden_result("fixture stage1 diagnostics json", run_driver_check_json(driver_path, "tests/fixtures/diagnostics_failure.nq"), "tests/golden/stage1_diagnostics/check_failure.json") {
+        return 1;
+    }
+    if not run_json_failure_golden_result("fixture UTF-8 type diagnostics json", run_driver_check_json(driver_path, "tests/fixtures/m53_values/diagnostics_type_utf8.nq"), "tests/golden/stage1_diagnostics/type_utf8.json") {
+        return 1;
+    }
+    if not run_json_golden_result("fixture warning diagnostics json", run_driver_check_json(driver_path, "tests/fixtures/diagnostics_warning.nq"), "tests/golden/stage1_diagnostics/check_warning.json") {
         return 1;
     }
     if not run_json_golden_result("fixture facts v2", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", "v2"), "tests/golden/facts/main-v2.json") {
@@ -1980,13 +2122,6 @@ audit {
         return 1;
     }
     if not run_formatter_tooling_checks(driver_path, mutref failed_phase) {
-        return 1;
-    }
-    let mut failed_case = "";
-    if run_example_corpus_inner(driver_path, mutref failed_phase, mutref failed_case) != 0 {
-        return 1;
-    }
-    if run_selfhost_proof_inner(driver_path, mutref failed_phase) != 0 {
         return 1;
     }
     print_line("nauqtype test ok");

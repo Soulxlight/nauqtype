@@ -120,7 +120,7 @@ class IntegrationTests(unittest.TestCase):
                         match entry {{
                             Some(module_name) => {{
                                 if module_reaches_start(module_name, ref uses) {{
-                                    list_push(mutref diags, make_diag(module_name, 0, "import cycle detected"));
+                                    list_push(mutref diags, make_error("NQ-IMPORT-002", diag_import, module_name, -1, -1, "import cycle detected"));
                                     return;
                                 }}
                             }},
@@ -171,7 +171,7 @@ class IntegrationTests(unittest.TestCase):
                             parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
                         }},
                         Err(err) => {{
-                            list_push(mutref diags, make_diag(name, 0, io_err_text(err)));
+                            list_push(mutref diags, make_error("NQ-IO-001", diag_io, name, -1, -1, io_err_text(err)));
                         }},
                     }}
                     return;

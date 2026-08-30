@@ -1,0 +1,912 @@
+use diag;
+use handoff;
+use text;
+
+pub enum checked_value_use_kind {
+    checked_value_read,
+    checked_value_copy,
+    checked_value_move,
+    checked_value_borrow,
+}
+
+pub type checked_type_property {
+    type_id: i32,
+    is_copy: bool,
+    needs_drop: bool,
+}
+
+pub type checked_value_use {
+    expr_id: i32,
+    kind: checked_value_use_kind,
+}
+
+pub type value_plan_summary {
+    type_property_count: i32,
+    value_use_count: i32,
+    diag_count: i32,
+}
+
+fn make_type_property(type_id: i32, is_copy: bool, needs_drop: bool) -> checked_type_property {
+    return checked_type_property {
+        type_id: type_id,
+        is_copy: is_copy,
+        needs_drop: needs_drop,
+    };
+}
+
+fn push_value_plan_error(diags: mutref list<diag>, message: str) -> unit {
+    list_push(mutref diags, make_error("NQ-HANDOFF-002", diag_handoff, "", -1, -1, message));
+    return;
+}
+
+pub fn lookup_checked_type_property(properties: ref list<checked_type_property>, type_id: i32) -> option<checked_type_property>
+audit {
+    intent("Look up canonical checked value properties by stable type identity");
+    mutates();
+    effects();
+}
+{
+    if type_id > 0 {
+        let direct = list_get(ref properties, type_id - 1);
+        match direct {
+            Some(value) => {
+                if value.type_id == type_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+    }
+    let mut index = 0;
+    while index < list_len(ref properties) {
+        let entry = list_get(ref properties, index);
+        match entry {
+            Some(value) => {
+                if value.type_id == type_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_checked_type_shape(type_shapes: ref list<checked_type_shape>, type_id: i32) -> option<checked_type_shape> {
+    if type_id <= 0 {
+        return None;
+    }
+    let entry = list_get(ref type_shapes, type_id - 1);
+    match entry {
+        Some(value) => {
+            if value.id == type_id {
+                return Some(value);
+            }
+        },
+        None => {
+        },
+    }
+    return None;
+}
+
+fn clone_i32_list(items: ref list<i32>) -> list<i32> {
+    let mut result: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => { list_push(mutref result, value); },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn named_type_decl_exists(type_decls: ref list<checked_type_decl>, module_name: str, type_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref type_decls) {
+        let entry = list_get(ref type_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == type_name {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn named_enum_id(enum_decls: ref list<checked_enum_decl>, module_name: str, type_name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref enum_decls) {
+        let entry = list_get(ref enum_decls, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == type_name {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn classify_type_id(type_id: i32, type_shapes: ref list<checked_type_shape>, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, visiting: ref list<i32>, properties: mutref list<checked_type_property>, diags: mutref list<diag>) -> checked_type_property {
+    let existing = lookup_checked_type_property(ref properties, type_id);
+    match existing {
+        Some(value) => { return value; },
+        None => {
+        },
+    }
+
+    if list_contains_i32(ref visiting, type_id) {
+        push_value_plan_error(mutref diags, str_concat("stage1 value plan found a cyclic by-value type shape: ", i32_to_str(type_id)));
+        return make_type_property(type_id, false, true);
+    }
+
+    let shape_entry = lookup_checked_type_shape(ref type_shapes, type_id);
+    match shape_entry {
+        Some(shape) => {
+            let mut next_visiting = clone_i32_list(ref visiting);
+            list_push(mutref next_visiting, type_id);
+            let mut property = make_type_property(type_id, false, true);
+            match shape.kind {
+                checked_type_bool => { property = make_type_property(type_id, true, false); },
+                checked_type_i32 => { property = make_type_property(type_id, true, false); },
+                checked_type_i64 => { property = make_type_property(type_id, true, false); },
+                checked_type_unit => { property = make_type_property(type_id, true, false); },
+                checked_type_ref => { property = make_type_property(type_id, true, false); },
+                checked_type_str => { property = make_type_property(type_id, true, true); },
+                checked_type_io_err => { property = make_type_property(type_id, true, true); },
+                checked_type_process_result => { property = make_type_property(type_id, true, true); },
+                checked_type_bytes => { property = make_type_property(type_id, false, true); },
+                checked_type_list => {
+                    if shape.arg1_id < 0 {
+                        push_value_plan_error(mutref diags, "stage1 value plan found a list without an element type");
+                    } else {
+                        let ignored = classify_type_id(shape.arg1_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                    }
+                    property = make_type_property(type_id, false, true);
+                },
+                checked_type_option => {
+                    if shape.arg1_id < 0 {
+                        push_value_plan_error(mutref diags, "stage1 value plan found an option without a payload type");
+                    } else {
+                        let payload = classify_type_id(shape.arg1_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                        property = make_type_property(type_id, payload.is_copy, payload.needs_drop);
+                    }
+                },
+                checked_type_result => {
+                    if shape.arg1_id < 0 or shape.arg2_id < 0 {
+                        push_value_plan_error(mutref diags, "stage1 value plan found a result without both payload types");
+                    } else {
+                        let ok_property = classify_type_id(shape.arg1_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                        let err_property = classify_type_id(shape.arg2_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                        property = make_type_property(type_id, ok_property.is_copy and err_property.is_copy, ok_property.needs_drop or err_property.needs_drop);
+                    }
+                },
+                checked_type_named => {
+                    let is_struct = named_type_decl_exists(ref type_decls, shape.origin_module, shape.name);
+                    let enum_id = named_enum_id(ref enum_decls, shape.origin_module, shape.name);
+                    if not is_struct and enum_id < 0 {
+                        push_value_plan_error(mutref diags, str_concat("stage1 value plan cannot classify named type `", str_concat(shape.name, "`")));
+                    } else {
+                        let mut all_copy = true;
+                        let mut any_drop = false;
+                        if is_struct {
+                            let mut field_index = 0;
+                            while field_index < list_len(ref field_decls) {
+                                let field_entry = list_get(ref field_decls, field_index);
+                                match field_entry {
+                                    Some(field) => {
+                                        if field.module_name == shape.origin_module and field.type_name == shape.name {
+                                            let field_property = classify_type_id(field.field_type_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                                            if not field_property.is_copy { all_copy = false; }
+                                            if field_property.needs_drop { any_drop = true; }
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                field_index = field_index + 1;
+                            }
+                        } else {
+                            let mut variant_index = 0;
+                            while variant_index < list_len(ref variant_decls) {
+                                let variant_entry = list_get(ref variant_decls, variant_index);
+                                match variant_entry {
+                                    Some(variant) => {
+                                        if variant.enum_id == enum_id {
+                                            let mut payload_index = 0;
+                                            while payload_index < list_len(ref variant_payload_decls) {
+                                                let payload_entry = list_get(ref variant_payload_decls, payload_index);
+                                                match payload_entry {
+                                                    Some(payload) => {
+                                                        if payload.variant_id == variant.id {
+                                                            let payload_property = classify_type_id(payload.type_id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref next_visiting, mutref properties, mutref diags);
+                                                            if not payload_property.is_copy { all_copy = false; }
+                                                            if payload_property.needs_drop { any_drop = true; }
+                                                        }
+                                                    },
+                                                    None => {
+                                                    },
+                                                }
+                                                payload_index = payload_index + 1;
+                                            }
+                                        }
+                                    },
+                                    None => {
+                                    },
+                                }
+                                variant_index = variant_index + 1;
+                            }
+                        }
+                        property = make_type_property(type_id, all_copy, any_drop);
+                    }
+                },
+            }
+            list_push(mutref properties, property);
+            return property;
+        },
+        None => {
+            push_value_plan_error(mutref diags, str_concat("stage1 value plan is missing checked type shape ", i32_to_str(type_id)));
+            return make_type_property(type_id, false, true);
+        },
+    }
+}
+
+pub fn build_checked_type_properties(type_shapes: ref list<checked_type_shape>, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, properties_out: mutref list<checked_type_property>, diags: mutref list<diag>) -> value_plan_summary
+audit {
+    intent("Classify canonical copy and reclamation properties for every checked type identity");
+    mutates(properties_out, diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+    let mut index = 0;
+    while index < list_len(ref type_shapes) {
+        let entry = list_get(ref type_shapes, index);
+        match entry {
+            Some(shape) => {
+                let visiting: list<i32> = list();
+                let ignored = classify_type_id(shape.id, ref type_shapes, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, mutref properties_out, mutref diags);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return value_plan_summary {
+        type_property_count: list_len(ref properties_out),
+        value_use_count: 0,
+        diag_count: list_len(ref diags) - start_diag_count,
+    };
+}
+
+pub fn lookup_checked_value_use(uses: ref list<checked_value_use>, expr_id: i32) -> option<checked_value_use>
+audit {
+    intent("Look up the planned ownership use for one checked expression identity");
+    mutates();
+    effects();
+}
+{
+    if expr_id > 0 {
+        let direct = list_get(ref uses, expr_id - 1);
+        match direct {
+            Some(value) => {
+                if value.expr_id == expr_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+    }
+    let mut index = 0;
+    while index < list_len(ref uses) {
+        let entry = list_get(ref uses, index);
+        match entry {
+            Some(value) => {
+                if value.expr_id == expr_id {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn lookup_checked_expr(expressions: ref list<checked_expr>, expr_id: i32) -> option<checked_expr> {
+    if expr_id <= 0 {
+        return None;
+    }
+    let entry = list_get(ref expressions, expr_id - 1);
+    match entry {
+        Some(value) => {
+            if value.id == expr_id {
+                return Some(value);
+            }
+        },
+        None => {
+        },
+    }
+    return None;
+}
+
+fn expr_child_before_or_equal(left: checked_expr_child, right: checked_expr_child) -> bool {
+    if left.parent_expr_id < right.parent_expr_id {
+        return true;
+    }
+    if left.parent_expr_id > right.parent_expr_id {
+        return false;
+    }
+    return left.index <= right.index;
+}
+
+fn sort_expr_child_range(source: ref list<checked_expr_child>, start: i32, end: i32) -> list<checked_expr_child> {
+    let mut result: list<checked_expr_child> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => { list_push(mutref result, value); },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = sort_expr_child_range(ref source, start, middle);
+            let right = sort_expr_child_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if expr_child_before_or_equal(left_value, right_value) {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => { left_index = list_len(ref left); },
+                        }
+                    },
+                    None => { left_index = list_len(ref left); },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+pub fn index_checked_expr_children(expr_children: ref list<checked_expr_child>) -> list<checked_expr_child>
+audit {
+    intent("Order checked expression-child edges for deterministic indexed lookup");
+    mutates();
+    effects();
+}
+{
+    return sort_expr_child_range(ref expr_children, 0, list_len(ref expr_children));
+}
+
+fn checked_expr_children_for(expr_children: ref list<checked_expr_child>, expr_id: i32) -> list<checked_expr_child> {
+    let mut result: list<checked_expr_child> = list();
+    let mut low = 0;
+    let mut high = list_len(ref expr_children);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref expr_children, middle);
+        match entry {
+            Some(value) => {
+                if value.parent_expr_id < expr_id {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => { high = middle; },
+        }
+    }
+    let mut index = low;
+    let mut collecting = true;
+    while collecting and index < list_len(ref expr_children) {
+        let entry = list_get(ref expr_children, index);
+        match entry {
+            Some(value) => {
+                if value.parent_expr_id == expr_id {
+                    list_push(mutref result, value);
+                } else {
+                    collecting = false;
+                }
+            },
+            None => { collecting = false; },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn checked_struct_fields_for(struct_fields: ref list<checked_struct_field_init>, expr_id: i32) -> list<checked_struct_field_init> {
+    let mut result: list<checked_struct_field_init> = list();
+    let mut index = 0;
+    while index < list_len(ref struct_fields) {
+        let entry = list_get(ref struct_fields, index);
+        match entry {
+            Some(value) => {
+                if value.expr_id == expr_id {
+                    list_push(mutref result, value);
+                }
+            },
+            None => {
+            }
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn checked_expr_kind_has_children(kind: checked_expr_kind) -> bool {
+    match kind {
+        checked_expr_unit => { return false; },
+        checked_expr_bool => { return false; },
+        checked_expr_i32 => { return false; },
+        checked_expr_i64 => { return false; },
+        checked_expr_str => { return false; },
+        checked_expr_name => { return false; },
+        checked_expr_const => { return false; },
+        checked_expr_zero_variant => { return false; },
+        checked_expr_struct => { return false; },
+        _ => { return true; },
+    }
+}
+
+fn target_is_constructor(kind: checked_target_kind) -> bool {
+    match kind {
+        checked_target_constructor => { return true; },
+        checked_target_builtin_constructor => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn builtin_arg_is_borrow(name: str, index: i32) -> bool {
+    if (name == "list_push" or name == "list_len" or name == "list_get") and index == 0 {
+        return true;
+    }
+    if name == "run_process" and index == 1 {
+        return true;
+    }
+    if (name == "bytes_len" or name == "bytes_get") and index == 0 {
+        return true;
+    }
+    return false;
+}
+
+fn call_arg_is_borrow(functions: ref list<checked_function>, params: ref list<checked_param>, call: checked_expr, index: i32) -> bool {
+    if call.target_origin_module == "__builtin__" {
+        return builtin_arg_is_borrow(call.name, index);
+    }
+    let mut function_id = -1;
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                if value.module_name == call.target_origin_module and value.name == call.name {
+                    function_id = value.id;
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+    if function_id < 0 {
+        return false;
+    }
+    let mut param_index = 0;
+    while param_index < list_len(ref params) {
+        let entry = list_get(ref params, param_index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.index == index {
+                    return value.is_borrow;
+                }
+            },
+            None => {
+            },
+        }
+        param_index = param_index + 1;
+    }
+    return false;
+}
+
+fn stmt_for_expr(statements: ref list<checked_stmt>, expr_id: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if value.expr_id == expr_id {
+                    return value.id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn is_lvalue_expr(kind: checked_expr_kind) -> bool {
+    match kind {
+        checked_expr_name => { return true; },
+        checked_expr_const => { return true; },
+        checked_expr_field => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn append_value_use(expr: checked_expr, properties: ref list<checked_type_property>, consume: bool, borrow_value: bool, uses: mutref list<checked_value_use>, diags: mutref list<diag>) -> unit {
+    let mut kind = checked_value_read;
+    if borrow_value {
+        kind = checked_value_borrow;
+    } else {
+        if consume {
+            let property_entry = lookup_checked_type_property(ref properties, expr.type_id);
+            match property_entry {
+                Some(property) => {
+                    if is_lvalue_expr(expr.kind) and property.is_copy {
+                        kind = checked_value_copy;
+                    } else {
+                        kind = checked_value_move;
+                    }
+                },
+                None => {
+                    push_value_plan_error(mutref diags, str_concat("stage1 value plan is missing properties for expression ", i32_to_str(expr.id)));
+                },
+            }
+        }
+    }
+    list_push(mutref uses, checked_value_use { expr_id: expr.id, kind: kind });
+    return;
+}
+
+fn sort_value_use_range(source: ref list<checked_value_use>, start: i32, end: i32) -> list<checked_value_use> {
+    let mut result: list<checked_value_use> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => { list_push(mutref result, value); },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = sort_value_use_range(ref source, start, middle);
+            let right = sort_value_use_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if left_value.expr_id <= right_value.expr_id {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => {
+                                left_index = list_len(ref left);
+                            },
+                        }
+                    },
+                    None => {
+                        left_index = list_len(ref left);
+                    },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+fn append_canonical_value_uses(raw_uses: ref list<checked_value_use>, uses_out: mutref list<checked_value_use>) -> unit {
+    let sorted = sort_value_use_range(ref raw_uses, 0, list_len(ref raw_uses));
+    let mut last_expr_id = -1;
+    let mut index = 0;
+    while index < list_len(ref sorted) {
+        let entry = list_get(ref sorted, index);
+        match entry {
+            Some(value) => {
+                if value.expr_id != last_expr_id {
+                    list_push(mutref uses_out, value);
+                    last_expr_id = value.expr_id;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_param>, properties: ref list<checked_type_property>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, consume: bool, borrow_value: bool, uses: mutref list<checked_value_use>, diags: mutref list<diag>) -> unit {
+    let expr_entry = lookup_checked_expr(ref expressions, expr_id);
+    match expr_entry {
+        Some(expr) => {
+            append_value_use(expr, ref properties, consume, borrow_value, mutref uses, mutref diags);
+            let mut children: list<checked_expr_child> = list();
+            if checked_expr_kind_has_children(expr.kind) {
+                children = checked_expr_children_for(ref expr_children, expr.id);
+            }
+            match expr.kind {
+                checked_expr_ref => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
+                        None => { push_value_plan_error(mutref diags, "stage1 value plan found a borrow without a target expression"); },
+                    }
+                },
+                checked_expr_mutref => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
+                        None => { push_value_plan_error(mutref diags, "stage1 value plan found a mutable borrow without a target expression"); },
+                    }
+                },
+                checked_expr_call => {
+                    let mut index = 0;
+                    while index < list_len(ref children) {
+                        let child_entry = list_get(ref children, index);
+                        match child_entry {
+                            Some(child) => {
+                                let arg_borrow = not target_is_constructor(expr.target_kind) and call_arg_is_borrow(ref functions, ref params, expr, index);
+                                plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, not arg_borrow, arg_borrow, mutref uses, mutref diags);
+                            },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                },
+                checked_expr_struct => {
+                    let fields = checked_struct_fields_for(ref struct_fields, expr.id);
+                    let mut index = 0;
+                    while index < list_len(ref fields) {
+                        let field_entry = list_get(ref fields, index);
+                        match field_entry {
+                            Some(field) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, field.value_expr_id, true, false, mutref uses, mutref diags); },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                },
+                checked_expr_list => {
+                    let mut index = 0;
+                    while index < list_len(ref children) {
+                        let child_entry = list_get(ref children, index);
+                        match child_entry {
+                            Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                },
+                checked_expr_field => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        None => { push_value_plan_error(mutref diags, "stage1 value plan found a field access without a base expression"); },
+                    }
+                },
+                checked_expr_match => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
+                        None => { push_value_plan_error(mutref diags, "stage1 value plan found a match without a scrutinee"); },
+                    }
+                    let stmt_id = stmt_for_expr(ref statements, expr.id);
+                    let mut arm_index = 0;
+                    while arm_index < list_len(ref match_arms) {
+                        let arm_entry = list_get(ref match_arms, arm_index);
+                        match arm_entry {
+                            Some(arm) => {
+                                if arm.stmt_id == stmt_id and arm.result_expr_id > 0 {
+                                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, arm.result_expr_id, consume, false, mutref uses, mutref diags);
+                                }
+                            },
+                            None => {
+                            },
+                        }
+                        arm_index = arm_index + 1;
+                    }
+                },
+                checked_expr_not => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        None => {
+                        },
+                    }
+                },
+                checked_expr_neg => {
+                    let child_entry = list_get(ref children, 0);
+                    match child_entry {
+                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        None => {
+                        },
+                    }
+                },
+                _ => {
+                    let mut index = 0;
+                    while index < list_len(ref children) {
+                        let child_entry = list_get(ref children, index);
+                        match child_entry {
+                            Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                            None => {
+                            },
+                        }
+                        index = index + 1;
+                    }
+                },
+            }
+        },
+        None => {
+            if expr_id > 0 {
+                push_value_plan_error(mutref diags, str_concat("stage1 value plan is missing checked expression ", i32_to_str(expr_id)));
+            }
+        },
+    }
+    return;
+}
+
+fn stmt_consumes_expr(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_local => { return true; },
+        checked_stmt_assign => { return true; },
+        checked_stmt_field_assign => { return true; },
+        checked_stmt_let_else => { return true; },
+        checked_stmt_propagate => { return true; },
+        checked_stmt_match => { return true; },
+        checked_stmt_return => { return true; },
+        _ => { return false; },
+    }
+}
+
+pub fn plan_checked_value_uses(functions: ref list<checked_function>, params: ref list<checked_param>, properties: ref list<checked_type_property>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, uses_out: mutref list<checked_value_use>, diags: mutref list<diag>) -> value_plan_summary
+audit {
+    intent("Plan explicit read copy move and borrow uses from checked expression identities");
+    mutates(uses_out, diags);
+    effects();
+}
+{
+    let start_diag_count = list_len(ref diags);
+    let mut raw_uses: list<checked_value_use> = list();
+    let indexed_expr_children = index_checked_expr_children(ref expr_children);
+
+    let mut const_expr_index = 0;
+    while const_expr_index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, const_expr_index);
+        match entry {
+            Some(expr) => {
+                if expr.function_id == 0 {
+                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, expr.id, true, false, mutref raw_uses, mutref diags);
+                }
+            },
+            None => {
+            },
+        }
+        const_expr_index = const_expr_index + 1;
+    }
+
+    let mut stmt_index = 0;
+    while stmt_index < list_len(ref statements) {
+        let entry = list_get(ref statements, stmt_index);
+        match entry {
+            Some(stmt) => {
+                if stmt.expr_id > 0 {
+                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, stmt.expr_id, stmt_consumes_expr(stmt.kind), false, mutref raw_uses, mutref diags);
+                }
+            },
+            None => {
+            },
+        }
+        stmt_index = stmt_index + 1;
+    }
+
+    append_canonical_value_uses(ref raw_uses, mutref uses_out);
+
+    let mut expr_index = 0;
+    while expr_index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, expr_index);
+        match entry {
+            Some(expr) => {
+                let planned = lookup_checked_value_use(ref uses_out, expr.id);
+                match planned {
+                    Some(_) => {
+                    },
+                    None => {
+                        push_value_plan_error(mutref diags, str_concat("stage1 value plan could not reach checked expression ", i32_to_str(expr.id)));
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        expr_index = expr_index + 1;
+    }
+
+    return value_plan_summary {
+        type_property_count: list_len(ref properties),
+        value_use_count: list_len(ref uses_out),
+        diag_count: list_len(ref diags) - start_diag_count,
+    };
+}

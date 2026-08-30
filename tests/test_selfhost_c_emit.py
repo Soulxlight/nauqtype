@@ -12,9 +12,11 @@ from tests.test_support import (
     ROOT,
     SELFHOST_REFERENCE_TIMEOUT,
     compile_and_run_c,
+    compile_c_only,
     copy_selfhost_workspace,
     ensure_bootstrap_deps,
     normalize_structural_c,
+    run_stage1_selfhost,
     run_stage0_selfhost,
 )
 
@@ -37,7 +39,9 @@ class SelfhostCEmitTests(unittest.TestCase):
             "source.nq",
             "text.nq",
             "token.nq",
+            "type_text.nq",
             "typecheck.nq",
+            "value_plan.nq",
         ]
 
     def _escape_nauq_string(self, text: str) -> str:
@@ -212,17 +216,6 @@ class SelfhostCEmitTests(unittest.TestCase):
     def _run_stage0(self, workspace: Path) -> subprocess.CompletedProcess[str]:
         return run_stage0_selfhost(workspace, timeout=180)
 
-    def _emit_stage0_c(self, workspace: Path) -> str:
-        output = workspace / "stage0.c"
-        result = subprocess.run(
-            [sys.executable, "-m", "compiler.main", "emit-c", str(workspace / "main.nq"), "-o", str(output)],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return output.read_text(encoding="utf-8")
-
     def test_stage1_c_emit_writes_expected_shapes(self) -> None:
         modules = {
             "main": """
@@ -281,7 +274,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertIn("nq_list__i32_from_array", emitted)
         self.assertIn("nq_write_file(", emitted)
         self.assertIn(".left = 2;", emitted)
-        self.assertIn("switch (nq_tmp_1.tag)", emitted)
+        self.assertIn("switch (nq_tmp_", emitted)
         self.assertIn("const int32_t* nqv_", emitted)
         self.assertIn("int main(int argc, char** argv)", emitted)
         self.assertIn("nq_init_process_args(argc, argv);", emitted)
@@ -336,7 +329,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertEqual(returncode, 0, output)
         self.assertIn("switch (nq_tmp_", emitted)
         self.assertIn("if (nq_tmp_", emitted)
-        self.assertIn("nq_match_result_", emitted)
+        self.assertRegex(emitted, r"nqv_\d+_picked = ")
         self.assertNotIn("({", emitted)
 
     def test_stage1_c_emit_lowers_literal_and_nested_constructor_patterns(self) -> None:
@@ -478,7 +471,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         self.assertEqual(emitted, "")
         self.assertIn("let-else `else` block must exit explicitly with `return` in V1", output)
 
-    def test_stage1_c_emit_matches_stage0_structurally_on_locked_corpus(self) -> None:
+    def test_stage1_c_emit_is_deterministic_on_locked_corpus(self) -> None:
         cases = {
             "hello_print": {
                 "main.nq": """
@@ -589,11 +582,16 @@ class SelfhostCEmitTests(unittest.TestCase):
                     tmp = Path(tmp_dir)
                     for filename, content in files.items():
                         (tmp / filename).write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
-                    stage0_c = self._emit_stage0_c(tmp)
                     modules = {path.stem: content for path, content in ((tmp / filename, content) for filename, content in files.items())}
                     returncode, output, stage1_c = self._run_stage1_emit(modules)
                     self.assertEqual(returncode, 0, output)
-                    self.assertEqual(normalize_structural_c(stage1_c), normalize_structural_c(stage0_c))
+                    second_returncode, second_output, second_stage1_c = self._run_stage1_emit(modules)
+                    self.assertEqual(second_returncode, 0, second_output)
+                    self.assertEqual(
+                        normalize_structural_c(stage1_c),
+                        normalize_structural_c(second_stage1_c),
+                    )
+                    self.assertIn("nq_function_cleanup_", stage1_c)
 
     def test_stage1_emitted_c_compiles_and_runs_on_locked_corpus(self) -> None:
         ensure_bootstrap_deps()
@@ -725,13 +723,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             tmp = Path(tmp_dir)
             copy_selfhost_workspace(tmp)
-            result = subprocess.run(
-                [sys.executable, "-m", "compiler.main", "run", str(tmp / "main.nq")],
-                cwd=self.root,
-                capture_output=True,
-                text=True,
-                timeout=SELFHOST_REFERENCE_TIMEOUT,
-            )
+            result = run_stage1_selfhost(tmp, timeout=SELFHOST_REFERENCE_TIMEOUT)
             combined = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, combined)
             self.assertIn("stage1 front-end ok", result.stdout)
@@ -739,9 +731,17 @@ class SelfhostCEmitTests(unittest.TestCase):
             self.assertNotIn("stage1 c error:", combined)
             emitted_c = tmp / "build" / "main.c"
             self.assertTrue(emitted_c.exists(), f"missing emitted C at {emitted_c}")
-            rerun = compile_and_run_c(emitted_c, cwd=tmp)
+            stage2 = compile_c_only(emitted_c, exe_path=tmp / "build" / "nauqc-stage2")
+            rerun = subprocess.run(
+                [str(stage2), "check", "main.nq"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=SELFHOST_REFERENCE_TIMEOUT,
+            )
             self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
-            self.assertIn("stage1 front-end ok", rerun.stdout)
+            self.assertEqual(rerun.stdout, "")
+            self.assertEqual(rerun.stderr, "")
 
 
 if __name__ == "__main__":

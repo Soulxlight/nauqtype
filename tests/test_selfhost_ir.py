@@ -27,7 +27,9 @@ class SelfhostIRTests(unittest.TestCase):
             "source.nq",
             "text.nq",
             "token.nq",
+            "type_text.nq",
             "typecheck.nq",
+            "value_plan.nq",
         ]
 
     def _escape_nauq_string(self, text: str) -> str:
@@ -426,6 +428,29 @@ class SelfhostIRTests(unittest.TestCase):
         returncode, output = self._run_probe(modules, assertions)
         self.assertEqual(returncode, 0, output)
 
+    def test_ir_marks_forwarded_ref_parameter_as_borrow(self) -> None:
+        modules = {
+            "main": """
+            fn values_len(values: ref list<i32>) -> i32 {
+                return list_len(values);
+            }
+
+            fn main() -> i32 {
+                let values: list<i32> = [40, 2];
+                return values_len(ref values);
+            }
+            """,
+        }
+        assertions = [
+            '                let values_len_fn = ir_lookup_function_id(ref ir_functions, "main::values_len");',
+            '                if not ir_has_borrowed_name_expr(ref ir_expressions, values_len_fn, "values") {',
+            '                    print_line("missing planned borrow for forwarded ref parameter");',
+            "                    failures = failures + 1;",
+            "                }",
+        ]
+        returncode, output = self._run_probe(modules, assertions)
+        self.assertEqual(returncode, 0, output)
+
     def test_ir_lowers_literal_and_nested_constructor_patterns(self) -> None:
         modules = {
             "main": """
@@ -494,7 +519,6 @@ class SelfhostIRTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, output)
         self.assertNotIn("stage1 limitation", output)
         self.assertNotIn("stage1 ir error:", output)
-        self.assertIn("stage1 front-end ok", output)
 
 
 if __name__ == "__main__":

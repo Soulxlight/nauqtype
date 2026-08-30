@@ -4,6 +4,11 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 release_root="${1:-$repo_root/build/linux-release/nauqtype}"
+if [[ ! -d "$release_root" ]]; then
+    printf 'linux release verify: missing release root %s\n' "$release_root" >&2
+    exit 1
+fi
+release_root="$(cd -- "$release_root" && pwd -P)"
 version="$(tr -d '[:space:]' < "$repo_root/VERSION")"
 release_id="nauqtype-$version"
 
@@ -44,10 +49,61 @@ require_file "share/doc/nauqtype/README.md"
 require_file "share/doc/nauqtype/LINUX.md"
 require_file "share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md"
 
+verify_cli_golden() {
+    local label="$1"
+    local executable="$2"
+    local cwd="$3"
+    local golden="$4"
+    shift 4
+    local actual
+    local errors
+    actual="$(mktemp)"
+    errors="$(mktemp)"
+    if ! (cd "$cwd" && "$executable" "$@") > "$actual" 2> "$errors"; then
+        printf 'linux release verify: %s command failed\n' "$label" >&2
+        cat "$errors" >&2
+        rm -f "$actual" "$errors"
+        exit 1
+    fi
+    if [[ -s "$errors" ]]; then
+        printf 'linux release verify: %s produced unexpected stderr\n' "$label" >&2
+        cat "$errors" >&2
+        rm -f "$actual" "$errors"
+        exit 1
+    fi
+    if ! cmp -s "$golden" "$actual"; then
+        printf 'linux release verify: %s output does not match %s\n' "$label" "$golden" >&2
+        rm -f "$actual" "$errors"
+        exit 1
+    fi
+    rm -f "$actual" "$errors"
+}
+
 if [[ "$(tr -d '[:space:]' < "$release_root/share/nauqtype/VERSION")" != "$version" ]]; then
     printf 'linux release verify: copied VERSION does not match repo VERSION\n' >&2
     exit 1
 fi
+
+expected_version="$(mktemp)"
+printf 'nauqc %s\n' "$version" > "$expected_version"
+if ! cmp -s "$repo_root/tests/golden/cli/version.txt" "$expected_version"; then
+    printf 'linux release verify: version golden does not match repo VERSION\n' >&2
+    rm -f "$expected_version"
+    exit 1
+fi
+rm -f "$expected_version"
+
+public_driver="$release_root/bin/nauqc"
+direct_driver="$release_root/lib/nauqtype/nauqc-stage1"
+driver_cwd="$release_root/lib/nauqtype"
+for alias in help --help -h; do
+    verify_cli_golden "public $alias" "$public_driver" "$release_root" "$repo_root/tests/golden/cli/help.txt" "$alias"
+done
+for alias in version --version -V; do
+    verify_cli_golden "public $alias" "$public_driver" "$release_root" "$repo_root/tests/golden/cli/version.txt" "$alias"
+done
+verify_cli_golden "direct help" "$direct_driver" "$driver_cwd" "$repo_root/tests/golden/cli/help.txt" help
+verify_cli_golden "direct version" "$direct_driver" "$driver_cwd" "$repo_root/tests/golden/cli/version.txt" version
 
 require_json_field() {
     local key="$1"

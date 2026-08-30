@@ -15,5 +15,5 @@ mkdir -p "$work_dir"
     "$seed_exe" emit-c selfhost/main.nq -o "$stage1_c"
 )
 mkdir -p "$(dirname -- "$stage1_exe")"
-"${CC:-cc}" -std=c11 -D_POSIX_C_SOURCE=200809L -I"$repo_root/bootstrap/seed" "$stage1_c" "$repo_root/bootstrap/seed/runtime.c" -o "$stage1_exe"
+"${CC:-cc}" -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I"$repo_root/bootstrap/seed" "$stage1_c" "$repo_root/bootstrap/seed/runtime.c" -o "$stage1_exe"
 printf '%s\n' "$stage1_exe"

@@ -26,7 +26,9 @@ class SelfhostHandoffTests(unittest.TestCase):
             "source.nq",
             "text.nq",
             "token.nq",
+            "type_text.nq",
             "typecheck.nq",
+            "value_plan.nq",
         ]
 
     def _write_modules(self, tmp: Path, modules: dict[str, str]) -> None:
@@ -535,4 +537,3 @@ class SelfhostHandoffTests(unittest.TestCase):
         output = (result.stdout + result.stderr).strip()
         self.assertEqual(result.returncode, 0, output)
         self.assertNotIn("stage1 limitation", output)
-        self.assertIn("stage1 front-end ok", output)

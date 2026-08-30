@@ -30,6 +30,8 @@ The implemented handoff currently captures:
 - typed params, locals, returns, and assignment targets
 - typed expression trees for the trusted subset
 - recursive checked type-shape truth with canonical backend-facing `type_id` values, including origin-module truth for named types and `ref` vs `mutref` shape truth
+- canonical `is_copy` / `needs_drop` properties for every backend-visible type identity
+- one deterministic checked read/copy/move/borrow use decision for every checked expression
 - explicit `ref` / `mutref` borrow nodes instead of borrow-sensitive name reconstruction
 - typed `if`, `while`, and `match` statement structure
 - recursive checked pattern trees for the trusted pattern subset
@@ -89,6 +91,7 @@ The handoff must include, at minimum:
 - field access nodes with resolved base type and resolved field target
 - stable source spans carried through for downstream diagnostics
 - truthful borrow bits and explicit borrow-node shape for `ref` / `mutref`
+- canonical copy/drop properties and checked value-use identity, so ownership-sensitive consumers do not re-derive value behavior
 
 ## Trusted Expression And Statement Scope
 
@@ -98,7 +101,7 @@ That subset includes:
 
 - literals
 - local and top-level names in supported expression positions
-- top-level constant declarations and references for the narrow `i32` / `bool` / `str` const subset
+- top-level constant declarations and references for the narrow `i32` / `i64` / `bool` / `str` const subset
 - constructor expressions in supported positions
 - supported direct calls
 - field access
