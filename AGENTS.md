@@ -76,6 +76,32 @@ Use judgment for trivial, isolated edits. For a substantial milestone:
 5. The lead reviews all delegated edits rather than trusting a completion
    summary by itself.
 
+## Audit Model Policy
+
+Formal audit gates default to `gpt-5.6-sol` with `xhigh` reasoning. Keep the
+auditor independent, read-only, and findings-first; model capability does not
+replace the requirement to provide the actual diff, acceptance contract, and
+exact verification evidence.
+
+Use model diversity deliberately:
+
+- routine substantial milestones require one `gpt-5.6-sol` `xhigh` trailing
+  auditor;
+- ownership, bootstrap, filesystem authority, process execution, FFI, and
+  release-boundary milestones require a `gpt-5.6-sol` `xhigh` primary auditor
+  plus an independent `gpt-5.5` `xhigh` adversarial auditor;
+- M60/M61 release gates, conflicting verdicts, or materially ambiguous safety
+  findings escalate the primary auditor to `gpt-5.6-sol` `max` while retaining
+  the independent `gpt-5.5` `xhigh` review;
+- `max` and higher-cost modes are not routine defaults. Use them only for the
+  escalation cases above or when repository evidence demonstrates a measured
+  audit-quality gain.
+
+Auditors must reach their own verdicts before seeing another auditor's
+conclusion. Do not silently substitute a different model or reasoning level;
+record an unavailable-model fallback in the milestone evidence and preserve
+the strongest available independent, mixed-model review.
+
 ## Verification Discipline
 
 Use the smallest sufficient gate while developing. Do not run an equivalent
