@@ -75,6 +75,9 @@ class SelfhostDifferentialTests(unittest.TestCase):
             "field assignment value does not match target field type",
             "call argument type does not match parameter type",
             "constructor payload type does not match variant payload type",
+            "borrow expression does not match owned call argument type",
+            "cannot take `mutref` of immutable binding",
+            "borrow types are only allowed in function parameters in v0.1",
             "field access base",
             "field does not exist on base type",
             "struct literal",
@@ -185,6 +188,57 @@ class SelfhostDifferentialTests(unittest.TestCase):
 
                     fn main() -> i32 {
                         return take(true);
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "explicit borrow passed to owned parameter",
+                {
+                    "main": """
+                    fn consume(value: i32) -> unit {
+                        return;
+                    }
+
+                    fn main() -> i32 {
+                        let value = 1;
+                        consume(ref value);
+                        return 0;
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "mutref of immutable local",
+                {
+                    "main": """
+                    fn append_one(values: mutref list<i32>) -> unit {
+                        list_push(values, 1);
+                        return;
+                    }
+
+                    fn main() -> i32 {
+                        let values: list<i32> = [];
+                        append_one(mutref values);
+                        return 0;
+                    }
+                    """,
+                },
+                "TYPE",
+                {"TYPE"},
+            ),
+            (
+                "stored borrow local",
+                {
+                    "main": """
+                    fn main() -> i32 {
+                        let value = 1;
+                        let alias: ref i32 = value;
+                        return 0;
                     }
                     """,
                 },

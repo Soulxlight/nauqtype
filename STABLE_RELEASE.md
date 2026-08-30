@@ -108,11 +108,19 @@ the refreshed C seed, and checked Linux resource budgets are now in place.
 
 ### M54: Linux Input And Filesystem Foundation
 
+Status: complete. Narrow Linux authority primitives, structured `io_err`
+provenance, fixed checked IO evidence, library-module checking, and the locked
+vendored `nauqtype.std` integration/copy-release fixture are now in place. Pure
+UTF-8, lexical-path, sorting, and CLI conveniences remain owned by the separate
+NQType Libraries workspace rather than becoming compiler builtins.
+
 - add current-directory, environment lookup, standard-input, path status,
   directory iteration, text/binary file, temporary-path, and atomic-replace
   primitives over the M53 value foundations;
 - expose fixed checked IO evidence for each authority-bearing operation;
-- provide pure Nauqtype path/filesystem modules and a real terminal-tool corpus.
+- freeze the upstream byte/path/error/dependency contract and copied-release
+  fixture that let the separate NQType Libraries workspace provide pure
+  Nauqtype path/filesystem modules and the later terminal-tool corpus.
 
 ### M55: Structured Process, Time, And Cancellation
 

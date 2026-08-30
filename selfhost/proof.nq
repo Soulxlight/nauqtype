@@ -1389,7 +1389,12 @@ fn run_supervised_workflow_gate(driver_path: str, failed_phase: mutref str) -> b
 
 fn run_workspace_governance_gate(driver_path: str, failed_phase: mutref str) -> bool {
     let source_path = "tests/fixtures/workspace_local_dependency/src/app/main.nq";
+    let library_source_path = "tests/fixtures/workspace_local_dependency/vendor/reporting/src/values.nq";
     if not run_quiet_result("workspace governance check", run_driver_check(driver_path, source_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_quiet_result("workspace library module check", run_driver_check(driver_path, library_source_path)) {
         failed_phase = "tooling.golden";
         return false;
     }
@@ -1417,7 +1422,47 @@ fn run_workspace_governance_gate(driver_path: str, failed_phase: mutref str) -> 
         failed_phase = "tooling.golden";
         return false;
     }
+    let m54_source_path = "tests/fixtures/m54_library_dependency/src/app/main.nq";
+    let m54_library_path = "tests/fixtures/m54_library_dependency/vendor/std/src/status.nq";
+    if not run_quiet_result("M54 standard-library module check", run_driver_check(driver_path, m54_library_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_quiet_result("M54 locked-library application check", run_driver_check(driver_path, m54_source_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_contains_result("M54 locked-library facts v3", run_driver_facts(driver_path, m54_source_path, "v3"), "\"workspace\": \"nauqtype.std\"", "\"path\": \"vendor/std\"", "workspace:nauqtype.std::module:status::type:NqStatus") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_json_contains_result("M54 locked-library review v2", run_driver_review(driver_path, m54_source_path, "v2"), "\"qualified_name\": \"std::status::ready_status\"", "\"target_id\": \"fn:std::status::ready_status\"", "\"target_id\": \"builtin:print_line\"") {
+        failed_phase = "tooling.golden";
+        return false;
+    }
+    if not run_quiet_result("M54 locked-library application build", run_driver_build(driver_path, m54_source_path)) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
     return true;
+}
+
+fn m54_library_run_ok(driver_path: str) -> bool {
+    let result = run_driver_run(driver_path, "tests/fixtures/m54_library_dependency/src/app/main.nq");
+    match result {
+        Ok(status) => {
+            if status.exit_code != 0 or status.stdout != "m54 library ready\n" or status.stderr != "" or has_stage1_failure_text(status) {
+                eprint_line("M54 locked-library application run failed");
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
 }
 
 fn organizational_tool_run_ok(driver_path: str, source_path: str) -> bool {
@@ -2070,6 +2115,15 @@ audit {
         return 1;
     }
     if not run_quiet_result("fixture nested workspace", run_driver_check(driver_path, "tests/fixtures/workspace_nested/src/app/main.nq")) {
+        return 1;
+    }
+    if not run_quiet_result("fixture M54 runtime check", run_driver_check(driver_path, "tests/fixtures/m54_runtime.nq")) {
+        return 1;
+    }
+    if not run_quiet_result("fixture M54 runtime run", run_driver_run(driver_path, "tests/fixtures/m54_runtime.nq")) {
+        return 1;
+    }
+    if not m54_library_run_ok(driver_path) {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {

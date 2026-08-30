@@ -766,7 +766,7 @@ fn collect_try_propagation_facts(tokens: ref list<token>, start: i32, end: i32, 
                     _ => {
                     },
                 }
-                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, "", current.start, "", false, operand_start, index, expr_call, classify_expr_name(ref tokens, operand_start, index), "try_propagate", label));
+                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, "", current.start, "", false, false, operand_start, index, expr_call, classify_expr_name(ref tokens, operand_start, index), "try_propagate", label));
             }
         }
         index = index + 1;
@@ -3332,7 +3332,7 @@ fn collect_value_match_facts(tokens: ref list<token>, cursor: mutref i32, diags:
     }
 }
 
-fn collect_value_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, next_scope_id: mutref i32, typed_bindings: mutref list<typed_binding_fact>, match_arms: mutref list<match_arm_fact>, locals: mutref list<local_init_fact>, returns: mutref list<return_expr_fact>, conditions: mutref list<condition_fact>, assignments: mutref list<assignment_fact>) -> unit {
+fn collect_value_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str, function_name: str, scope_id: i32, is_mutable: bool, next_scope_id: mutref i32, typed_bindings: mutref list<typed_binding_fact>, match_arms: mutref list<match_arm_fact>, locals: mutref list<local_init_fact>, returns: mutref list<return_expr_fact>, conditions: mutref list<condition_fact>, assignments: mutref list<assignment_fact>) -> unit {
     let ctor = consume_ident(ref tokens, mutref cursor, mutref diags, file);
     if ctor.text != "Some" and ctor.text != "Ok" {
         push_diag(mutref diags, file, ctor, "let-else V1 only supports `Some(name)` and `Ok(name)` patterns");
@@ -3399,7 +3399,7 @@ fn collect_value_let_else_stmt(tokens: ref list<token>, cursor: mutref i32, diag
     match semi.kind {
         tk_semi => {
             if local_name != "" {
-                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, semi.start, "", false, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), ctor.text, "let_else", ""));
+                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, semi.start, "", false, is_mutable, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), ctor.text, "let_else", ""));
             }
             advance(mutref cursor);
         },
@@ -3416,15 +3416,17 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
         tk_kw_let => {
             advance(mutref cursor);
             let maybe_mut = token_at(ref tokens, cursor);
+            let mut local_is_mutable = false;
             match maybe_mut.kind {
                 tk_kw_mut => {
+                    local_is_mutable = true;
                     advance(mutref cursor);
                 },
                 _ => {
                 },
             }
             if is_let_else_pattern_start(ref tokens, cursor) {
-                collect_value_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
+                collect_value_let_else_stmt(ref tokens, mutref cursor, mutref diags, file, function_name, scope_id, local_is_mutable, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
                 return;
             }
             let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
@@ -3448,7 +3450,7 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
                     expected_type_name = expected_type.head;
                     expected_is_borrow = expected_type.is_borrow;
                     if local_name != "" and expected_type_name != "" {
-                        list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_type.arg1_name, expected_type.arg2_name, expected_is_borrow, expected_type.borrow_mutable));
+                        list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_type.arg1_name, expected_type.arg2_name, local_is_mutable, expected_is_borrow, expected_type.borrow_mutable));
                     }
                 },
                 _ => {
@@ -3464,7 +3466,7 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
                 if propagation_question_index(ref tokens, expr_start, cursor - 1) >= 0 {
                     member_name = "propagate";
                 }
-                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_is_borrow, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name, propagation_label));
+                list_push(mutref locals, make_local_init_fact(file, function_name, scope_id, local_name, local_at, expected_type_name, expected_is_borrow, local_is_mutable, expr_start, expr_end, classify_expr_kind(ref tokens, expr_start, expr_end), classify_expr_name(ref tokens, expr_start, expr_end), member_name, propagation_label));
                 collect_try_propagation_facts(ref tokens, expr_start, expr_end, file, function_name, scope_id, mutref locals, mutref diags);
             }
         },
@@ -3628,7 +3630,7 @@ fn collect_value_function_facts(tokens: ref list<token>, cursor: mutref i32, dia
                 let type_shape = consume_type_shape(ref tokens, mutref cursor, mutref diags, file);
                 let type_name = type_shape.head;
                 if param_text != "" and type_name != "" {
-                    list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, root_scope_id, param_text, param_at, type_name, type_shape.arg1_name, type_shape.arg2_name, type_shape.is_borrow, type_shape.borrow_mutable));
+                    list_push(mutref typed_bindings, make_typed_binding_fact(file, function_name, root_scope_id, param_text, param_at, type_name, type_shape.arg1_name, type_shape.arg2_name, false, type_shape.is_borrow, type_shape.borrow_mutable));
                 }
                 let maybe_comma = token_at(ref tokens, cursor);
                 match maybe_comma.kind {

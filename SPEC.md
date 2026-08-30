@@ -27,13 +27,17 @@ Its source language priorities are:
 
 - File extension: `.nq`
 - One source file is one module.
-- The module name is derived from the file name.
-- `use foo;` resolves to `<workspace-root>/foo.nq`.
+- In legacy flat-root mode, the module name is derived from the file name and
+  `use foo;` resolves to `<workspace-root>/foo.nq`.
+- Manifest workspaces use one declared source root, nested `::` module paths,
+  explicit module aliases, and locked local dependency roots as defined by
+  `WORKSPACE_CONTRACT.md` and `WORKSPACE_LOCK.md`.
 - All `use` declarations must appear before non-`use` items in a file.
 - Imported `pub fn`, `pub type`, `pub enum`, and `pub const` enter the importing module scope unqualified.
 - Imported public enum variants are also visible as constructor/pattern names.
 - Import cycles are rejected.
-- There is no package manager, nested module system, or re-export system in stage1.
+- There is no registry/package manager, wildcard import, implicit re-export,
+  hidden prelude, or ambient dependency search path in stage1.
 
 ## Naming And Style
 
@@ -95,9 +99,12 @@ Deferred numeric types:
 unless an expected `i64` context selects `i64`; arithmetic never performs an
 implicit width conversion.
 
-`str` is immutable at the source level. Runtime-owned strings use reference
-counting so source-level copies remain safe while generated code reclaims owned
-storage deterministically.
+`str` is an immutable, length-carrying byte string. It is not guaranteed to be
+valid UTF-8; length, indexing, and slicing use byte offsets. Runtime-owned
+strings use reference counting so source-level copies remain safe while
+generated code reclaims owned storage deterministically. OS-bound strings on
+Linux preserve arbitrary non-NUL bytes and reject embedded NUL rather than
+truncating at the C boundary.
 
 ## Built-in Utility Types
 
@@ -107,6 +114,7 @@ storage deterministically.
 - `io_err`
 - `bytes`
 - `process_result`
+- `path_metadata`
 
 Built-in constructors:
 
@@ -116,6 +124,26 @@ Built-in constructors:
 - `Err(value)`
 
 These are part of the core language surface in the current bootstrap compiler.
+
+`bytes` is owned and move-only. `path_metadata` is copyable and exposes
+`is_file`, `is_directory`, `is_symlink`, `size: i64`, `modified_ns: i64`, and
+`mode: i32`; on Linux, `mode` is `st_mode & 07777` and does not duplicate the
+file-kind booleans. A filesystem timestamp outside the representable `i64`
+nanosecond range makes `path_metadata` return `invalid_data`; it never wraps.
+
+### Linux Authority Builtins
+
+M54 adds narrow fallible boundaries for standard streams, environment/cwd,
+binary files, metadata, directory traversal, creation, secure temporary
+entries, removal, rename, and atomic replacement. These primitives expose OS
+truth; UTF-8 policy, lexical path operations, sorting, and CLI composition
+remain ordinary Nauqtype library work. Exact signatures and guarantees are
+locked in [NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md](NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md).
+
+All fallible authority builtins return `result<_, io_err>`. Structured error
+accessors expose stable kind, operation, primary/secondary path, and OS code.
+`atomic_write_file` promises same-directory atomic visibility through rename,
+not crash durability or metadata preservation.
 
 ## Declarations
 
@@ -247,7 +275,7 @@ Rules:
 - `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`
 - `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
 - `effects(print)` is checked against direct or transitive use of `print_line` / `eprint_line`
-- `effects(io)` is checked against direct or transitive use of file/process builtins: `read_file`, `write_file`, `create_dir_all`, and `run_process`; facts v2 and review v2 additionally report the checked `read`, `write`, `create_dir`, and `process` subkinds without widening source-level effect syntax
+- `effects(io)` is checked against direct or transitive use of authority-bearing builtins; facts v2 and review v2 report the fixed checked subkinds `read`, `write`, `create_dir`, `process`, `arguments`, `environment`, `cwd`, `stdin`, `stdout`, `stderr`, `metadata`, `traversal`, `create_file`, `temporary`, `remove`, `rename`, and `atomic_replace` without widening source-level effect syntax
 - `propagates(E)` is checked against direct `let name = result_expr?;` propagation sites in the function
 - duplicate clause entries are rejected
 - user-defined effect atoms, typed repair obligations, and stronger contract inference are deferred
@@ -543,6 +571,7 @@ Rules:
 - mutable borrows use `mutref`
 - mutable borrows require the source binding to be mutable
 - `mutref` cannot coexist with any other borrow of the same place in the same call
+- consuming a non-copy pointee through a borrowed binding is rejected; copy values may be read from a borrow and are copied according to their checked value plan
 - bootstrap `while` analysis tracks possible moves across iterations conservatively
 - no stored references
 - no field borrows

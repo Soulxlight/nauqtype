@@ -569,6 +569,9 @@ fn type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 checked_type_process_result => {
                     return "process_result";
                 },
+                checked_type_path_metadata => {
+                    return "path_metadata";
+                },
                 checked_type_bytes => {
                     return "bytes";
                 },
@@ -623,6 +626,9 @@ fn c_type(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 },
                 checked_type_process_result => {
                     return "NQ_process_result";
+                },
+                checked_type_path_metadata => {
+                    return "NQ_path_metadata";
                 },
                 checked_type_bytes => {
                     return "NQBytes";
@@ -787,6 +793,18 @@ fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i3
                                 },
                                 checked_type_process_result => {
                                     return true;
+                                },
+                                checked_type_bytes => {
+                                    return true;
+                                },
+                                checked_type_path_metadata => {
+                                    return true;
+                                },
+                                checked_type_option => {
+                                    return is_runtime_native_option(ref type_shapes, ok_value.arg1_id);
+                                },
+                                checked_type_list => {
+                                    return is_runtime_native_list(ref type_shapes, ok_value.arg1_id);
                                 },
                                 _ => {
                                     return false;
@@ -2309,6 +2327,35 @@ fn builtin_call_name(name: str) -> str {
     if name == "io_err_text" {
         return "nq_io_err_text";
     }
+    if name == "stdin_read" { return "nq_stdin_read"; }
+    if name == "stdin_read_bytes" { return "nq_stdin_read_bytes"; }
+    if name == "stdin_read_line" { return "nq_stdin_read_line"; }
+    if name == "stdout_write" { return "nq_stdout_write"; }
+    if name == "stdout_write_bytes" { return "nq_stdout_write_bytes"; }
+    if name == "stderr_write" { return "nq_stderr_write"; }
+    if name == "stderr_write_bytes" { return "nq_stderr_write_bytes"; }
+    if name == "stdout_flush" { return "nq_stdout_flush"; }
+    if name == "stderr_flush" { return "nq_stderr_flush"; }
+    if name == "env_get" { return "nq_env_get"; }
+    if name == "current_dir" { return "nq_current_dir"; }
+    if name == "read_file_bytes" { return "nq_read_file_bytes"; }
+    if name == "write_file_bytes" { return "nq_write_file_bytes"; }
+    if name == "path_metadata" { return "nq_path_metadata"; }
+    if name == "read_dir" { return "nq_read_dir"; }
+    if name == "create_dir" { return "nq_create_dir"; }
+    if name == "create_file_new" { return "nq_create_file_new"; }
+    if name == "remove_file" { return "nq_remove_file"; }
+    if name == "remove_dir" { return "nq_remove_dir"; }
+    if name == "rename_path" { return "nq_rename_path"; }
+    if name == "create_temp_file" { return "nq_create_temp_file"; }
+    if name == "create_temp_dir" { return "nq_create_temp_dir"; }
+    if name == "atomic_write_file" { return "nq_atomic_write_file"; }
+    if name == "str_from_bytes" { return "nq_str_from_bytes"; }
+    if name == "io_err_kind" { return "nq_io_err_kind"; }
+    if name == "io_err_operation" { return "nq_io_err_operation"; }
+    if name == "io_err_path" { return "nq_io_err_path"; }
+    if name == "io_err_other_path" { return "nq_io_err_other_path"; }
+    if name == "io_err_os_code" { return "nq_io_err_os_code"; }
     if name == "str_len" {
         return "nq_str_len";
     }

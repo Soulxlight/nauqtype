@@ -242,6 +242,15 @@ fn is_builtin_function(name: str) -> bool {
     if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" {
         return true;
     }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
+        return true;
+    }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" {
+        return true;
+    }
+    if name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" or name == "str_from_bytes" or name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code" {
+        return true;
+    }
     if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
         return true;
     }
@@ -915,6 +924,12 @@ fn builtin_propagation_error(name: str) -> str {
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
     }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
+        return "io_err";
+    }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
+        return "io_err";
+    }
     return "";
 }
 
@@ -1150,6 +1165,22 @@ fn io_kind_for_builtin(name: str) -> str {
     if name == "run_process" {
         return "process";
     }
+    if name == "arg_count" or name == "arg_get" { return "arguments"; }
+    if name == "env_get" { return "environment"; }
+    if name == "current_dir" { return "cwd"; }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" { return "stdin"; }
+    if name == "stdout_write" or name == "stdout_write_bytes" or name == "stdout_flush" { return "stdout"; }
+    if name == "stderr_write" or name == "stderr_write_bytes" or name == "stderr_flush" { return "stderr"; }
+    if name == "read_file_bytes" { return "read"; }
+    if name == "write_file_bytes" { return "write"; }
+    if name == "path_metadata" { return "metadata"; }
+    if name == "read_dir" { return "traversal"; }
+    if name == "create_dir" { return "create_dir"; }
+    if name == "create_file_new" { return "create_file"; }
+    if name == "create_temp_file" or name == "create_temp_dir" { return "temporary"; }
+    if name == "remove_file" or name == "remove_dir" { return "remove"; }
+    if name == "rename_path" { return "rename"; }
+    if name == "atomic_write_file" { return "atomic_replace"; }
     return "";
 }
 
@@ -1194,6 +1225,19 @@ fn io_kinds_for_function(entries: ref list<review_io_kind_fact>, module: str, fu
     if review_io_kind_exists(ref entries, function_id, "process") {
         list_push(mutref kinds, "process");
     }
+    if review_io_kind_exists(ref entries, function_id, "arguments") { list_push(mutref kinds, "arguments"); }
+    if review_io_kind_exists(ref entries, function_id, "environment") { list_push(mutref kinds, "environment"); }
+    if review_io_kind_exists(ref entries, function_id, "cwd") { list_push(mutref kinds, "cwd"); }
+    if review_io_kind_exists(ref entries, function_id, "stdin") { list_push(mutref kinds, "stdin"); }
+    if review_io_kind_exists(ref entries, function_id, "stdout") { list_push(mutref kinds, "stdout"); }
+    if review_io_kind_exists(ref entries, function_id, "stderr") { list_push(mutref kinds, "stderr"); }
+    if review_io_kind_exists(ref entries, function_id, "metadata") { list_push(mutref kinds, "metadata"); }
+    if review_io_kind_exists(ref entries, function_id, "traversal") { list_push(mutref kinds, "traversal"); }
+    if review_io_kind_exists(ref entries, function_id, "create_file") { list_push(mutref kinds, "create_file"); }
+    if review_io_kind_exists(ref entries, function_id, "temporary") { list_push(mutref kinds, "temporary"); }
+    if review_io_kind_exists(ref entries, function_id, "remove") { list_push(mutref kinds, "remove"); }
+    if review_io_kind_exists(ref entries, function_id, "rename") { list_push(mutref kinds, "rename"); }
+    if review_io_kind_exists(ref entries, function_id, "atomic_replace") { list_push(mutref kinds, "atomic_replace"); }
     return kinds;
 }
 

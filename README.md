@@ -18,7 +18,7 @@ Current bootstrap status:
 - narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
 - statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
 - explicit annotated-local `try { expression }` boundaries that capture expression-position propagation without silently returning from the function
-- fixed `effects(io)` contracts with checked read/write/create-directory/process evidence in v2 supervision outputs
+- fixed `effects(io)` contracts with checked operation-specific evidence for arguments, environment, cwd, streams, files, metadata, traversal, creation, temporary paths, removal, rename, atomic replacement, and process execution
 - named function arguments, direct module-qualified function/data names, and explicit module aliases
 - minimal nearest-`while` `break` / `continue`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
@@ -47,11 +47,13 @@ The active driver also exposes stable `help` / `version` behavior, producer-owne
 diagnostic identities and spans, and checked milestone resource budgets. These
 are release contracts rather than best-effort presentation details.
 
-M53 is complete: exact `i64`, move-only `bytes`, canonical checked value-use
-truth, deterministic generated cleanup, the refreshed fixed-point C seed, and
-the composed Linux performance gate are landed. M54 is the next active release
-milestone and adds the narrow Linux input/filesystem foundation on top of these
-value semantics.
+M54 is complete: the M53 value model now supports checked Linux stdin/output,
+environment and cwd access, text/binary files, metadata, traversal, creation,
+secure temporary entries, removal/rename, atomic replacement, and structured
+`io_err` provenance. The locked `nauqtype.std` fixture proves an ordinary
+vendored dependency without a hidden prelude, and `check` accepts library
+modules without requiring a fake `main`. M55 is next and adds structured
+process, time, timeout, and cancellation foundations.
 
 ## Quick Start
 
@@ -150,6 +152,16 @@ Use the active Nauqtype-owned driver for `run`:
 
 ```bash
 bin/nauqc run examples/hello.nq
+```
+
+The compiler/runtime contract used by the separate NQType Libraries workspace
+is recorded in [NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md](NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md).
+Its upstream integration fixture can be exercised directly:
+
+```bash
+bin/nauqc check tests/fixtures/m54_library_dependency/vendor/std/src/status.nq
+bin/nauqc facts tests/fixtures/m54_library_dependency/src/app/main.nq --format v3
+bin/nauqc run tests/fixtures/m54_library_dependency/src/app/main.nq
 ```
 
 Run the Linux alpha gate:
@@ -290,9 +302,9 @@ Current remaining gaps:
 
 Near-term focus:
 
-- implement M54 stdin, environment, cwd, path metadata, traversal, binary I/O,
-  and atomic replacement through narrow checked runtime primitives plus ordinary
-  Nauqtype helper modules
+- keep the completed M54 Linux authority contracts and locked library fixture
+  stable while NQType Libraries builds ordinary Nauqtype modules and compiler
+  work advances to M55 structured process, time, and cancellation support
 - preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints

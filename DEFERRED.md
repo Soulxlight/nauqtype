@@ -31,9 +31,12 @@ This file records features intentionally excluded from v0.1 so that omissions ar
 - Mutable strings
 - Networking
 - Time / randomness APIs
-- Process and environment APIs
+- Structured process control, environment overrides, timeouts, and cancellation
 
-The current stage1 driver has a deliberately narrow toolchain-only runtime surface for arguments, directory creation, and subprocess execution. Broad process/environment APIs remain deferred.
+M54 provides checked arguments, environment lookup, cwd, streams, and
+filesystem authority as narrow builtins. Reusable UTF-8, lexical-path, sorting,
+and CLI composition remain library-owned. Structured process control and
+time/cancellation remain deferred to M55.
 
 ## Compiler / Tooling
 

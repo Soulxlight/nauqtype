@@ -9,8 +9,9 @@ usage() {
     cat <<'EOF'
 Usage: scripts/check_m53_ownership.sh
 
-Emit, compile, and run the dense M53 value-ownership fixtures under the Linux
-address and leak sanitizers. The active stage1 driver must already exist.
+Emit, compile, and run the dense foundational value/runtime ownership fixtures
+under the Linux address and leak sanitizers. The active stage1 driver must
+already exist.
 EOF
 }
 
@@ -44,6 +45,7 @@ fixtures=(
     tests/fixtures/m53_ownership/control_boundaries.nq
     tests/fixtures/m53_ownership/bytes_cleanup.nq
     tests/fixtures/m53_ownership/temporary_field_snapshot.nq
+    tests/fixtures/m54_runtime.nq
 )
 
 for fixture in "${fixtures[@]}"; do

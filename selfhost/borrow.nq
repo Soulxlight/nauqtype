@@ -955,6 +955,15 @@ fn builtin_function_param_count(name: str) -> i32 {
     if name == "arg_get" {
         return 1;
     }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_flush" or name == "stderr_flush" or name == "current_dir" {
+        return 0;
+    }
+    if name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "env_get" or name == "read_file_bytes" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code" or name == "str_from_bytes" {
+        return 1;
+    }
+    if name == "write_file_bytes" or name == "path_metadata" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
+        return 2;
+    }
     if name == "create_dir_all" {
         return 1;
     }
@@ -1008,6 +1017,15 @@ fn builtin_function_param_is_borrow(name: str, index: i32) -> bool {
         return true;
     }
     if (name == "bytes_len" or name == "bytes_get") and index == 0 {
+        return true;
+    }
+    if (name == "stdout_write_bytes" or name == "stderr_write_bytes" or name == "str_from_bytes") and index == 0 {
+        return true;
+    }
+    if (name == "write_file_bytes" or name == "atomic_write_file") and index == 1 {
+        return true;
+    }
+    if (name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code") and index == 0 {
         return true;
     }
     return false;
@@ -1185,7 +1203,7 @@ fn is_copy_type(module_name: str, type_name: str, type_arg1_name: str, type_arg2
     if is_borrow {
         return true;
     }
-    if type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" {
+    if type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" {
         return true;
     }
     if type_name == "list" or type_name == "bytes" {
@@ -1350,7 +1368,8 @@ fn type_id_is_copy_or_limit(type_properties: ref list<checked_type_property>, ty
 
 fn binding_is_copy_for_borrow(binding: checked_binding, type_properties: ref list<checked_type_property>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, file: str, at: i32, diags: mutref list<diag>) -> bool {
     if binding.is_borrow {
-        return true;
+        let visiting: list<str> = list();
+        return is_copy_type(binding.module_name, binding.type_name, binding.type_arg1_name, binding.type_arg2_name, false, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags);
     }
     if use_value_plan {
         return type_id_is_copy_or_limit(ref type_properties, binding.type_id, file, at, mutref diags);
@@ -1360,14 +1379,11 @@ fn binding_is_copy_for_borrow(binding: checked_binding, type_properties: ref lis
 }
 
 fn expr_result_is_copy_for_borrow(expr: checked_expr, type_properties: ref list<checked_type_property>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, file: str, at: i32, diags: mutref list<diag>) -> bool {
-    if expr.is_borrow {
-        return true;
-    }
     if use_value_plan {
         return type_id_is_copy_or_limit(ref type_properties, expr.type_id, file, at, mutref diags);
     }
     let visiting: list<str> = list();
-    return is_copy_type(expr.module_name, expr.type_name, expr.type_arg1_name, expr.type_arg2_name, expr.is_borrow, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags);
+    return is_copy_type(expr.module_name, expr.type_name, expr.type_arg1_name, expr.type_arg2_name, false, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref visiting, file, at, mutref diags);
 }
 
 fn lookup_owner_stmt_id_for_expr(statements: ref list<checked_stmt>, function_id: i32, expr_id: i32) -> i32 {
@@ -1412,12 +1428,22 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                                 if is_checked_value_copy(use_kind) {
                                     let ignored_copy_check = type_id_is_copy_or_limit(ref type_properties, expr.type_id, expr.module_name, expr.at, mutref diags);
                                 }
-                                if is_checked_value_move(use_kind) and not binding.is_borrow {
-                                    set_moved_or_limit(mutref state, expr.binding_id, true, expr.module_name, expr.at, mutref diags);
+                                if is_checked_value_move(use_kind) {
+                                    if binding.is_borrow {
+                                        if emit_diagnostics {
+                                            push_borrow_error(mutref diags, expr.module_name, expr.at, "NQ-BORROW-009", str_concat("cannot move owned value out of borrowed binding `", str_concat(binding.name, "`")));
+                                        }
+                                    } else {
+                                        set_moved_or_limit(mutref state, expr.binding_id, true, expr.module_name, expr.at, mutref diags);
+                                    }
                                 }
                             } else {
-                                if consume and not binding.is_borrow {
-                                    if not binding_is_copy_for_borrow(binding, ref type_properties, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, expr.module_name, expr.at, mutref diags) {
+                                if consume and not binding_is_copy_for_borrow(binding, ref type_properties, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, expr.module_name, expr.at, mutref diags) {
+                                    if binding.is_borrow {
+                                        if emit_diagnostics {
+                                            push_borrow_error(mutref diags, expr.module_name, expr.at, "NQ-BORROW-009", str_concat("cannot move owned value out of borrowed binding `", str_concat(binding.name, "`")));
+                                        }
+                                    } else {
                                         set_moved_or_limit(mutref state, expr.binding_id, true, expr.module_name, expr.at, mutref diags);
                                     }
                                 }

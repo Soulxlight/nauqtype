@@ -784,8 +784,29 @@ Status: complete.
 
 - add stdin, environment, cwd, path metadata, traversal, removal/rename,
   temporary locations, binary I/O, and atomic replacement
-- keep runtime primitives narrow and build ordinary conveniences as Nauqtype
-  modules with checked IO evidence
+- keep runtime primitives narrow and give the separate NQType Libraries
+  workspace the frozen contracts and fixture needed to build ordinary
+  conveniences as Nauqtype modules with checked IO evidence
+
+Status:
+
+- complete
+- stage1 owns checked stdin/stdout/stderr, arguments, environment, cwd,
+  text/binary file, metadata, traversal, creation, secure temporary,
+  removal/rename, and atomic-replacement builtins over M53 ownership truth
+- `io_err` now preserves stable kind, operation, primary/secondary path, and OS
+  code; every OS-bound string rejects embedded NUL rather than truncating
+- facts v2/review v2 preserve the existing IO-kind order and append the locked
+  M54 authority kinds without introducing new source-level effect atoms
+- `tests/fixtures/m54_library_dependency/` proves an explicit locked
+  `nauqtype.std` vendored dependency, an exported nominal type/function,
+  library-only `check`, facts/review evidence, build/run, and copied-release use
+- NQType Libraries owns UTF-8, lexical Linux paths, sorting, CLI composition,
+  and other reusable modules; the exact handoff is recorded in
+  `NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md`
+- M55 is next; package versions/bundled resolution, qualified type annotations,
+  broader process control, time, networking, and implicit authority remain out
+  of M54
 
 ### M55: Structured Process, Time, And Cancellation
 

@@ -1,0 +1,181 @@
+fn path_join(root: str, name: str) -> str {
+    return str_concat(str_concat(root, "/"), name);
+}
+
+fn is_runtime_data_file(metadata: path_metadata) -> bool {
+    return metadata.is_file and not metadata.is_directory and not metadata.is_symlink and metadata.size == 12;
+}
+
+fn main() -> i32 {
+    match create_dir_all("build") {
+        Ok(_) => {},
+        Err(_) => { return 1; },
+    }
+    let root_result = create_temp_dir("build", "m54-runtime-");
+    let Ok(root) = root_result else {
+        return 2;
+    };
+
+    let owned_dir = path_join(root, "owned");
+    match create_dir(owned_dir) {
+        Ok(_) => {},
+        Err(_) => { return 3; },
+    }
+
+    let data_path = path_join(root, "data.bin");
+    let data = bytes_from_str("runtime-data");
+    match write_file_bytes(data_path, ref data) {
+        Ok(_) => {},
+        Err(_) => { return 4; },
+    }
+    if bytes_len(ref data) != 12 {
+        return 5;
+    }
+    match read_file_bytes(data_path) {
+        Ok(read_data) => {
+            if str_from_bytes(ref read_data) != "runtime-data" {
+                return 6;
+            }
+        },
+        Err(_) => { return 7; },
+    }
+    match path_metadata(data_path, false) {
+        Ok(metadata) => {
+            if not is_runtime_data_file(metadata) or metadata.mode <= 0 {
+                return 8;
+            }
+        },
+        Err(_) => { return 9; },
+    }
+    match read_dir(root) {
+        Ok(entries) => {
+            if list_len(ref entries) != 2 {
+                return 10;
+            }
+        },
+        Err(_) => { return 11; },
+    }
+
+    let renamed_path = path_join(root, "renamed.bin");
+    match rename_path(data_path, renamed_path) {
+        Ok(_) => {},
+        Err(_) => { return 12; },
+    }
+    let replacement = bytes_from_str("replacement");
+    match atomic_write_file(renamed_path, ref replacement) {
+        Ok(_) => {},
+        Err(_) => { return 13; },
+    }
+    match read_file(renamed_path) {
+        Ok(text) => {
+            if text != "replacement" {
+                return 14;
+            }
+        },
+        Err(_) => { return 15; },
+    }
+
+    let new_path = path_join(root, "new-file");
+    match create_file_new(new_path) {
+        Ok(_) => {},
+        Err(_) => { return 16; },
+    }
+    match create_file_new(new_path) {
+        Ok(_) => { return 17; },
+        Err(err) => {
+            if io_err_kind(ref err) != "already_exists" or io_err_operation(ref err) != "create_file_new" or io_err_os_code(ref err) <= 0 {
+                return 18;
+            }
+            match io_err_path(ref err) {
+                Some(path) => {
+                    if path != new_path {
+                        return 19;
+                    }
+                },
+                None => { return 20; },
+            }
+            match io_err_other_path(ref err) {
+                Some(_) => { return 21; },
+                None => {},
+            }
+        },
+    }
+
+    match create_temp_file(root, "file-") {
+        Ok(path) => {
+            match path_metadata(path, false) {
+                Ok(metadata) => {
+                    if not metadata.is_file or metadata.mode != 384 {
+                        return 22;
+                    }
+                },
+                Err(_) => { return 23; },
+            }
+            match remove_file(path) {
+                Ok(_) => {},
+                Err(_) => { return 24; },
+            }
+        },
+        Err(_) => { return 25; },
+    }
+    match create_temp_dir(root, "dir-") {
+        Ok(path) => {
+            match path_metadata(path, false) {
+                Ok(metadata) => {
+                    if not metadata.is_directory or metadata.mode != 448 {
+                        return 26;
+                    }
+                },
+                Err(_) => { return 27; },
+            }
+            match remove_dir(path) {
+                Ok(_) => {},
+                Err(_) => { return 28; },
+            }
+        },
+        Err(_) => { return 29; },
+    }
+
+    match env_get("PATH") {
+        Ok(_) => {},
+        Err(_) => { return 30; },
+    }
+    match current_dir() {
+        Ok(_) => {},
+        Err(_) => { return 31; },
+    }
+    match stdout_write("") {
+        Ok(_) => {},
+        Err(_) => { return 32; },
+    }
+    match stderr_write("") {
+        Ok(_) => {},
+        Err(_) => { return 33; },
+    }
+    match stdout_flush() {
+        Ok(_) => {},
+        Err(_) => { return 34; },
+    }
+    match stderr_flush() {
+        Ok(_) => {},
+        Err(_) => { return 35; },
+    }
+
+    match remove_file(new_path) {
+        Ok(_) => {},
+        Err(_) => { return 36; },
+    }
+    match remove_file(renamed_path) {
+        Ok(_) => {},
+        Err(_) => { return 37; },
+    }
+    match remove_dir(owned_dir) {
+        Ok(_) => {},
+        Err(_) => { return 38; },
+    }
+    match remove_dir(root) {
+        Ok(_) => {},
+        Err(_) => { return 39; },
+    }
+    return 0;
+}

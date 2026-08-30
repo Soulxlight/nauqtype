@@ -41,7 +41,9 @@ fn main() -> i32 {
 - `use module_path as alias;` creates one explicit local alias for that module path. The alias is source spelling only: checked facts, policy, change reports, and refactor targets retain the actual canonical module identity. Duplicate qualifiers fail closed.
 - `as` does not alias individual functions, types, variants, or fields. The M44 dependency manifest alias remains separate routing metadata, for example `use reporting::render;`.
 - `::` denotes module provenance only. `.` remains field access; it never triggers method lookup or module traversal.
-- Qualified values, types, enums, variants, and calls resolve through the same canonical module identity.
+- Qualified calls, struct-literal type heads, enums, variants, and patterns
+  resolve through the same canonical module identity. Type annotations remain
+  unqualified in the current grammar.
 - No wildcard imports, relative imports, implicit re-exports, chained package discovery, or hidden prelude are allowed.
 
 ## Flat-Root Compatibility
@@ -56,11 +58,15 @@ This makes migration visible in facts and diffs instead of silently changing an 
 
 ## Evidence And Governance Contract
 
-- Facts currently retain checked module identities, including the explicit dependency alias root, while M45 upgrades these to canonical workspace/package/module IDs.
-- Review, review-diff, change-report, policy-check, and refactor plans gain cross-package canonical-ID behavior only with M45; no filesystem-text fallback is permitted.
+- Facts v3 retain canonical workspace/package/module IDs and locked dependency
+  hashes in addition to the explicit dependency alias root.
+- Review, review-diff, change-report, policy-check, and refactor plans use the
+  shipped M45 cross-package canonical-ID behavior; no filesystem-text fallback
+  is permitted.
 - M43 direct function calls, struct-literal type heads, enum variants/patterns, and imports retain their checked canonical module targets through facts, handoff, IR, C emission, and plan-only rename evidence. Qualified type annotations and selective-item aliases stay deferred rather than being guessed from source spelling.
 - [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md) locks the M44 local dependency and deterministic lock-file contract. The manifest itself never fetches code.
-- M45 extends ownership and policy checks across package boundaries; policy remains sidecar data, never hidden compiler authority.
+- Ownership and policy checks extend across package boundaries; policy remains
+  sidecar data, never hidden compiler authority.
 
 ## Representative Tool Checks
 

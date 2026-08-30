@@ -15,6 +15,19 @@ This is the active local confidence tier. Corpus and copied-selfhost proof
 claims run once through `nauqc prove` in the composed milestone gate. The
 archived Python unit suite is not part of milestone or release verification.
 
+M54's focused upstream checks are also available when changing Linux
+input/filesystem or library-resolution contracts:
+
+```bash
+python3 -m unittest tests.test_m54_runtime tests.test_m54_library_dependency -v
+bin/nauqc check tests/fixtures/m54_runtime.nq
+bin/nauqc check tests/fixtures/m54_library_dependency/vendor/std/src/status.nq
+```
+
+The Python modules are bounded host harnesses around the Nauqtype-owned stage1
+compiler and native executables; they do not implement active compiler
+behavior.
+
 ## Milestone Gate
 
 Build stage1 from the frozen seed once, reuse that artifact for the fixed-point

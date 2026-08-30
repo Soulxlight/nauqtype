@@ -59,7 +59,7 @@ fn clone_type_keys(values: ref list<str>) -> list<str> {
 }
 
 fn type_ctx_is_copy(ctx: expected_type_ctx, module: str, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, visiting: ref list<str>) -> bool {
-    if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" {
+    if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" or ctx.head == "path_metadata" {
         return true;
     }
     if ctx.head == "list" or ctx.head == "bytes" {
@@ -381,8 +381,17 @@ fn builtin_function_arity(name: str) -> i32 {
     if name == "run_process" {
         return 3;
     }
-    if name == "arg_count" {
+    if name == "arg_count" or name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_flush" or name == "stderr_flush" or name == "current_dir" {
         return 0;
+    }
+    if name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "env_get" or name == "read_file_bytes" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" {
+        return 1;
+    }
+    if name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code" or name == "str_from_bytes" {
+        return 1;
+    }
+    if name == "write_file_bytes" or name == "path_metadata" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
+        return 2;
     }
     if name == "str_len" {
         return 1;
@@ -636,6 +645,21 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "io_err_text" {
         return "str";
     }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
+        return "result";
+    }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
+        return "result";
+    }
+    if name == "io_err_kind" or name == "io_err_operation" or name == "str_from_bytes" {
+        return "str";
+    }
+    if name == "io_err_path" or name == "io_err_other_path" {
+        return "option";
+    }
+    if name == "io_err_os_code" {
+        return "i32";
+    }
     if name == "str_len" {
         return "i32";
     }
@@ -685,6 +709,27 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     if name == "run_process" {
         return "process_result";
     }
+    if name == "stdin_read" or name == "current_dir" or name == "create_temp_file" or name == "create_temp_dir" {
+        return "str";
+    }
+    if name == "stdin_read_bytes" or name == "read_file_bytes" {
+        return "bytes";
+    }
+    if name == "stdin_read_line" or name == "env_get" {
+        return "option<str>";
+    }
+    if name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" or name == "write_file_bytes" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" or name == "atomic_write_file" {
+        return "unit";
+    }
+    if name == "path_metadata" {
+        return "path_metadata";
+    }
+    if name == "read_dir" {
+        return "list<str>";
+    }
+    if name == "io_err_path" or name == "io_err_other_path" {
+        return "str";
+    }
     if name == "str_get" {
         return "i32";
     }
@@ -699,6 +744,12 @@ fn builtin_function_return_arg1_name(name: str) -> str {
 
 fn builtin_function_return_arg2_name(name: str) -> str {
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
+        return "io_err";
+    }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
+        return "io_err";
+    }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
         return "io_err";
     }
     return "";
@@ -1254,6 +1305,46 @@ fn visible_typed_binding_is_borrow(typed_bindings: ref list<typed_binding_fact>,
     return false;
 }
 
+fn visible_typed_binding_borrow_mutable(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return value.is_borrow and value.borrow_mutable;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
+fn visible_typed_binding_is_mutable_capable(typed_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
+    let mut index = list_len(ref typed_bindings) - 1;
+    while index >= 0 {
+        let entry = list_get(ref typed_bindings, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
+                    if scope_is_visible(ref scopes, module, function_name, scope_id, value.scope_id) {
+                        return value.is_mutable or (value.is_borrow and value.borrow_mutable);
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return false;
+}
+
 fn visible_mutable_local_stmt(statements: ref list<stmt_fact>, scopes: ref list<body_scope>, module: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
     let mut index = list_len(ref statements) - 1;
     while index >= 0 {
@@ -1597,6 +1688,42 @@ fn lookup_function_param_ctx(function_params: ref list<function_param_fact>, mod
     return empty_expected_type_ctx();
 }
 
+fn lookup_function_param_is_borrow(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> bool {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        let entry = list_get(ref function_params, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index {
+                    return value.is_borrow;
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return false;
+}
+
+fn lookup_function_param_borrow_mutable(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> bool {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        let entry = list_get(ref function_params, cursor);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index {
+                    return value.is_borrow and value.borrow_mutable;
+                }
+            },
+            None => {
+            },
+        }
+        cursor = cursor + 1;
+    }
+    return false;
+}
+
 fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
     if function_name == "print_line" or function_name == "eprint_line" or function_name == "read_file" {
         if index == 0 {
@@ -1609,6 +1736,42 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
         }
     }
     if function_name == "io_err_text" {
+        if index == 0 {
+            return "io_err";
+        }
+    }
+    if function_name == "stdout_write" or function_name == "stderr_write" or function_name == "env_get" or function_name == "read_file_bytes" or function_name == "read_dir" or function_name == "create_dir" or function_name == "create_file_new" or function_name == "remove_file" or function_name == "remove_dir" {
+        if index == 0 {
+            return "str";
+        }
+    }
+    if function_name == "stdout_write_bytes" or function_name == "stderr_write_bytes" or function_name == "str_from_bytes" {
+        if index == 0 {
+            return "bytes";
+        }
+    }
+    if function_name == "write_file_bytes" or function_name == "atomic_write_file" {
+        if index == 0 {
+            return "str";
+        }
+        if index == 1 {
+            return "bytes";
+        }
+    }
+    if function_name == "path_metadata" {
+        if index == 0 {
+            return "str";
+        }
+        if index == 1 {
+            return "bool";
+        }
+    }
+    if function_name == "rename_path" or function_name == "create_temp_file" or function_name == "create_temp_dir" {
+        if index == 0 or index == 1 {
+            return "str";
+        }
+    }
+    if function_name == "io_err_kind" or function_name == "io_err_operation" or function_name == "io_err_path" or function_name == "io_err_other_path" or function_name == "io_err_os_code" {
         if index == 0 {
             return "io_err";
         }
@@ -1681,6 +1844,32 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
     return "";
 }
 
+fn builtin_function_param_is_borrow(function_name: str, index: i32) -> bool {
+    if (function_name == "list_push" or function_name == "list_len" or function_name == "list_get") and index == 0 {
+        return true;
+    }
+    if function_name == "run_process" and index == 1 {
+        return true;
+    }
+    if (function_name == "bytes_len" or function_name == "bytes_get") and index == 0 {
+        return true;
+    }
+    if (function_name == "stdout_write_bytes" or function_name == "stderr_write_bytes" or function_name == "str_from_bytes") and index == 0 {
+        return true;
+    }
+    if (function_name == "write_file_bytes" or function_name == "atomic_write_file") and index == 1 {
+        return true;
+    }
+    if (function_name == "io_err_kind" or function_name == "io_err_operation" or function_name == "io_err_path" or function_name == "io_err_other_path" or function_name == "io_err_os_code") and index == 0 {
+        return true;
+    }
+    return false;
+}
+
+fn builtin_function_param_borrow_mutable(function_name: str, index: i32) -> bool {
+    return function_name == "list_push" and index == 0;
+}
+
 fn builtin_function_param_ctx(function_name: str, index: i32) -> expected_type_ctx {
     let builtin = builtin_function_param_type_name(function_name, index);
     if builtin == "" {
@@ -1748,6 +1937,54 @@ audit {
     return empty_expected_type_ctx();
 }
 
+fn visible_function_param_is_borrow(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> bool {
+    if builtin_function_param_type_name(function_name, index) != "" {
+        return builtin_function_param_is_borrow(function_name, index);
+    }
+    if module_has_local_function_name(ref items, module, function_name) {
+        return lookup_function_param_is_borrow(ref function_params, module, function_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, function_name) {
+                    return lookup_function_param_is_borrow(ref function_params, value.name, function_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
+fn visible_function_param_borrow_mutable(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> bool {
+    if builtin_function_param_type_name(function_name, index) != "" {
+        return builtin_function_param_borrow_mutable(function_name, index);
+    }
+    if module_has_local_function_name(ref items, module, function_name) {
+        return lookup_function_param_borrow_mutable(ref function_params, module, function_name, index);
+    }
+    let mut use_index = 0;
+    while use_index < list_len(ref uses) {
+        let entry = list_get(ref uses, use_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and module_exports_function_name(ref items, value.name, function_name) {
+                    return lookup_function_param_borrow_mutable(ref function_params, value.name, function_name, index);
+                }
+            },
+            None => {
+            },
+        }
+        use_index = use_index + 1;
+    }
+    return false;
+}
+
 fn builtin_function_param_name(function_name: str, index: i32) -> str {
     if function_name == "print_line" or function_name == "eprint_line" {
         if index == 0 {
@@ -1773,6 +2010,63 @@ fn builtin_function_param_name(function_name: str, index: i32) -> str {
         }
     }
     if function_name == "io_err_text" {
+        if index == 0 {
+            return "err";
+        }
+    }
+    if function_name == "stdout_write" or function_name == "stderr_write" {
+        if index == 0 {
+            return "data";
+        }
+    }
+    if function_name == "stdout_write_bytes" or function_name == "stderr_write_bytes" or function_name == "str_from_bytes" {
+        if index == 0 {
+            return "data";
+        }
+    }
+    if function_name == "env_get" {
+        if index == 0 {
+            return "name";
+        }
+    }
+    if function_name == "read_file_bytes" or function_name == "read_dir" or function_name == "create_dir" or function_name == "create_file_new" or function_name == "remove_file" or function_name == "remove_dir" {
+        if index == 0 {
+            return "path";
+        }
+    }
+    if function_name == "write_file_bytes" or function_name == "atomic_write_file" {
+        if index == 0 {
+            return "path";
+        }
+        if index == 1 {
+            return "data";
+        }
+    }
+    if function_name == "path_metadata" {
+        if index == 0 {
+            return "path";
+        }
+        if index == 1 {
+            return "follow_symlinks";
+        }
+    }
+    if function_name == "rename_path" {
+        if index == 0 {
+            return "source";
+        }
+        if index == 1 {
+            return "target";
+        }
+    }
+    if function_name == "create_temp_file" or function_name == "create_temp_dir" {
+        if index == 0 {
+            return "directory";
+        }
+        if index == 1 {
+            return "prefix";
+        }
+    }
+    if function_name == "io_err_kind" or function_name == "io_err_operation" or function_name == "io_err_path" or function_name == "io_err_other_path" or function_name == "io_err_os_code" {
         if index == 0 {
             return "err";
         }
@@ -1943,6 +2237,22 @@ fn qualified_function_param_ctx(function_params: ref list<function_param_fact>, 
         return lookup_function_param_ctx(ref function_params, imported, function_name, index);
     }
     return empty_expected_type_ctx();
+}
+
+fn qualified_function_param_is_borrow(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
+        return lookup_function_param_is_borrow(ref function_params, imported, function_name, index);
+    }
+    return false;
+}
+
+fn qualified_function_param_borrow_mutable(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
+    let imported = imported_module_for_qualifier(ref uses, module, qualifier);
+    if imported != "" and module_exports_function_name(ref items, imported, function_name) {
+        return lookup_function_param_borrow_mutable(ref function_params, imported, function_name, index);
+    }
+    return false;
 }
 
 fn qualified_function_param_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> str {
@@ -3464,6 +3774,174 @@ fn builtin_variant_payload_ctx(call_name: str, return_ctx: expected_type_ctx, in
     return empty_expected_type_ctx();
 }
 
+fn call_param_is_borrow(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
+    if qualifier != "" {
+        return qualified_function_param_is_borrow(ref function_params, ref uses, ref items, module, qualifier, function_name, index);
+    }
+    return visible_function_param_is_borrow(ref function_params, ref uses, ref items, module, function_name, index);
+}
+
+fn call_param_borrow_mutable(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
+    if qualifier != "" {
+        return qualified_function_param_borrow_mutable(ref function_params, ref uses, ref items, module, qualifier, function_name, index);
+    }
+    return visible_function_param_borrow_mutable(ref function_params, ref uses, ref items, module, function_name, index);
+}
+
+fn call_argument_supplies_borrow(scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return false;
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_ref => { return true; },
+        tk_kw_mutref => { return true; },
+        tk_ident => {
+            if expr_start + 1 == expr_end {
+                return visible_typed_binding_is_borrow(ref typed_bindings, ref scopes, module, function_name, scope_id, current.text, current.start);
+            }
+        },
+        _ => {
+        },
+    }
+    return false;
+}
+
+fn call_argument_is_explicit_borrow(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return false;
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_ref => { return true; },
+        tk_kw_mutref => { return true; },
+        _ => {
+        },
+    }
+    return false;
+}
+
+fn call_argument_is_explicit_mutref(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return false;
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_mutref => { return true; },
+        _ => {
+        },
+    }
+    return false;
+}
+
+fn call_argument_mutref_target_name(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start + 2 != expr_end {
+        return "";
+    }
+    let prefix = token_at(ref tokens, expr_start);
+    match prefix.kind {
+        tk_kw_mutref => {
+        },
+        _ => { return ""; },
+    }
+    let target = token_at(ref tokens, expr_start + 1);
+    match target.kind {
+        tk_ident => { return target.text; },
+        _ => {
+        },
+    }
+    return "";
+}
+
+fn call_argument_mutref_target_is_mutable_capable(scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let name = call_argument_mutref_target_name(ref tokens, start, end);
+    if name == "" {
+        return false;
+    }
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    let target = token_at(ref tokens, expr_start + 1);
+    return visible_typed_binding_is_mutable_capable(ref typed_bindings, ref scopes, module, function_name, scope_id, name, target.start);
+}
+
+fn call_argument_supplies_mutable_borrow(scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut expr_start = expr_content_start(ref tokens, start, end);
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start >= expr_end {
+        return false;
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_kw_mutref => {
+            return call_argument_mutref_target_is_mutable_capable(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end);
+        },
+        tk_ident => {
+            if expr_start + 1 == expr_end {
+                return visible_typed_binding_borrow_mutable(ref typed_bindings, ref scopes, module, function_name, scope_id, current.text, current.start);
+            }
+        },
+        _ => {
+        },
+    }
+    return false;
+}
+
+fn validate_call_argument_borrow(function_params: ref list<function_param_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, qualifier: str, call_name: str, arg_index: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> unit {
+    let expects_borrow = call_param_is_borrow(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index);
+    if call_argument_is_explicit_mutref(ref tokens, start, end) and not call_argument_mutref_target_is_mutable_capable(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end) {
+        let at = token_at(ref tokens, start).start;
+        let name = call_argument_mutref_target_name(ref tokens, start, end);
+        push_error(mutref diags, module, at, "NQ-TYPE-012", diag_type, str_concat("cannot take `mutref` of immutable binding `", str_concat(name, "`")));
+        return;
+    }
+    if not expects_borrow and call_argument_is_explicit_borrow(ref tokens, start, end) {
+        let at = token_at(ref tokens, start).start;
+        push_diag(mutref diags, module, at, "borrow expression does not match owned call argument type");
+        return;
+    }
+    if expects_borrow and not call_argument_supplies_borrow(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end) {
+        let at = token_at(ref tokens, start).start;
+        push_diag(mutref diags, module, at, "borrow parameter requires explicit `ref` or an existing borrowed binding");
+        return;
+    }
+    if expects_borrow and call_param_borrow_mutable(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index) and not call_argument_supplies_mutable_borrow(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end) {
+        let at = token_at(ref tokens, start).start;
+        push_diag(mutref diags, module, at, "mutable borrow parameter requires explicit `mutref` or an existing mutable borrowed binding");
+    }
+}
+
 fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> expected_type_ctx {
     let name_index = span_call_name_index(ref tokens, start, end);
     let open_index = span_call_open_index(ref tokens, start, end);
@@ -3578,7 +4056,9 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                 push_diag(mutref diags, module, head.start, "missing named argument for parameter");
             } else {
                 let segment_end = next_top_level_comma(ref tokens, segment_start, arg_end_limit);
-                let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, segment_value_start(ref tokens, segment_start, segment_end), segment_end, head.start, expected_arg_ctx, mutref diags);
+                let value_start = segment_value_start(ref tokens, segment_start, segment_end);
+                let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, value_start, segment_end, head.start, expected_arg_ctx, mutref diags);
+                validate_call_argument_borrow(ref function_params, ref scopes, ref typed_bindings, ref uses, ref items, module, function_name, scope_id, qualifier, call_name, arg_index, ref tokens, value_start, segment_end, mutref diags);
                 if arg_index == 0 {
                     first_arg_ctx = actual_arg_ctx;
                 }
@@ -3634,7 +4114,11 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
                     }
                 }
             }
-            let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, segment_value_start(ref tokens, arg_start, segment_end), segment_end, head.start, expected_arg_ctx, mutref diags);
+            let value_start = segment_value_start(ref tokens, arg_start, segment_end);
+            let actual_arg_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, value_start, segment_end, head.start, expected_arg_ctx, mutref diags);
+            if function_return_ctx.head != "" or variant_enum_name != "" {
+                validate_call_argument_borrow(ref function_params, ref scopes, ref typed_bindings, ref uses, ref items, module, function_name, scope_id, qualifier, call_name, arg_index, ref tokens, value_start, segment_end, mutref diags);
+            }
             if arg_index == 0 {
                 first_arg_ctx = actual_arg_ctx;
             }
@@ -4770,6 +5254,19 @@ audit {
                             push_diag(mutref diags, module, field_token.start, "field does not exist on base type");
                             return empty_expected_type_ctx();
                         }
+                        if base_type_ctx.head == "path_metadata" {
+                            if field_token.text == "is_file" or field_token.text == "is_directory" or field_token.text == "is_symlink" {
+                                return make_expected_type_ctx("bool", "", "");
+                            }
+                            if field_token.text == "size" or field_token.text == "modified_ns" {
+                                return make_expected_type_ctx("i64", "", "");
+                            }
+                            if field_token.text == "mode" {
+                                return make_expected_type_ctx("i32", "", "");
+                            }
+                            push_diag(mutref diags, module, field_token.start, "field does not exist on base type");
+                            return empty_expected_type_ctx();
+                        }
                         push_diag(mutref diags, module, field_token.start, "field access base does not name a readable product type");
                         return empty_expected_type_ctx();
                     }
@@ -5121,7 +5618,7 @@ fn typecheck_pattern_span(variants: ref list<variant_fact>, variant_payloads: re
                     return;
                 }
                 if has_known_type_ctx(scrutinee_ctx) {
-                    list_push(mutref resolved_bindings, make_typed_binding_fact(module, function_name, scope_id, current.text, current.start, scrutinee_ctx.head, scrutinee_ctx.arg1_name, scrutinee_ctx.arg2_name, false, false));
+                    list_push(mutref resolved_bindings, make_typed_binding_fact(module, function_name, scope_id, current.text, current.start, scrutinee_ctx.head, scrutinee_ctx.arg1_name, scrutinee_ctx.arg2_name, false, false, false));
                     list_push(mutref pattern_bindings, make_pattern_binding_fact(module, function_name, scope_id, current.text, current.start, scrutinee_ctx.head, scrutinee_ctx.arg1_name, scrutinee_ctx.arg2_name, false, false));
                 }
                 return;
@@ -5297,9 +5794,104 @@ fn typecheck_for_binding(functions: ref list<function_fact>, function_params: re
         push_diag(mutref diags, current.module, current.at, "for over list<T> requires a copy element type in V1");
     }
     if current.name != "" and has_known_type_ctx(element_ctx) {
-        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false));
+        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false, false));
     }
     return;
+}
+
+fn type_text_contains_borrow(value: str) -> bool {
+    if value == "" {
+        return false;
+    }
+    if type_text_is_borrow(value) {
+        return true;
+    }
+    return type_text_contains_borrow(type_text_arg1(value)) or type_text_contains_borrow(type_text_arg2(value));
+}
+
+fn type_shape_contains_borrow(arg1_name: str, arg2_name: str, is_borrow: bool) -> bool {
+    return is_borrow or type_text_contains_borrow(arg1_name) or type_text_contains_borrow(arg2_name);
+}
+
+fn push_borrow_type_location_diag(diags: mutref list<diag>, module: str, at: i32) -> unit {
+    push_error(mutref diags, module, at, "NQ-TYPE-003", diag_type, "borrow types are only allowed in function parameters in v0.1");
+}
+
+fn validate_borrow_type_locations(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, field_facts: ref list<field_fact>, diags: mutref list<diag>) -> unit {
+    let mut function_index = 0;
+    while function_index < list_len(ref functions) {
+        let entry = list_get(ref functions, function_index);
+        match entry {
+            Some(value) => {
+                if type_shape_contains_borrow(value.return_arg1_name, value.return_arg2_name, value.return_is_borrow) {
+                    push_borrow_type_location_diag(mutref diags, value.module, value.at);
+                }
+            },
+            None => {
+            },
+        }
+        function_index = function_index + 1;
+    }
+
+    let mut param_index = 0;
+    while param_index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, param_index);
+        match entry {
+            Some(value) => {
+                if type_text_contains_borrow(value.type_arg1_name) or type_text_contains_borrow(value.type_arg2_name) {
+                    push_borrow_type_location_diag(mutref diags, value.module, value.at);
+                }
+            },
+            None => {
+            },
+        }
+        param_index = param_index + 1;
+    }
+
+    let mut field_index = 0;
+    while field_index < list_len(ref field_facts) {
+        let entry = list_get(ref field_facts, field_index);
+        match entry {
+            Some(value) => {
+                if type_shape_contains_borrow(value.field_type_arg1_name, value.field_type_arg2_name, value.field_is_borrow) {
+                    push_borrow_type_location_diag(mutref diags, value.module, value.at);
+                }
+            },
+            None => {
+            },
+        }
+        field_index = field_index + 1;
+    }
+
+    let mut payload_index = 0;
+    while payload_index < list_len(ref variant_payloads) {
+        let entry = list_get(ref variant_payloads, payload_index);
+        match entry {
+            Some(value) => {
+                if type_shape_contains_borrow(value.type_arg1_name, value.type_arg2_name, value.is_borrow) {
+                    push_borrow_type_location_diag(mutref diags, value.module, value.at);
+                }
+            },
+            None => {
+            },
+        }
+        payload_index = payload_index + 1;
+    }
+
+    let mut const_index = 0;
+    while const_index < list_len(ref consts) {
+        let entry = list_get(ref consts, const_index);
+        match entry {
+            Some(value) => {
+                if type_shape_contains_borrow(value.type_arg1_name, value.type_arg2_name, value.is_borrow) {
+                    push_borrow_type_location_diag(mutref diags, value.module, value.at);
+                }
+            },
+            None => {
+            },
+        }
+        const_index = const_index + 1;
+    }
 }
 
 pub fn typecheck_value_facts_with_stmt_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, returns: ref list<return_expr_fact>, conditions: ref list<condition_fact>, assignments: ref list<assignment_fact>, statements: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, diags: mutref list<diag>) -> value_typecheck_summary
@@ -5310,6 +5902,7 @@ audit {
 }
 {
     let start_diag_count = list_len(ref diags);
+    validate_borrow_type_locations(ref functions, ref function_params, ref variant_payloads, ref consts, ref field_facts, mutref diags);
     let mut total_resolved_binding_count = 0;
     let mut ignored_pattern_bindings: list<pattern_binding_fact> = list();
     let mut source_index = 0;
@@ -5398,12 +5991,15 @@ audit {
                                                 }
                                                 if current.expected_type_name != "" {
                                                     expected_ctx = exact_typed_binding_ctx(ref resolved_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
+                                                    if type_shape_contains_borrow(expected_ctx.arg1_name, expected_ctx.arg2_name, current.expected_is_borrow) {
+                                                        push_borrow_type_location_diag(mutref diags, current.module, current.at);
+                                                    }
                                                 }
                                                 let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                 if local_init_is_let_else(current) {
                                                     let payload_ctx = let_else_payload_ctx(current.expr_name, actual_ctx, current.module, current.at, mutref diags);
                                                     if current.name != "" and has_known_type_ctx(payload_ctx) {
-                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, current.is_mutable, false, false));
                                                     }
                                                 } else {
                                                     if local_init_is_propagate(current) {
@@ -5415,7 +6011,7 @@ audit {
                                                             }
                                                         }
                                                         if current.name != "" and has_known_type_ctx(payload_ctx) {
-                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, current.is_mutable, false, false));
                                                         }
                                                     } else {
                                                         if current.expected_type_name != "" {
@@ -5426,7 +6022,7 @@ audit {
                                                             }
                                                         } else {
                                                             if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, current.is_mutable, false, false));
                                                             }
                                                         }
                                                     }
@@ -5683,19 +6279,19 @@ audit {
                                                 if local_init_is_let_else(current) {
                                                     let payload_ctx = let_else_payload_ctx(current.expr_name, actual_ctx, current.module, current.at, mutref diags);
                                                     if current.name != "" and has_known_type_ctx(payload_ctx) {
-                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                        list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, current.is_mutable, false, false));
                                                     }
                                                 } else {
                                                     if local_init_is_propagate(current) {
                                                         let return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
                                                         let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
                                                         if current.name != "" and has_known_type_ctx(payload_ctx) {
-                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, false, false));
+                                                            list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, current.is_mutable, false, false));
                                                         }
                                                     } else {
                                                         if current.expected_type_name == "" {
                                                             if current.name != "" and has_known_type_ctx(actual_ctx) {
-                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, false, false));
+                                                                list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, actual_ctx.head, actual_ctx.arg1_name, actual_ctx.arg2_name, current.is_mutable, false, false));
                                                             }
                                                         }
                                                     }

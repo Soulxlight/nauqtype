@@ -79,6 +79,7 @@ pub enum checked_type_shape_kind {
     checked_type_unit,
     checked_type_io_err,
     checked_type_process_result,
+    checked_type_path_metadata,
     checked_type_bytes,
     checked_type_named,
     checked_type_list,
@@ -2645,6 +2646,16 @@ fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked
                 },
             }
         },
+        checked_type_path_metadata => {
+            match right {
+                checked_type_path_metadata => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_type_bytes => {
             match right {
                 checked_type_bytes => { return true; },
@@ -2755,7 +2766,7 @@ fn push_type_shape(type_shapes: mutref list<checked_type_shape>, kind: checked_t
 }
 
 fn canonical_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module_name: str, type_name: str) -> str {
-    if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "list" or type_name == "option" or type_name == "result" {
+    if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" or type_name == "bytes" or type_name == "list" or type_name == "option" or type_name == "result" {
         return "";
     }
     let origin = visible_type_origin_module(ref uses, ref items, module_name, type_name);
@@ -2822,6 +2833,9 @@ fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: s
     }
     if type_name == "process_result" {
         return push_type_shape(mutref type_shapes, checked_type_process_result, "", "", -1, -1, false);
+    }
+    if type_name == "path_metadata" {
+        return push_type_shape(mutref type_shapes, checked_type_path_metadata, "", "", -1, -1, false);
     }
     if type_name == "bytes" {
         return push_type_shape(mutref type_shapes, checked_type_bytes, "", "", -1, -1, false);
@@ -3014,6 +3028,63 @@ fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
             return "err";
         }
     }
+    if function_name == "stdout_write" or function_name == "stderr_write" {
+        if index == 0 {
+            return "data";
+        }
+    }
+    if function_name == "stdout_write_bytes" or function_name == "stderr_write_bytes" or function_name == "str_from_bytes" {
+        if index == 0 {
+            return "data";
+        }
+    }
+    if function_name == "env_get" {
+        if index == 0 {
+            return "name";
+        }
+    }
+    if function_name == "read_file_bytes" or function_name == "read_dir" or function_name == "create_dir" or function_name == "create_file_new" or function_name == "remove_file" or function_name == "remove_dir" {
+        if index == 0 {
+            return "path";
+        }
+    }
+    if function_name == "write_file_bytes" or function_name == "atomic_write_file" {
+        if index == 0 {
+            return "path";
+        }
+        if index == 1 {
+            return "data";
+        }
+    }
+    if function_name == "path_metadata" {
+        if index == 0 {
+            return "path";
+        }
+        if index == 1 {
+            return "follow_symlinks";
+        }
+    }
+    if function_name == "rename_path" {
+        if index == 0 {
+            return "source";
+        }
+        if index == 1 {
+            return "target";
+        }
+    }
+    if function_name == "create_temp_file" or function_name == "create_temp_dir" {
+        if index == 0 {
+            return "directory";
+        }
+        if index == 1 {
+            return "prefix";
+        }
+    }
+    if function_name == "io_err_kind" or function_name == "io_err_operation" or function_name == "io_err_path" or function_name == "io_err_other_path" or function_name == "io_err_os_code" {
+        if index == 0 {
+            return "err";
+        }
+    }
     if function_name == "run_process" {
         if index == 0 {
             return "program";
@@ -3082,7 +3153,7 @@ fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
 }
 
 fn handoff_builtin_function_param_count(function_name: str) -> i32 {
-    if function_name == "list" or function_name == "arg_count" {
+    if function_name == "list" or function_name == "arg_count" or function_name == "stdin_read" or function_name == "stdin_read_bytes" or function_name == "stdin_read_line" or function_name == "stdout_flush" or function_name == "stderr_flush" or function_name == "current_dir" {
         return 0;
     }
     if function_name == "print_line" or function_name == "eprint_line" or function_name == "read_file" or function_name == "arg_get" or function_name == "create_dir_all" or function_name == "io_err_text" or function_name == "str_len" or function_name == "list_len" {
@@ -3093,6 +3164,12 @@ fn handoff_builtin_function_param_count(function_name: str) -> i32 {
     }
     if function_name == "run_process" or function_name == "str_slice" {
         return 3;
+    }
+    if function_name == "stdout_write" or function_name == "stdout_write_bytes" or function_name == "stderr_write" or function_name == "stderr_write_bytes" or function_name == "env_get" or function_name == "read_file_bytes" or function_name == "read_dir" or function_name == "create_dir" or function_name == "create_file_new" or function_name == "remove_file" or function_name == "remove_dir" or function_name == "io_err_kind" or function_name == "io_err_operation" or function_name == "io_err_path" or function_name == "io_err_other_path" or function_name == "io_err_os_code" or function_name == "str_from_bytes" {
+        return 1;
+    }
+    if function_name == "write_file_bytes" or function_name == "path_metadata" or function_name == "rename_path" or function_name == "create_temp_file" or function_name == "create_temp_dir" or function_name == "atomic_write_file" {
+        return 2;
     }
     return -1;
 }
@@ -3250,7 +3327,18 @@ fn build_literal_expr(function_id: i32, module_name: str, function_name: str, sc
 
 fn push_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, is_borrow: bool, borrow_mutable: bool, binding_id: i32, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, diags: mutref list<diag>) -> i32 {
     let expr_id = next_expr_id(ref expressions);
-    let type_id = intern_checked_type_id(type_ctx.head, type_ctx.arg1_name, type_ctx.arg2_name, is_borrow, borrow_mutable, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
+    let mut type_shape_is_borrow = is_borrow;
+    let mut type_shape_borrow_mutable = borrow_mutable;
+    match kind {
+        checked_expr_name => {
+            // A borrowed binding remains provenance-marked, but reading its name yields the pointee value.
+            type_shape_is_borrow = false;
+            type_shape_borrow_mutable = false;
+        },
+        _ => {
+        },
+    }
+    let type_id = intern_checked_type_id(type_ctx.head, type_ctx.arg1_name, type_ctx.arg2_name, type_shape_is_borrow, type_shape_borrow_mutable, module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
     list_push(mutref expressions, checked_expr {
         id: expr_id,
         function_id: function_id,

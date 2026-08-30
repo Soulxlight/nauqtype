@@ -171,6 +171,7 @@ fn classify_type_id(type_id: i32, type_shapes: ref list<checked_type_shape>, typ
                 checked_type_str => { property = make_type_property(type_id, true, true); },
                 checked_type_io_err => { property = make_type_property(type_id, true, true); },
                 checked_type_process_result => { property = make_type_property(type_id, true, true); },
+                checked_type_path_metadata => { property = make_type_property(type_id, true, false); },
                 checked_type_bytes => { property = make_type_property(type_id, false, true); },
                 checked_type_list => {
                     if shape.arg1_id < 0 {
@@ -515,6 +516,15 @@ fn builtin_arg_is_borrow(name: str, index: i32) -> bool {
         return true;
     }
     if (name == "bytes_len" or name == "bytes_get") and index == 0 {
+        return true;
+    }
+    if (name == "stdout_write_bytes" or name == "stderr_write_bytes" or name == "str_from_bytes") and index == 0 {
+        return true;
+    }
+    if (name == "write_file_bytes" or name == "atomic_write_file") and index == 1 {
+        return true;
+    }
+    if (name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code") and index == 0 {
         return true;
     }
     return false;

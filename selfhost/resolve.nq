@@ -376,6 +376,15 @@ fn is_builtin_name(name: str) -> bool {
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
         return true;
     }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
+        return true;
+    }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" {
+        return true;
+    }
+    if name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" or name == "str_from_bytes" or name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code" {
+        return true;
+    }
     if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" {
         return true;
     }
@@ -398,7 +407,7 @@ fn is_builtin_type_name(name: str) -> bool {
     if name == "char" or name == "str" or name == "unit" {
         return true;
     }
-    if name == "option" or name == "result" or name == "list" or name == "io_err" or name == "process_result" or name == "bytes" {
+    if name == "option" or name == "result" or name == "list" or name == "io_err" or name == "process_result" or name == "path_metadata" or name == "bytes" {
         return true;
     }
     return false;
@@ -490,13 +499,7 @@ fn module_has_hidden_imported_const_name(items: ref list<top_item>, uses: ref li
 }
 
 fn module_has_visible_function_name(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> bool {
-    if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
-        return true;
-    }
-    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" {
-        return true;
-    }
-    if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
+    if is_builtin_name(name) {
         return true;
     }
     if module_has_local_function_name(ref items, module, name) {

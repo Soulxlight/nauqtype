@@ -66,8 +66,22 @@ trap 'rm -rf "$smoke_root"' EXIT
 cp -R build/linux-release/nauqtype "$smoke_root/nauqtype"
 mkdir -p "$smoke_root/project"
 cp examples/hello.nq "$smoke_root/project/hello.nq"
+cp tests/fixtures/m54_runtime.nq "$smoke_root/project/m54_runtime.nq"
+cp -R tests/fixtures/m54_library_dependency "$smoke_root/library-project"
+rm -rf "$smoke_root/library-project/src/app/build"
 (
     cd "$smoke_root/project"
     "$smoke_root/nauqtype/bin/nauqc" check hello.nq
     "$smoke_root/nauqtype/bin/nauqc" run hello.nq
+    "$smoke_root/nauqtype/bin/nauqc" check m54_runtime.nq
+    "$smoke_root/nauqtype/bin/nauqc" run m54_runtime.nq
+)
+(
+    cd "$smoke_root/library-project"
+    "$smoke_root/nauqtype/bin/nauqc" check vendor/std/src/status.nq
+    "$smoke_root/nauqtype/bin/nauqc" check src/app/main.nq
+    "$smoke_root/nauqtype/bin/nauqc" facts src/app/main.nq --format v3 >/dev/null
+    "$smoke_root/nauqtype/bin/nauqc" review src/app/main.nq --format v2 >/dev/null
+    "$smoke_root/nauqtype/bin/nauqc" build src/app/main.nq -o build/m54-library
+    test "$("$smoke_root/nauqtype/bin/nauqc" run src/app/main.nq)" = "m54 library ready"
 )
