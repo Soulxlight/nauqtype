@@ -267,7 +267,7 @@ class Stage1DriverTests(unittest.TestCase):
             )
             duplicate = self._run_driver(["check", str(tmp / "src" / "app" / "main.nq")])
             self.assertEqual(duplicate.returncode, 1)
-            self.assertIn("duplicate import qualifier", duplicate.stdout)
+            self.assertIn("duplicate import qualifier", duplicate.stdout + duplicate.stderr)
 
     def test_stage1_driver_rejects_workspace_dependencies_without_lock(self) -> None:
         source = "tests/fixtures/workspace_missing_lock/src/app/main.nq"

@@ -1,0 +1,21 @@
+name: Nauqtype Quick
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: nauqtype-quick-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: quick
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build or reuse a truthful stage1 and run owned tests
+        run: scripts/check_fast.sh

@@ -12,7 +12,8 @@ Usage: scripts/check_seed_bootstrap.sh [--reuse-stage1]
 
 Prove the seed-to-stage1 fixed point. With --reuse-stage1, consume the stage1 C
 and executable freshly produced by scripts/build_stage1_from_seed.sh instead of
-repeating the expensive seed emission.
+repeating the expensive seed emission. Reuse fails closed unless the checked
+input and artifact hashes still match.
 EOF
 }
 
@@ -38,10 +39,7 @@ stage2_c="$work_dir/stage2.c"
 if [[ "$reuse_stage1" == true ]]; then
     stage1_c="$repo_root/build/seed/stage1.c"
     stage1_exe="$repo_root/selfhost/build/nauqc"
-    if [[ ! -s "$stage1_c" || ! -x "$stage1_exe" ]]; then
-        printf 'reused stage1 artifacts are missing; run scripts/build_stage1_from_seed.sh first\n' >&2
-        exit 1
-    fi
+    "$repo_root/scripts/stage1_cache.sh" require
 else
     "$repo_root/scripts/bootstrap_seed.sh" "$seed_exe" >/dev/null
     (

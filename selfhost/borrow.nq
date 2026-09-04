@@ -32,6 +32,13 @@ type call_borrow_state {
     kind: str,
 }
 
+type borrow_expr_child {
+    function_id: i32,
+    parent_expr_id: i32,
+    index: i32,
+    child_expr_id: i32,
+}
+
 fn push_borrow_error(diags: mutref list<diag>, file: str, at: i32, code: str, message: str) -> unit {
     let mut end = at;
     if at >= 0 {
@@ -559,8 +566,94 @@ fn borrow_pattern_bindings_for_function(pattern_bindings: ref list<checked_patte
     return result;
 }
 
-fn borrow_expr_children_for_function(expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, function_id: i32) -> list<checked_expr_child> {
-    let mut result: list<checked_expr_child> = list();
+fn borrow_expr_child_before_or_equal(left: borrow_expr_child, right: borrow_expr_child) -> bool {
+    if left.function_id < right.function_id {
+        return true;
+    }
+    if left.function_id > right.function_id {
+        return false;
+    }
+    if left.parent_expr_id < right.parent_expr_id {
+        return true;
+    }
+    if left.parent_expr_id > right.parent_expr_id {
+        return false;
+    }
+    return left.index <= right.index;
+}
+
+fn sort_borrow_expr_child_range(source: ref list<borrow_expr_child>, start: i32, end: i32) -> list<borrow_expr_child> {
+    let mut result: list<borrow_expr_child> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => {
+                    list_push(mutref result, value);
+                },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = sort_borrow_expr_child_range(ref source, start, middle);
+            let right = sort_borrow_expr_child_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if borrow_expr_child_before_or_equal(left_value, right_value) {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => {
+                                left_index = list_len(ref left);
+                            },
+                        }
+                    },
+                    None => {
+                        left_index = list_len(ref left);
+                    },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => {
+                        list_push(mutref result, value);
+                    },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => {
+                        list_push(mutref result, value);
+                    },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+fn index_borrow_expr_children(expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>) -> list<borrow_expr_child> {
+    let mut unsorted: list<borrow_expr_child> = list();
     let mut index = 0;
     while index < list_len(ref expr_children) {
         let entry = list_get(ref expr_children, index);
@@ -569,15 +662,59 @@ fn borrow_expr_children_for_function(expressions: ref list<checked_expr>, expr_c
                 let parent_entry = lookup_expr(ref expressions, value.parent_expr_id);
                 match parent_entry {
                     Some(parent) => {
-                        if parent.function_id == function_id {
-                            list_push(mutref result, value);
-                        }
+                        list_push(mutref unsorted, borrow_expr_child {
+                            function_id: parent.function_id,
+                            parent_expr_id: value.parent_expr_id,
+                            index: value.index,
+                            child_expr_id: value.child_expr_id,
+                        });
                     },
                     None => {
                     },
                 }
             },
             None => {
+            },
+        }
+        index = index + 1;
+    }
+    return sort_borrow_expr_child_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+fn borrow_expr_children_for_function(expr_children: ref list<borrow_expr_child>, function_id: i32) -> list<borrow_expr_child> {
+    let mut result: list<borrow_expr_child> = list();
+    let mut low = 0;
+    let mut high = list_len(ref expr_children);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref expr_children, middle);
+        match entry {
+            Some(value) => {
+                if value.function_id < function_id {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => {
+                high = middle;
+            },
+        }
+    }
+    let mut index = low;
+    let mut collecting = true;
+    while collecting and index < list_len(ref expr_children) {
+        let entry = list_get(ref expr_children, index);
+        match entry {
+            Some(value) => {
+                if value.function_id != function_id {
+                    collecting = false;
+                } else {
+                    list_push(mutref result, value);
+                }
+            },
+            None => {
+                collecting = false;
             },
         }
         index = index + 1;
@@ -611,7 +748,7 @@ fn borrow_struct_fields_for_function(expressions: ref list<checked_expr>, struct
     return result;
 }
 
-fn lookup_expr_child_id(expr_children: ref list<checked_expr_child>, parent_expr_id: i32, child_index: i32) -> i32 {
+fn lookup_expr_child_id(expr_children: ref list<borrow_expr_child>, parent_expr_id: i32, child_index: i32) -> i32 {
     let mut low = 0;
     let mut high = list_len(ref expr_children);
     while low < high {
@@ -649,7 +786,7 @@ fn lookup_expr_child_id(expr_children: ref list<checked_expr_child>, parent_expr
     return -1;
 }
 
-fn count_expr_children(expr_children: ref list<checked_expr_child>, parent_expr_id: i32) -> i32 {
+fn count_expr_children(expr_children: ref list<borrow_expr_child>, parent_expr_id: i32) -> i32 {
     let mut low = 0;
     let mut high = list_len(ref expr_children);
     while low < high {
@@ -1404,7 +1541,7 @@ fn lookup_owner_stmt_id_for_expr(statements: ref list<checked_stmt>, function_id
     return -1;
 }
 
-fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
+fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expr(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -1822,7 +1959,7 @@ fn reset_match_arm_bindings(pattern_bindings: ref list<checked_pattern_binding>,
     return;
 }
 
-fn check_block(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, block_id: i32, state: ref list<move_binding_state>, emit_diagnostics: bool, diags: mutref list<diag>) -> list<move_binding_state> {
+fn check_block(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, block_id: i32, state: ref list<move_binding_state>, emit_diagnostics: bool, diags: mutref list<diag>) -> list<move_binding_state> {
     let mut current = clone_move_state(ref state);
     let mut stmt_index = 0;
     while stmt_index < list_len(ref statements) {
@@ -2001,6 +2138,7 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
 
 fn check_checked_handoff_borrows_impl(functions: ref list<checked_function>, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, diags: mutref list<diag>) -> borrow_summary {
     let start_diag_count = list_len(ref diags);
+    let indexed_expr_children = index_borrow_expr_children(ref expressions, ref expr_children);
     let mut function_index = 0;
     while function_index < list_len(ref functions) {
         let function_entry = list_get(ref functions, function_index);
@@ -2010,8 +2148,7 @@ fn check_checked_handoff_borrows_impl(functions: ref list<checked_function>, bin
                 let local_statements = borrow_statements_for_function(ref statements, function.id);
                 let local_match_arms = borrow_match_arms_for_function(ref match_arms, function.id);
                 let local_pattern_bindings = borrow_pattern_bindings_for_function(ref pattern_bindings, function.id);
-                let unsorted_expr_children = borrow_expr_children_for_function(ref expressions, ref expr_children, function.id);
-                let local_expr_children = index_checked_expr_children(ref unsorted_expr_children);
+                let local_expr_children = borrow_expr_children_for_function(ref indexed_expr_children, function.id);
                 let local_struct_fields = borrow_struct_fields_for_function(ref expressions, ref struct_fields, function.id);
                 let root_block_id = lookup_root_block_id(ref local_blocks, function.id, function.root_scope_id);
                 if root_block_id < 0 {

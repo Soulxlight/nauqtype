@@ -1,4 +1,5 @@
 use files;
+use host_c;
 use text;
 
 type norm_mapping {
@@ -743,6 +744,7 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "files");
     list_push(mutref modules, "fmt");
     list_push(mutref modules, "handoff");
+    list_push(mutref modules, "host_c");
     list_push(mutref modules, "ir");
     list_push(mutref modules, "lexer");
     list_push(mutref modules, "main");
@@ -963,6 +965,25 @@ fn corpus_build_c_path(case_name: str) -> str {
 
 fn corpus_run_c_path(case_name: str) -> str {
     return join_path(join_path("build/corpus", case_name), "run.c");
+}
+
+fn corpus_program_path(source_path: str) -> str {
+    let program_name = str_concat(path_stem(source_path), "-corpus");
+    return join_path(join_path(path_dir(source_path), "build"), program_name);
+}
+
+fn corpus_program_run_path(source_path: str) -> str {
+    return join_path("build", str_concat(path_stem(source_path), "-corpus"));
+}
+
+// Every case compiles and runs emitted C; public build/run routing is sampled.
+fn corpus_routes_driver_commands(case_name: str) -> bool {
+    return case_name == "hello" or case_name == "multi_file_main" or case_name == "m53_ownership_values";
+}
+
+fn run_corpus_program(source_path: str) -> result<process_result, io_err> {
+    let args: list<str> = list();
+    return run_process(corpus_program_run_path(source_path), ref args, path_dir(source_path));
 }
 
 fn write_artifact_snapshot(label: str, path: str, text: str) -> bool {
@@ -1678,6 +1699,25 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
     return true;
 }
 
+fn corpus_run_status_ok(step_name: str, status: process_result, entry: corpus_case) -> bool {
+    if status.exit_code != entry.expected_exit_code {
+        eprint_line(str_concat("corpus proof failed: unexpected exit code for ", step_name));
+        emit_process_output(status);
+        return false;
+    }
+    if not output_matches(status.stdout, entry.expected_stdout) or status.stderr != "" {
+        eprint_line(str_concat("corpus proof failed: unexpected stdout/stderr for ", step_name));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat("corpus proof failed: stage1 diagnostic text for ", step_name));
+        emit_process_output(status);
+        return false;
+    }
+    return true;
+}
+
 fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref str, failed_case: mutref str) -> bool {
     let emit_path = corpus_emit_c_path(entry.name);
     let emit_result = run_driver_emit_c(driver_path, entry.source_path, emit_path);
@@ -1703,11 +1743,18 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
         failed_case = entry.name;
         return false;
     }
+    if not write_artifact_snapshot(str_concat("failed to write compiled C artifact for ", entry.name), corpus_build_c_path(entry.name), emit_c) {
+        failed_phase = "corpus.build";
+        failed_case = entry.name;
+        return false;
+    }
 
-    let build_result = run_driver_build(driver_path, entry.source_path);
-    match build_result {
+    let compile_result = compile_host_c_program(emit_path, corpus_program_path(entry.source_path));
+    match compile_result {
         Ok(status) => {
-            if not driver_step_ok(str_concat("build ", entry.name), status) {
+            if status.exit_code != 0 {
+                eprint_line(str_concat("corpus proof failed: host C compile failed for ", entry.name));
+                emit_process_output(status);
                 failed_phase = "corpus.build";
                 failed_case = entry.name;
                 return false;
@@ -1721,45 +1768,49 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
         },
     }
 
-    let build_c_path = default_build_c_path(entry.source_path);
-    let mut build_c = "";
-    if not read_text_or_report(build_c_path, str_concat("failed to read build C for ", entry.name), mutref build_c) {
-        failed_phase = "corpus.build";
-        failed_case = entry.name;
-        return false;
-    }
-    if not write_artifact_snapshot(str_concat("failed to write build C artifact for ", entry.name), corpus_build_c_path(entry.name), build_c) {
-        failed_phase = "corpus.build";
-        failed_case = entry.name;
-        return false;
-    }
-    if not structural_c_equal(emit_c, build_c) {
-        eprint_line(str_concat("corpus proof failed: emit/build C changed for ", entry.name));
-        failed_phase = "corpus.structural_c_compare";
-        failed_case = entry.name;
-        return false;
+    let routes_driver = corpus_routes_driver_commands(entry.name);
+    if routes_driver {
+        let build_result = run_driver_build(driver_path, entry.source_path);
+        match build_result {
+            Ok(status) => {
+                if not driver_step_ok(str_concat("build route ", entry.name), status) {
+                    failed_phase = "corpus.build";
+                    failed_case = entry.name;
+                    return false;
+                }
+            },
+            Err(err) => {
+                eprint_line(io_err_text(err));
+                failed_phase = "corpus.build";
+                failed_case = entry.name;
+                return false;
+            },
+        }
+
+        let build_c_path = default_build_c_path(entry.source_path);
+        let mut build_c = "";
+        if not read_text_or_report(build_c_path, str_concat("failed to read routed build C for ", entry.name), mutref build_c) {
+            failed_phase = "corpus.build";
+            failed_case = entry.name;
+            return false;
+        }
+        if not write_artifact_snapshot(str_concat("failed to write routed build C artifact for ", entry.name), corpus_build_c_path(entry.name), build_c) {
+            failed_phase = "corpus.build";
+            failed_case = entry.name;
+            return false;
+        }
+        if not structural_c_equal(emit_c, build_c) {
+            eprint_line(str_concat("corpus proof failed: emit/build route C changed for ", entry.name));
+            failed_phase = "corpus.structural_c_compare";
+            failed_case = entry.name;
+            return false;
+        }
     }
 
-    let run_result = run_driver_run(driver_path, entry.source_path);
+    let run_result = run_corpus_program(entry.source_path);
     match run_result {
         Ok(status) => {
-            if status.exit_code != entry.expected_exit_code {
-                eprint_line(str_concat("corpus proof failed: unexpected exit code for ", entry.name));
-                emit_process_output(status);
-                failed_phase = "corpus.run";
-                failed_case = entry.name;
-                return false;
-            }
-            if not output_matches(status.stdout, entry.expected_stdout) or status.stderr != "" {
-                eprint_line(str_concat("corpus proof failed: unexpected stdout/stderr for ", entry.name));
-                emit_process_output(status);
-                failed_phase = "corpus.run";
-                failed_case = entry.name;
-                return false;
-            }
-            if has_stage1_failure_text(status) {
-                eprint_line(str_concat("corpus proof failed: stage1 diagnostic text for ", entry.name));
-                emit_process_output(status);
+            if not corpus_run_status_ok(entry.name, status, entry) {
                 failed_phase = "corpus.run";
                 failed_case = entry.name;
                 return false;
@@ -1772,23 +1823,48 @@ fn run_corpus_case(driver_path: str, entry: corpus_case, failed_phase: mutref st
             return false;
         },
     }
+    if not write_artifact_snapshot(str_concat("failed to write executed C artifact for ", entry.name), corpus_run_c_path(entry.name), emit_c) {
+        failed_phase = "corpus.run";
+        failed_case = entry.name;
+        return false;
+    }
 
-    let mut run_c = "";
-    if not read_text_or_report(build_c_path, str_concat("failed to read run C for ", entry.name), mutref run_c) {
-        failed_phase = "corpus.structural_c_compare";
-        failed_case = entry.name;
-        return false;
-    }
-    if not write_artifact_snapshot(str_concat("failed to write run C artifact for ", entry.name), corpus_run_c_path(entry.name), run_c) {
-        failed_phase = "corpus.structural_c_compare";
-        failed_case = entry.name;
-        return false;
-    }
-    if not structural_c_equal(emit_c, run_c) {
-        eprint_line(str_concat("corpus proof failed: emit/run C changed for ", entry.name));
-        failed_phase = "corpus.structural_c_compare";
-        failed_case = entry.name;
-        return false;
+    if routes_driver {
+        let routed_run_result = run_driver_run(driver_path, entry.source_path);
+        match routed_run_result {
+            Ok(status) => {
+                if not corpus_run_status_ok(str_concat("run route ", entry.name), status, entry) {
+                    failed_phase = "corpus.run";
+                    failed_case = entry.name;
+                    return false;
+                }
+            },
+            Err(err) => {
+                eprint_line(io_err_text(err));
+                failed_phase = "corpus.run";
+                failed_case = entry.name;
+                return false;
+            },
+        }
+
+        let run_c_path = default_build_c_path(entry.source_path);
+        let mut run_c = "";
+        if not read_text_or_report(run_c_path, str_concat("failed to read routed run C for ", entry.name), mutref run_c) {
+            failed_phase = "corpus.structural_c_compare";
+            failed_case = entry.name;
+            return false;
+        }
+        if not write_artifact_snapshot(str_concat("failed to write routed run C artifact for ", entry.name), corpus_run_c_path(entry.name), run_c) {
+            failed_phase = "corpus.structural_c_compare";
+            failed_case = entry.name;
+            return false;
+        }
+        if not structural_c_equal(emit_c, run_c) {
+            eprint_line(str_concat("corpus proof failed: emit/run route C changed for ", entry.name));
+            failed_phase = "corpus.structural_c_compare";
+            failed_case = entry.name;
+            return false;
+        }
     }
 
     return true;

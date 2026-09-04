@@ -6,17 +6,20 @@ or pushing.
 
 ## Startup Check
 
-1. Resolve the repository root from this `AGENTS.md` and work in a native Linux
+1. Load and follow the `$nauqtype-work` skill, then read
+   `/home/soulxlight/Documents/NauqType/NAUQTYPE_COORDINATION.md`. This is
+   required even when the current task appears confined to this repository.
+2. Resolve the repository root from this `AGENTS.md` and work in a native Linux
    checkout or agent worktree. The canonical checkout on this machine is
    `/home/soulxlight/Documents/NauqType`; legitimate Linux clones/worktrees are
    allowed. Never edit the mounted historical Windows-path workspace under
    `/opt/codex-desktop/C:\Users\...`.
-2. Read the current task-relevant sections of `README.md`, `ROADMAP.md`,
+3. Read the current task-relevant sections of `README.md`, `ROADMAP.md`,
    `TODO.md`, `DECISIONS.md`, `DEFERRED.md`, `SYNTAX_IDENTITY.md`, and
    `VERIFICATION.md` before changing a public contract.
-3. Run `git status --short --branch` and preserve unrelated user changes.
-4. Identify the smallest honest milestone slice and its acceptance evidence.
-5. Keep active compiler, tooling, fixtures, and teaching work in Nauqtype.
+4. Run `git status --short --branch` and preserve unrelated user changes.
+5. Identify the smallest honest milestone slice and its acceptance evidence.
+6. Keep active compiler, tooling, fixtures, and teaching work in Nauqtype.
    Python is frozen historical bootstrap/reference code unless a narrowly
    proven bootstrap blocker requires a repair.
 
@@ -116,6 +119,20 @@ gate when another assigned agent already has it in progress.
   fixture or release artifact;
 - stable/release candidate: the independent gates listed in
   `VERIFICATION.md` and `STABLE_RELEASE.md`.
+
+For any milestone that needs the expensive executable close, use this order:
+
+1. Iterate with the narrowest focused checks and do not launch duplicate gates.
+2. Freeze the candidate diff and give auditors that diff plus focused evidence.
+3. Resolve blocking findings, rerun only affected focused checks, and ask the
+   same auditor to inspect only the repair when possible.
+4. Run `scripts/check_milestone.sh` once on the reviewed, frozen candidate.
+5. If that full gate exposes a defect, fix it, audit the changed slice, and run
+   the full gate again; never treat an earlier run as evidence for changed code.
+
+Do not routinely run the full gate before the trailing audit and then repeat it
+afterward. Audit prompts should point to the plan, diff, and concise command
+results rather than copying the full conversation or unbounded logs.
 
 Report exact commands, outcomes, and skipped gates. Convert discovered
 composition bugs into focused fixtures before closing a milestone.

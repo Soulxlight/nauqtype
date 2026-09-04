@@ -52,8 +52,12 @@ environment and cwd access, text/binary files, metadata, traversal, creation,
 secure temporary entries, removal/rename, atomic replacement, and structured
 `io_err` provenance. The locked `nauqtype.std` fixture proves an ordinary
 vendored dependency without a hidden prelude, and `check` accepts library
-modules without requiring a fake `main`. M55 is next and adds structured
-process, time, timeout, and cancellation foundations.
+modules without requiring a fake `main`. M54.5 also made warm artifact reuse
+and milestone close ordering truthful and cheap. M54.6 then cut the measured
+full-tree semantic check from 349.76 seconds to repeat runs of 194.66 and
+194.51 seconds by batching private scope, borrow-child, and visible-item
+lookups. M55 is the next feature milestone and adds structured process, time,
+timeout, and cancellation foundations.
 
 ## Quick Start
 
@@ -182,9 +186,10 @@ This records a deterministic workspace facts snapshot and change-report evidence
 
 For normal milestone work, use the layered verification commands in
 [VERIFICATION.md](VERIFICATION.md). `scripts/check_fast.sh` provides quick
-focused feedback, while `scripts/check_milestone.sh` runs the selfhost proof,
-release smoke, and stress leg once each before focused tests. The standalone
-commands below remain the deliberately redundant final Alpha/release gates.
+focused feedback with content-verified stage1 reuse. Freeze and audit the
+candidate before running `scripts/check_milestone.sh` once; it runs the
+selfhost proof, release smoke, and stress leg once each. The standalone commands
+below remain the deliberately redundant final release gates.
 
 Run the dense milestone stress leg when checking cross-feature interactions:
 
@@ -205,7 +210,7 @@ bin/nauqc prove-selfhost
 bin/nauqc prove-corpus
 ```
 
-The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, now locked by `schemas/proof-summary-v2.schema.json`. The summary uses richer phase IDs such as `selfhost.stage1_emit_c`, `corpus.run`, and `tooling.schema_golden`, preserves artifact paths and deterministic content hashes, and records corpus IDs for faster triage without relying on model prose. The locked corpus is also guarded so every runnable canonical example in `examples/` participates in `prove-corpus`, while every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
+The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, now locked by `schemas/proof-summary-v2.schema.json`. The summary uses richer phase IDs such as `selfhost.stage1_emit_c`, `corpus.run`, and `tooling.schema_golden`, preserves artifact paths and deterministic content hashes, and records corpus IDs for faster triage without relying on model prose. Every runnable canonical example is emitted once, compiled, and run; `hello`, `multi_file_main`, and `m53_ownership_values` additionally lock public `build`/`run` routing parity. Every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
 
 Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
 The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux alpha layouts use `lib/nauqtype/nauqc-stage1` behind the public `bin/nauqc` launcher.
@@ -304,7 +309,8 @@ Near-term focus:
 
 - keep the completed M54 Linux authority contracts and locked library fixture
   stable while NQType Libraries builds ordinary Nauqtype modules and compiler
-  work advances to M55 structured process, time, and cancellation support
+  work advances to M55 structured process, time, and cancellation support on
+  top of M54.5's truthful reuse and M54.6's measured semantic speedup
 - preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints

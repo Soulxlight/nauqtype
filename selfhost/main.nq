@@ -9,6 +9,7 @@ use diag;
 use facts;
 use fmt;
 use lexer;
+use host_c;
 use parser;
 use proof;
 use review;
@@ -1414,62 +1415,6 @@ fn emit_process_output(result: process_result) -> unit {
     return;
 }
 
-fn compile_emitted_c(c_path: str, exe_path: str) -> result<process_result, io_err> {
-    let ensure_result = ensure_parent_dir(exe_path);
-    match ensure_result {
-        Ok(_) => {
-        },
-        Err(err) => {
-            return Err(err);
-        },
-    }
-
-    let mut cc_args: list<str> = list();
-    list_push(mutref cc_args, "-std=c11");
-    list_push(mutref cc_args, "-O2");
-    list_push(mutref cc_args, "-D_POSIX_C_SOURCE=200809L");
-    list_push(mutref cc_args, "-Istdlib");
-    list_push(mutref cc_args, c_path);
-    list_push(mutref cc_args, "stdlib/runtime.c");
-    list_push(mutref cc_args, "-o");
-    list_push(mutref cc_args, exe_path);
-    let system_cc = run_process("cc", ref cc_args, ".");
-    match system_cc {
-        Ok(status) => {
-            return Ok(status);
-        },
-        Err(system_err) => {
-            let mut zig_args: list<str> = list();
-            list_push(mutref zig_args, "cc");
-            list_push(mutref zig_args, "-std=c11");
-            list_push(mutref zig_args, "-O2");
-            list_push(mutref zig_args, "-D_POSIX_C_SOURCE=200809L");
-            list_push(mutref zig_args, "-Istdlib");
-            list_push(mutref zig_args, c_path);
-            list_push(mutref zig_args, "stdlib/runtime.c");
-            list_push(mutref zig_args, "-o");
-            list_push(mutref zig_args, exe_path);
-            let linux_zig = run_process(".deps/ziglang/zig", ref zig_args, ".");
-            match linux_zig {
-                Ok(status) => {
-                    return Ok(status);
-                },
-                Err(_) => {
-                },
-            }
-            let windows_zig = run_process(".deps/ziglang/zig.exe", ref zig_args, ".");
-            match windows_zig {
-                Ok(status) => {
-                    return Ok(status);
-                },
-                Err(_) => {
-                },
-            }
-            return Err(system_err);
-        },
-    }
-}
-
 fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
     let c_path = build_c_output_path(request.entry_path, request.output_path);
     let exe_path = build_exe_output_path(request.entry_path, request.output_path);
@@ -1478,7 +1423,7 @@ fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
         return emit_code;
     }
 
-    let compile_result = compile_emitted_c(c_path, exe_path);
+    let compile_result = compile_host_c_program(c_path, exe_path);
     match compile_result {
         Ok(compile_status) => {
             if compile_status.exit_code != 0 {

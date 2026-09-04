@@ -11,10 +11,10 @@ Usage: scripts/check_fast.sh
 
 Run the active Nauqtype-owned fixture and tooling confidence tier.
 
-This command intentionally delegates to the stage1 driver. Historical Python
-tests are no longer an active milestone or release gate. Copied-selfhost and
-corpus proof claims remain owned by `nauqc prove` so composed gates do not run
-them twice.
+This command verifies the stage1 input/artifact cache and rebuilds stale
+artifacts before delegating to the driver. Historical Python tests are no
+longer an active milestone or release gate. Copied-selfhost and corpus proof
+claims remain owned by `nauqc prove` so composed gates do not run them twice.
 EOF
 }
 
@@ -28,7 +28,8 @@ if (( $# > 0 )); then
     exit 2
 fi
 
-if [[ ! -x selfhost/build/nauqc ]]; then
+if ! scripts/stage1_cache.sh check; then
+    printf 'check_fast: rebuilding stale stage1 artifacts\n' >&2
     scripts/build_stage1_from_seed.sh >/dev/null
 fi
 bin/nauqc test

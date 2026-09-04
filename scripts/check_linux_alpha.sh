@@ -11,8 +11,8 @@ Usage: scripts/check_linux_alpha.sh [--reuse-stage1] [--skip-prove]
 
 Run the Linux Alpha RC1 release-layout gate.
 
-  --reuse-stage1  Reuse an already-built selfhost/build/nauqc from this
-                  verification run instead of rebuilding it with stage0.
+  --reuse-stage1  Reuse a hash-verified selfhost/build/nauqc from this
+                  verification run instead of rebuilding it with the seed.
   --skip-prove    Skip the repo-local `nauqc prove` run when the caller has
                   already run it in this verification run.
 
@@ -44,10 +44,7 @@ while (( $# > 0 )); do
 done
 
 if "$reuse_stage1"; then
-    if [[ ! -x selfhost/build/nauqc ]]; then
-        printf 'check_linux_alpha: --reuse-stage1 requires selfhost/build/nauqc\n' >&2
-        exit 1
-    fi
+    scripts/stage1_cache.sh require
 else
     scripts/build_stage1_from_seed.sh >/dev/null
 fi

@@ -14,7 +14,7 @@ tool with the active driver, records its checked snapshot and impact evidence,
 then repeats check/facts/policy/run from a copied Linux release outside the
 source checkout.
 
-  --reuse-stage1  Reuse selfhost/build/nauqc from this verification run.
+  --reuse-stage1  Reuse hash-verified stage1 artifacts from this run.
   --skip-prove    Skip repo-local `nauqc prove` after it was already run.
 EOF
 }
@@ -36,10 +36,7 @@ while (( $# > 0 )); do
 done
 
 if "$reuse_stage1"; then
-    if [[ ! -x selfhost/build/nauqc ]]; then
-        printf 'check_organizational_alpha: --reuse-stage1 requires selfhost/build/nauqc\n' >&2
-        exit 1
-    fi
+    scripts/stage1_cache.sh require
 else
     scripts/build_stage1_from_seed.sh >/dev/null
 fi

@@ -198,7 +198,9 @@ Status:
 - the stage1 driver now owns the combined transition gate as `prove`
 - the stage1 driver now owns the copied-selfhost proof gate as `prove-selfhost`
 - the stage1 driver now owns the locked example corpus gate as `prove-corpus`
-- `prove-corpus` runs the locked examples through `emit-c`, `build`, and `run`, compares normalized structural C across driver paths, and checks smoke behavior
+- `prove-corpus` emits, host-compiles, and runs every locked example; three
+  fixed cases additionally compare normalized C across public `build`/`run`
+  routes
 - the current Python proof/corpus harness remains only as frozen bootstrap/reference coverage until a later archival cleanup pass
 
 ### M17: AI-First Review Surfaces
@@ -370,7 +372,8 @@ Status:
 - `scripts/install_nauqtype.sh` installs a symlink into `$HOME/.local/bin` or `$PREFIX/bin`
 - `scripts/make_linux_release.sh` creates a copied alpha layout with the launcher, internal stage1 driver, runtime files, schemas, examples, and docs
 - `scripts/check_linux_alpha.sh` runs the bootstrap rebuild, repo-local smoke checks, the stage1-owned `prove` gate, copied-layout creation, and copied-launcher smoke checks
-- `.github/workflows/linux-alpha.yml` gives clean-checkout Linux coverage for the same alpha gate
+- clean-checkout Linux coverage now uses a quick push/PR workflow plus the full
+  alpha gate on nightly, manual, and release-tag runs
 
 ### M27: Stress-Leg Edge Cleanup
 
@@ -804,9 +807,58 @@ Status:
 - NQType Libraries owns UTF-8, lexical Linux paths, sorting, CLI composition,
   and other reusable modules; the exact handoff is recorded in
   `NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md`
-- M55 is next; package versions/bundled resolution, qualified type annotations,
+- M55 remains the next feature milestone after the M54.5/M54.6 efficiency
+  checkpoints; package versions/bundled resolution, qualified type annotations,
   broader process control, time, networking, and implicit authority remain out
   of M54
+
+### M54.5: Development Loop Efficiency
+
+- make warm stage1 reuse truthful by binding the full seed/selfhost input
+  fingerprint to hashes of both generated stage1 artifacts
+- compile and run every locked corpus case from one canonical `emit-c` result,
+  while retaining representative public `build`/`run` route parity
+- move required audits ahead of one exact-candidate milestone gate, rather than
+  routinely paying for a full gate both before and after review
+- run quick CI on pushes/pull requests and reserve the serial full Linux gate
+  for nightly, manual, and release-tag verification
+
+Status:
+
+- complete; the exact-candidate milestone gate passed in 2,132 seconds with
+  every phase green
+- warm cache validation completed in about 0.16 seconds, the warm fast gate in
+  about 1.3 seconds, and the refactored 38-case corpus in about 20.8 seconds
+- the cold composed gate did not become materially faster than its 2,128-second
+  pre-pass baseline; M54.5 removes repeated work between edits and during
+  milestone close rather than claiming a compiler-speed improvement
+- proof-summary v2, the copied-selfhost fixed point, release gates, language
+  semantics, and runtime APIs remain unchanged
+
+### M54.6: Semantic Lookup Hot-Path Optimization
+
+- batch or index only the measured typecheck and borrow lookups that repeatedly
+  scan flat fact lists
+- reduce generated-value clone/drop amplification without changing source
+  semantics, checked evidence, proof structure, or the flat-front-end boundary
+- use before/after profiles and wall-time evidence on the same host; do not
+  accept an optimization that merely moves cost between milestone phases
+- keep this a bounded performance checkpoint rather than a parser,
+  typechecker, or handoff rewrite
+
+Status:
+
+- complete; function-local scope/statement slices, one private borrow-expression
+  child index, and one-pass visible-item origin lookup remove the measured
+  repeated scans without changing public semantic records or lookup priority
+- the same-host non-instrumented full-tree check fell from 349.76 seconds to
+  repeat measurements of 194.66 and 194.51 seconds, a 44.4% wall-time
+  reduction, while peak RSS stayed effectively flat at about 85 MiB
+- the reviewed exact-candidate milestone gate passed all seven phases in 1,517
+  seconds, down from the 2,132-second M54.5 close without relaxing a budget
+- the optimized path preserves builtin priority, local-over-import precedence,
+  direct-import source order, alias qualification, enum/type classification,
+  borrow child order, and the existing fail-closed boundaries
 
 ### M55: Structured Process, Time, And Cancellation
 

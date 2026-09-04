@@ -376,6 +376,12 @@
 - [x] M52: restore executable metadata for clean-checkout Linux gate scripts
 - [x] M53: lock CLI/diagnostic truth, bytes, width-safe values, reclamation, CI, and performance baselines
 - [x] M54: add Linux stdin/environment/cwd and filesystem foundations
+- [x] M54.5: bind warm stage1 reuse to source and artifact hashes
+- [x] M54.5: reduce the locked corpus from 114 compiler passes to 44 while preserving all runtime cases and three public-command route checks
+- [x] M54.5: move audits before the one exact-candidate full gate and split quick vs full CI triggers
+- [x] M54.5: pass the final frozen-candidate milestone gate and record measured timing evidence
+- [x] M54.6: batch the profiled typecheck export/scope and borrow expression lookups without rewriting the semantic front end
+- [x] M54.6: prove a same-host cold wall-time improvement while keeping selfhost, corpus, release, and evidence contracts unchanged
 - [ ] M55: add structured process, time, timeout, and cancellation foundations
 - [ ] M56: add explicit generic reuse without trait or method-system drift
 - [ ] M57: add reusable collections and deterministic general JSON

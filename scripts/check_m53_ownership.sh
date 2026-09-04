@@ -11,7 +11,7 @@ Usage: scripts/check_m53_ownership.sh
 
 Emit, compile, and run the dense foundational value/runtime ownership fixtures
 under the Linux address and leak sanitizers. The active stage1 driver must
-already exist.
+already exist and match its checked source/artifact cache.
 EOF
 }
 
@@ -23,10 +23,7 @@ if (( $# > 0 )); then
     printf 'check_m53_ownership: no arguments are accepted\n' >&2
     exit 2
 fi
-if [[ ! -x selfhost/build/nauqc ]]; then
-    printf 'check_m53_ownership: missing active stage1 driver\n' >&2
-    exit 1
-fi
+scripts/stage1_cache.sh require
 if ! command -v "${CC:-cc}" >/dev/null 2>&1; then
     printf 'check_m53_ownership: C compiler not found: %s\n' "${CC:-cc}" >&2
     exit 1
