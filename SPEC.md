@@ -99,12 +99,37 @@ Deferred numeric types:
 unless an expected `i64` context selects `i64`; arithmetic never performs an
 implicit width conversion.
 
+Addition, subtraction, multiplication, and unary negation wrap modulo the
+operand width, interpreted as the corresponding signed two's-complement
+value. Division truncates toward zero. Division by zero or the minimum value
+divided by `-1` terminates with exit code 1 and, respectively,
+`nauqtype runtime: integer division by zero` or
+`nauqtype runtime: integer division overflow` on stderr. Fatal runtime failures
+do not promise unwinding or cleanup.
+
+Top-level constants use the same arithmetic. Evaluated invalid divisions are
+rejected with `NQ-TYPE-045` at the slash token; boolean `and` and `or` still
+short-circuit. Literal range checks remain independent of reachability. This
+does not add casts or permit constant initializers to call functions or refer
+to other names.
+
 `str` is an immutable, length-carrying byte string. It is not guaranteed to be
 valid UTF-8; length, indexing, and slicing use byte offsets. Runtime-owned
 strings use reference counting so source-level copies remain safe while
 generated code reclaims owned storage deterministically. OS-bound strings on
 Linux preserve arbitrary non-NUL bytes and reject embedded NUL rather than
 truncating at the C boundary.
+
+String lengths, including views and imported OS text, are bounded by
+`INT32_MAX`. List lengths and capacities are bounded by `INT32_MAX` and the
+allocation-byte limit for their element type. Bytes are bounded by
+`min(INT64_MAX, SIZE_MAX)`. Runtime allocation paths check size arithmetic
+before allocation or growth. Infallible size/OOM failures terminate with exit
+code 1 and `nauqtype runtime: size limit exceeded` or
+`nauqtype runtime: out of memory`. Fallible IO reserve paths instead return an
+allocation-free `io_err`: `invalid_input` with code/OS code 0 for a size limit,
+or `other` with code/OS code `ENOMEM` for OOM. These errors preserve the
+operation and omit path fields. See [M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
 
 ## Built-in Utility Types
 
@@ -574,7 +599,11 @@ Rules:
 - consuming a non-copy pointee through a borrowed binding is rejected; copy values may be read from a borrow and are copied according to their checked value plan
 - bootstrap `while` analysis tracks possible moves across iterations conservatively
 - no stored references
-- no field borrows
+- read-only `ref binding.field` paths are supported for direct call arguments,
+  including the shipped runtime product fields; `mutref` still targets a
+  binding rather than a field
+- borrow-prefixed arithmetic is not a place and is rejected, not silently
+  lowered as pointer arithmetic
 
 This is intentionally stricter than a future version. The goal is safety and implementability, not maximum flexibility.
 

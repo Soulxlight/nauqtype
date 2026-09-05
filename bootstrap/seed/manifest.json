@@ -2,52 +2,43 @@
   "version": "nauqtype-c-seed/v1",
   "generator": {
     "kind": "stage1-c-emitter",
-    "command": "build/m54_7/E2 emit-c selfhost/main.nq -o build/m54_7/C3.c",
-    "promotion": "copy C3.c byte-for-byte to bootstrap/seed/nauqc-seed.c after fixed-point validation",
-    "executable_sha256": "e152c474c2a26a31e6004ee636152e7644b61eafd40f1ccaad0ed3feb00fdae8",
-    "input_c_sha256": "9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1",
-    "output_c_sha256": "9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1",
+    "command": "build/m54_9/borrow-repair emit-c selfhost/main.nq -o build/m54_9/final-fixedpoint.c",
+    "promotion": "copy final-fixedpoint.c byte-for-byte after both exact and normalized fixed-point validation",
+    "executable_sha256": "69ebf82ee3ede889af2076b27658d1b95f518bd00744416bb5421c4f475f76e6",
+    "input_c_sha256": "3ae7bc907b3f1e234127eac4be1feadd4c2fb8be405379a37cc928474b46b525",
+    "output_c_sha256": "3ae7bc907b3f1e234127eac4be1feadd4c2fb8be405379a37cc928474b46b525",
     "structural_comparison": "nauqc prove-seed <stage1-c> <stage2-c>"
   },
   "source": {
     "entry": "selfhost/main.nq",
-    "entry_sha256": "7a890781d0bcf39e26cc33bb82bb85adbe1b76ce0dd06dcc4ee3e8d183767c17",
-    "base_revision": "d2c7592ae5e4dc11fba7ffe715334a881d715b62",
+    "entry_sha256": "5d7c34fede5b97168788dee34b30f39cf1bac28a33adb13f334a9ee035249a9d",
+    "base_revision": "b8e03acdf1a1d953e9b92cf1a34423b59dfc07bc",
     "working_tree_changes": true,
     "digest_format": "nauqtype-selfhost-source/v1",
-    "selfhost_tree_sha256": "6d6279903ab2e110982920c25534dc8c1f041f458c92bef6a2ab342be6a04353",
+    "selfhost_tree_sha256": "f66c003d62e2235cd1321c7860327ebc35eaef7deec0798ee95da578595e7bbe",
     "digest_definition": "SHA256(domain NUL followed by C-locale sorted regular selfhost/**/*.nq relative paths, each path NUL lowercase SHA256(file) NUL); see BOOTSTRAP_RETIREMENT.md"
   },
   "transition": {
-    "milestone": "M54.7",
-    "predecessor_seed_c_sha256": "e9e503b3581e0b66e837303d28838789ad949028461da86cfc4cb81b09bf2760",
-    "bridge": {
-      "input_c_sha256": "ce60df71b2cf863c9fd33bc8b528f0ddae57f3176b68605fe1d4a5e46c4c8c5b",
-      "executable_sha256": "3259eb9dd749da6f928b6d207f63926632c46d01c3f1234ff0d51377645ef06c",
-      "source_tree_sha256": "a8cc92a897857f164aeb699ad1c263067175a44bd44079345b02b5191c52ad08",
-      "source_note": "Initial repaired compiler before the expression-arm cleanup correction; digest reconstructed by reversing that one repair. C1 is transitional and was not promoted."
-    },
-    "regenerated_c_sha256": "9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1",
-    "promoted_validator_executable_sha256": "ed1a0efb33a7090f53ace7719e108c95a6c42a6ca294915cc121ad76c2f46756",
-    "post_promotion_c_sha256": "9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1",
+    "milestone": "M54.9",
+    "predecessor_seed_c_sha256": "9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1",
     "comparisons": [
       {
-        "command": "build/m54_7/E2 prove-seed build/m54_7/C2.c build/m54_7/C3.c",
+        "command": "cmp build/m54_9/borrow-repair.c build/m54_9/final-fixedpoint.c",
         "exit_code": 0,
-        "stdout": "seed structural proof ok\n"
+        "stdout": ""
       },
       {
-        "command": "build/m54_7/E3 prove-seed build/m54_7/C3.c build/m54_7/C4.c",
+        "command": "build/m54_9/borrow-repair prove-seed build/m54_9/borrow-repair.c build/m54_9/final-fixedpoint.c",
         "exit_code": 0,
         "stdout": "seed structural proof ok\n"
       }
     ],
-    "normalization": "Existing selfhost/proof.nq structural normalizer, unchanged; C2/C3/C4 are also byte-identical."
+    "normalization": "Existing selfhost/proof.nq structural normalizer, unchanged; generator input/output C are also byte-identical."
   },
   "runtime": {
-    "changed": false,
-    "c_sha256": "1f1bbdbc1d1f569dd464f44b19f01b6c738c438543f2d1fa8a8409e039b6ed14",
-    "h_sha256": "b3a9a6d34cee04ffd369eeddebba1525d776e1c360ecdccc38101270d4cc71e6"
+    "changed": true,
+    "c_sha256": "823bb9fdaa9c5f6f4be3f6ba78a73f20fd5d604d79ef04f64f2280d2d74bb1c9",
+    "h_sha256": "659cf2b7330b34175d9c66a50f7e1ee531101019bff4563b82173d112f7c5ade"
   },
   "artifacts": {
     "compiler_c": "bootstrap/seed/nauqc-seed.c",
@@ -64,8 +55,12 @@
       "-std=c11",
       "-O2",
       "-D_POSIX_C_SOURCE=200809L",
-      "-Ibootstrap/seed"
+      "-Istdlib",
+      "build/m54_9/borrow-repair.c",
+      "stdlib/runtime.c",
+      "-o",
+      "build/m54_9/borrow-repair"
     ],
-    "runtime_source": "bootstrap/seed/runtime.c"
+    "runtime_source": "stdlib/runtime.c"
   }
 }

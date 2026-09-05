@@ -1,0 +1,402 @@
+fn edge32(seed: str, name: str) -> i32 {
+    if seed != "edge" { return 3; }
+    if name == "max" { return 2147483647; }
+    if name == "min" { return -2147483648; }
+    if name == "one" { return 1; }
+    if name == "two" { return 2; }
+    if name == "seven" { return 7; }
+    return 0;
+}
+
+fn edge64(seed: str, name: str) -> i64 {
+    if seed != "edge" { return 3; }
+    if name == "max" { return 9223372036854775807; }
+    if name == "min" { return -9223372036854775808; }
+    if name == "one" { return 1; }
+    if name == "two" { return 2; }
+    if name == "seven" { return 7; }
+    return 0;
+}
+
+fn boundaries32(seed: str) -> bool {
+    let hi = edge32(seed, "max");
+    let lo = edge32(seed, "min");
+    let one = edge32(seed, "one");
+    let two = edge32(seed, "two");
+    let seven = edge32(seed, "seven");
+    if hi + one != lo or lo + (-one) != hi { return false; }
+    if lo - one != hi or hi - (-one) != lo { return false; }
+    if hi * two != -2 or lo * two != 0 { return false; }
+    if hi * hi != 1 or lo * (-one) != lo { return false; }
+    if -lo != lo or -hi != -2147483647 or -one != -1 { return false; }
+    if seven / two != 3 or (-seven) / two != -3 { return false; }
+    if seven / (-two) != -3 or (-seven) / (-two) != 3 { return false; }
+    if one / two != 0 or (-one) / two != 0 { return false; }
+    if lo / one != lo or lo / two != -1073741824 { return false; }
+    if hi / (-one) != -2147483647 or lo / lo != 1 { return false; }
+    if (hi + one) / two != -1073741824 { return false; }
+    return true;
+}
+
+fn boundaries64(seed: str) -> bool {
+    let hi = edge64(seed, "max");
+    let lo = edge64(seed, "min");
+    let one = edge64(seed, "one");
+    let two = edge64(seed, "two");
+    let seven = edge64(seed, "seven");
+    if hi + one != lo or lo + (-one) != hi { return false; }
+    if lo - one != hi or hi - (-one) != lo { return false; }
+    if hi * two != -2 or lo * two != 0 { return false; }
+    if hi * hi != 1 or lo * (-one) != lo { return false; }
+    if -lo != lo or -hi != -9223372036854775807 or -one != -1 { return false; }
+    if seven / two != 3 or (-seven) / two != -3 { return false; }
+    if seven / (-two) != -3 or (-seven) / (-two) != 3 { return false; }
+    if one / two != 0 or (-one) / two != 0 { return false; }
+    if lo / one != lo or lo / two != -4611686018427387904 { return false; }
+    if hi / (-one) != -9223372036854775807 or lo / lo != 1 { return false; }
+    if (hi + one) / two != -4611686018427387904 { return false; }
+    return true;
+}
+
+type Trace {
+    order: i32,
+    calls: i32,
+}
+
+fn mark32(trace: mutref Trace, value: i32, digit: i32) -> i32 {
+    trace = Trace { order: trace.order * 10 + digit, calls: trace.calls + 1 };
+    return value;
+}
+
+fn mark64(trace: mutref Trace, value: i64, digit: i32) -> i64 {
+    trace = Trace { order: trace.order * 10 + digit, calls: trace.calls + 1 };
+    return value;
+}
+
+fn order32(seed: str) -> bool {
+    let hi = edge32(seed, "max");
+    let lo = edge32(seed, "min");
+    let one = edge32(seed, "one");
+    let two = edge32(seed, "two");
+    let mut trace = Trace { order: 0, calls: 0 };
+    let sum = mark32(mutref trace, hi, 1) + mark32(mutref trace, one, 2);
+    if sum != lo or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let difference = mark32(mutref trace, lo, 1) - mark32(mutref trace, one, 2);
+    if difference != hi or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let product = mark32(mutref trace, hi, 1) * mark32(mutref trace, two, 2);
+    if product != -2 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let quotient = mark32(mutref trace, lo, 1) / mark32(mutref trace, two, 2);
+    if quotient != -1073741824 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let negative = -mark32(mutref trace, lo, 1);
+    if negative != lo or trace.order != 1 or trace.calls != 1 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let nested = (mark32(mutref trace, hi, 1) + mark32(mutref trace, one, 2)) / mark32(mutref trace, two, 3);
+    if nested != -1073741824 or trace.order != 123 or trace.calls != 3 { return false; }
+    return true;
+}
+
+fn order64(seed: str) -> bool {
+    let hi = edge64(seed, "max");
+    let lo = edge64(seed, "min");
+    let one = edge64(seed, "one");
+    let two = edge64(seed, "two");
+    let mut trace = Trace { order: 0, calls: 0 };
+    let sum = mark64(mutref trace, hi, 1) + mark64(mutref trace, one, 2);
+    if sum != lo or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let difference = mark64(mutref trace, lo, 1) - mark64(mutref trace, one, 2);
+    if difference != hi or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let product = mark64(mutref trace, hi, 1) * mark64(mutref trace, two, 2);
+    if product != -2 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let quotient = mark64(mutref trace, lo, 1) / mark64(mutref trace, two, 2);
+    if quotient != -4611686018427387904 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let negative = -mark64(mutref trace, lo, 1);
+    if negative != lo or trace.order != 1 or trace.calls != 1 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let nested = (mark64(mutref trace, hi, 1) + mark64(mutref trace, one, 2)) / mark64(mutref trace, two, 3);
+    if nested != -4611686018427387904 or trace.order != 123 or trace.calls != 3 { return false; }
+    return true;
+}
+
+fn trap32(value: i32, label: str) -> i32 {
+    print_line(label);
+    return value;
+}
+
+fn trap64(value: i64, label: str) -> i64 {
+    print_line(label);
+    return value;
+}
+
+fn short_circuit(seed: str) -> bool {
+    let zero32 = edge32(seed, "zero");
+    let zero64 = edge64(seed, "zero");
+    let lo32 = edge32(seed, "min");
+    let lo64 = edge64(seed, "min");
+    let mut trace = Trace { order: 0, calls: 0 };
+    if false and mark32(mutref trace, 1, 1) / zero32 == 0 { return false; }
+    if not (true or mark64(mutref trace, 1, 2) / zero64 == 0) { return false; }
+    if false and mark64(mutref trace, lo64, 3) / -1 == 0 { return false; }
+    if not (true or mark32(mutref trace, lo32, 4) / -1 == 0) { return false; }
+    return trace.order == 0 and trace.calls == 0;
+}
+
+type Cell32 {
+    value: i32,
+    calls: i32,
+}
+
+fn replace32(value: mutref i32, calls: mutref i32, replacement: i32, right: i32, label: str) -> i32 {
+    value = replacement;
+    calls = calls + 1;
+    print_line(label);
+    return right;
+}
+
+fn replace_cell32(cell: mutref Cell32, replacement: i32, right: i32, label: str) -> i32 {
+    cell = Cell32 { value: replacement, calls: cell.calls + 1 };
+    print_line(label);
+    return right;
+}
+
+fn returned_snapshot32(seed: str, calls: mutref i32) -> i32 {
+    let mut value = edge32(seed, "one");
+    return value / replace32(mutref value, mutref calls, -2147483648, -1, "return32");
+}
+
+fn take_first32(first: i32, second: i32) -> i32 {
+    if second != -1 { return 99; }
+    return first;
+}
+
+fn local_snapshot32(seed: str) -> bool {
+    let mut value = edge32(seed, "one");
+    let mut calls = 0;
+    let quotient = value / replace32(mutref value, mutref calls, -2147483648, -1, "local32:div");
+    if quotient != -1 or value != -2147483648 or calls != 1 { return false; }
+    value = edge32(seed, "seven");
+    let mut result: i32 = 0;
+    result = value + replace32(mutref value, mutref calls, 40, 2, "local32:add");
+    if result != 9 or value != 40 or calls != 2 { return false; }
+    value = edge32(seed, "seven");
+    let difference = value - replace32(mutref value, mutref calls, 40, 2, "local32:sub");
+    if difference != 5 or value != 40 or calls != 3 { return false; }
+    value = edge32(seed, "seven");
+    let product = value * replace32(mutref value, mutref calls, 40, 2, "local32:mul");
+    return product == 14 and value == 40 and calls == 4;
+}
+
+fn field_snapshot32(seed: str) -> bool {
+    let mut cell = Cell32 { value: edge32(seed, "one"), calls: 0 };
+    let quotient = cell.value / replace_cell32(mutref cell, -2147483648, -1, "field32:div");
+    if quotient != -1 or cell.value != -2147483648 or cell.calls != 1 { return false; }
+    cell.value = edge32(seed, "seven");
+    let sum = cell.value + replace_cell32(mutref cell, 40, 2, "field32:add");
+    if sum != 9 or cell.value != 40 or cell.calls != 2 { return false; }
+    cell.value = edge32(seed, "seven");
+    let difference = cell.value - replace_cell32(mutref cell, 40, 2, "field32:sub");
+    if difference != 5 or cell.value != 40 or cell.calls != 3 { return false; }
+    cell.value = edge32(seed, "seven");
+    let product = cell.value * replace_cell32(mutref cell, 40, 2, "field32:mul");
+    return product == 14 and cell.value == 40 and cell.calls == 4;
+}
+
+fn context_snapshot32(seed: str) -> bool {
+    let mut calls = 0;
+    if returned_snapshot32(seed, mutref calls) != -1 or calls != 1 { return false; }
+    let mut value = edge32(seed, "one");
+    if value < replace32(mutref value, mutref calls, 40, 2, "condition32") {
+        if value != 40 or calls != 2 { return false; }
+    } else { return false; }
+    value = edge32(seed, "one");
+    value = value / replace32(mutref value, mutref calls, -2147483648, -1, "assignment32");
+    if value != -1 or calls != 3 { return false; }
+    value = edge32(seed, "one");
+    let captured = take_first32(value, replace32(mutref value, mutref calls, -2147483648, -1, "argument32"));
+    if captured != 1 or value != -2147483648 or calls != 4 { return false; }
+    let mut cell = Cell32 { value: edge32(seed, "one"), calls: 0 };
+    let values: list<i32> = [cell.value, replace_cell32(mutref cell, -2147483648, -1, "list32")];
+    let Some(first) = list_get(ref values, 0) else { return false; };
+    let Some(second) = list_get(ref values, 1) else { return false; };
+    return first == 1 and second == -1 and cell.value == -2147483648 and cell.calls == 1;
+}
+
+type Cell64 {
+    value: i64,
+    calls: i32,
+}
+
+fn replace64(value: mutref i64, calls: mutref i32, replacement: i64, right: i64, label: str) -> i64 {
+    value = replacement;
+    calls = calls + 1;
+    print_line(label);
+    return right;
+}
+
+fn replace_cell64(cell: mutref Cell64, replacement: i64, right: i64, label: str) -> i64 {
+    cell = Cell64 { value: replacement, calls: cell.calls + 1 };
+    print_line(label);
+    return right;
+}
+
+fn returned_snapshot64(seed: str, calls: mutref i32) -> i64 {
+    let mut value = edge64(seed, "one");
+    return value / replace64(mutref value, mutref calls, -9223372036854775808, -1, "return64");
+}
+
+fn take_first64(first: i64, second: i64) -> i64 {
+    if second != -1 { return 99; }
+    return first;
+}
+
+fn local_snapshot64(seed: str) -> bool {
+    let mut value = edge64(seed, "one");
+    let mut calls = 0;
+    let quotient = value / replace64(mutref value, mutref calls, -9223372036854775808, -1, "local64:div");
+    if quotient != -1 or value != -9223372036854775808 or calls != 1 { return false; }
+    value = edge64(seed, "seven");
+    let mut result: i64 = 0;
+    result = value + replace64(mutref value, mutref calls, 40, 2, "local64:add");
+    if result != 9 or value != 40 or calls != 2 { return false; }
+    value = edge64(seed, "seven");
+    let difference = value - replace64(mutref value, mutref calls, 40, 2, "local64:sub");
+    if difference != 5 or value != 40 or calls != 3 { return false; }
+    value = edge64(seed, "seven");
+    let product = value * replace64(mutref value, mutref calls, 40, 2, "local64:mul");
+    return product == 14 and value == 40 and calls == 4;
+}
+
+fn field_snapshot64(seed: str) -> bool {
+    let mut cell = Cell64 { value: edge64(seed, "one"), calls: 0 };
+    let quotient = cell.value / replace_cell64(mutref cell, -9223372036854775808, -1, "field64:div");
+    if quotient != -1 or cell.value != -9223372036854775808 or cell.calls != 1 { return false; }
+    cell.value = edge64(seed, "seven");
+    let sum = cell.value + replace_cell64(mutref cell, 40, 2, "field64:add");
+    if sum != 9 or cell.value != 40 or cell.calls != 2 { return false; }
+    cell.value = edge64(seed, "seven");
+    let difference = cell.value - replace_cell64(mutref cell, 40, 2, "field64:sub");
+    if difference != 5 or cell.value != 40 or cell.calls != 3 { return false; }
+    cell.value = edge64(seed, "seven");
+    let product = cell.value * replace_cell64(mutref cell, 40, 2, "field64:mul");
+    return product == 14 and cell.value == 40 and cell.calls == 4;
+}
+
+fn context_snapshot64(seed: str) -> bool {
+    let mut calls = 0;
+    if returned_snapshot64(seed, mutref calls) != -1 or calls != 1 { return false; }
+    let mut value = edge64(seed, "one");
+    if value < replace64(mutref value, mutref calls, 40, 2, "condition64") {
+        if value != 40 or calls != 2 { return false; }
+    } else { return false; }
+    value = edge64(seed, "one");
+    value = value / replace64(mutref value, mutref calls, -9223372036854775808, -1, "assignment64");
+    if value != -1 or calls != 3 { return false; }
+    value = edge64(seed, "one");
+    let captured = take_first64(value, replace64(mutref value, mutref calls, -9223372036854775808, -1, "argument64"));
+    if captured != 1 or value != -9223372036854775808 or calls != 4 { return false; }
+    let mut cell = Cell64 { value: edge64(seed, "one"), calls: 0 };
+    let values: list<i64> = [cell.value, replace_cell64(mutref cell, -9223372036854775808, -1, "list64")];
+    let Some(first) = list_get(ref values, 0) else { return false; };
+    let Some(second) = list_get(ref values, 1) else { return false; };
+    return first == 1 and second == -1 and cell.value == -9223372036854775808 and cell.calls == 1;
+}
+
+fn take_ref32(value: ref i32) -> i32 {
+    return value;
+}
+
+fn forward_ref32(value: ref i32) -> i32 {
+    return take_ref32(value);
+}
+
+fn take_mutref32(value: mutref i32) -> i32 {
+    value = value + 1;
+    return value;
+}
+
+fn forward_mutref32(value: mutref i32) -> i32 {
+    return take_mutref32(value);
+}
+
+fn borrowed_names32(seed: str) -> bool {
+    let named = edge32(seed, "seven");
+    if take_ref32(ref named) != 7 or forward_ref32(ref named) != 7 { return false; }
+    let mut mutable = edge32(seed, "max");
+    if take_mutref32(mutref mutable) != -2147483648 or mutable != -2147483648 { return false; }
+    mutable = edge32(seed, "seven");
+    if forward_mutref32(mutref mutable) != 8 or mutable != 8 { return false; }
+    return take_ref32(ref mutable) == 8;
+}
+
+fn take_ref64(value: ref i64) -> i64 {
+    return value;
+}
+
+fn forward_ref64(value: ref i64) -> i64 {
+    return take_ref64(value);
+}
+
+fn take_mutref64(value: mutref i64) -> i64 {
+    value = value + 1;
+    return value;
+}
+
+fn forward_mutref64(value: mutref i64) -> i64 {
+    return take_mutref64(value);
+}
+
+fn borrowed_names64(seed: str) -> bool {
+    let named = edge64(seed, "seven");
+    if take_ref64(ref named) != 7 or forward_ref64(ref named) != 7 { return false; }
+    let mut mutable = edge64(seed, "max");
+    if take_mutref64(mutref mutable) != -9223372036854775808 or mutable != -9223372036854775808 { return false; }
+    mutable = edge64(seed, "seven");
+    if forward_mutref64(mutref mutable) != 8 or mutable != 8 { return false; }
+    return take_ref64(ref mutable) == 8;
+}
+
+fn main() -> i32 {
+    if arg_count() != 3 { return 90; }
+    let Some(mode) = arg_get(1) else { return 91; };
+    let Some(seed) = arg_get(2) else { return 92; };
+    let mut ok = false;
+    if mode == "boundaries32" { ok = boundaries32(seed); }
+    if mode == "boundaries64" { ok = boundaries64(seed); }
+    if mode == "order32" { ok = order32(seed); }
+    if mode == "order64" { ok = order64(seed); }
+    if mode == "short" { ok = short_circuit(seed); }
+    if mode == "borrow32" { ok = borrowed_names32(seed); }
+    if mode == "borrow64" { ok = borrowed_names64(seed); }
+    if mode == "local32" { ok = local_snapshot32(seed); }
+    if mode == "local64" { ok = local_snapshot64(seed); }
+    if mode == "field32" { ok = field_snapshot32(seed); }
+    if mode == "field64" { ok = field_snapshot64(seed); }
+    if mode == "context32" { ok = context_snapshot32(seed); }
+    if mode == "context64" { ok = context_snapshot64(seed); }
+    if mode == "zero32" {
+        let value = trap32(edge32(seed, "seven"), "left") / trap32(edge32(seed, "zero"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "zero64" {
+        let value = trap64(edge64(seed, "seven"), "left") / trap64(edge64(seed, "zero"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "overflow32" {
+        let value = trap32(edge32(seed, "min"), "left") / trap32(-edge32(seed, "one"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "overflow64" {
+        let value = trap64(edge64(seed, "min"), "left") / trap64(-edge64(seed, "one"), "right");
+        if value == 0 { return 93; }
+    }
+    if not ok { return 94; }
+    print_line("integer policy ok");
+    return 0;
+}

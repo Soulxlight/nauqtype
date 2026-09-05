@@ -72,6 +72,13 @@ the requested format. Legacy successful formats stay available and unchanged.
 [EVIDENCE_SCHEMA_PROFILE.md](EVIDENCE_SCHEMA_PROFILE.md) defines the bounded
 Nauqtype-owned schema checks used by `test` and `prove`.
 
+M54.9 defines width-preserving integer wraparound and deterministic invalid
+division failures, including compile-time constant diagnostics. Runtime and
+generated container allocation paths check capacity arithmetic before use;
+fallible IO allocation failures remain structured errors. The corrective
+scope, fault-injection tests, and completion evidence are recorded in
+[M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
+
 ## Quick Start
 
 Build the stage1 driver from the checked-in C seed:

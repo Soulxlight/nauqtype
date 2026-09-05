@@ -1,6 +1,6 @@
 # Astra Audit Remediation
 
-Status: M54.7 and M54.8 complete, 2026-09-05. M54.9/M54.10 remain open.
+Status: M54.7-M54.9 complete, 2026-09-05. M54.10 remains open.
 Feature expansion waits for
 the remaining evidence, numeric, and provenance prerequisites below.
 
@@ -103,6 +103,17 @@ The final independent audits returned PASS. Frozen tree
 in 1,908 seconds. `M54_8_CONTRACTS.md` records exact command, timing, hashes,
 and the bounded bootstrap-runtime repair. M54.8 is complete; no
 numeric/provenance finding is closed by this work.
+
+M54.9 now closes F06/F13: both-width wrapping arithmetic and checked division,
+bounded strict-C constant lowering, immediate ordered value reads, allocation
+size/retain guards, and allocation-free fallible IO errors are implemented.
+An adversarial audit also exposed an invalid borrow-arithmetic argument;
+the place-only repair preserves existing read-only field borrows. Final
+Sol max and GPT-5.5 xhigh reviews returned PASS. Frozen tree
+`756577157e6018962e938872548dc962449a40dd` passed all seven milestone phases
+in 2,048 seconds with empty stderr. `M54_9_CONTRACTS.md` records the exact
+focused checks, seed lineage, gate timings, and artifact hashes. Provenance
+enforcement remains M54.10; process interruption handling remains M55/F14.
 
 ## Architecture And Product Direction
 

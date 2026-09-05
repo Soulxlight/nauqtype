@@ -388,7 +388,8 @@
 - [x] M54.8b: explicitly migrate absent/partial/failed evidence, mutation summaries, failure envelopes, and diagnostic producer fixes
 - [x] M54.8b1: close reviewed v3 audit provenance and checked direct-write lower-bound emission; preserve legacy outputs; Sol xhigh audit and seven-phase frozen gate passed
 - [x] M54.8b final close: checked call summaries/validation, review v4/change-report v3, schema profile, failure envelopes, and producer diagnostics passed independent audits and all seven frozen-gate phases in 1,908 seconds
-- [ ] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
+- [x] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
+- [x] M54.9 close: validate arithmetic/allocation, refresh the generated seed with recorded lineage, obtain mixed-model audit PASS, and run the frozen milestone gate
 - [ ] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
 - [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)
 - [ ] M55: add structured process, time, timeout, and cancellation foundations after corrective closure

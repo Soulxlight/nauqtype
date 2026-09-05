@@ -1,0 +1,176 @@
+use text;
+
+fn allocation_policy_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m54_9_allocation/", name);
+}
+
+fn allocation_policy_output(name: str) -> str {
+    return str_concat("build/m54_9_allocation/", name);
+}
+
+fn allocation_policy_expect(label: str, result: result<process_result, io_err>, code: i32, stdout: str, stderr: str) -> bool {
+    match result {
+        Ok(status) => {
+            if status.exit_code == code and status.stdout == stdout and status.stderr == stderr { return true; }
+            eprint_line(str_concat("allocation policy failed: ", label));
+            eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+            eprint_line(str_concat("stdout: ", status.stdout));
+            eprint_line(str_concat("stderr: ", status.stderr));
+        },
+        Err(err) => { eprint_line(concat3(label, ": ", io_err_text(err))); },
+    }
+    return false;
+}
+
+fn allocation_policy_compile(source: str, name: str, cap: str, fault_after: str, generated: bool) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    if not generated {
+        list_push(mutref args, "-pedantic-errors");
+        list_push(mutref args, "-Wall");
+        list_push(mutref args, "-Wextra");
+        list_push(mutref args, "-Werror");
+    }
+    list_push(mutref args, "-O2");
+    list_push(mutref args, "-fsanitize=address,undefined");
+    list_push(mutref args, "-fno-sanitize-recover=all");
+    list_push(mutref args, "-DNQ_TEST_MAX_SEQUENCE_LENGTH=128");
+    list_push(mutref args, str_concat("-DNQ_TEST_MAX_ALLOCATION_BYTES=", cap));
+    if fault_after != "" { list_push(mutref args, str_concat("-DNQ_TEST_ALLOC_FAIL_AFTER=", fault_after)); }
+    list_push(mutref args, source);
+    // Native probes include runtime.c to exercise private seams; generated C
+    // includes only runtime.h and must link the actual runtime separately.
+    if generated { list_push(mutref args, "stdlib/runtime.c"); }
+    list_push(mutref args, "-o");
+    list_push(mutref args, allocation_policy_output(name));
+    return allocation_policy_expect(str_concat("compile ", name), run_process("cc", ref args, "."), 0, "", "");
+}
+
+fn allocation_policy_run(name: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
+    let mut args: list<str> = list();
+    if mode != "" { list_push(mutref args, mode); }
+    return allocation_policy_expect(concat3(name, " ", mode), run_process(str_concat("./", name), ref args, "build/m54_9_allocation"), code, stdout, stderr);
+}
+
+fn allocation_policy_native() -> bool {
+    if not allocation_policy_compile(allocation_policy_fixture("boundaries.c"), "boundaries", "128", "", false) { return false; }
+    if not allocation_policy_run("boundaries", "", 0, "boundary checks passed\n", "") { return false; }
+    let mut modes: list<str> = list();
+    list_push(mutref modes, "str");
+    list_push(mutref modes, "concat");
+    list_push(mutref modes, "nul");
+    list_push(mutref modes, "product");
+    list_push(mutref modes, "list");
+    list_push(mutref modes, "array");
+    list_push(mutref modes, "bytes");
+    list_push(mutref modes, "view");
+    list_push(mutref modes, "refcount");
+    list_push(mutref modes, "argv");
+    list_push(mutref modes, "arg-get");
+    let mut index = 0;
+    while index < list_len(ref modes) {
+        match list_get(ref modes, index) {
+            Some(mode) => {
+                if not allocation_policy_run("boundaries", mode, 1, "", "nauqtype runtime: size limit exceeded\n") { return false; }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not allocation_policy_compile(allocation_policy_fixture("boundaries.c"), "fatal-oom", "128", "0", false) { return false; }
+    if not allocation_policy_run("fatal-oom", "oom", 1, "", "nauqtype runtime: out of memory\n") { return false; }
+    if not allocation_policy_compile(allocation_policy_fixture("counter.c"), "counter", "128", "2", false) { return false; }
+    if not allocation_policy_run("counter", "", 0, "counter: exactly two successful allocations, zero/size rejection uncounted, fallback allocation-free\n", "") { return false; }
+    if not allocation_policy_compile(allocation_policy_fixture("fallible.c"), "fallible", "4096", "128", false) { return false; }
+    if not allocation_policy_run("fallible", "", 0, "fallible sweep: 54 injected OOM errors, 271 successful operations\n", "") { return false; }
+    let limits_ok = "IO limits: file/bytes/line/env/temp/atomic/list/capture/error boundaries passed\n";
+    if not allocation_policy_compile(allocation_policy_fixture("io_limits.c"), "io-limits-128", "128", "", false) { return false; }
+    if not allocation_policy_run("io-limits-128", "", 0, limits_ok, "") { return false; }
+    if not allocation_policy_compile(allocation_policy_fixture("io_limits.c"), "io-limits-4096", "4096", "", false) { return false; }
+    if not allocation_policy_run("io-limits-4096", "", 0, limits_ok, "") { return false; }
+    return true;
+}
+
+fn allocation_policy_contains(source: str, needle: str) -> bool {
+    let mut index = 0;
+    while index + str_len(needle) <= str_len(source) {
+        if starts_with_at(source, index, needle) { return true; }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn allocation_policy_generated_carriers(path: str) -> bool {
+    match read_file(path) {
+        Ok(source) => {
+            let mut needles: list<str> = list();
+            list_push(mutref needles, "_from_array(const ");
+            list_push(mutref needles, "nq_list_grow_capacity(0, 0, (size_t)len, sizeof(");
+            list_push(mutref needles, "nq_list_grow_capacity(items->cap, items->len, 1, sizeof(");
+            list_push(mutref needles, "nq_allocation_size((size_t)capacity, sizeof(");
+            list_push(mutref needles, "nq_allocation_size((size_t)len, sizeof(");
+            list_push(mutref needles, "nq_allocation_size((size_t)next_cap, sizeof(");
+            let mut index = 0;
+            while index < list_len(ref needles) {
+                match list_get(ref needles, index) {
+                    Some(needle) => {
+                        if not allocation_policy_contains(source, needle) {
+                            eprint_line(str_concat("generated list missing checked carrier: ", needle));
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+pub fn run_allocation_policy_gate(driver: str) -> bool
+audit {
+    intent("Lock bounded allocation failures, allocation-free IO errors, cleanup, and generated copy-struct list sizing");
+    mutates();
+    effects(print, io);
+}
+{
+    match create_dir_all("build/m54_9_allocation") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let mut domain_args: list<str> = list();
+    list_push(mutref domain_args, "-std=c11");
+    list_push(mutref domain_args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref domain_args, "-DNQ_TEST_MAX_SEQUENCE_LENGTH=127");
+    list_push(mutref domain_args, "-fsyntax-only");
+    list_push(mutref domain_args, "stdlib/runtime.c");
+    match run_process("cc", ref domain_args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 or not allocation_policy_contains(status.stderr, "NQ_TEST_MAX_SEQUENCE_LENGTH must be at least 128") {
+                eprint_line("unsupported allocation test limit was not rejected");
+                return false;
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    if not allocation_policy_native() { return false; }
+    let source = allocation_policy_output("generated-lists.c");
+    let mut args: list<str> = list();
+    list_push(mutref args, "emit-c");
+    list_push(mutref args, allocation_policy_fixture("generated_lists.nq"));
+    list_push(mutref args, "-o");
+    list_push(mutref args, source);
+    if not allocation_policy_expect("emit generated copy-struct list", run_process(driver, ref args, "."), 0, "", "") { return false; }
+    if not allocation_policy_generated_carriers(source) { return false; }
+    if not allocation_policy_compile(source, "generated-lists", "128", "", true) { return false; }
+    if not allocation_policy_run("generated-lists", "ok", 0, "generated list allocation ok\n", "") { return false; }
+    let size = "nauqtype runtime: size limit exceeded\n";
+    if not allocation_policy_run("generated-lists", "grow", 1, "generated list growth\n", size) { return false; }
+    if not allocation_policy_run("generated-lists", "array", 1, "generated list from_array\n", size) { return false; }
+    return true;
+}

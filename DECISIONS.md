@@ -547,3 +547,24 @@
   NQ-TYPE-044 with its full builtin token span and actionable help.
 - Boundary: no syntax, ownership, effect, runtime, or Python feature growth.
   M54.9 integer/allocation semantics and M54.10 provenance remain separate.
+
+## D062: Defined Integer And Allocation Boundaries
+
+- Decision: both exact integer widths wrap for addition, subtraction,
+  multiplication, and negation. Division truncates toward zero and fails
+  deterministically for zero or minimum-value divided by `-1`. Constant
+  evaluation obeys the same rules and boolean short-circuiting, with source
+  diagnostics for evaluated invalid division.
+- Lowering: dynamic operands are materialized in order once before unsigned
+  C arithmetic helpers. Constants fold typed IR into bounded-size strict C11
+  literals using bounded-limb arithmetic, not host signed overflow or nested
+  duplicating macros.
+- Allocation: validate size, growth, terminators, and element products before
+  arithmetic can overflow. Infallible paths fail with fixed stderr/exit status;
+  fallible IO reserve paths return allocation-free existing `io_err` values.
+  Imported strings and generated lists obey the same limits as native ones.
+- Evidence: exercise runtime-fed arithmetic at both widths under optimization
+  and UBSan, constant diagnostics, generated containers, and injected size/OOM
+  limits. Private test macros do not become runtime builtins or release flags.
+- Boundary: no new syntax, numeric conversion, ownership, runtime builtin,
+  exception, or unwinding promise. M54.10 owns provenance; M55/F14 remain open.

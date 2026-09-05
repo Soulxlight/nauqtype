@@ -5,6 +5,8 @@ use handoff;
 use host_c;
 use review;
 use schema_profile_tests;
+use integer_policy_tests;
+use allocation_policy_tests;
 use text;
 
 type norm_mapping {
@@ -35,11 +37,7 @@ fn proof_summary_path() -> str {
 }
 
 fn proof_hash_bound(value: i32) -> i32 {
-    let mut out = value;
-    if out < 0 {
-        out = 0 - out;
-    }
-    return out - ((out / 1000000000) * 1000000000);
+    return value - ((value / 1000000000) * 1000000000);
 }
 
 fn proof_text_hash(text: str) -> str {
@@ -50,7 +48,14 @@ fn proof_text_hash(text: str) -> str {
         if ch < 0 {
             ch = 0;
         }
-        hash = proof_hash_bound(hash + ((ch + 31) * (index + 1)));
+        // Split the product so every intermediate is below INT32_MAX.
+        let position = index + 1;
+        let high = position / 1000000;
+        let low = position - high * 1000000;
+        let high_product = high * (ch + 31);
+        let high_remainder = high_product - (high_product / 1000) * 1000;
+        hash = proof_hash_bound(hash + low * (ch + 31));
+        hash = proof_hash_bound(hash + high_remainder * 1000000);
         index = index + 1;
     }
     return concat5("nqsum:", i32_to_str(str_len(text)), ":", i32_to_str(hash), "");
@@ -777,6 +782,9 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "review");
     list_push(mutref modules, "schema_profile");
     list_push(mutref modules, "schema_profile_tests");
+    list_push(mutref modules, "const_word");
+    list_push(mutref modules, "integer_policy_tests");
+    list_push(mutref modules, "allocation_policy_tests");
     list_push(mutref modules, "source");
     list_push(mutref modules, "text");
     list_push(mutref modules, "token");
@@ -2769,6 +2777,8 @@ audit {
     effects(print, io);
 }
 {
+    if not run_integer_policy_gate(driver_path) { return 1; }
+    if not run_allocation_policy_gate(driver_path) { return 1; }
     if not run_schema_profile_gate() { return 1; }
     if not run_m39_fixture_manifest_gate() {
         return 1;

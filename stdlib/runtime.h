@@ -7,6 +7,56 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Constant-only operands: these remain strict C11 integer constant expressions.
+ * Reconstruct the signed value using only representable casts and signed sums. */
+#define NQ_I32_CONST_BITS(x) \
+    ((int32_t)((uint32_t)(x) & (uint32_t)INT32_MAX) + \
+     (((uint32_t)(x) > (uint32_t)INT32_MAX) ? INT32_MIN : INT32_C(0)))
+#define NQ_I64_CONST_BITS(x) \
+    ((int64_t)((uint64_t)(x) & (uint64_t)INT64_MAX) + \
+     (((uint64_t)(x) > (uint64_t)INT64_MAX) ? INT64_MIN : INT64_C(0)))
+#define NQ_I32_CONST_ADD(a, b) NQ_I32_CONST_BITS((uint32_t)(a) + (uint32_t)(b))
+#define NQ_I32_CONST_SUB(a, b) NQ_I32_CONST_BITS((uint32_t)(a) - (uint32_t)(b))
+#define NQ_I32_CONST_MUL(a, b) NQ_I32_CONST_BITS((uint32_t)((uint64_t)(uint32_t)(a) * (uint64_t)(uint32_t)(b)))
+#define NQ_I32_CONST_NEG(a) NQ_I32_CONST_BITS(UINT32_C(0) - (uint32_t)(a))
+#define NQ_I64_CONST_ADD(a, b) NQ_I64_CONST_BITS((uint64_t)(a) + (uint64_t)(b))
+#define NQ_I64_CONST_SUB(a, b) NQ_I64_CONST_BITS((uint64_t)(a) - (uint64_t)(b))
+#define NQ_I64_CONST_MUL(a, b) NQ_I64_CONST_BITS((uint64_t)(a) * (uint64_t)(b))
+#define NQ_I64_CONST_NEG(a) NQ_I64_CONST_BITS(UINT64_C(0) - (uint64_t)(a))
+/* Invalid evaluated divisions are rejected by the frontend. Guard even the
+ * denominator so unreachable invalid expressions never form C division UB. */
+#define NQ_I32_CONST_DIV(a, b) \
+    ((int32_t)(a) / (((b) == 0 || ((a) == INT32_MIN && (b) == -1)) ? INT32_C(1) : (int32_t)(b)))
+#define NQ_I64_CONST_DIV(a, b) \
+    ((int64_t)(a) / (((b) == 0 || ((a) == INT64_MIN && (b) == -1)) ? INT64_C(1) : (int64_t)(b)))
+
+_Noreturn void nq_integer_division_fail(bool zero);
+
+static inline int32_t nq_i32_add(int32_t a, int32_t b) { return NQ_I32_CONST_ADD(a, b); }
+static inline int32_t nq_i32_sub(int32_t a, int32_t b) { return NQ_I32_CONST_SUB(a, b); }
+static inline int32_t nq_i32_mul(int32_t a, int32_t b) { return NQ_I32_CONST_MUL(a, b); }
+static inline int32_t nq_i32_neg(int32_t a) { return NQ_I32_CONST_NEG(a); }
+static inline int64_t nq_i64_add(int64_t a, int64_t b) { return NQ_I64_CONST_ADD(a, b); }
+static inline int64_t nq_i64_sub(int64_t a, int64_t b) { return NQ_I64_CONST_SUB(a, b); }
+static inline int64_t nq_i64_mul(int64_t a, int64_t b) { return NQ_I64_CONST_MUL(a, b); }
+static inline int64_t nq_i64_neg(int64_t a) { return NQ_I64_CONST_NEG(a); }
+
+static inline int32_t nq_i32_div(int32_t a, int32_t b) {
+    if (b == 0 || (a == INT32_MIN && b == -1)) nq_integer_division_fail(b == 0);
+    return a / b;
+}
+
+static inline int64_t nq_i64_div(int64_t a, int64_t b) {
+    if (b == 0 || (a == INT64_MIN && b == -1)) nq_integer_division_fail(b == 0);
+    return a / b;
+}
+
+/* C emitter support only. Failfast on invalid sizes, before arithmetic.
+ * Pass the existing length and increment separately, never len + increment.
+ * Returned capacity respects both INT32_MAX and allocation bytes / item_size. */
+size_t nq_allocation_size(size_t count, size_t item_size);
+int32_t nq_list_grow_capacity(int32_t cap, int32_t len, size_t extra, size_t item_size);
+
 typedef struct {
     unsigned char _unused;
 } NQUnit;
@@ -177,9 +227,7 @@ typedef struct NQ_Result__list__str__io_err {
     } data;
 } NQ_Result__list__str__io_err;
 
-static inline NQStr nq_str(const char* data) {
-    return (NQStr){data, (intptr_t)strlen(data), NULL};
-}
+NQStr nq_str(const char* data);
 
 static inline bool nq_str_eq(NQStr left, NQStr right) {
     if (left.len != right.len) {

@@ -898,8 +898,13 @@ Status: complete.
   diagnostics. M54.8 is complete: independent trailing audits passed, then
   all seven frozen-candidate phases passed in 1,908 seconds.
   See [M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) for exact acceptance evidence.
-- M54.9: exact ordinary integer overflow/division policy, safe allocation-size
-  arithmetic, and runtime boundary regressions.
+- M54.9: complete. Exact integer overflow/division policy, safe allocation-size
+  arithmetic, and runtime boundary regressions implement
+  wrapping arithmetic, checked division/constant evaluation, allocation-free
+  IO errors, and generated/native capacity guards. Final Sol max and
+  GPT-5.5 xhigh audits passed, then all seven frozen gate phases passed in
+  2,048 seconds without relaxed limits.
+  See [M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
 - M54.10: framed dependency source hashes, enforced seed provenance, immutable
   source/artifact binding for cache/gate evidence, and honest proof identities.
 - The complete finding-to-owner and acceptance map is

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -11,7 +12,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -21,59 +21,192 @@
 static int nq_process_argc = 0;
 static char** nq_process_argv = NULL;
 
+/* Test limits must still represent fixed allocation-free IO error metadata. */
+#if defined(NQ_TEST_MAX_SEQUENCE_LENGTH) && NQ_TEST_MAX_SEQUENCE_LENGTH < 128
+#error NQ_TEST_MAX_SEQUENCE_LENGTH must be at least 128
+#endif
+
+typedef enum { NQ_ALLOC_OK, NQ_ALLOC_SIZE, NQ_ALLOC_OOM } NQAllocStatus;
+
+static _Noreturn void nq_size_fail(void) {
+    fputs("nauqtype runtime: size limit exceeded\n", stderr);
+    exit(1);
+}
+
+static _Noreturn void nq_alloc_fail(NQAllocStatus status) {
+    if (status == NQ_ALLOC_SIZE) nq_size_fail();
+    fputs("nauqtype runtime: out of memory\n", stderr);
+    exit(1);
+}
+
+static size_t nq_allocation_limit(void) {
+    size_t limit = SIZE_MAX;
+#ifdef NQ_TEST_MAX_ALLOCATION_BYTES
+    if ((uintmax_t)NQ_TEST_MAX_ALLOCATION_BYTES < (uintmax_t)limit)
+        limit = (size_t)NQ_TEST_MAX_ALLOCATION_BYTES;
+#endif
+    return limit;
+}
+
+static size_t nq_sequence_limit(uintmax_t maximum) {
+    if (maximum > SIZE_MAX) maximum = SIZE_MAX;
+#ifdef NQ_TEST_MAX_SEQUENCE_LENGTH
+    if ((uintmax_t)NQ_TEST_MAX_SEQUENCE_LENGTH < maximum)
+        maximum = (uintmax_t)NQ_TEST_MAX_SEQUENCE_LENGTH;
+#endif
+    return (size_t)maximum;
+}
+
+static size_t nq_str_limit(void) { return nq_sequence_limit(INT32_MAX); }
+static size_t nq_bytes_limit(void) {
+    size_t limit = nq_sequence_limit(INT64_MAX);
+    return limit < nq_allocation_limit() ? limit : nq_allocation_limit();
+}
+
+static bool nq_size_add(size_t a, size_t b, size_t limit, size_t* out) {
+    if (a > limit || b > limit - a) return false;
+    *out = a + b;
+    return true;
+}
+
+static bool nq_size_mul(size_t count, size_t size, size_t* out) {
+    if (size != 0 && count > nq_allocation_limit() / size) return false;
+    *out = count * size;
+    return true;
+}
+
+static size_t nq_growth(size_t cap, size_t needed, size_t limit, size_t initial) {
+    if (needed <= cap) return cap;
+    size_t next = cap == 0 ? (initial < limit ? initial : limit) : cap;
+    while (next < needed) next = next > limit - next ? limit : next * 2;
+    return next;
+}
+
+static NQAllocStatus nq_list_capacity(int32_t cap, int32_t len, size_t extra,
+                                     size_t item_size, int32_t* out) {
+    size_t needed;
+    size_t limit = nq_sequence_limit(INT32_MAX);
+    if (item_size == 0) return NQ_ALLOC_SIZE;
+    if (limit > nq_allocation_limit() / item_size) limit = nq_allocation_limit() / item_size;
+    if (len < 0 || cap < len || (uintmax_t)cap > limit ||
+        !nq_size_add((size_t)len, extra, limit, &needed)) return NQ_ALLOC_SIZE;
+    *out = (int32_t)nq_growth((size_t)cap, needed, limit, 4);
+    return NQ_ALLOC_OK;
+}
+
+size_t nq_allocation_size(size_t count, size_t item_size) {
+    size_t size;
+    if (!nq_size_mul(count, item_size, &size)) nq_size_fail();
+    return size;
+}
+
+int32_t nq_list_grow_capacity(int32_t cap, int32_t len, size_t extra, size_t item_size) {
+    int32_t next;
+    if (nq_list_capacity(cap, len, extra, item_size, &next) != NQ_ALLOC_OK) nq_size_fail();
+    return next;
+}
+
+#ifdef NQ_TEST_ALLOC_FAIL_AFTER
+static uintmax_t nq_test_allocation_count = 0;
+#endif
+
+/* The sole runtime allocator entrypoint. Rejection never changes ptr or the
+ * successful-allocation counter; zero-size requests only release storage. */
+static void* nq_try_realloc(void* ptr, size_t size, NQAllocStatus* status) {
+    void* next;
+    *status = NQ_ALLOC_OK;
+    if (size > nq_allocation_limit()) { *status = NQ_ALLOC_SIZE; return NULL; }
+    if (size == 0) { free(ptr); return NULL; }
+#ifdef NQ_TEST_ALLOC_FAIL_AFTER
+    if (nq_test_allocation_count == (uintmax_t)NQ_TEST_ALLOC_FAIL_AFTER) {
+        *status = NQ_ALLOC_OOM;
+        return NULL;
+    }
+#endif
+    next = ptr == NULL ? malloc(size) : realloc(ptr, size);
+    if (next == NULL) { *status = NQ_ALLOC_OOM; return NULL; }
+#ifdef NQ_TEST_ALLOC_FAIL_AFTER
+    nq_test_allocation_count += 1;
+#endif
+    return next;
+}
+
+static bool nq_str_size(intmax_t len) {
+    return len >= 0 && (uintmax_t)len <= nq_str_limit();
+}
+
+static bool nq_cstr_length(const char* text, size_t* len) {
+    size_t n = 0;
+    size_t limit = nq_str_limit();
+    while (text[n] != '\0') {
+        if (n == limit) return false;
+        n += 1;
+    }
+    *len = n;
+    return true;
+}
+
+NQStr nq_str(const char* data) {
+    size_t len;
+    if (!nq_cstr_length(data, &len)) nq_size_fail();
+    return (NQStr){data, (intptr_t)len, NULL};
+}
+
+_Noreturn void nq_integer_division_fail(bool zero) {
+    fputs(zero ? "nauqtype runtime: integer division by zero\n" :
+                 "nauqtype runtime: integer division overflow\n", stderr);
+    exit(1);
+}
+
 struct NQStrOwner {
     size_t ref_count;
     char* storage;
 };
 
-static NQStr nq_owned_str_take(char* storage, intptr_t len) {
-    NQStrOwner* owner = (NQStrOwner*)malloc(sizeof(NQStrOwner));
-    if (owner == NULL) {
-        free(storage);
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
+/* try_take consumes storage on both success and failure. */
+static NQAllocStatus nq_try_str_take(char* storage, size_t len, NQStr* out) {
+    NQAllocStatus status;
+    NQStrOwner* owner;
+    if (len > nq_str_limit() || len >= nq_allocation_limit()) { free(storage); return NQ_ALLOC_SIZE; }
+    owner = (NQStrOwner*)nq_try_realloc(NULL, sizeof(NQStrOwner), &status);
+    if (status != NQ_ALLOC_OK) { free(storage); return status; }
     owner->ref_count = 1;
     owner->storage = storage;
-    return (NQStr){ .data = storage, .len = len, .owner = owner };
+    *out = (NQStr){ .data = storage, .len = (intptr_t)len, .owner = owner };
+    return NQ_ALLOC_OK;
+}
+
+static NQAllocStatus nq_try_cstr_copy(const char* data, size_t len, char** out) {
+    NQAllocStatus status;
+    size_t size;
+    if (len > nq_str_limit() || !nq_size_add(len, 1, nq_allocation_limit(), &size)) return NQ_ALLOC_SIZE;
+    *out = (char*)nq_try_realloc(NULL, size, &status);
+    if (status != NQ_ALLOC_OK) return status;
+    if (len != 0) memcpy(*out, data, len);
+    (*out)[len] = '\0';
+    return NQ_ALLOC_OK;
+}
+
+static NQAllocStatus nq_try_str_copy(const char* data, size_t len, NQStr* out) {
+    char* storage = NULL;
+    NQAllocStatus status;
+    if (sizeof(NQStrOwner) > nq_allocation_limit()) return NQ_ALLOC_SIZE;
+    status = nq_try_cstr_copy(data, len, &storage);
+    if (status != NQ_ALLOC_OK) return status;
+    return nq_try_str_take(storage, len, out);
 }
 
 static NQStr nq_owned_str_copy(const char* data, intptr_t len) {
-    char* storage = (char*)malloc((size_t)len + 1);
-    if (storage == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
-    memcpy(storage, data, (size_t)len);
-    storage[len] = '\0';
-    return nq_owned_str_take(storage, len);
-}
-
-#ifdef _WIN32
-static char* nq_dup_cstr(const char* text) {
-    size_t len = strlen(text);
-    char* copy = (char*)malloc(len + 1);
-    if (copy == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
-    memcpy(copy, text, len + 1);
-    return copy;
-}
-#endif
-
-static char* nq_str_to_cstr(NQStr text) {
-    char* copy = (char*)malloc((size_t)text.len + 1);
-    if (copy == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
-    memcpy(copy, text.data, (size_t)text.len);
-    copy[text.len] = '\0';
-    return copy;
+    NQStr out;
+    NQAllocStatus status;
+    if (!nq_str_size(len)) nq_size_fail();
+    status = nq_try_str_copy(data, (size_t)len, &out);
+    if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
+    return out;
 }
 
 static const char* nq_io_kind_for_code(int code);
+static NQIoErr nq_allocation_io_err(const char* operation, NQAllocStatus status);
 static NQIoErr nq_make_io_err_details(
     int32_t os_code,
     const char* kind,
@@ -84,9 +217,15 @@ static NQIoErr nq_make_io_err_details(
 );
 
 static NQ_Result__process_result__io_err nq_process_io_err(int32_t code, const char* text) {
+#ifdef _WIN32
+    bool out_of_memory = code == ERROR_NOT_ENOUGH_MEMORY || code == ERROR_OUTOFMEMORY;
+#else
+    bool out_of_memory = code == ENOMEM;
+#endif
     return (NQ_Result__process_result__io_err){
         .tag = NQ_Result__process_result__io_err_Tag_Err,
-        .data.Err = { ._0 = nq_make_io_err_details(code, nq_io_kind_for_code(code), "run_process", NULL, NULL, text) },
+        .data.Err = { ._0 = out_of_memory ? nq_allocation_io_err("run_process", NQ_ALLOC_OOM) :
+                     nq_make_io_err_details(code, nq_io_kind_for_code(code), "run_process", NULL, NULL, text) },
     };
 }
 
@@ -111,12 +250,26 @@ static NQStr nq_empty_str(void) {
     return (NQStr){ .data = "", .len = 0, .owner = NULL };
 }
 
+/* operation is a runtime-owned static label, never caller-owned storage.
+ * This fallback deliberately has no paths and performs no allocation. */
+static NQIoErr nq_allocation_io_err(const char* operation, NQAllocStatus status) {
+    bool size = status == NQ_ALLOC_SIZE;
+    return (NQIoErr){
+        .code = size ? 0 : ENOMEM, .os_code = size ? 0 : ENOMEM,
+        .text = nq_str(size ? "size limit exceeded" : "out of memory"),
+        .kind = nq_str(size ? "invalid_input" : "other"),
+        .operation = nq_str(operation == NULL ? "" : operation),
+        .path = nq_empty_str(), .other_path = nq_empty_str(),
+        .has_path = false, .has_other_path = false,
+    };
+}
+
 static bool nq_str_has_nul(NQStr text) {
     return text.len > 0 && memchr(text.data, '\0', (size_t)text.len) != NULL;
 }
 
 static bool nq_str_storage_is_valid(NQStr text) {
-    return text.len >= 0 && (text.len == 0 || text.data != NULL);
+    return nq_str_size(text.len) && (text.len == 0 || text.data != NULL);
 }
 
 static const char* nq_io_kind_for_code(int code) {
@@ -165,36 +318,54 @@ static NQIoErr nq_make_io_err_details(
 ) {
     const char* actual_operation = operation == NULL ? "" : operation;
     const char* actual_detail = detail == NULL ? "I/O operation failed" : detail;
-    size_t operation_len = strlen(actual_operation);
-    size_t detail_len = strlen(actual_detail);
-    size_t separator_len = operation_len == 0 ? 0 : 2;
-    char* message = (char*)malloc(operation_len + separator_len + detail_len + 1);
-    NQIoErr err;
-    if (message == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
+    size_t operation_len, detail_len, kind_len, message_len, size;
+    size_t separator_len;
+    char* message;
+    NQAllocStatus status;
+    NQIoErr err = {0};
+    if (!nq_cstr_length(actual_operation, &operation_len) ||
+        !nq_cstr_length(actual_detail, &detail_len) || !nq_cstr_length(kind, &kind_len))
+        return nq_allocation_io_err(actual_operation, NQ_ALLOC_SIZE);
+    separator_len = operation_len == 0 ? 0 : 2;
+    if (!nq_size_add(operation_len, separator_len, nq_str_limit(), &message_len) ||
+        !nq_size_add(message_len, detail_len, nq_str_limit(), &message_len) ||
+        !nq_size_add(message_len, 1, nq_allocation_limit(), &size) ||
+        sizeof(NQStrOwner) > nq_allocation_limit() ||
+        (path != NULL && !nq_str_storage_is_valid(*path)) ||
+        (other_path != NULL && !nq_str_storage_is_valid(*other_path)))
+        return nq_allocation_io_err(actual_operation, NQ_ALLOC_SIZE);
+    if ((path != NULL && (size_t)path->len >= nq_allocation_limit()) ||
+        (other_path != NULL && (size_t)other_path->len >= nq_allocation_limit()) ||
+        kind_len >= nq_allocation_limit())
+        return nq_allocation_io_err(actual_operation, NQ_ALLOC_SIZE);
+    message = (char*)nq_try_realloc(NULL, size, &status);
+    if (status != NQ_ALLOC_OK) return nq_allocation_io_err(actual_operation, status);
     if (operation_len > 0) {
         memcpy(message, actual_operation, operation_len);
         memcpy(message + operation_len, ": ", 2);
     }
     memcpy(message + operation_len + separator_len, actual_detail, detail_len);
-    message[operation_len + separator_len + detail_len] = '\0';
-    err = (NQIoErr){
-        .code = os_code,
-        .os_code = os_code,
-        .text = nq_owned_str_take(message, (intptr_t)(operation_len + separator_len + detail_len)),
-        .kind = nq_owned_str_copy(kind, (intptr_t)strlen(kind)),
-        .operation = nq_owned_str_copy(actual_operation, (intptr_t)operation_len),
-        .path = path == NULL ? nq_empty_str() : nq_owned_str_copy(path->data, path->len),
-        .other_path = other_path == NULL ? nq_empty_str() : nq_owned_str_copy(other_path->data, other_path->len),
-        .has_path = path != NULL,
-        .has_other_path = other_path != NULL,
-    };
+    message[message_len] = '\0';
+    status = nq_try_str_take(message, message_len, &err.text);
+    if (status == NQ_ALLOC_OK) status = nq_try_str_copy(kind, kind_len, &err.kind);
+    if (status == NQ_ALLOC_OK) status = nq_try_str_copy(actual_operation, operation_len, &err.operation);
+    if (status == NQ_ALLOC_OK && path != NULL) status = nq_try_str_copy(path->data, (size_t)path->len, &err.path);
+    if (status == NQ_ALLOC_OK && other_path != NULL) status = nq_try_str_copy(other_path->data, (size_t)other_path->len, &err.other_path);
+    if (status != NQ_ALLOC_OK) {
+        nq_io_err_drop(&err);
+        return nq_allocation_io_err(actual_operation, status);
+    }
+    err.code = os_code;
+    err.os_code = os_code;
+    err.has_path = path != NULL;
+    err.has_other_path = other_path != NULL;
+    if (path == NULL) err.path = nq_empty_str();
+    if (other_path == NULL) err.other_path = nq_empty_str();
     return err;
 }
 
 static NQIoErr nq_errno_io_err(const char* operation, const NQStr* path, const NQStr* other_path, int error_code) {
+    if (error_code == ENOMEM) return nq_allocation_io_err(operation, NQ_ALLOC_OOM);
     const char* detail = strerror(error_code);
     return nq_make_io_err_details(
         (int32_t)error_code,
@@ -213,21 +384,26 @@ static NQIoErr nq_errno_io_err_with_detail(
     int error_code,
     const char* context
 ) {
+    if (error_code == ENOMEM) return nq_allocation_io_err(operation, NQ_ALLOC_OOM);
     const char* system_detail = strerror(error_code);
-    size_t context_len = strlen(context);
-    size_t system_len = system_detail == NULL ? 0 : strlen(system_detail);
-    char* detail = (char*)malloc(context_len + (system_len == 0 ? 0 : 2 + system_len) + 1);
+    size_t context_len, system_len = 0, detail_len, size;
+    char* detail;
+    NQAllocStatus status;
     NQIoErr err;
-    if (detail == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
+    if (!nq_cstr_length(context, &context_len) ||
+        (system_detail != NULL && !nq_cstr_length(system_detail, &system_len)) ||
+        !nq_size_add(context_len, system_len == 0 ? 0 : 2, nq_str_limit(), &detail_len) ||
+        !nq_size_add(detail_len, system_len, nq_str_limit(), &detail_len) ||
+        !nq_size_add(detail_len, 1, nq_allocation_limit(), &size))
+        return nq_allocation_io_err(operation, NQ_ALLOC_SIZE);
+    detail = (char*)nq_try_realloc(NULL, size, &status);
+    if (status != NQ_ALLOC_OK) return nq_allocation_io_err(operation, status);
     memcpy(detail, context, context_len);
     if (system_len > 0) {
         memcpy(detail + context_len, ": ", 2);
         memcpy(detail + context_len + 2, system_detail, system_len);
     }
-    detail[context_len + (system_len == 0 ? 0 : 2 + system_len)] = '\0';
+    detail[detail_len] = '\0';
     err = nq_make_io_err_details(
         (int32_t)error_code,
         nq_io_kind_for_code(error_code),
@@ -255,8 +431,13 @@ static NQIoErr nq_unsupported_io_err(const char* operation, const NQStr* path) {
 #endif
 
 static bool nq_os_string(NQStr value, const char* operation, const NQStr* path, const NQStr* other_path, char** out, NQIoErr* out_err) {
+    NQAllocStatus status;
     const NQStr* safe_path = path != NULL && nq_str_storage_is_valid(*path) ? path : NULL;
     const NQStr* safe_other_path = other_path != NULL && nq_str_storage_is_valid(*other_path) ? other_path : NULL;
+    if (!nq_str_size(value.len) || (uintmax_t)value.len >= nq_allocation_limit()) {
+        *out_err = nq_allocation_io_err(operation, NQ_ALLOC_SIZE);
+        return false;
+    }
     if (!nq_str_storage_is_valid(value)) {
         *out_err = nq_invalid_input_io_err(operation, safe_path, safe_other_path, "invalid string storage");
         return false;
@@ -265,7 +446,11 @@ static bool nq_os_string(NQStr value, const char* operation, const NQStr* path, 
         *out_err = nq_invalid_input_io_err(operation, safe_path, safe_other_path, "embedded NUL is not allowed");
         return false;
     }
-    *out = nq_str_to_cstr(value);
+    status = nq_try_cstr_copy(value.data, (size_t)value.len, out);
+    if (status != NQ_ALLOC_OK) {
+        *out_err = nq_allocation_io_err(operation, status);
+        return false;
+    }
     return true;
 }
 
@@ -356,21 +541,22 @@ static NQ_Result__option__str__io_err nq_option_str_err(NQIoErr err) {
 }
 
 void* nq_realloc(void* ptr, size_t size) {
-    void* next = realloc(ptr, size);
-    if (next == NULL && size != 0) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
+    NQAllocStatus status;
+    void* next = nq_try_realloc(ptr, size, &status);
+    if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
     return next;
 }
 
 void nq_init_process_args(int argc, char** argv) {
+    if (argc < 0 || (uintmax_t)argc > nq_sequence_limit(INT32_MAX)) nq_size_fail();
     nq_process_argc = argc;
     nq_process_argv = argv;
 }
 
 NQStr nq_str_clone(NQStr text) {
+    if (!nq_str_size(text.len)) nq_size_fail();
     if (text.owner != NULL) {
+        if (text.owner->ref_count == SIZE_MAX) nq_size_fail();
         text.owner->ref_count += 1;
     }
     return text;
@@ -378,14 +564,11 @@ NQStr nq_str_clone(NQStr text) {
 
 NQBytes nq_bytes_from_str(NQStr text) {
     NQBytes bytes = { .data = NULL, .len = 0, .cap = 0 };
+    if (!nq_str_size(text.len) || (uintmax_t)text.len > nq_bytes_limit()) nq_size_fail();
     if (text.len <= 0) {
         return bytes;
     }
-    bytes.data = (unsigned char*)malloc((size_t)text.len);
-    if (bytes.data == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
+    bytes.data = (unsigned char*)nq_realloc(NULL, (size_t)text.len);
     memcpy(bytes.data, text.data, (size_t)text.len);
     bytes.len = (int64_t)text.len;
     bytes.cap = (int64_t)text.len;
@@ -393,6 +576,7 @@ NQBytes nq_bytes_from_str(NQStr text) {
 }
 
 NQStr nq_str_from_bytes(const NQBytes* bytes) {
+    if (bytes != NULL && (!nq_str_size(bytes->len) || (uintmax_t)bytes->len > nq_bytes_limit())) nq_size_fail();
     if (bytes == NULL || bytes->len <= 0) {
         return nq_empty_str();
     }
@@ -400,10 +584,12 @@ NQStr nq_str_from_bytes(const NQBytes* bytes) {
 }
 
 int64_t nq_bytes_len(const NQBytes* bytes) {
+    if (bytes->len < 0 || (uintmax_t)bytes->len > nq_bytes_limit()) nq_size_fail();
     return bytes->len;
 }
 
 NQ_Option__i32 nq_bytes_get(const NQBytes* bytes, int64_t index) {
+    if (bytes->len < 0 || (uintmax_t)bytes->len > nq_bytes_limit()) nq_size_fail();
     if (index < 0 || index >= bytes->len) {
         return (NQ_Option__i32){
             .tag = NQ_Option__i32_Tag_None,
@@ -622,6 +808,7 @@ void nq_result__process_result__io_err_drop(NQ_Result__process_result__io_err* v
 }
 
 NQUnit nq_print_line(NQStr text) {
+    if (!nq_str_size(text.len)) nq_size_fail();
     fwrite(text.data, 1, (size_t)text.len, stdout);
     fputc('\n', stdout);
     fflush(stdout);
@@ -629,6 +816,7 @@ NQUnit nq_print_line(NQStr text) {
 }
 
 NQUnit nq_eprint_line(NQStr text) {
+    if (!nq_str_size(text.len)) nq_size_fail();
     fwrite(text.data, 1, (size_t)text.len, stderr);
     fputc('\n', stderr);
     fflush(stderr);
@@ -691,23 +879,37 @@ NQ_List__str nq_list__str_make(void) {
 
 NQ_List__str nq_list__str_from_array(const NQStr* values, int32_t len) {
     NQ_List__str items = nq_list__str_make();
+    (void)nq_list_grow_capacity(len, len, 0, sizeof(NQStr));
     if (len > 0) {
-        items.data = (NQStr*)nq_realloc(NULL, sizeof(NQStr) * (size_t)len);
-        memcpy(items.data, values, sizeof(NQStr) * (size_t)len);
+        size_t size = nq_allocation_size((size_t)len, sizeof(NQStr));
+        for (int32_t i = 0; i < len; i += 1)
+            if (!nq_str_size(values[i].len)) nq_size_fail();
+        items.data = (NQStr*)nq_realloc(NULL, size);
+        memcpy(items.data, values, size);
         items.len = len;
         items.cap = len;
     }
     return items;
 }
 
-NQUnit nq_list__str_push(NQ_List__str* items, NQStr value) {
-    if (items->len == items->cap) {
-        int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;
-        items->data = (NQStr*)nq_realloc(items->data, sizeof(NQStr) * (size_t)next_cap);
+static NQAllocStatus nq_try_list_str_push(NQ_List__str* items, NQStr value) {
+    int32_t next_cap;
+    NQAllocStatus status = nq_list_capacity(items->cap, items->len, 1, sizeof(NQStr), &next_cap);
+    if (status != NQ_ALLOC_OK || !nq_str_size(value.len)) return NQ_ALLOC_SIZE;
+    if (next_cap != items->cap) {
+        NQStr* next = (NQStr*)nq_try_realloc(items->data, (size_t)next_cap * sizeof(NQStr), &status);
+        if (status != NQ_ALLOC_OK) return status;
+        items->data = next;
         items->cap = next_cap;
     }
     items->data[items->len] = value;
     items->len += 1;
+    return NQ_ALLOC_OK;
+}
+
+NQUnit nq_list__str_push(NQ_List__str* items, NQStr value) {
+    NQAllocStatus status = nq_try_list_str_push(items, value);
+    if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
     return NQ_UNIT;
 }
 
@@ -744,19 +946,26 @@ void nq_list__str_drop(NQ_List__str* items) {
 }
 
 int32_t nq_str_len(NQStr text) {
+    if (!nq_str_size(text.len)) nq_size_fail();
     return (int32_t)text.len;
 }
 
 NQStr nq_str_concat(NQStr left, NQStr right) {
-    char* buffer = (char*)malloc((size_t)(left.len + right.len) + 1);
-    if (buffer == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
-    }
-    memcpy(buffer, left.data, (size_t)left.len);
-    memcpy(buffer + left.len, right.data, (size_t)right.len);
-    buffer[left.len + right.len] = '\0';
-    return nq_owned_str_take(buffer, left.len + right.len);
+    size_t len, size;
+    NQStr result;
+    NQAllocStatus status;
+    char* buffer;
+    if (!nq_str_size(left.len) || !nq_str_size(right.len) ||
+        !nq_size_add((size_t)left.len, (size_t)right.len, nq_str_limit(), &len) ||
+        !nq_size_add(len, 1, nq_allocation_limit(), &size) ||
+        sizeof(NQStrOwner) > nq_allocation_limit()) nq_size_fail();
+    buffer = (char*)nq_realloc(NULL, size);
+    if (left.len != 0) memcpy(buffer, left.data, (size_t)left.len);
+    if (right.len != 0) memcpy(buffer + left.len, right.data, (size_t)right.len);
+    buffer[len] = '\0';
+    status = nq_try_str_take(buffer, len, &result);
+    if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
+    return result;
 }
 
 typedef struct {
@@ -765,37 +974,45 @@ typedef struct {
     size_t cap;
 } NQByteBuffer;
 
-static void nq_buffer_reserve(NQByteBuffer* buffer, size_t needed) {
+static NQAllocStatus nq_buffer_reserve(NQByteBuffer* buffer, size_t extra, size_t limit) {
+    size_t needed;
     size_t next_cap;
+    unsigned char* next;
+    NQAllocStatus status;
+    if (limit > nq_allocation_limit()) limit = nq_allocation_limit();
+    if (buffer->cap > limit || buffer->len > buffer->cap ||
+        !nq_size_add(buffer->len, extra, limit, &needed)) return NQ_ALLOC_SIZE;
     if (needed <= buffer->cap) {
-        return;
+        return NQ_ALLOC_OK;
     }
-    next_cap = buffer->cap == 0 ? 4096 : buffer->cap;
-    while (next_cap < needed) {
-        if (next_cap > SIZE_MAX / 2) {
-            next_cap = needed;
-            break;
-        }
-        next_cap *= 2;
-    }
-    buffer->data = (unsigned char*)nq_realloc(buffer->data, next_cap);
+    next_cap = nq_growth(buffer->cap, needed, limit, 4096);
+    next = (unsigned char*)nq_try_realloc(buffer->data, next_cap, &status);
+    if (status != NQ_ALLOC_OK) return status;
+    buffer->data = next;
     buffer->cap = next_cap;
+    return NQ_ALLOC_OK;
 }
 
-static void nq_buffer_push(NQByteBuffer* buffer, unsigned char value) {
-    nq_buffer_reserve(buffer, buffer->len + 1);
+static NQAllocStatus nq_buffer_push(NQByteBuffer* buffer, unsigned char value, size_t limit) {
+    NQAllocStatus status = nq_buffer_reserve(buffer, 1, limit);
+    if (status != NQ_ALLOC_OK) return status;
     buffer->data[buffer->len] = value;
     buffer->len += 1;
+    return NQ_ALLOC_OK;
 }
 
-static NQ_Result__bytes__io_err nq_read_stream(FILE* stream, const char* operation, const NQStr* path) {
+static NQ_Result__bytes__io_err nq_read_stream(FILE* stream, const char* operation, const NQStr* path, size_t limit) {
     NQByteBuffer buffer = {0};
     unsigned char chunk[8192];
     while (true) {
         errno = 0;
         size_t count = fread(chunk, 1, sizeof(chunk), stream);
         if (count > 0) {
-            nq_buffer_reserve(&buffer, buffer.len + count);
+            NQAllocStatus status = nq_buffer_reserve(&buffer, count, limit);
+            if (status != NQ_ALLOC_OK) {
+                free(buffer.data);
+                return nq_bytes_err(nq_allocation_io_err(operation, status));
+            }
             memcpy(buffer.data + buffer.len, chunk, count);
             buffer.len += count;
         }
@@ -807,10 +1024,6 @@ static NQ_Result__bytes__io_err nq_read_stream(FILE* stream, const char* operati
             }
             break;
         }
-    }
-    if (buffer.len > (size_t)INT64_MAX) {
-        free(buffer.data);
-        return nq_bytes_err(nq_invalid_input_io_err(operation, path, NULL, "input exceeds the supported byte length"));
     }
     return nq_bytes_ok((NQBytes){
         .data = buffer.data,
@@ -846,28 +1059,46 @@ static NQ_Result__unit__io_err nq_write_stream(FILE* stream, const unsigned char
     return nq_unit_ok();
 }
 
-static NQ_Result__str__io_err nq_bytes_result_into_str(NQ_Result__bytes__io_err bytes_result) {
+static NQ_Result__str__io_err nq_bytes_result_into_str(NQ_Result__bytes__io_err bytes_result, const char* operation) {
     NQBytes bytes;
     char* storage;
+    size_t size;
+    NQStr text;
+    NQAllocStatus status;
     if (bytes_result.tag == NQ_Result__bytes__io_err_Tag_Err) {
         return nq_str_err(bytes_result.data.Err._0);
     }
     bytes = bytes_result.data.Ok._0;
-    storage = (char*)nq_realloc(bytes.data, (size_t)bytes.len + 1);
+    if (!nq_str_size(bytes.len) ||
+        !nq_size_add((size_t)bytes.len, 1, nq_allocation_limit(), &size) ||
+        sizeof(NQStrOwner) > nq_allocation_limit()) {
+        free(bytes.data);
+        return nq_str_err(nq_allocation_io_err(operation, NQ_ALLOC_SIZE));
+    }
+    storage = (char*)nq_try_realloc(bytes.data, size, &status);
+    if (status != NQ_ALLOC_OK) {
+        free(bytes.data);
+        return nq_str_err(nq_allocation_io_err(operation, status));
+    }
     storage[bytes.len] = '\0';
-    return nq_str_ok(nq_owned_str_take(storage, (intptr_t)bytes.len));
+    status = nq_try_str_take(storage, (size_t)bytes.len, &text);
+    if (status != NQ_ALLOC_OK) return nq_str_err(nq_allocation_io_err(operation, status));
+    return nq_str_ok(text);
 }
 
 NQ_Result__bytes__io_err nq_stdin_read_bytes(void) {
-    return nq_read_stream(stdin, "stdin_read_bytes", NULL);
+    return nq_read_stream(stdin, "stdin_read_bytes", NULL, nq_bytes_limit());
 }
 
 NQ_Result__str__io_err nq_stdin_read(void) {
-    return nq_bytes_result_into_str(nq_read_stream(stdin, "stdin_read", NULL));
+    return nq_bytes_result_into_str(nq_read_stream(stdin, "stdin_read", NULL, nq_str_limit()), "stdin_read");
 }
 
 NQ_Result__option__str__io_err nq_stdin_read_line(void) {
     NQByteBuffer buffer = {0};
+    NQAllocStatus status;
+    NQStr text;
+    size_t terminated_limit;
     while (true) {
         errno = 0;
         int value = fgetc(stdin);
@@ -889,17 +1120,29 @@ NQ_Result__option__str__io_err nq_stdin_read_line(void) {
         if (value == '\n') {
             break;
         }
-        nq_buffer_push(&buffer, (unsigned char)value);
+        status = nq_buffer_push(&buffer, (unsigned char)value, nq_str_limit());
+        if (status != NQ_ALLOC_OK) {
+            free(buffer.data);
+            return nq_option_str_err(nq_allocation_io_err("stdin_read_line", status));
+        }
     }
-    nq_buffer_reserve(&buffer, buffer.len + 1);
+    if (!nq_size_add(nq_str_limit(), 1, SIZE_MAX, &terminated_limit)) terminated_limit = SIZE_MAX;
+    status = nq_buffer_reserve(&buffer, 1, terminated_limit);
+    if (status != NQ_ALLOC_OK) {
+        free(buffer.data);
+        return nq_option_str_err(nq_allocation_io_err("stdin_read_line", status));
+    }
     buffer.data[buffer.len] = '\0';
+    status = nq_try_str_take((char*)buffer.data, buffer.len, &text);
+    if (status != NQ_ALLOC_OK) return nq_option_str_err(nq_allocation_io_err("stdin_read_line", status));
     return nq_option_str_ok((NQ_Option__str){
         .tag = NQ_Option__str_Tag_Some,
-        .data.Some = { ._0 = nq_owned_str_take((char*)buffer.data, (intptr_t)buffer.len) },
+        .data.Some = { ._0 = text },
     });
 }
 
 NQ_Result__unit__io_err nq_stdout_write(NQStr data) {
+    if (!nq_str_size(data.len)) return nq_unit_err(nq_allocation_io_err("stdout_write", NQ_ALLOC_SIZE));
     if (!nq_str_storage_is_valid(data)) {
         return nq_unit_err(nq_invalid_input_io_err("stdout_write", NULL, NULL, "invalid string storage"));
     }
@@ -907,6 +1150,8 @@ NQ_Result__unit__io_err nq_stdout_write(NQStr data) {
 }
 
 NQ_Result__unit__io_err nq_stdout_write_bytes(const NQBytes* data) {
+    if (data != NULL && (data->len < 0 || (uintmax_t)data->len > nq_bytes_limit()))
+        return nq_unit_err(nq_allocation_io_err("stdout_write_bytes", NQ_ALLOC_SIZE));
     if (data == NULL || data->len < 0 || (data->len > 0 && data->data == NULL)) {
         return nq_unit_err(nq_invalid_input_io_err("stdout_write_bytes", NULL, NULL, "invalid bytes storage"));
     }
@@ -914,6 +1159,7 @@ NQ_Result__unit__io_err nq_stdout_write_bytes(const NQBytes* data) {
 }
 
 NQ_Result__unit__io_err nq_stderr_write(NQStr data) {
+    if (!nq_str_size(data.len)) return nq_unit_err(nq_allocation_io_err("stderr_write", NQ_ALLOC_SIZE));
     if (!nq_str_storage_is_valid(data)) {
         return nq_unit_err(nq_invalid_input_io_err("stderr_write", NULL, NULL, "invalid string storage"));
     }
@@ -921,6 +1167,8 @@ NQ_Result__unit__io_err nq_stderr_write(NQStr data) {
 }
 
 NQ_Result__unit__io_err nq_stderr_write_bytes(const NQBytes* data) {
+    if (data != NULL && (data->len < 0 || (uintmax_t)data->len > nq_bytes_limit()))
+        return nq_unit_err(nq_allocation_io_err("stderr_write_bytes", NQ_ALLOC_SIZE));
     if (data == NULL || data->len < 0 || (data->len > 0 && data->data == NULL)) {
         return nq_unit_err(nq_invalid_input_io_err("stderr_write_bytes", NULL, NULL, "invalid bytes storage"));
     }
@@ -971,7 +1219,7 @@ NQ_Result__unit__io_err nq_stderr_flush(void) {
     return nq_unit_ok();
 }
 
-static NQ_Result__bytes__io_err nq_read_file_bytes_operation(NQStr path, const char* operation) {
+static NQ_Result__bytes__io_err nq_read_file_bytes_operation(NQStr path, const char* operation, size_t limit) {
     char* file_name = NULL;
     FILE* handle;
     NQIoErr validation_err;
@@ -984,7 +1232,7 @@ static NQ_Result__bytes__io_err nq_read_file_bytes_operation(NQStr path, const c
     if (handle == NULL) {
         return nq_bytes_err(nq_errno_io_err_with_detail(operation, &path, NULL, errno, "failed to open file"));
     }
-    result = nq_read_stream(handle, operation, &path);
+    result = nq_read_stream(handle, operation, &path, limit);
     errno = 0;
     if (fclose(handle) != 0 && result.tag == NQ_Result__bytes__io_err_Tag_Ok) {
         nq_bytes_drop(&result.data.Ok._0);
@@ -994,11 +1242,11 @@ static NQ_Result__bytes__io_err nq_read_file_bytes_operation(NQStr path, const c
 }
 
 NQ_Result__bytes__io_err nq_read_file_bytes(NQStr path) {
-    return nq_read_file_bytes_operation(path, "read_file_bytes");
+    return nq_read_file_bytes_operation(path, "read_file_bytes", nq_bytes_limit());
 }
 
 NQ_Result__str__io_err nq_read_file(NQStr path) {
-    return nq_bytes_result_into_str(nq_read_file_bytes_operation(path, "read_file"));
+    return nq_bytes_result_into_str(nq_read_file_bytes_operation(path, "read_file", nq_str_limit()), "read_file");
 }
 
 static NQ_Result__unit__io_err nq_write_file_data(NQStr path, const unsigned char* data, size_t len, const char* operation) {
@@ -1023,6 +1271,7 @@ static NQ_Result__unit__io_err nq_write_file_data(NQStr path, const unsigned cha
 }
 
 NQ_Result__unit__io_err nq_write_file(NQStr path, NQStr text) {
+    if (!nq_str_size(text.len)) return nq_unit_err(nq_allocation_io_err("write_file", NQ_ALLOC_SIZE));
     if (!nq_str_storage_is_valid(text)) {
         return nq_unit_err(nq_invalid_input_io_err("write_file", &path, NULL, "invalid string storage"));
     }
@@ -1030,6 +1279,8 @@ NQ_Result__unit__io_err nq_write_file(NQStr path, NQStr text) {
 }
 
 NQ_Result__unit__io_err nq_write_file_bytes(NQStr path, const NQBytes* data) {
+    if (data != NULL && (data->len < 0 || (uintmax_t)data->len > nq_bytes_limit()))
+        return nq_unit_err(nq_allocation_io_err("write_file_bytes", NQ_ALLOC_SIZE));
     if (data == NULL || data->len < 0 || (data->len > 0 && data->data == NULL)) {
         return nq_unit_err(nq_invalid_input_io_err("write_file_bytes", &path, NULL, "invalid bytes storage"));
     }
@@ -1059,6 +1310,9 @@ NQ_Result__option__str__io_err nq_env_get(NQStr name) {
     char* name_cstr = NULL;
     const char* value;
     NQIoErr validation_err;
+    NQAllocStatus status;
+    NQStr text;
+    size_t len;
     if (!nq_os_string(name, "env_get", NULL, NULL, &name_cstr, &validation_err)) {
         return nq_option_str_err(validation_err);
     }
@@ -1070,48 +1324,50 @@ NQ_Result__option__str__io_err nq_env_get(NQStr name) {
             .data.None = NQ_UNIT,
         });
     }
+    if (!nq_cstr_length(value, &len)) return nq_option_str_err(nq_allocation_io_err("env_get", NQ_ALLOC_SIZE));
+    status = nq_try_str_copy(value, len, &text);
+    if (status != NQ_ALLOC_OK) return nq_option_str_err(nq_allocation_io_err("env_get", status));
     return nq_option_str_ok((NQ_Option__str){
         .tag = NQ_Option__str_Tag_Some,
-        .data.Some = { ._0 = nq_owned_str_copy(value, (intptr_t)strlen(value)) },
+        .data.Some = { ._0 = text },
     });
 }
 
 NQ_Result__str__io_err nq_current_dir(void) {
+    size_t limit, cap;
+    if (!nq_size_add(nq_str_limit(), 1, nq_allocation_limit(), &limit)) limit = nq_allocation_limit();
 #ifdef _WIN32
-    size_t cap = 256;
-    while (true) {
-        char* buffer = (char*)malloc(cap);
-        if (buffer == NULL) {
-            fputs("nauqtype runtime: out of memory\n", stderr);
-            exit(1);
-        }
-        if (_getcwd(buffer, (int)cap) != NULL) {
-            return nq_str_ok(nq_owned_str_take(buffer, (intptr_t)strlen(buffer)));
-        }
-        free(buffer);
-        if (errno != ERANGE || cap > (size_t)INT32_MAX / 2) {
-            return nq_str_err(nq_errno_io_err("current_dir", NULL, NULL, errno));
-        }
-        cap *= 2;
-    }
-#else
-    size_t cap = 256;
-    while (true) {
-        char* buffer = (char*)malloc(cap);
-        if (buffer == NULL) {
-            fputs("nauqtype runtime: out of memory\n", stderr);
-            exit(1);
-        }
-        if (getcwd(buffer, cap) != NULL) {
-            return nq_str_ok(nq_owned_str_take(buffer, (intptr_t)strlen(buffer)));
-        }
-        free(buffer);
-        if (errno != ERANGE || cap > SIZE_MAX / 2) {
-            return nq_str_err(nq_errno_io_err("current_dir", NULL, NULL, errno));
-        }
-        cap *= 2;
-    }
+    if (limit > INT_MAX) limit = INT_MAX;
 #endif
+    cap = limit < 256 ? limit : 256;
+    while (true) {
+        NQAllocStatus status;
+        NQStr text;
+        size_t len;
+        char* buffer;
+        int error_code;
+        if (cap == 0) return nq_str_err(nq_allocation_io_err("current_dir", NQ_ALLOC_SIZE));
+        buffer = (char*)nq_try_realloc(NULL, cap, &status);
+        if (status != NQ_ALLOC_OK) return nq_str_err(nq_allocation_io_err("current_dir", status));
+#ifdef _WIN32
+        if (_getcwd(buffer, (int)cap) != NULL) {
+#else
+        if (getcwd(buffer, cap) != NULL) {
+#endif
+            if (!nq_cstr_length(buffer, &len)) {
+                free(buffer);
+                return nq_str_err(nq_allocation_io_err("current_dir", NQ_ALLOC_SIZE));
+            }
+            status = nq_try_str_take(buffer, len, &text);
+            if (status != NQ_ALLOC_OK) return nq_str_err(nq_allocation_io_err("current_dir", status));
+            return nq_str_ok(text);
+        }
+        error_code = errno;
+        free(buffer);
+        if (error_code != ERANGE) return nq_str_err(nq_errno_io_err("current_dir", NULL, NULL, error_code));
+        if (cap == limit) return nq_str_err(nq_allocation_io_err("current_dir", NQ_ALLOC_SIZE));
+        cap = nq_growth(cap, cap + 1, limit, 256);
+    }
 }
 
 static int nq_mkdir_single(const char* path) {
@@ -1335,7 +1591,24 @@ NQ_Result__list__str__io_err nq_read_dir(NQStr path) {
             (entry->d_name[0] == '.' && entry->d_name[1] == '.' && entry->d_name[2] == '\0')) {
             continue;
         }
-        nq_list__str_push(&entries, nq_owned_str_copy(entry->d_name, (intptr_t)strlen(entry->d_name)));
+        {
+            NQStr name = nq_empty_str();
+            size_t len;
+            int32_t next_cap;
+            NQAllocStatus status = nq_list_capacity(entries.cap, entries.len, 1, sizeof(NQStr), &next_cap);
+            if (!nq_cstr_length(entry->d_name, &len)) status = NQ_ALLOC_SIZE;
+            if (status == NQ_ALLOC_OK) status = nq_try_str_copy(entry->d_name, len, &name);
+            if (status == NQ_ALLOC_OK) status = nq_try_list_str_push(&entries, name);
+            if (status != NQ_ALLOC_OK) {
+                nq_str_drop(&name);
+                closedir(directory);
+                nq_list__str_drop(&entries);
+                return (NQ_Result__list__str__io_err){
+                    .tag = NQ_Result__list__str__io_err_Tag_Err,
+                    .data.Err = { ._0 = nq_allocation_io_err("read_dir", status) },
+                };
+            }
+        }
         errno = 0;
     }
     if (errno != 0) {
@@ -1429,6 +1702,8 @@ static bool nq_temp_template(NQStr directory, NQStr prefix, const char* operatio
     size_t prefix_len;
     bool needs_separator;
     char* value;
+    size_t len, size;
+    NQAllocStatus status;
     if (!nq_os_string(directory, operation, &directory, NULL, &directory_cstr, out_err)) {
         return false;
     }
@@ -1455,10 +1730,21 @@ static bool nq_temp_template(NQStr directory, NQStr prefix, const char* operatio
         return false;
     }
     needs_separator = directory_cstr[directory_len - 1] != '/';
-    value = (char*)malloc(directory_len + (needs_separator ? 1 : 0) + prefix_len + 7);
-    if (value == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
+    if (!nq_size_add(directory_len, needs_separator ? 1 : 0, nq_str_limit(), &len) ||
+        !nq_size_add(len, prefix_len, nq_str_limit(), &len) ||
+        !nq_size_add(len, 6, nq_str_limit(), &len) ||
+        !nq_size_add(len, 1, nq_allocation_limit(), &size)) {
+        free(directory_cstr);
+        free(prefix_cstr);
+        *out_err = nq_allocation_io_err(operation, NQ_ALLOC_SIZE);
+        return false;
+    }
+    value = (char*)nq_try_realloc(NULL, size, &status);
+    if (status != NQ_ALLOC_OK) {
+        free(directory_cstr);
+        free(prefix_cstr);
+        *out_err = nq_allocation_io_err(operation, status);
+        return false;
     }
     memcpy(value, directory_cstr, directory_len);
     if (needs_separator) {
@@ -1481,29 +1767,34 @@ NQ_Result__str__io_err nq_create_temp_file(NQStr directory, NQStr prefix) {
     char* path_template = NULL;
     NQIoErr err;
     int fd;
+    NQStr result;
+    NQAllocStatus status;
     if (!nq_temp_template(directory, prefix, "create_temp_file", &path_template, &err)) {
         return nq_str_err(err);
     }
+    /* Reserve the owner before creating the file, so OOM cannot orphan it. */
+    status = nq_try_str_take(path_template, strlen(path_template), &result);
+    if (status != NQ_ALLOC_OK) return nq_str_err(nq_allocation_io_err("create_temp_file", status));
     fd = mkstemp(path_template);
     if (fd < 0) {
         int error_code = errno;
-        free(path_template);
+        nq_str_drop(&result);
         return nq_str_err(nq_errno_io_err("create_temp_file", &directory, NULL, error_code));
     }
     if (fchmod(fd, 0600) != 0) {
         int error_code = errno;
         close(fd);
         unlink(path_template);
-        free(path_template);
+        nq_str_drop(&result);
         return nq_str_err(nq_errno_io_err("create_temp_file", &directory, NULL, error_code));
     }
     if (close(fd) != 0) {
         int error_code = errno;
         unlink(path_template);
-        free(path_template);
+        nq_str_drop(&result);
         return nq_str_err(nq_errno_io_err("create_temp_file", &directory, NULL, error_code));
     }
-    return nq_str_ok(nq_owned_str_take(path_template, (intptr_t)strlen(path_template)));
+    return nq_str_ok(result);
 #endif
 }
 
@@ -1514,21 +1805,25 @@ NQ_Result__str__io_err nq_create_temp_dir(NQStr directory, NQStr prefix) {
 #else
     char* path_template = NULL;
     NQIoErr err;
+    NQStr result;
+    NQAllocStatus status;
     if (!nq_temp_template(directory, prefix, "create_temp_dir", &path_template, &err)) {
         return nq_str_err(err);
     }
+    status = nq_try_str_take(path_template, strlen(path_template), &result);
+    if (status != NQ_ALLOC_OK) return nq_str_err(nq_allocation_io_err("create_temp_dir", status));
     if (mkdtemp(path_template) == NULL) {
         int error_code = errno;
-        free(path_template);
+        nq_str_drop(&result);
         return nq_str_err(nq_errno_io_err("create_temp_dir", &directory, NULL, error_code));
     }
     if (chmod(path_template, 0700) != 0) {
         int error_code = errno;
         rmdir(path_template);
-        free(path_template);
+        nq_str_drop(&result);
         return nq_str_err(nq_errno_io_err("create_temp_dir", &directory, NULL, error_code));
     }
-    return nq_str_ok(nq_owned_str_take(path_template, (intptr_t)strlen(path_template)));
+    return nq_str_ok(result);
 #endif
 }
 
@@ -1543,10 +1838,14 @@ NQ_Result__unit__io_err nq_atomic_write_file(NQStr path, const NQBytes* data) {
     char* path_template;
     size_t directory_len;
     NQIoErr validation_err;
+    NQAllocStatus allocation_status;
+    size_t template_len, template_size;
     int fd;
     int error_code;
     size_t offset = 0;
     NQStr temp_path;
+    if (data != NULL && (data->len < 0 || (uintmax_t)data->len > nq_bytes_limit()))
+        return nq_unit_err(nq_allocation_io_err("atomic_write_file", NQ_ALLOC_SIZE));
     if (data == NULL || data->len < 0 || (data->len > 0 && data->data == NULL)) {
         return nq_unit_err(nq_invalid_input_io_err("atomic_write_file", &path, NULL, "invalid bytes storage"));
     }
@@ -1559,23 +1858,30 @@ NQ_Result__unit__io_err nq_atomic_write_file(NQStr path, const NQBytes* data) {
         return nq_unit_err(nq_invalid_input_io_err("atomic_write_file", &path, NULL, "target path must name a file"));
     }
     if (slash == NULL) {
-        directory_cstr = nq_str_to_cstr(nq_str("."));
+        allocation_status = nq_try_cstr_copy(".", 1, &directory_cstr);
     } else if (slash == target_cstr) {
-        directory_cstr = nq_str_to_cstr(nq_str("/"));
+        allocation_status = nq_try_cstr_copy("/", 1, &directory_cstr);
     } else {
-        directory_cstr = (char*)malloc((size_t)(slash - target_cstr) + 1);
-        if (directory_cstr == NULL) {
-            fputs("nauqtype runtime: out of memory\n", stderr);
-            exit(1);
-        }
-        memcpy(directory_cstr, target_cstr, (size_t)(slash - target_cstr));
-        directory_cstr[slash - target_cstr] = '\0';
+        allocation_status = nq_try_cstr_copy(target_cstr, (size_t)(slash - target_cstr), &directory_cstr);
+    }
+    if (allocation_status != NQ_ALLOC_OK) {
+        free(target_cstr);
+        return nq_unit_err(nq_allocation_io_err("atomic_write_file", allocation_status));
     }
     directory_len = strlen(directory_cstr);
-    path_template = (char*)malloc(directory_len + (directory_len == 1 && directory_cstr[0] == '/' ? 0 : 1) + 18);
-    if (path_template == NULL) {
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
+    if (!nq_size_add(directory_len, directory_len == 1 && directory_cstr[0] == '/' ? 0 : 1,
+                     nq_str_limit(), &template_len) ||
+        !nq_size_add(template_len, 17, nq_str_limit(), &template_len) ||
+        !nq_size_add(template_len, 1, nq_allocation_limit(), &template_size)) {
+        free(directory_cstr);
+        free(target_cstr);
+        return nq_unit_err(nq_allocation_io_err("atomic_write_file", NQ_ALLOC_SIZE));
+    }
+    path_template = (char*)nq_try_realloc(NULL, template_size, &allocation_status);
+    if (allocation_status != NQ_ALLOC_OK) {
+        free(directory_cstr);
+        free(target_cstr);
+        return nq_unit_err(nq_allocation_io_err("atomic_write_file", allocation_status));
     }
     memcpy(path_template, directory_cstr, directory_len);
     if (!(directory_len == 1 && directory_cstr[0] == '/')) {
@@ -1634,11 +1940,14 @@ NQ_Result__unit__io_err nq_atomic_write_file(NQStr path, const NQBytes* data) {
 }
 
 static bool nq_try_read_text_file(const char* path, NQStr* out_text, NQIoErr* out_err) {
-    NQ_Result__str__io_err result = nq_read_file((NQStr){
-        .data = path,
-        .len = (intptr_t)strlen(path),
-        .owner = NULL,
-    });
+    size_t len;
+    NQ_Result__str__io_err result;
+    if (!nq_cstr_length(path, &len)) {
+        *out_err = nq_allocation_io_err("run_process", NQ_ALLOC_SIZE);
+        return false;
+    }
+    result = nq_bytes_result_into_str(nq_read_file_bytes_operation(
+        (NQStr){path, (intptr_t)len, NULL}, "run_process", nq_str_limit()), "run_process");
     if (result.tag == NQ_Result__str__io_err_Tag_Ok) {
         *out_text = result.data.Ok._0;
         return true;
@@ -1648,7 +1957,10 @@ static bool nq_try_read_text_file(const char* path, NQStr* out_text, NQIoErr* ou
 }
 
 #ifdef _WIN32
-static char* nq_quote_windows_arg(const char* arg) {
+static char* nq_quote_windows_arg(const char* arg, NQAllocStatus* status) {
+    size_t len, doubled, size;
+    *status = NQ_ALLOC_OK;
+    if (!nq_cstr_length(arg, &len)) { *status = NQ_ALLOC_SIZE; return NULL; }
     bool needs_quotes = arg[0] == '\0';
     const char* cursor = arg;
     while (*cursor != '\0') {
@@ -1658,19 +1970,22 @@ static char* nq_quote_windows_arg(const char* arg) {
         cursor += 1;
     }
     if (!needs_quotes) {
-        return nq_dup_cstr(arg);
+        char* copy = NULL;
+        *status = nq_try_cstr_copy(arg, len, &copy);
+        return copy;
     }
 
     {
-        size_t len = strlen(arg);
-        char* out = (char*)malloc((len * 2) + 3);
+        char* out;
         size_t out_index = 0;
         size_t slash_count = 0;
         size_t index = 0;
-        if (out == NULL) {
-            fputs("nauqtype runtime: out of memory\n", stderr);
-            exit(1);
+        if (!nq_size_mul(len, 2, &doubled) || !nq_size_add(doubled, 3, nq_allocation_limit(), &size)) {
+            *status = NQ_ALLOC_SIZE;
+            return NULL;
         }
+        out = (char*)nq_try_realloc(NULL, size, status);
+        if (*status != NQ_ALLOC_OK) return NULL;
         out[out_index++] = '"';
         while (arg[index] != '\0') {
             char ch = arg[index];
@@ -1704,27 +2019,46 @@ static char* nq_quote_windows_arg(const char* arg) {
     }
 }
 
-static char* nq_join_windows_command(const char* program, const NQ_List__str* args) {
-    char* command = nq_quote_windows_arg(program);
+static char* nq_join_windows_command(const char* program, const NQ_List__str* args, NQAllocStatus* status) {
+    char* command = nq_quote_windows_arg(program, status);
     int32_t index = 0;
+    if (*status != NQ_ALLOC_OK) return NULL;
     while (index < args->len) {
-        char* arg_cstr = nq_str_to_cstr(args->data[index]);
-        char* quoted = nq_quote_windows_arg(arg_cstr);
-        size_t command_len = strlen(command);
-        size_t quoted_len = strlen(quoted);
-        command = (char*)nq_realloc(command, command_len + quoted_len + 2);
+        char* arg_cstr = NULL;
+        char* quoted;
+        char* next;
+        size_t command_len, quoted_len, size;
+        *status = nq_try_cstr_copy(args->data[index].data, (size_t)args->data[index].len, &arg_cstr);
+        if (*status != NQ_ALLOC_OK) { free(command); return NULL; }
+        quoted = nq_quote_windows_arg(arg_cstr, status);
+        free(arg_cstr);
+        if (*status != NQ_ALLOC_OK) { free(command); return NULL; }
+        command_len = strlen(command);
+        quoted_len = strlen(quoted);
+        if (!nq_size_add(command_len, quoted_len, nq_allocation_limit(), &size) ||
+            !nq_size_add(size, 2, nq_allocation_limit(), &size)) {
+            free(command);
+            free(quoted);
+            *status = NQ_ALLOC_SIZE;
+            return NULL;
+        }
+        next = (char*)nq_try_realloc(command, size, status);
+        if (*status != NQ_ALLOC_OK) { free(command); free(quoted); return NULL; }
+        command = next;
         command[command_len] = ' ';
         memcpy(command + command_len + 1, quoted, quoted_len + 1);
-        free(arg_cstr);
         free(quoted);
         index += 1;
     }
     return command;
 }
 
-static char* nq_make_windows_temp_file(const char* prefix) {
+static char* nq_make_windows_temp_file(const char* prefix, NQAllocStatus* status) {
     char buffer[MAX_PATH + 1];
     char path[MAX_PATH + 1];
+    char* copy = NULL;
+    size_t path_len;
+    *status = NQ_ALLOC_OK;
     DWORD len = GetTempPathA(MAX_PATH, buffer);
     if (len == 0 || len > MAX_PATH) {
         return NULL;
@@ -1732,7 +2066,10 @@ static char* nq_make_windows_temp_file(const char* prefix) {
     if (GetTempFileNameA(buffer, prefix, 0, path) == 0) {
         return NULL;
     }
-    return nq_dup_cstr(path);
+    if (!nq_cstr_length(path, &path_len)) *status = NQ_ALLOC_SIZE;
+    else *status = nq_try_cstr_copy(path, path_len, &copy);
+    if (*status != NQ_ALLOC_OK) DeleteFileA(path);
+    return copy;
 }
 #endif
 
@@ -1742,10 +2079,18 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     NQStr stdout_text = nq_empty_str();
     NQStr stderr_text = nq_empty_str();
     NQIoErr io_err;
+    NQAllocStatus allocation_status;
     int32_t validation_index = 0;
+    int32_t validated_cap;
+    size_t argv_count, argv_size;
+    if (args != NULL && nq_list_capacity(args->cap, args->len, 0, sizeof(NQStr), &validated_cap) != NQ_ALLOC_OK)
+        return nq_process_err(nq_allocation_io_err("run_process", NQ_ALLOC_SIZE));
     if (args == NULL || args->len < 0 || (args->len > 0 && args->data == NULL)) {
         return nq_process_err(nq_invalid_input_io_err("run_process", &program, NULL, "argument list is missing"));
     }
+    if (!nq_size_add((size_t)args->len, 2, nq_allocation_limit(), &argv_count) ||
+        !nq_size_mul(argv_count, sizeof(char*), &argv_size))
+        return nq_process_err(nq_allocation_io_err("run_process", NQ_ALLOC_SIZE));
     if (!nq_os_string(program, "run_process", &program, NULL, &program_cstr, &io_err)) {
         return nq_process_err(io_err);
     }
@@ -1754,6 +2099,12 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         return nq_process_err(io_err);
     }
     while (validation_index < args->len) {
+        if (!nq_str_size(args->data[validation_index].len) ||
+            (uintmax_t)args->data[validation_index].len >= nq_allocation_limit()) {
+            free(program_cstr);
+            free(cwd_cstr);
+            return nq_process_err(nq_allocation_io_err("run_process", NQ_ALLOC_SIZE));
+        }
         if (!nq_str_storage_is_valid(args->data[validation_index]) || nq_str_has_nul(args->data[validation_index])) {
             free(program_cstr);
             free(cwd_cstr);
@@ -1762,9 +2113,9 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         validation_index += 1;
     }
 #ifdef _WIN32
-    char* command = nq_join_windows_command(program_cstr, args);
-    char* stdout_path = nq_make_windows_temp_file("nqo");
-    char* stderr_path = nq_make_windows_temp_file("nqe");
+    char* command = nq_join_windows_command(program_cstr, args, &allocation_status);
+    char* stdout_path = NULL;
+    char* stderr_path = NULL;
     SECURITY_ATTRIBUTES security = {0};
     STARTUPINFOA startup = {0};
     PROCESS_INFORMATION process = {0};
@@ -1773,12 +2124,17 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     DWORD exit_code = 0;
     BOOL created;
 
-    if (stdout_path == NULL || stderr_path == NULL) {
+    if (allocation_status == NQ_ALLOC_OK) stdout_path = nq_make_windows_temp_file("nqo", &allocation_status);
+    if (allocation_status == NQ_ALLOC_OK && stdout_path != NULL) stderr_path = nq_make_windows_temp_file("nqe", &allocation_status);
+    if (allocation_status != NQ_ALLOC_OK || stdout_path == NULL || stderr_path == NULL) {
         free(program_cstr);
         free(cwd_cstr);
         free(command);
+        if (stdout_path != NULL) DeleteFileA(stdout_path);
+        if (stderr_path != NULL) DeleteFileA(stderr_path);
         free(stdout_path);
         free(stderr_path);
+        if (allocation_status != NQ_ALLOC_OK) return nq_process_err(nq_allocation_io_err("run_process", allocation_status));
         return nq_process_io_err(10, "failed to allocate temporary output files");
     }
 
@@ -1908,23 +2264,33 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         return nq_process_io_err(errno, "failed to allocate temporary output files");
     }
 
-    argv = (char**)calloc((size_t)arg_count + 2, sizeof(char*));
-    if (argv == NULL) {
+    argv = (char**)nq_try_realloc(NULL, argv_size, &allocation_status);
+    if (allocation_status != NQ_ALLOC_OK) {
         close(stdout_fd);
         close(stderr_fd);
         unlink(stdout_template);
         unlink(stderr_template);
         free(program_cstr);
         free(cwd_cstr);
-        fputs("nauqtype runtime: out of memory\n", stderr);
-        exit(1);
+        return nq_process_err(nq_allocation_io_err("run_process", allocation_status));
     }
     argv[0] = program_cstr;
     while (index < arg_count) {
-        argv[index + 1] = nq_str_to_cstr(args->data[index]);
+        allocation_status = nq_try_cstr_copy(args->data[index].data, (size_t)args->data[index].len, &argv[(size_t)index + 1]);
+        if (allocation_status != NQ_ALLOC_OK) {
+            while (index > 0) { free(argv[index]); index -= 1; }
+            free(argv);
+            close(stdout_fd);
+            close(stderr_fd);
+            unlink(stdout_template);
+            unlink(stderr_template);
+            free(program_cstr);
+            free(cwd_cstr);
+            return nq_process_err(nq_allocation_io_err("run_process", allocation_status));
+        }
         index += 1;
     }
-    argv[arg_count + 1] = NULL;
+    argv[(size_t)arg_count + 1] = NULL;
 
     if (pipe(error_pipe) != 0) {
         index = 0;
@@ -2046,6 +2412,7 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
 }
 
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index) {
+    if (!nq_str_size(text.len)) nq_size_fail();
     if (index < 0 || index >= (int32_t)text.len) {
         return (NQ_Option__i32){
             .tag = NQ_Option__i32_Tag_None,
@@ -2060,6 +2427,7 @@ NQ_Option__i32 nq_str_get(NQStr text, int32_t index) {
 
 NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end) {
     NQStr slice;
+    if (!nq_str_size(text.len)) nq_size_fail();
     if (start < 0 || end < start || end > (int32_t)text.len) {
         return (NQ_Option__str){
             .tag = NQ_Option__str_Tag_None,
@@ -2067,7 +2435,7 @@ NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end) {
         };
     }
     slice = (NQStr){
-        .data = text.data + start,
+        .data = start == 0 ? text.data : text.data + start,
         .len = (intptr_t)(end - start),
         .owner = text.owner,
     };

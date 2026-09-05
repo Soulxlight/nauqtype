@@ -84,6 +84,11 @@ unless the user explicitly assigns them.
   enforcement, and F15 passed independent audits and the seven-phase gate.
   See `M54_8_CONTRACTS.md` for frozen tree and artifact identities. This does
   not freeze M54.9/M54.10 or change external dependency lock contracts yet.
+- M54.9 now closes integer/allocation findings F06/F13. Final Sol max and
+  GPT-5.5 xhigh reviews passed; the unchanged candidate passed all seven gate
+  phases in 2,048 seconds. See `M54_9_CONTRACTS.md` for arithmetic, allocation,
+  borrow-place repair, and exact seed/gate evidence. This changes no Libraries
+  or AIML implementation and does not yet close M54.10 provenance or M55/F14.
 - M54.5 development-loop efficiency is complete and evidenced: content-verified
   stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
   close ordering, and quick/full CI tiers all passed the 2,132-second

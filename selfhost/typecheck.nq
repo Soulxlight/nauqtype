@@ -1,4 +1,5 @@
 use ast;
+use const_word;
 use diag;
 use lexer;
 use source;
@@ -3841,6 +3842,25 @@ fn call_param_borrow_mutable(function_params: ref list<function_param_fact>, use
     return visible_function_param_borrow_mutable(ref function_params, ref uses, ref items, module, function_name, index);
 }
 
+fn borrow_argument_has_place_shape(tokens: ref list<token>, start: i32, end: i32, fields: bool) -> bool {
+    let mut target_start = start;
+    let mut target_end = end;
+    while span_is_wrapped_in_parens(ref tokens, target_start, target_end) {
+        target_start = target_start + 1;
+        target_end = target_end - 1;
+    }
+    if target_start >= target_end { return false; }
+    match token_at(ref tokens, target_start).kind { tk_ident => {}, _ => { return false; }, }
+    let mut index = target_start + 1;
+    while index < target_end {
+        if not fields or index + 1 >= target_end { return false; }
+        match token_at(ref tokens, index).kind { tk_dot => {}, _ => { return false; }, }
+        match token_at(ref tokens, index + 1).kind { tk_ident => {}, _ => { return false; }, }
+        index = index + 2;
+    }
+    return true;
+}
+
 fn call_argument_supplies_borrow(scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32) -> bool {
     let mut expr_start = expr_content_start(ref tokens, start, end);
     let mut expr_end = end;
@@ -3853,8 +3873,13 @@ fn call_argument_supplies_borrow(scopes: ref list<body_scope>, typed_bindings: r
     }
     let current = token_at(ref tokens, expr_start);
     match current.kind {
-        tk_kw_ref => { return true; },
-        tk_kw_mutref => { return true; },
+        tk_kw_ref => {
+            return borrow_argument_has_place_shape(ref tokens, expr_start + 1, expr_end, true);
+        },
+        tk_kw_mutref => {
+            if expr_start + 2 != expr_end { return false; }
+            match token_at(ref tokens, expr_start + 1).kind { tk_ident => { return true; }, _ => { return false; }, }
+        },
         tk_ident => {
             if expr_start + 1 == expr_end {
                 return visible_typed_binding_is_borrow(ref typed_bindings, ref scopes, module, function_name, scope_id, current.text, current.start);
@@ -3973,6 +3998,10 @@ fn call_argument_supplies_mutable_borrow(scopes: ref list<body_scope>, typed_bin
 
 fn validate_call_argument_borrow(function_params: ref list<function_param_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, qualifier: str, call_name: str, arg_index: i32, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> unit {
     let expects_borrow = call_param_is_borrow(ref function_params, ref uses, ref items, module, qualifier, call_name, arg_index);
+    if call_argument_is_explicit_borrow(ref tokens, start, end) and not call_argument_supplies_borrow(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end) {
+        push_diag(mutref diags, module, token_at(ref tokens, start).start, "borrow expression must name a binding or field path");
+        return;
+    }
     if call_argument_is_explicit_mutref(ref tokens, start, end) and not call_argument_mutref_target_is_mutable_capable(ref scopes, ref typed_bindings, module, function_name, scope_id, ref tokens, start, end) {
         let at = token_at(ref tokens, start).start;
         let name = call_argument_mutref_target_name(ref tokens, start, end);
@@ -5539,6 +5568,103 @@ fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, expe
     return unsupported_type_ctx();
 }
 
+type const_eval_value {
+    bits: const_word,
+    boolean: bool,
+    failed: bool,
+}
+
+fn const_eval_empty() -> const_eval_value {
+    return const_eval_value { bits: const_word_decimal("0", 4), boolean: false, failed: false };
+}
+
+fn evaluate_typed_const(tokens: ref list<token>, start: i32, end: i32, width: i32, module: str, diags: mutref list<diag>) -> const_eval_value {
+    let mut lo = expr_content_start(ref tokens, start, end);
+    let mut hi = end;
+    while span_is_wrapped_in_parens(ref tokens, lo, hi) { lo = lo + 1; hi = hi - 1; }
+    let mut out = const_eval_empty();
+    let mut root = find_root_or_operator(ref tokens, lo, hi);
+    if root < 0 { root = find_root_and_operator(ref tokens, lo, hi); }
+    if root >= 0 {
+        let left = evaluate_typed_const(ref tokens, lo, root, 4, module, mutref diags);
+        if left.failed { return left; }
+        match token_at(ref tokens, root).kind {
+            tk_kw_or => { if left.boolean { return left; } },
+            tk_kw_and => { if not left.boolean { return left; } },
+            _ => {},
+        }
+        return evaluate_typed_const(ref tokens, root + 1, hi, 4, module, mutref diags);
+    }
+    root = find_root_compare_operator(ref tokens, lo, hi);
+    if root >= 0 {
+        // Const comparisons have no named operands; their unsuffixed integers are i32.
+        let left = evaluate_typed_const(ref tokens, lo, root, 4, module, mutref diags);
+        if left.failed { return left; }
+        let right = evaluate_typed_const(ref tokens, root + 1, hi, 4, module, mutref diags);
+        if right.failed { return right; }
+        let order = const_word_compare(left.bits, right.bits, 4);
+        match token_at(ref tokens, root).kind {
+            tk_eqeq => { out.boolean = order == 0; },
+            tk_noteq => { out.boolean = order != 0; },
+            tk_lt => { out.boolean = order < 0; },
+            tk_lte => { out.boolean = order <= 0; },
+            tk_gt => { out.boolean = order > 0; },
+            tk_gte => { out.boolean = order >= 0; },
+            _ => {},
+        }
+        return out;
+    }
+    root = find_root_additive_operator(ref tokens, lo, hi);
+    if root < 0 { root = find_root_multiplicative_operator(ref tokens, lo, hi); }
+    if root >= 0 {
+        let left = evaluate_typed_const(ref tokens, lo, root, width, module, mutref diags);
+        if left.failed { return left; }
+        let right = evaluate_typed_const(ref tokens, root + 1, hi, width, module, mutref diags);
+        if right.failed { return right; }
+        let op = token_at(ref tokens, root);
+        match op.kind {
+            tk_plus => { out.bits = const_word_add(left.bits, right.bits, width); },
+            tk_minus => { out.bits = const_word_add(left.bits, const_word_neg(right.bits, width), width); },
+            tk_star => { out.bits = const_word_mul(left.bits, right.bits, width); },
+            tk_slash => {
+                match const_word_div(left.bits, right.bits, width) {
+                    Ok(value) => { out.bits = value; },
+                    Err(reason) => {
+                        let mut message = "constant integer division by zero";
+                        if reason == 2 { message = "constant integer division overflow"; }
+                        push_token_error_with_help(mutref diags, module, op, "NQ-TYPE-045", message, "Change the evaluated constant division; a zero divisor and minimum integer divided by -1 are not defined results.");
+                        out.failed = true;
+                    },
+                }
+            },
+            _ => {},
+        }
+        return out;
+    }
+    let current = token_at(ref tokens, lo);
+    match current.kind {
+        tk_kw_not => {
+            let inner = evaluate_typed_const(ref tokens, lo + 1, hi, 4, module, mutref diags);
+            out.boolean = not inner.boolean;
+            out.failed = inner.failed;
+        },
+        tk_minus => {
+            let inner = evaluate_typed_const(ref tokens, lo + 1, hi, width, module, mutref diags);
+            out.bits = const_word_neg(inner.bits, width);
+            out.failed = inner.failed;
+        },
+        tk_kw_true => { out.boolean = true; },
+        tk_kw_false => {},
+        tk_int_lit => { out.bits = const_word_decimal(current.text, width); },
+        tk_string_lit => {},
+        _ => {
+            push_diag(mutref diags, module, current.start, "stage1 limitation: missing typed constant evaluation");
+            out.failed = true;
+        },
+    }
+    return out;
+}
+
 pub fn typecheck_const_facts(consts: ref list<const_fact>, sources: ref list<source_file>, diags: mutref list<diag>) -> typecheck_summary
 audit {
     intent("Validate top-level constants against the narrow stage1 const-expression subset");
@@ -5552,6 +5678,7 @@ audit {
         let entry = list_get(ref consts, index);
         match entry {
             Some(value) => {
+                let before_const = list_len(ref diags);
                 if not is_const_safe_type(value.type_name, value.type_arg1_name, value.type_arg2_name, value.is_borrow) {
                     push_diag(mutref diags, value.module, value.at, "top-level const supports only non-borrow i32, i64, bool, or str in v1");
                 }
@@ -5561,6 +5688,11 @@ audit {
                 let actual = infer_const_expr_type_ctx(ref tokens, value.expr_start, value.expr_end, expected, value.module, value.at, mutref diags);
                 if has_known_type_ctx(actual) and not type_ctx_matches(expected, actual) {
                     push_diag(mutref diags, value.module, value.at, "const initializer does not match declared type");
+                }
+                if list_len(ref diags) == before_const {
+                    let mut width = 4;
+                    if value.type_name == "i64" { width = 8; }
+                    let evaluated = evaluate_typed_const(ref tokens, value.expr_start, value.expr_end, width, value.module, mutref diags);
                 }
             },
             None => {

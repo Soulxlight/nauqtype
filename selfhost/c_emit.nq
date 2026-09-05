@@ -3,6 +3,7 @@ use handoff;
 use ir;
 use text;
 use value_plan;
+use const_word;
 
 pub type c_emit_summary {
     line_count: i32,
@@ -1202,19 +1203,20 @@ fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_s
     if include_from_array {
         append_line(mutref lines, concat7("static inline ", type_name, " ", helper, "_from_array(const ", c_type(ref type_shapes, element_type_id), "* values, int32_t len) {"));
         append_line(mutref lines, concat5("    ", type_name, " items = ", helper, "_make();"));
+        append_line(mutref lines, concat3("    int32_t capacity = nq_list_grow_capacity(0, 0, (size_t)len, sizeof(", c_type(ref type_shapes, element_type_id), "));"));
         append_line(mutref lines, "    if (len > 0) {");
-        append_line(mutref lines, concat6("        items.data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(NULL, sizeof(", c_type(ref type_shapes, element_type_id), ") * (size_t)len);", ""));
-        append_line(mutref lines, str_concat("        memcpy(items.data, values, sizeof(", str_concat(c_type(ref type_shapes, element_type_id), ") * (size_t)len);")));
+        append_line(mutref lines, concat5("        items.data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(NULL, nq_allocation_size((size_t)capacity, sizeof(", c_type(ref type_shapes, element_type_id), ")));"));
+        append_line(mutref lines, concat3("        memcpy(items.data, values, nq_allocation_size((size_t)len, sizeof(", c_type(ref type_shapes, element_type_id), ")));"));
         append_line(mutref lines, "        items.len = len;");
-        append_line(mutref lines, "        items.cap = len;");
+        append_line(mutref lines, "        items.cap = capacity;");
         append_line(mutref lines, "    }");
         append_line(mutref lines, "    return items;");
         append_line(mutref lines, "}");
     }
     append_line(mutref lines, concat7("static inline NQUnit ", helper, "_push(", type_name, "* items, ", c_type(ref type_shapes, element_type_id), " value) {"));
-    append_line(mutref lines, "    if (items->len == items->cap) {");
-    append_line(mutref lines, "        int32_t next_cap = items->cap == 0 ? 4 : items->cap * 2;");
-    append_line(mutref lines, concat6("        items->data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(items->data, sizeof(", c_type(ref type_shapes, element_type_id), ") * (size_t)next_cap);", ""));
+    append_line(mutref lines, concat3("    int32_t next_cap = nq_list_grow_capacity(items->cap, items->len, 1, sizeof(", c_type(ref type_shapes, element_type_id), "));"));
+    append_line(mutref lines, "    if (next_cap != items->cap) {");
+    append_line(mutref lines, concat5("        items->data = (", c_type(ref type_shapes, element_type_id), "*)nq_realloc(items->data, nq_allocation_size((size_t)next_cap, sizeof(", c_type(ref type_shapes, element_type_id), ")));"));
     append_line(mutref lines, "        items->cap = next_cap;");
     append_line(mutref lines, "    }");
     append_line(mutref lines, "    items->data[items->len] = value;");
@@ -2271,12 +2273,233 @@ fn emit_ordered_declarations(lines: mutref list<str>, type_shapes: ref list<ir_t
     return;
 }
 
+fn integer_operator_suffix(kind: ir_expr_kind, constant: bool) -> str {
+    match kind {
+        ir_expr_add => { if constant { return "ADD"; } return "add"; },
+        ir_expr_sub => { if constant { return "SUB"; } return "sub"; },
+        ir_expr_mul => { if constant { return "MUL"; } return "mul"; },
+        ir_expr_div => { if constant { return "DIV"; } return "div"; },
+        ir_expr_neg => { if constant { return "NEG"; } return "neg"; },
+        _ => { return ""; },
+    }
+}
+
+fn integer_operation_text(type_shapes: ref list<ir_type_shape>, type_id: i32, kind: ir_expr_kind, left: str, right: str, constant: bool, at: i32, diags: mutref list<diag>) -> str {
+    let mut prefix = "";
+    match lookup_type_shape(ref type_shapes, type_id) {
+        Some(shape) => {
+            match shape.kind {
+                checked_type_i32 => { prefix = "nq_i32_"; if constant { prefix = "NQ_I32_CONST_"; } },
+                checked_type_i64 => { prefix = "nq_i64_"; if constant { prefix = "NQ_I64_CONST_"; } },
+                _ => {},
+            }
+        },
+        None => {},
+    }
+    let suffix = integer_operator_suffix(kind, constant);
+    if prefix == "" or suffix == "" {
+        push_c_error(mutref diags, "", at, "missing integer operation type truth");
+        return "0";
+    }
+    let mut args = left;
+    match kind { ir_expr_neg => {}, _ => { args = concat3(left, ", ", right); }, }
+    return concat5(prefix, suffix, "(", args, ")");
+}
+
+type folded_c_const {
+    valid: bool,
+    type_id: i32,
+    bits: const_word,
+    boolean: bool,
+    text: str,
+}
+
+fn const_integer_width(type_shapes: ref list<ir_type_shape>, type_id: i32) -> i32 {
+    match lookup_type_shape(ref type_shapes, type_id) {
+        Some(shape) => {
+            match shape.kind { checked_type_i32 => { return 4; }, checked_type_i64 => { return 8; }, _ => {}, }
+        },
+        None => {},
+    }
+    return 0;
+}
+
+fn const_is_bool(type_shapes: ref list<ir_type_shape>, type_id: i32) -> bool {
+    match lookup_type_shape(ref type_shapes, type_id) {
+        Some(shape) => { match shape.kind { checked_type_bool => { return true; }, _ => {}, } },
+        None => {},
+    }
+    return false;
+}
+
+fn invalid_c_const(at: i32, diags: mutref list<diag>) -> folded_c_const {
+    push_c_error(mutref diags, "", at, "invalid constant IR type, structure, or evaluated division during C emission");
+    return folded_c_const { valid: false, type_id: -1, bits: const_word_decimal("0", 4), boolean: false, text: "" };
+}
+
+fn fold_c_const(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, evaluate: bool, diags: mutref list<diag>) -> folded_c_const {
+    match lookup_expression(ref expressions, expr_id) {
+        Some(expr) => {
+            let child_ids = lookup_expr_child_ids(ref children, expr.id);
+            let width = const_integer_width(ref type_shapes, expr.type_id);
+            let is_bool = const_is_bool(ref type_shapes, expr.type_id);
+            let mut out = folded_c_const { valid: true, type_id: expr.type_id, bits: const_word_decimal("0", 4), boolean: false, text: "" };
+            match expr.kind {
+                ir_expr_i32 => {
+                    if width == 4 and list_len(ref child_ids) == 0 { out.bits = const_word_decimal(expr.name, 4); return out; }
+                },
+                ir_expr_i64 => {
+                    if width == 8 and list_len(ref child_ids) == 0 { out.bits = const_word_decimal(expr.name, 8); return out; }
+                },
+                ir_expr_bool => {
+                    if is_bool and list_len(ref child_ids) == 0 and (expr.name == "true" or expr.name == "false") { out.boolean = expr.name == "true"; return out; }
+                },
+                ir_expr_str => {
+                    match lookup_type_shape(ref type_shapes, expr.type_id) {
+                        Some(shape) => {
+                            match shape.kind {
+                                checked_type_str => { if list_len(ref child_ids) == 0 { out.text = expr.name; return out; } },
+                                _ => {},
+                            }
+                        },
+                        None => {},
+                    }
+                },
+                ir_expr_neg => {
+                    if width > 0 and list_len(ref child_ids) == 1 {
+                        let inner = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                        if not inner.valid { return inner; }
+                        if inner.type_id == expr.type_id { out.bits = const_word_neg(inner.bits, width); return out; }
+                    }
+                },
+                ir_expr_not => {
+                    if is_bool and list_len(ref child_ids) == 1 {
+                        let inner = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                        if not inner.valid { return inner; }
+                        if inner.type_id == expr.type_id { out.boolean = not inner.boolean; return out; }
+                    }
+                },
+                _ => {
+                    if list_len(ref child_ids) != 2 { return invalid_c_const(expr.at, mutref diags); }
+                    let left = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                    if not left.valid { return left; }
+                    let mut right_evaluate = evaluate;
+                    match expr.kind {
+                        ir_expr_and => { right_evaluate = evaluate and left.boolean; },
+                        ir_expr_or => { right_evaluate = evaluate and not left.boolean; },
+                        _ => {},
+                    }
+                    // Dead operands still validate their IR links/types, but cannot
+                    // trigger arithmetic failure or expand into recursive C macros.
+                    let right = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 1), right_evaluate, mutref diags);
+                    if not right.valid { return right; }
+                    if left.type_id != right.type_id { return invalid_c_const(expr.at, mutref diags); }
+                    if integer_operator_suffix(expr.kind, false) != "" {
+                        if width == 0 or left.type_id != expr.type_id { return invalid_c_const(expr.at, mutref diags); }
+                        if not evaluate { return out; }
+                        match expr.kind {
+                            ir_expr_add => { out.bits = const_word_add(left.bits, right.bits, width); },
+                            ir_expr_sub => { out.bits = const_word_add(left.bits, const_word_neg(right.bits, width), width); },
+                            ir_expr_mul => { out.bits = const_word_mul(left.bits, right.bits, width); },
+                            ir_expr_div => {
+                                match const_word_div(left.bits, right.bits, width) {
+                                    Ok(value) => { out.bits = value; },
+                                    Err(_) => { return invalid_c_const(expr.at, mutref diags); },
+                                }
+                            },
+                            _ => { return invalid_c_const(expr.at, mutref diags); },
+                        }
+                        return out;
+                    }
+                    if not is_bool { return invalid_c_const(expr.at, mutref diags); }
+                    match expr.kind {
+                        ir_expr_and => { if left.type_id == expr.type_id { out.boolean = left.boolean and right.boolean; return out; } },
+                        ir_expr_or => { if left.type_id == expr.type_id { out.boolean = left.boolean or right.boolean; return out; } },
+                        _ => {
+                            let operand_width = const_integer_width(ref type_shapes, left.type_id);
+                            if operand_width == 0 { return invalid_c_const(expr.at, mutref diags); }
+                            let order = const_word_compare(left.bits, right.bits, operand_width);
+                            match expr.kind {
+                                ir_expr_eq => { out.boolean = order == 0; },
+                                ir_expr_ne => { out.boolean = order != 0; },
+                                ir_expr_lt => { out.boolean = order < 0; },
+                                ir_expr_lte => { out.boolean = order <= 0; },
+                                ir_expr_gt => { out.boolean = order > 0; },
+                                ir_expr_gte => { out.boolean = order >= 0; },
+                                _ => { return invalid_c_const(expr.at, mutref diags); },
+                            }
+                            return out;
+                        },
+                    }
+                },
+            }
+            return invalid_c_const(expr.at, mutref diags);
+        },
+        None => { return invalid_c_const(0, mutref diags); },
+    }
+}
+
+fn arithmetic_probe_expr(id: i32, kind: ir_expr_kind, type_id: i32, name: str) -> ir_expr {
+    return ir_expr { id: id, function_id: 0, at: id, start: id, end: id + 1, kind: kind, type_id: type_id, use_kind: checked_value_borrow, local_id: -1, mutable: false, name: name, target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" };
+}
+
+pub fn check_c_arithmetic_export_failures() -> bool
+audit {
+    intent("Reject malformed borrowed argument IR and dead constant child links without invoking a host compiler");
+    mutates();
+    effects();
+}
+{
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, ir_type_shape { id: 0, kind: checked_type_bool, name: "bool", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    let mut expressions: list<ir_expr> = list();
+    list_push(mutref expressions, arithmetic_probe_expr(0, ir_expr_bool, 0, "false"));
+    list_push(mutref expressions, arithmetic_probe_expr(1, ir_expr_and, 0, ""));
+    let mut children: list<ir_expr_child> = list();
+    list_push(mutref children, ir_expr_child { parent_expr_id: 1, index: 0, child_expr_id: 0 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 1, index: 1, child_expr_id: 9 });
+    let mut diags: list<diag> = list();
+    let folded = fold_c_const(ref shapes, ref expressions, ref children, 1, true, mutref diags);
+    if folded.valid or list_len(ref diags) != 1 { return false; }
+    diags = list();
+    let mut lines: list<str> = list();
+    let locals: list<ir_local> = list();
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let mut temp = 0;
+    let value = lower_planned_borrow_argument(mutref lines, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, 1, 0, mutref temp, mutref diags);
+    if value != "0" or list_len(ref lines) != 0 or list_len(ref diags) != 1 { return false; }
+    diags = list();
+    list_push(mutref expressions, arithmetic_probe_expr(2, ir_expr_borrow, 0, ""));
+    list_push(mutref children, ir_expr_child { parent_expr_id: 2, index: 0, child_expr_id: 1 });
+    let borrowed = emit_borrow_expr(ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, arithmetic_probe_expr(2, ir_expr_borrow, 0, ""), mutref diags);
+    return borrowed == "0" and list_len(ref diags) == 1;
+}
+
+fn emit_const_expr(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, diags: mutref list<diag>) -> str {
+    let value = fold_c_const(ref type_shapes, ref expressions, ref children, expr_id, true, mutref diags);
+    if not value.valid { return "0"; }
+    let width = const_integer_width(ref type_shapes, value.type_id);
+    if width > 0 {
+        let decimal = const_word_signed_text(value.bits, width);
+        if width == 4 {
+            if decimal == "-2147483648" { return "INT32_MIN"; }
+            return concat3("INT32_C(", decimal, ")");
+        }
+        if decimal == "-9223372036854775808" { return "INT64_MIN"; }
+        return concat3("INT64_C(", decimal, ")");
+    }
+    if const_is_bool(ref type_shapes, value.type_id) { if value.boolean { return "true"; } return "false"; }
+    return concat5("{ .data = \"", escape_c_string(value.text), "\", .len = ", i32_to_str(str_len(value.text)), " }");
+}
+
 fn emit_const_decl(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, const_decl: ir_const_decl, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, const_decl.expr_id);
     match expr_entry {
         Some(expr) => {
             let c_name = const_name(const_decl.module_name, const_decl.name);
-            let mut value_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, const_decl.expr_id, mutref diags);
+            let mut value_text = emit_const_expr(ref type_shapes, ref expressions, ref expr_children, const_decl.expr_id, mutref diags);
             match expr.kind {
                 ir_expr_str => {
                     value_text = concat6("{ .data = \"", escape_c_string(expr.name), "\", .len = ", i32_to_str(str_len(expr.name)), " }", "");
@@ -2510,11 +2733,43 @@ fn emit_variant_constructor(type_shapes: ref list<ir_type_shape>, variant_decls:
     }
 }
 
+fn borrow_child_is_place(locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, expr_id: i32, remaining: i32) -> bool {
+    if remaining <= 0 { return false; }
+    match lookup_expression(ref expressions, expr_id) {
+        Some(expr) => {
+            let children = lookup_expr_child_ids(ref expr_children, expr.id);
+            match expr.kind {
+                ir_expr_name => {
+                    if list_len(ref children) != 0 { return false; }
+                    match lookup_local(ref locals, expr.local_id) { Some(_) => { return true; }, None => { return false; }, }
+                },
+                ir_expr_field => {
+                    if list_len(ref children) != 1 { return false; }
+                    match list_get(ref children, 0) {
+                        Some(child) => { return borrow_child_is_place(ref locals, ref expressions, ref expr_children, child, remaining - 1); },
+                        None => { return false; },
+                    }
+                },
+                _ => { return false; },
+            }
+        },
+        None => { return false; },
+    }
+}
+
 fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr: ir_expr, diags: mutref list<diag>) -> str {
     let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+    if list_len(ref child_ids) != 1 {
+        push_c_error(mutref diags, "", expr.at, "borrow expression requires one binding child");
+        return "0";
+    }
     let child_entry = list_get(ref child_ids, 0);
     match child_entry {
         Some(child_id) => {
+            if not borrow_child_is_place(ref locals, ref expressions, ref expr_children, child_id, list_len(ref expressions)) {
+                push_c_error(mutref diags, "", expr.at, "borrow expression requires a binding or field path");
+                return "0";
+            }
             let child_expr_entry = lookup_expression(ref expressions, child_id);
             match child_expr_entry {
                 Some(child_expr) => {
@@ -2535,9 +2790,10 @@ fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_lo
                                 },
                             }
                         },
-                        _ => {
+                        ir_expr_field => {
                             return concat3("&(", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")");
                         },
+                        _ => { push_c_error(mutref diags, "", expr.at, "borrow expression requires a binding or field path"); return "0"; },
                     }
                 },
                 None => {
@@ -2669,7 +2925,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                                 None => {
                                 },
                             }
-                            return concat3("(-", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")"), "");
+                            return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), "", false, expr.at, mutref diags);
                         },
                         None => {
                             push_c_error(mutref diags, "", expr.at, "missing unary child expression");
@@ -2685,7 +2941,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") + (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -2705,7 +2961,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") - (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -2725,7 +2981,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") * (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -2745,7 +3001,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") / (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -3185,7 +3441,8 @@ fn materialize_c_value(lines: mutref list<str>, type_shapes: ref list<ir_type_sh
 
 fn apply_planned_lvalue_use(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, expr: ir_expr, value_text: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
     if not type_needs_drop(ref type_shapes, expr.type_id) {
-        return value_text;
+        // Capture this read before later operands or arguments can mutate it.
+        return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, value_text, level, mutref temp_index);
     }
     match expr.use_kind {
         checked_value_copy => {
@@ -3231,6 +3488,9 @@ fn lower_planned_borrow_argument(lines: mutref list<str>, type_shapes: ref list<
     match expr_entry {
         Some(expr) => {
             match expr.kind {
+                ir_expr_borrow => {
+                    return emit_borrow_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
+                },
                 ir_expr_name => {
                     let local_entry = lookup_local(ref locals, expr.local_id);
                     match local_entry {
@@ -3248,13 +3508,14 @@ fn lower_planned_borrow_argument(lines: mutref list<str>, type_shapes: ref list<
                 _ => {
                 },
             }
+            push_c_error(mutref diags, "", expr.at, "planned borrow argument requires a direct borrow or borrowed parameter");
+            return "0";
         },
         None => {
             push_c_error(mutref diags, "", 0, "planned borrow argument is missing expression truth");
             return "0";
         },
     }
-    return lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, level, mutref temp_index, mutref diags);
 }
 
 fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
@@ -3310,7 +3571,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                         },
                     }
                     let child_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
-                    return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, concat3("(-", child_text, ")"), level, mutref temp_index);
+                    return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, integer_operation_text(ref type_shapes, expr.type_id, expr.kind, child_text, "", false, expr.at, mutref diags), level, mutref temp_index);
                 },
                 ir_expr_and => {
                     let left_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
@@ -3531,6 +3792,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                         let left_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
                         let right_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level, mutref temp_index, mutref diags);
                         let mut value_text = concat5("((", left_text, ") ", binary_operator_text(expr.kind), str_concat(" (", str_concat(right_text, "))")));
+                        if integer_operator_suffix(expr.kind, false) != "" { value_text = integer_operation_text(ref type_shapes, expr.type_id, expr.kind, left_text, right_text, false, expr.at, mutref diags); }
                         let mut is_equality = false;
                         let mut is_inequality = false;
                         match expr.kind {
