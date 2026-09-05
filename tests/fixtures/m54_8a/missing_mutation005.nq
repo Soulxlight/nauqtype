@@ -1,0 +1,22 @@
+fn bump(counter: mutref i32) -> unit
+audit {
+    intent("Mutate a mutref parameter while omitting it from mutates.");
+    mutates();
+    effects();
+}
+{
+    counter = counter + 1;
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise omitted direct mutation detection.");
+    mutates();
+    effects();
+}
+{
+    let mut value = 0;
+    bump(mutref value);
+    return value;
+}

@@ -1,0 +1,43 @@
+enum LocalErr {
+    Bad,
+}
+
+fn fail_local() -> result<i32, LocalErr>
+audit {
+    intent("Return a local error result.");
+    mutates();
+    effects();
+}
+{
+    return Err(Bad);
+}
+
+fn use_local() -> result<i32, LocalErr>
+audit {
+    intent("Propagate a local error type.");
+    mutates();
+    effects();
+    propagates(LocalErr);
+}
+{
+    let value = fail_local()?[local];
+    return Ok(value);
+}
+
+fn main() -> i32
+audit {
+    intent("Convert the local propagation result to an exit code.");
+    mutates();
+    effects();
+}
+{
+    let result = use_local();
+    match result {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 0;
+        },
+    }
+}

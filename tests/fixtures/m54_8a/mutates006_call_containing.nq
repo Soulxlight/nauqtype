@@ -1,0 +1,33 @@
+fn touch(counter: mutref i32) -> unit
+audit {
+    intent("Directly write to a mutref parameter.");
+    mutates(counter);
+    effects();
+}
+{
+    counter = counter + 1;
+    return;
+}
+
+fn forwards(counter: mutref i32) -> unit
+audit {
+    intent("Declare mutation that is only visible through a call.");
+    mutates(counter);
+    effects();
+}
+{
+    touch(mutref counter);
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise call-containing mutates suppression.");
+    mutates();
+    effects();
+}
+{
+    let mut value = 0;
+    forwards(mutref value);
+    return value - 1;
+}

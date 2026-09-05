@@ -1,0 +1,42 @@
+fn parse_value() -> result<i32, str>
+audit {
+    intent("Propagate the builtin string error type.");
+    mutates();
+    effects();
+    propagates(str);
+}
+{
+    let parsed = parse_word("ok")?[word];
+    return Ok(parsed);
+}
+
+fn parse_word(text: str) -> result<i32, str>
+audit {
+    intent("Return a tiny parsed value.");
+    mutates();
+    effects();
+}
+{
+    if text == "ok" {
+        return Ok(0);
+    }
+    return Err("bad");
+}
+
+fn main() -> i32
+audit {
+    intent("Convert the builtin propagation result to an exit code.");
+    mutates();
+    effects();
+}
+{
+    let result = parse_value();
+    match result {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 1;
+        },
+    }
+}

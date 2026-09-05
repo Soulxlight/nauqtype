@@ -62,6 +62,12 @@ next feature milestone for structured process, time, timeout, and cancellation
 after those prerequisites. [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
 active implementation rather than the archived Python design.
 
+The M54.8 correction is deliberately split: shared source-contract validation
+comes first, then an explicit migration for incomplete or contradictory
+evidence. Compilation and evidence commands must agree on invalid `audit`
+blocks; a consistent rejection is not a claim that all evidence is complete.
+[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) records that boundary and its gates.
+
 ## Quick Start
 
 Build the stage1 driver from the checked-in C seed:

@@ -1,0 +1,22 @@
+fn bump(counter: mutref i32) -> unit
+audit {
+    intent("Declare the same mutated parameter twice.");
+    mutates(counter, counter);
+    effects();
+}
+{
+    counter = counter + 1;
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise duplicate audit declaration detection.");
+    mutates();
+    effects();
+}
+{
+    let mut value = 0;
+    bump(mutref value);
+    return value;
+}

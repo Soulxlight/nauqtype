@@ -1,0 +1,31 @@
+use helper;
+
+fn use_imported() -> result<i32, PublicErr>
+audit {
+    intent("Propagate an imported public error type.");
+    mutates();
+    effects();
+    propagates(PublicErr);
+}
+{
+    let value = fail_imported()?[imported];
+    return Ok(value);
+}
+
+fn main() -> i32
+audit {
+    intent("Convert the imported propagation result to an exit code.");
+    mutates();
+    effects();
+}
+{
+    let result = use_imported();
+    match result {
+        Ok(value) => {
+            return value;
+        },
+        Err(_) => {
+            return 0;
+        },
+    }
+}

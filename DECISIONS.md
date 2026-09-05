@@ -485,3 +485,25 @@
   with a switch only when it preserves first-match priority and every cleanup
   edge. Any C encoding revision requires another explicit seed transition,
   not altered comparison rules that erase semantic differences.
+
+## D059: Source Contract Validity Is Shared By Every Checked Command
+
+- Decision: M54.8a extracts and validates the existing fixed audit grammar once
+  per analyzed input and gives review renderers those validated declarations,
+  resolved propagation targets, and the validation summary. Compilation,
+  facts, review, diffs, policy targets, and refactor plans share acceptance.
+- Reason chosen: a source program cannot be trustworthy for `build` or
+  `facts` while the same declared contract is rejected by `review`. Output
+  purpose is not a different semantic policy.
+- Consequences: the driver owns structured diagnostic emission. Warnings are
+  nonfatal and emitted once per input; successful JSON shapes stay unchanged.
+  A call-containing body's direct-only mutation analysis cannot justify a
+  negative overdeclaration claim, so only call-free bodies receive that
+  warning. Missing directly inferred mutation remains an error. Shared
+  completeness checks reject missing value-plan coverage in tooling too.
+- Compatibility boundary: fixed-grammar enforcement and previously
+  review-only contract errors now apply consistently. The M54.7 seed remains
+  pinned if it bootstraps the new source and the fixed point passes. M54.8b
+  must separately version evidence changes for absent declarations, partial
+  mutation coverage, and failed or unprovided inputs. This is not a silent
+  schema correction or a claim that all audit findings are closed.

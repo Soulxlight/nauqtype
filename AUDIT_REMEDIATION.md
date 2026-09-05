@@ -68,6 +68,22 @@ F09's current seed record must be refreshed during M54.7 because C output
 changes. Automatic rejection of an unrecorded future seed refresh remains in
 M54.10; updating a manifest alone does not close that enforcement finding.
 
+M54.8 is split at its compatibility boundary. M54.8a shares strict source
+contract extraction/validation and value-plan completeness checks across
+commands. M54.8b retains F05/F08, the remaining F11 schema/failure-envelope
+work, and F15 producer diagnostics. The reviewed implementation contract is
+[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md). No successful schema is silently
+changed in M54.8a, and the parent milestone remains open.
+
+M54.8a is complete as of 2026-09-05. Independent Sol xhigh source and repair
+audits returned PASS; the replacement frozen candidate passed all seven
+`scripts/check_milestone.sh` phases in 1,520 seconds. The first attempt exposed
+an obsolete empty-stderr refactor assertion, which was narrowly repaired and
+added to fast coverage before the complete repeat. F03's inconsistent
+source-contract acceptance is corrected. This does not close F05/F08, general
+F11 envelopes, or general F15 duplication; exact hashes, failed-run provenance,
+and remaining scope are in `M54_8_CONTRACTS.md`.
+
 ## Architecture And Product Direction
 
 The active implementation is `selfhost/` plus the narrow C runtime in

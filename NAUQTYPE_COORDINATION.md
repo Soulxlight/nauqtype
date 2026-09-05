@@ -1,6 +1,6 @@
 # NauqType Work Coordination
 
-Last live review: 2026-09-04.
+Last live review: 2026-09-05.
 
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
@@ -23,7 +23,7 @@ unless the user explicitly assigns them.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.7 complete with mixed-model audit PASS and the clean milestone gate; M54.8 contract/evidence consistency is next | No edits to Libraries, AIML, or Tool Codex's study. Follow the Astra finding ledger in `AUDIT_REMEDIATION.md`; no runtime/schema/language widening in M54.7. |
+| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8a complete after Sol xhigh audits and the 1,520-second frozen gate; M54.8b versioned evidence corrections remain next | No edits to Libraries, AIML, or Tool Codex's study. `M54_8_CONTRACTS.md` records exact evidence; no runtime, successful-schema, or source-syntax widening in this slice. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -69,6 +69,12 @@ unless the user explicitly assigns them.
   Astra audit. See [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for findings,
   acceptance evidence, and boundaries. M55 structured process, time, timeout,
   and cancellation remains the next feature milestone after those repairs.
+- M54.8a now shares strict source-contract validity across compilation and
+  evidence commands, with contract diagnostics emitted once per analyzed input
+  and checked-plan readiness.
+  All seven frozen-gate phases passed after the independent repair audit.
+  M54.8b still owns absent/partial evidence and versioned failure envelopes;
+  this is not blanket closure of the contract/evidence audit findings.
 - M54.5 development-loop efficiency is complete and evidenced: content-verified
   stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
   close ordering, and quick/full CI tiers all passed the 2,132-second

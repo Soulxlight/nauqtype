@@ -709,6 +709,22 @@ fn output_matches(actual: str, expected: str) -> bool {
     return normalize_newlines(actual) == normalize_newlines(expected);
 }
 
+fn count_text_occurrences(text: str, pattern: str) -> i32 {
+    if pattern == "" {
+        return 0;
+    }
+    let mut count = 0;
+    let mut index = 0;
+    let limit = str_len(text) - str_len(pattern);
+    while index <= limit {
+        if starts_with_at(text, index, pattern) {
+            count = count + 1;
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
 fn copy_file_text(source_path: str, dest_path: str) -> result<unit, io_err> {
     let ensure_result = ensure_parent_dir(dest_path);
     match ensure_result {
@@ -739,6 +755,7 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "borrow");
     list_push(mutref modules, "build_info");
     list_push(mutref modules, "c_emit");
+    list_push(mutref modules, "checked_coverage");
     list_push(mutref modules, "diag");
     list_push(mutref modules, "facts");
     list_push(mutref modules, "files");
@@ -825,6 +842,15 @@ fn run_driver_build(driver_path: str, entry_path: str) -> result<process_result,
     return run_process(driver_path, ref args, ".");
 }
 
+fn run_driver_build_output(driver_path: str, entry_path: str, output_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "build");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, "-o");
+    list_push(mutref args, output_path);
+    return run_process(driver_path, ref args, ".");
+}
+
 fn run_driver_check(driver_path: str, entry_path: str) -> result<process_result, io_err> {
     let mut args: list<str> = list();
     list_push(mutref args, "check");
@@ -861,6 +887,19 @@ fn run_driver_run(driver_path: str, entry_path: str) -> result<process_result, i
     list_push(mutref args, "run");
     list_push(mutref args, entry_path);
     return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_run_output(driver_path: str, entry_path: str, output_path: str) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "run");
+    list_push(mutref args, entry_path);
+    list_push(mutref args, "-o");
+    list_push(mutref args, output_path);
+    return run_process(driver_path, ref args, ".");
+}
+
+fn run_driver_program(driver_path: str, entry_path: str) -> result<process_result, io_err> {
+    return run_driver_run(driver_path, entry_path);
 }
 
 fn run_driver_facts(driver_path: str, entry_path: str, format: str) -> result<process_result, io_err> {
@@ -1225,6 +1264,55 @@ fn run_json_golden_result(label: str, result: result<process_result, io_err>, go
     match result {
         Ok(status) => {
             return driver_json_matches_golden(label, status, golden_path);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn driver_json_matches_golden_with_warning(step_name: str, status: process_result, golden_path: str, code: str, expected_count: i32) -> bool {
+    if status.exit_code != 0 {
+        eprint_line(str_concat(step_name, " returned an unexpected exit code"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(step_name, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if count_text_occurrences(status.stderr, code) != expected_count or count_text_occurrences(status.stdout, code) != 0 {
+        eprint_line(str_concat(step_name, " did not emit the expected warning count"));
+        emit_process_output(status);
+        return false;
+    }
+    if count_text_occurrences(status.stderr, "NQ-CONTRACT-") + count_text_occurrences(status.stderr, "NQ-PROPAGATE-") != expected_count {
+        eprint_line(str_concat(step_name, " emitted an unexpected contract diagnostic"));
+        emit_process_output(status);
+        return false;
+    }
+    if count_text_occurrences(status.stdout, "NQ-CONTRACT-") + count_text_occurrences(status.stdout, "NQ-PROPAGATE-") != 0 {
+        eprint_line(str_concat(step_name, " emitted a contract diagnostic on stdout"));
+        emit_process_output(status);
+        return false;
+    }
+    let mut expected = "";
+    if not read_text_or_report(golden_path, str_concat("failed to read golden for ", step_name), mutref expected) {
+        return false;
+    }
+    if not output_matches(status.stdout, expected) {
+        eprint_line(str_concat(step_name, " output changed"));
+        return false;
+    }
+    return true;
+}
+
+fn run_json_golden_warning_result(label: str, result: result<process_result, io_err>, golden_path: str, code: str, expected_count: i32) -> bool {
+    match result {
+        Ok(status) => {
+            return driver_json_matches_golden_with_warning(label, status, golden_path, code, expected_count);
         },
         Err(err) => {
             eprint_line(io_err_text(err));
@@ -1645,7 +1733,7 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         failed_phase = "tooling.golden";
         return false;
     }
-    if not run_json_golden_result("facts named args v2", run_driver_facts(driver_path, "tests/fixtures/facts/named_args_main.nq", "v2"), "tests/golden/facts/named-args-v2.json") {
+    if not run_json_golden_warning_result("facts named args v2", run_driver_facts(driver_path, "tests/fixtures/facts/named_args_main.nq", "v2"), "tests/golden/facts/named-args-v2.json", "NQ-CONTRACT-001", 1) {
         failed_phase = "tooling.golden";
         return false;
     }
@@ -1673,7 +1761,7 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         failed_phase = "tooling.refactor";
         return false;
     }
-    if not run_json_contains_result("refactor-rename named arg", run_driver_refactor_rename(driver_path, "tests/fixtures/facts/named_args_main.nq", "binding:fn:named_args_helper::combine:1:scale@38", "multiplier"), "\"ok\": true", "\"span\": {", "\"replacement\": \"multiplier\"") {
+    if not run_m54_8a_named_arg_refactor(driver_path) {
         failed_phase = "tooling.refactor";
         return false;
     }
@@ -2113,6 +2201,332 @@ fn run_expected_check_failure(driver_path: str, path: str, expected_text: str) -
     }
 }
 
+fn m54_8a_contract_code_count(text: str) -> i32 {
+    return count_text_occurrences(text, "NQ-CONTRACT-") + count_text_occurrences(text, "NQ-PROPAGATE-");
+}
+
+fn m54_8a_unexpected_checked_success(status: process_result) -> bool {
+    if text_contains(status.stdout, "\"ok\": true") {
+        return true;
+    }
+    if text_contains(status.stdout, "\"diagnostics\": []") {
+        return true;
+    }
+    return false;
+}
+
+fn m54_8a_invalid_status_ok(label: str, status: process_result, code: str, marker: str) -> bool {
+    if status.exit_code == 0 {
+        eprint_line(str_concat(label, " unexpectedly succeeded"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(label, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if marker != "" {
+        if text_contains(status.stdout, marker) or text_contains(status.stderr, marker) {
+            eprint_line(str_concat(label, " executed an invalid fixture"));
+            emit_process_output(status);
+            return false;
+        }
+    }
+    if count_text_occurrences(status.stderr, code) != 1 or count_text_occurrences(status.stdout, code) != 0 {
+        eprint_line(str_concat(label, " did not emit exactly one expected stderr diagnostic"));
+        emit_process_output(status);
+        return false;
+    }
+    if m54_8a_contract_code_count(status.stderr) != 1 or m54_8a_contract_code_count(status.stdout) != 0 {
+        eprint_line(str_concat(label, " emitted an extra contract diagnostic"));
+        emit_process_output(status);
+        return false;
+    }
+    if m54_8a_unexpected_checked_success(status) {
+        eprint_line(str_concat(label, " emitted checked-success output for invalid input"));
+        emit_process_output(status);
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_invalid_result(label: str, result: result<process_result, io_err>, code: str, marker: str) -> bool {
+    match result {
+        Ok(status) => {
+            return m54_8a_invalid_status_ok(label, status, code, marker);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn m54_8a_sentinel_text() -> str {
+    return "m54.8a sentinel\n";
+}
+
+fn m54_8a_sentinel_unchanged(label: str, output_path: str) -> bool {
+    let mut text = "";
+    if not read_text_or_report(output_path, str_concat(label, " sentinel read"), mutref text) {
+        return false;
+    }
+    if text != m54_8a_sentinel_text() {
+        eprint_line(str_concat(label, " replaced an output artifact"));
+        return false;
+    }
+    return true;
+}
+
+fn m54_8a_invalid_emit_c(driver_path: str, label: str, entry_path: str, output_path: str, code: str, marker: str) -> bool {
+    if not write_artifact_snapshot(str_concat(label, " sentinel write"), output_path, m54_8a_sentinel_text()) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result(label, run_driver_emit_c(driver_path, entry_path, output_path), code, marker) {
+        return false;
+    }
+    return m54_8a_sentinel_unchanged(label, output_path);
+}
+
+fn m54_8a_invalid_build(driver_path: str, label: str, entry_path: str, output_path: str, code: str, marker: str) -> bool {
+    if not write_artifact_snapshot(str_concat(label, " sentinel write"), output_path, m54_8a_sentinel_text()) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result(label, run_driver_build_output(driver_path, entry_path, output_path), code, marker) {
+        return false;
+    }
+    return m54_8a_sentinel_unchanged(label, output_path);
+}
+
+fn m54_8a_invalid_run(driver_path: str, label: str, entry_path: str, output_path: str, code: str, marker: str) -> bool {
+    if not write_artifact_snapshot(str_concat(label, " sentinel write"), output_path, m54_8a_sentinel_text()) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result(label, run_driver_run_output(driver_path, entry_path, output_path), code, marker) {
+        return false;
+    }
+    return m54_8a_sentinel_unchanged(label, output_path);
+}
+
+fn m54_8a_warning_status_ok(label: str, status: process_result, code: str, expected_count: i32) -> bool {
+    if status.exit_code != 0 {
+        eprint_line(str_concat(label, " failed"));
+        emit_process_output(status);
+        return false;
+    }
+    if has_stage1_failure_text(status) {
+        eprint_line(str_concat(label, " reported a stage1 failure"));
+        emit_process_output(status);
+        return false;
+    }
+    if count_text_occurrences(status.stderr, code) != expected_count or count_text_occurrences(status.stdout, code) != 0 {
+        eprint_line(str_concat(label, " did not emit the expected warning count"));
+        emit_process_output(status);
+        return false;
+    }
+    if m54_8a_contract_code_count(status.stderr) != expected_count or m54_8a_contract_code_count(status.stdout) != 0 {
+        eprint_line(str_concat(label, " emitted an unexpected contract diagnostic"));
+        emit_process_output(status);
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_warning_result(label: str, result: result<process_result, io_err>, code: str, expected_count: i32) -> bool {
+    match result {
+        Ok(status) => {
+            return m54_8a_warning_status_ok(label, status, code, expected_count);
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_m54_8a_missing_effect_route_matrix(driver_path: str) -> bool {
+    let invalid_path = "tests/fixtures/m54_8a/missing_effect.nq";
+    let valid_path = "tests/fixtures/m54_8a/valid.nq";
+    let policy_path = "tests/fixtures/m54_8a/invalid_policy.json";
+    let marker = "M54_8A_SHOULD_NOT_RUN";
+    let code = "NQ-CONTRACT-008";
+
+    if not run_m54_8a_invalid_result("M54.8a check missing effect", run_driver_check(driver_path, invalid_path), code, marker) {
+        return false;
+    }
+    if not m54_8a_invalid_emit_c(driver_path, "M54.8a emit-c missing effect", invalid_path, "build/m54_8a/missing_effect.emit.c", code, marker) {
+        return false;
+    }
+    if not m54_8a_invalid_build(driver_path, "M54.8a build missing effect", invalid_path, "build/m54_8a/missing_effect.build.c", code, marker) {
+        return false;
+    }
+    if not m54_8a_invalid_run(driver_path, "M54.8a run missing effect", invalid_path, "build/m54_8a/missing_effect.run.c", code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a facts v1 missing effect", run_driver_facts(driver_path, invalid_path, ""), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a facts v2 missing effect", run_driver_facts(driver_path, invalid_path, "v2"), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a facts v3 missing effect", run_driver_facts(driver_path, invalid_path, "v3"), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a review v1 missing effect", run_driver_review(driver_path, invalid_path, ""), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a review v2 missing effect", run_driver_review(driver_path, invalid_path, "v2"), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a review-diff v1 missing effect", run_driver_review_diff(driver_path, valid_path, invalid_path, ""), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a review-diff v2 missing effect", run_driver_review_diff(driver_path, valid_path, invalid_path, "v2"), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a change-report v1 missing effect", run_driver_change_report(driver_path, valid_path, invalid_path, ""), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a change-report v2 missing effect", run_driver_change_report_v2(driver_path, valid_path, invalid_path), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a policy-check missing effect", run_driver_policy_check(driver_path, invalid_path, policy_path), code, marker) {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a refactor-rename missing effect", run_driver_refactor_rename(driver_path, invalid_path, "fn:missing_effect::main", "renamed_main"), code, marker) {
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_contract_content_cases(driver_path: str) -> bool {
+    if not run_m54_8a_invalid_result("M54.8a invalid mutates 004", run_driver_check(driver_path, "tests/fixtures/m54_8a/invalid_mutates004.nq"), "NQ-CONTRACT-004", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a missing mutation 005", run_driver_check(driver_path, "tests/fixtures/m54_8a/missing_mutation005.nq"), "NQ-CONTRACT-005", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a duplicate mutates 010", run_driver_check(driver_path, "tests/fixtures/m54_8a/duplicate_mutates010.nq"), "NQ-CONTRACT-010", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a reordered audit syntax 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_ordered002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a missing audit clause 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_missing002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a repeated audit clause 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_repeated002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a unknown audit clause 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_unknown002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a leading empty audit entry 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_leading_empty002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a double comma audit entry 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_double_comma002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a string clause token 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_string_clause002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a string separator token 002", run_driver_check(driver_path, "tests/fixtures/m54_8a/syntax_string_separator002.nq"), "NQ-CONTRACT-002", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a unknown propagation 006", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagate_unknown006.nq"), "NQ-PROPAGATE-006", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a value propagation 006", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagate_value006.nq"), "NQ-PROPAGATE-006", "") {
+        return false;
+    }
+    if not run_m54_8a_invalid_result("M54.8a hidden propagation 006", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagates_hidden/main.nq"), "NQ-PROPAGATE-006", "") {
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_positive_contract_cases(driver_path: str) -> bool {
+    if not run_quiet_result("M54.8a trailing comma accepted", run_driver_check(driver_path, "tests/fixtures/m54_8a/trailing_comma_ok.nq")) {
+        return false;
+    }
+    if not run_quiet_result("M54.8a builtin propagation accepted", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagates_builtin_ok.nq")) {
+        return false;
+    }
+    if not run_quiet_result("M54.8a local propagation accepted", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagates_local_ok.nq")) {
+        return false;
+    }
+    if not run_quiet_result("M54.8a imported propagation accepted", run_driver_check(driver_path, "tests/fixtures/m54_8a/propagates_imported/main.nq")) {
+        return false;
+    }
+    if not run_json_contains_result("M54.8a type-only facts v2", run_driver_facts(driver_path, "tests/fixtures/m54_8a/type_only_ok.nq", "v2"), "\"module\": \"type_only_ok\"", "\"kind\": \"type\"", "\"kind\": \"variant\"") {
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_warning_cases(driver_path: str) -> bool {
+    if not run_m54_8a_named_arg_refactor(driver_path) {
+        return false;
+    }
+    if not run_m54_8a_warning_result("M54.8a public audit warning 001", run_driver_review(driver_path, "tests/fixtures/m54_8a/warning001.nq", "v2"), "NQ-CONTRACT-001", 1) {
+        return false;
+    }
+    if not run_m54_8a_warning_result("M54.8a call-free mutates warning 006", run_driver_review(driver_path, "tests/fixtures/m54_8a/mutates006_call_free.nq", "v2"), "NQ-CONTRACT-006", 1) {
+        return false;
+    }
+    if not run_m54_8a_warning_result("M54.8a call-containing mutates suppression", run_driver_review(driver_path, "tests/fixtures/m54_8a/mutates006_call_containing.nq", "v2"), "NQ-CONTRACT-006", 0) {
+        return false;
+    }
+    if not run_m54_8a_warning_result("M54.8a policy-backed change warning 001", run_driver_change_report(driver_path, "tests/fixtures/m54_8a/policy_warning_before.nq", "tests/fixtures/m54_8a/policy_warning_after.nq", "tests/fixtures/m54_8a/policy_warning.json"), "NQ-CONTRACT-001", 1) {
+        return false;
+    }
+    return true;
+}
+
+fn run_m54_8a_checked_coverage_probe(driver_path: str) -> bool {
+    return run_quiet_result("M54.8a checked coverage probe", run_driver_program(driver_path, "selfhost/probe_checked_coverage.nq"));
+}
+
+fn run_m54_8a_named_arg_refactor(driver_path: str) -> bool {
+    let result = run_driver_refactor_rename(driver_path, "tests/fixtures/facts/named_args_main.nq", "binding:fn:named_args_helper::combine:1:scale@38", "multiplier");
+    match result {
+        Ok(status) => {
+            if not m54_8a_warning_status_ok("refactor-rename named arg", status, "NQ-CONTRACT-001", 1) {
+                return false;
+            }
+            if not text_contains(status.stdout, "\"ok\": true") or not text_contains(status.stdout, "\"span\": {") or not text_contains(status.stdout, "\"replacement\": \"multiplier\"") {
+                eprint_line("refactor-rename named arg output missing expected checked evidence");
+                return false;
+            }
+            return true;
+        },
+        Err(err) => {
+            eprint_line(io_err_text(err));
+            return false;
+        },
+    }
+}
+
+fn run_m54_8a_contract_gate(driver_path: str) -> bool {
+    if not run_m54_8a_missing_effect_route_matrix(driver_path) {
+        return false;
+    }
+    if not run_m54_8a_contract_content_cases(driver_path) {
+        return false;
+    }
+    if not run_m54_8a_positive_contract_cases(driver_path) {
+        return false;
+    }
+    if not run_m54_8a_warning_cases(driver_path) {
+        return false;
+    }
+    if not run_m54_8a_checked_coverage_probe(driver_path) {
+        return false;
+    }
+    return true;
+}
+
 fn m39_manifest_has_all_suite_entries(text: str) -> bool {
     let mut suites: list<str> = list();
     list_push(mutref suites, "test_ai_audit.py|");
@@ -2216,6 +2630,9 @@ audit {
         return 1;
     }
     if not run_quiet_result("fixture M54.7 module names", run_driver_run(driver_path, "tests/fixtures/m54_7/names_workspace/src/app/main.nq")) {
+        return 1;
+    }
+    if not run_m54_8a_contract_gate(driver_path) {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {

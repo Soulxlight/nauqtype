@@ -32,6 +32,12 @@ audit {
 - `effects(...)` currently supports the fixed atoms `print` and `io`.
 - `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`.
 - Public functions without `audit` are allowed in this phase, but they emit a warning.
+- Compilation and evidence commands share source-contract validation. An
+  invalid declaration is not accepted merely because the command is `facts`,
+  `build`, or `policy-check`; policy sidecars remain advisory and separate.
+- Malformed fixed clause grammar reports `NQ-CONTRACT-002`. Duplicate list
+  entries report `NQ-CONTRACT-010`; unresolved or non-type propagation names
+  report `NQ-PROPAGATE-006`. A trailing comma is allowed, an empty entry is not.
 
 ## Compiler Inference
 
@@ -43,6 +49,10 @@ audit {
 - Propagation is inferred from accepted `let name = result_expr?;` sites and checked against exact `propagates(E)` entries.
 - Missing inferred facts are errors.
 - Overdeclared facts are warnings.
+- For mutation, an overdeclaration warning is only justified for a call-free
+  body: the current direct-only analysis cannot prove the absence of mutation
+  through calls. Omitting a directly inferred write remains an error. This
+  does not make the existing mutation footprint complete.
 
 ## Review Output
 
@@ -77,7 +87,16 @@ This output is intended to be consumed by both humans and future AI tooling.
 
 During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, and `fmt` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
 
-The broader AI-first compiler surface now also includes `nauqc facts <file>`, which emits checked definitions, references, and call graph edges independently from audit-contract review. That separation is intentional: `facts` gives agents stable program structure, while `review` evaluates the fixed-shape human-supervision contract.
+The broader AI-first compiler surface also includes `nauqc facts <file>`, which
+exports checked definitions, references, and call graph edges. Its output is
+different from `review`, but both commands require the same valid source
+contracts. Review renders the already-extracted, validated declarations rather
+than applying a second acceptance policy.
+
+M54.8a keeps successful JSON formats unchanged. Existing review v2
+absent-audit provenance, partial mutation coverage, and change-report v2
+failure-envelope/schema defects remain open for the explicit M54.8b migration;
+consistent source rejection alone does not close those evidence findings.
 
 ## Supervised Workflow Alpha
 

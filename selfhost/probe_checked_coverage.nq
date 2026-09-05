@@ -1,0 +1,39 @@
+use checked_coverage;
+use diag;
+
+fn main() -> i32 {
+    let mut diags: list<diag> = list();
+    if not check_value_plan_coverage("probe", 2, 2, 3, 3, mutref diags) {
+        return 1;
+    }
+    if list_len(ref diags) != 0 {
+        return 2;
+    }
+    if check_value_plan_coverage("probe", 2, 1, 3, 3, mutref diags) {
+        return 3;
+    }
+    match list_get(ref diags, 0) {
+        Some(value) => {
+            if value.code != "NQ-INTERNAL-010" or value.start != -1 or value.end != -1 {
+                return 4;
+            }
+        },
+        None => { return 5; },
+    }
+    diags = list();
+    if check_value_plan_coverage("probe", 2, 2, 3, 2, mutref diags) {
+        return 6;
+    }
+    match list_get(ref diags, 0) {
+        Some(value) => {
+            if value.code != "NQ-INTERNAL-011" {
+                return 7;
+            }
+        },
+        None => { return 8; },
+    }
+    if list_len(ref diags) != 1 or not diagnostics_have_errors(ref diags) {
+        return 9;
+    }
+    return 0;
+}

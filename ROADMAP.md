@@ -888,6 +888,10 @@ Status: complete.
 
 - M54.8: canonical contract validation and truthful evidence coverage across
   check/facts/review, including absent contracts and mutation coverage.
+  M54.8a is complete: shared extraction, diagnostics, and readiness passed
+  independent audit and the seven-phase frozen gate. M54.8b next migrates
+  incompatible evidence/schema contracts explicitly; M54.8 remains open.
+  See [M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) for the bounded acceptance plan.
 - M54.9: exact ordinary integer overflow/division policy, safe allocation-size
   arithmetic, and runtime boundary regressions.
 - M54.10: framed dependency source hashes, enforced seed provenance, immutable
