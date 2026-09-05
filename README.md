@@ -106,7 +106,15 @@ Use the active Nauqtype-owned driver for `review`:
 ```bash
 bin/nauqc review examples/review_contracts.nq
 bin/nauqc review examples/review_contracts.nq --format v2
+bin/nauqc review examples/review_contracts.nq --format v3
 ```
+
+For new review consumers, v3 distinguishes an absent audit from a declared
+one and labels mutation inference as a partial direct-write lower bound.
+It resolves those writes by checked binding identity, including shadowing.
+An empty mutation list is not a purity guarantee: builtin and user-call writes
+are not yet summarized. v1/v2 remain compatibility outputs; source-contract
+acceptance is unchanged. See [AI_CONTRACTS.md](AI_CONTRACTS.md).
 
 Compare two checked review surfaces with stable semantic identities:
 

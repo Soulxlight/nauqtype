@@ -386,6 +386,8 @@
 - [ ] M54.8: unify contract validation and report truthful evidence completeness (F03/F05/F08/F11/F15)
 - [x] M54.8a: share validated source contracts and checked-plan readiness across compilation and evidence commands; independent audit and seven-phase frozen gate passed
 - [ ] M54.8b: explicitly migrate absent/partial/failed evidence, mutation summaries, failure envelopes, and diagnostic producer fixes
+- [x] M54.8b1: close reviewed v3 audit provenance and checked direct-write lower-bound emission; preserve legacy outputs; Sol xhigh audit and seven-phase frozen gate passed
+- [ ] M54.8b follow-up: checked call summaries/validation, standing schema enforcement, diff/change failure contracts, and F15 producer diagnostics
 - [ ] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
 - [ ] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
 - [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)

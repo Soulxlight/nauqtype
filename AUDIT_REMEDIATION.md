@@ -1,6 +1,7 @@
 # Astra Audit Remediation
 
-Status: M54.7 complete, 2026-09-05; M54.8 is next. Feature expansion waits for
+Status: M54.7, M54.8a, and M54.8b1 complete, 2026-09-05. M54.8 remains open.
+Feature expansion waits for
 the remaining evidence, numeric, and provenance prerequisites below.
 
 The 2026-09-04 Astra audit reviewed `d2c7592ae5e4dc11fba7ffe715334a881d715b62`.
@@ -83,6 +84,13 @@ added to fast coverage before the complete repeat. F03's inconsistent
 source-contract acceptance is corrected. This does not close F05/F08, general
 F11 envelopes, or general F15 duplication; exact hashes, failed-run provenance,
 and remaining scope are in `M54_8_CONTRACTS.md`.
+
+M54.8b1 completed the bounded review-v3 migration: absent/declared audit
+emission, checked-ID direct assignments, and explicit partial lower-bound
+coverage. Independent Sol xhigh audit PASS and one 1,574-second frozen gate
+close emitter/golden coherence only. It does not close call-summary validation,
+standing F08 standards
+schema enforcement, F11 diff/change failure envelopes, or F15 diagnostics.
 
 ## Architecture And Product Direction
 

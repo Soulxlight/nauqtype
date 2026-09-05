@@ -1,5 +1,6 @@
 use ast;
 use diag;
+use handoff;
 use lexer;
 use source;
 use text;
@@ -13,6 +14,130 @@ pub type review_function_fact {
     is_public: bool,
     has_audit: bool,
     intent: str,
+}
+
+pub type review_direct_mutation {
+    module: str,
+    function_name: str,
+    binding_id: i32,
+    param_index: i32,
+    name: str,
+}
+
+fn review_mutation_identity_error(diags: mutref list<diag>, module: str, at: i32) -> unit {
+    list_push(mutref diags, make_error("NQ-INTERNAL-012", diag_internal, module, at, at + 1, "stage1 internal error: review direct mutation has inconsistent checked binding or parameter identity"));
+    return;
+}
+
+fn review_is_assignment(kind: checked_stmt_kind) -> bool {
+    match kind {
+        checked_stmt_assign => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn review_is_param(kind: checked_binding_kind) -> bool {
+    match kind {
+        checked_binding_param => { return true; },
+        _ => { return false; },
+    }
+}
+
+pub fn collect_review_direct_mutations(bindings: ref list<checked_binding>, params: ref list<checked_param>, statements: ref list<checked_stmt>, out: mutref list<review_direct_mutation>, diags: mutref list<diag>) -> unit
+audit {
+    intent("Collect direct mutable-parameter writes by checked identity without inferring call writes");
+    mutates(out, diags);
+    effects();
+}
+{
+    let mut seen: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        match list_get(ref statements, index) {
+            Some(stmt) => {
+                if review_is_assignment(stmt.kind) {
+                    if stmt.target_binding_id < 1 {
+                        review_mutation_identity_error(mutref diags, stmt.module_name, stmt.at);
+                        return;
+                    }
+                    match list_get(ref bindings, stmt.target_binding_id - 1) {
+                        Some(binding) => {
+                            if binding.id != stmt.target_binding_id or binding.function_id != stmt.function_id or binding.module_name != stmt.module_name or binding.function_name != stmt.function_name {
+                                review_mutation_identity_error(mutref diags, stmt.module_name, stmt.at);
+                                return;
+                            }
+                            if review_is_param(binding.kind) {
+                                let mut matches = 0;
+                                let mut param_index = 0;
+                                while param_index < list_len(ref params) {
+                                    match list_get(ref params, param_index) {
+                                        Some(param) => {
+                                            if param.binding_id == binding.id {
+                                                if param.function_id != binding.function_id or param.module_name != binding.module_name or param.function_name != binding.function_name or param.index != binding.param_index or param.name != binding.name or not param.is_borrow or not param.borrow_mutable or not binding.is_borrow or not binding.borrow_mutable or param.type_id != binding.type_id {
+                                                    review_mutation_identity_error(mutref diags, stmt.module_name, stmt.at);
+                                                    return;
+                                                }
+                                                matches = matches + 1;
+                                            }
+                                        },
+                                        None => {},
+                                    }
+                                    param_index = param_index + 1;
+                                }
+                                if matches != 1 or binding.param_index < 0 or binding.type_id < 1 {
+                                    review_mutation_identity_error(mutref diags, stmt.module_name, stmt.at);
+                                    return;
+                                }
+                                if not list_contains_i32(ref seen, binding.id) {
+                                    list_push(mutref seen, binding.id);
+                                    list_push(mutref out, review_direct_mutation { module: binding.module_name, function_name: binding.function_name, binding_id: binding.id, param_index: binding.param_index, name: binding.name });
+                                }
+                            }
+                        },
+                        None => {
+                            review_mutation_identity_error(mutref diags, stmt.module_name, stmt.at);
+                            return;
+                        },
+                    }
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+fn inferred_checked_mutates(writes: ref list<review_direct_mutation>, module: str, function_name: str) -> list<str> {
+    let mut names: list<str> = list();
+    let mut previous = -1;
+    let mut searching = true;
+    while searching {
+        let mut next = -1;
+        let mut name = "";
+        let mut index = 0;
+        while index < list_len(ref writes) {
+            match list_get(ref writes, index) {
+                Some(write) => {
+                    if write.module == module and write.function_name == function_name and write.param_index > previous {
+                        if next < 0 or write.param_index < next {
+                            next = write.param_index;
+                            name = write.name;
+                        }
+                    }
+                },
+                None => {},
+            }
+            index = index + 1;
+        }
+        if next < 0 {
+            searching = false;
+        } else {
+            list_push(mutref names, name);
+            previous = next;
+        }
+    }
+    return names;
 }
 
 pub fn make_review_function_fact(module: str, name: str, at: i32, is_public: bool, has_audit: bool, intent: str) -> review_function_fact
@@ -1834,7 +1959,7 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
     return;
 }
 
-fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>) -> unit {
+fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, use_v3: bool) -> unit {
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let io_kind_effects = build_io_kind_effects(ref functions, ref calls, ref uses);
@@ -1848,7 +1973,12 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 let declared_mutates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_mutates);
                 let declared_effects = decl_entries_for_function(ref decls, value.module, value.name, review_decl_effects);
                 let declared_propagates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_propagates);
-                let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                let mut inferred_mutate_names: list<str> = list();
+                if use_v3 {
+                    inferred_mutate_names = inferred_checked_mutates(ref writes, value.module, value.name);
+                } else {
+                    inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
+                }
                 let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
                 let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, value.module, value.name);
                 let mut inferred_effect_names: list<str> = list();
@@ -1888,8 +2018,22 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 }
                 list_push(mutref lines, "      },");
                 list_push(mutref lines, "      \"evidence\": {");
-                list_push(mutref lines, "        \"audit\": \"declared\",");
-                list_push(mutref lines, "        \"inferred\": \"checked\"");
+                if use_v3 and not value.has_audit {
+                    list_push(mutref lines, "        \"audit\": \"absent\",");
+                } else {
+                    list_push(mutref lines, "        \"audit\": \"declared\",");
+                }
+                if use_v3 {
+                    list_push(mutref lines, "        \"inferred\": \"checked\",");
+                    list_push(mutref lines, "        \"mutation_coverage\": {");
+                    list_push(mutref lines, "          \"interpretation\": \"lower_bound\",");
+                    list_push(mutref lines, "          \"scope\": \"direct_mutref_parameter_assignments\",");
+                    list_push(mutref lines, "          \"completeness\": \"partial\",");
+                    list_push(mutref lines, "          \"uncovered\": [\"builtin_call_writes\", \"local_call_writes\", \"imported_call_writes\"]");
+                    list_push(mutref lines, "        }");
+                } else {
+                    list_push(mutref lines, "        \"inferred\": \"checked\"");
+                }
                 list_push(mutref lines, "      },");
                 append_review_v2_calls(mutref lines, "      ", ref functions, ref items, ref variants, ref calls, ref uses, value.module, value.name, false);
                 if index + 1 < total_functions {
@@ -2042,13 +2186,17 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
     return;
 }
 
-fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>) -> unit {
+fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, use_v3: bool) -> unit {
     list_push(mutref lines, "{");
-    list_push(mutref lines, "  \"version\": 2,");
+    if use_v3 {
+        list_push(mutref lines, "  \"version\": 3,");
+    } else {
+        list_push(mutref lines, "  \"version\": 2,");
+    }
     list_push(mutref lines, "  \"command\": \"review\",");
     list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
-    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals);
+    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, use_v3);
     append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses);
     append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true);
     append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref locals);
@@ -2643,7 +2791,24 @@ audit {
     }
 
     let mut lines: list<str> = list();
-    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals);
+    let writes: list<review_direct_mutation> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, false);
+    emit_lines(ref lines);
+    return summary;
+}
+
+pub fn emit_review_v3(entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, summary: review_summary, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>) -> review_summary
+audit {
+    intent("Emit review v3 with truthful audit provenance and partial checked direct-write evidence");
+    mutates();
+    effects(print);
+}
+{
+    if summary.error_count > 0 {
+        return summary;
+    }
+    let mut lines: list<str> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, true);
     emit_lines(ref lines);
     return summary;
 }

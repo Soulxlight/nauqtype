@@ -71,7 +71,40 @@ audit {
 - call references with resolved target identity where available
 - call graph edges
 - propagation contracts and checked propagation sites
-- evidence fields that distinguish declared audit data from checked compiler inference
+- legacy evidence fields; v2 incorrectly labels absent audits as declared
+
+`nauqc review <file> --format v3` is the explicit migration for new consumers.
+It preserves the v2 identities and successful-output structure, but makes
+`evidence.audit` exactly `absent` for `audit: null`, otherwise `declared`.
+`inferred.mutates` now comes from checked assignment target/binding/parameter
+IDs, with names deduplicated in parameter-index order. A shadowing local is
+not the parameter it happens to share a name with.
+
+Every v3 function has this fixed capability-level evidence:
+
+```json
+"mutation_coverage": {
+  "interpretation": "lower_bound",
+  "scope": "direct_mutref_parameter_assignments",
+  "completeness": "partial",
+  "uncovered": ["builtin_call_writes", "local_call_writes", "imported_call_writes"]
+}
+```
+
+This object is inside `evidence`, alongside `audit` and `inferred`.
+It describes syntactically observed writes, not path feasibility. Empty
+`mutates` does not prove purity or a complete footprint, even for a call-free
+function. Owned-local field writes are outside this parameter contract.
+Effects, IO kinds, and propagation retain their existing analysis.
+Source-contract validation remains the legacy direct/name-based analysis in
+all versions; v3 does not silently strengthen acceptance or suppression rules.
+
+v3 is opt-in and successful-output-only. Errors return nonzero, empty stdout,
+and diagnostics on stderr; warnings remain nonfatal and appear once.
+`review-diff` and `change-report` do not accept v3 yet. The strict
+[review-v3 schema](schemas/review-v3.schema.json) describes audit/evidence
+coherence. Owned goldens check emitter coherence; a general standards-compliant
+schema-validation gate remains open, not implied by those golden checks.
 
 `nauqc review-diff <before> <after>` consumes the same checked review facts and emits deterministic JSON for semantic changes:
 
@@ -93,10 +126,11 @@ different from `review`, but both commands require the same valid source
 contracts. Review renders the already-extracted, validated declarations rather
 than applying a second acceptance policy.
 
-M54.8a keeps successful JSON formats unchanged. Existing review v2
-absent-audit provenance, partial mutation coverage, and change-report v2
-failure-envelope/schema defects remain open for the explicit M54.8b migration;
-consistent source rejection alone does not close those evidence findings.
+M54.8b1 preserves the legacy review v1/v2 successful formats. v3 corrects
+absent-audit emission and labels partial checked direct-write evidence, but
+call-aware mutation summaries/validation, standing schema enforcement,
+diff/change migration, and change-report v2 failure defects remain open.
+Consistent source rejection alone does not close those evidence findings.
 
 ## Supervised Workflow Alpha
 

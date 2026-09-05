@@ -23,7 +23,7 @@ unless the user explicitly assigns them.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8a complete after Sol xhigh audits and the 1,520-second frozen gate; M54.8b versioned evidence corrections remain next | No edits to Libraries, AIML, or Tool Codex's study. `M54_8_CONTRACTS.md` records exact evidence; no runtime, successful-schema, or source-syntax widening in this slice. |
+| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8a and M54.8b1 complete after Sol xhigh audits and frozen gates; b1's seven phases passed in 1,574 seconds | Review v3 truthfully labels absent audits and partial checked direct writes. Call summaries/validation, standing schema enforcement, diff/change failures, and F15 remain open. No changes to Libraries, AIML, Tool Codex's study, syntax, runtime, or ownership. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -75,6 +75,10 @@ unless the user explicitly assigns them.
   All seven frozen-gate phases passed after the independent repair audit.
   M54.8b still owns absent/partial evidence and versioned failure envelopes;
   this is not blanket closure of the contract/evidence audit findings.
+- M54.8b1 now provides opt-in review v3 with checked-ID direct-write evidence
+  and absent/declared audit provenance. All 1,467 selfhost functions passed
+  the v3 smoke. Legacy review outputs remain unchanged; the parent corrective
+  milestone remains open for call summaries, validation, and failure evidence.
 - M54.5 development-loop efficiency is complete and evidenced: content-verified
   stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
   close ordering, and quick/full CI tiers all passed the 2,132-second

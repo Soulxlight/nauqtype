@@ -32,6 +32,7 @@ enum driver_mode {
     driver_facts_v3,
     driver_review,
     driver_review_v2,
+    driver_review_v3,
     driver_review_diff,
     driver_review_diff_v2,
     driver_change_report,
@@ -302,7 +303,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2|v3] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -462,7 +463,10 @@ fn parse_driver_request() -> driver_request {
             if format == "v2" {
                 return make_driver_request(driver_review_v2, source_path, entry_module, path_dir(source_path), "", "", "");
             }
-            return invalid_request("expected review format `v1` or `v2`");
+            if format == "v3" {
+                return make_driver_request(driver_review_v3, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            return invalid_request("expected review format `v1`, `v2`, or `v3`");
         }
         return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "", "");
     }
@@ -1106,7 +1110,7 @@ fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, pol
     return emit_policy_check(workspace_root, entry_module, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
 }
 
-fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>) -> review_summary {
+fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, collect_mutations: bool, direct_mutations: mutref list<review_direct_mutation>) -> review_summary {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut scopes: list<body_scope> = list();
@@ -1165,10 +1169,13 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
         push_driver_error(mutref diags, "NQ-INTERNAL-009", diag_internal, entry_module, -1, -1, "stage1 internal error: review safety pass skipped checked functions");
         return make_review_summary(contract_summary.function_count, contract_summary.declaration_count, contract_summary.warning_count, contract_summary.error_count + 1);
     }
+    if collect_mutations {
+        collect_review_direct_mutations(ref checked_bindings, ref checked_params, ref checked_statements, mutref direct_mutations, mutref diags);
+    }
     return contract_summary;
 }
 
-fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: bool) -> i32 {
+fn run_review(workspace_root: str, entry_module: str, entry_path: str, format_version: i32) -> i32 {
     let mut sources: list<source_file> = list();
     let mut uses: list<module_use> = list();
     let mut items: list<top_item> = list();
@@ -1181,16 +1188,21 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, use_v2: b
     let mut contract_functions: list<review_function_fact> = list();
     let mut contract_decls: list<review_decl_entry> = list();
     let mut diags: list<diag> = list();
-    let contracts = collect_review_ready_project(workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags);
+    let mut direct_mutations: list<review_direct_mutation> = list();
+    let contracts = collect_review_ready_project(workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags, format_version == 3, mutref direct_mutations);
     emit_all_with_sources(ref diags, ref sources);
     if diagnostics_have_errors(ref diags) or contracts.error_count > 0 {
         return 1;
     }
     let mut summary = make_review_summary(0, 0, 0, 1);
-    if use_v2 {
-        summary = emit_review_v2(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals);
+    if format_version == 3 {
+        summary = emit_review_v3(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals, ref direct_mutations);
     } else {
-        summary = emit_review(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref functions, ref params, ref assignments, ref calls, ref locals);
+        if format_version == 2 {
+            summary = emit_review_v2(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals);
+        } else {
+            summary = emit_review(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref functions, ref params, ref assignments, ref calls, ref locals);
+        }
     }
     if summary.error_count > 0 {
         return 1;
@@ -1239,8 +1251,9 @@ fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     let mut after_contract_functions: list<review_function_fact> = list();
     let mut after_contract_decls: list<review_decl_entry> = list();
 
-    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags);
-    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags);
+    let mut unused_mutations: list<review_direct_mutation> = list();
+    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, false, mutref unused_mutations);
+    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, false, mutref unused_mutations);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
     if before_ok.error_count > 0 or after_ok.error_count > 0 {
@@ -1293,8 +1306,9 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
     let mut after_contract_functions: list<review_function_fact> = list();
     let mut after_contract_decls: list<review_decl_entry> = list();
 
-    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags);
-    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags);
+    let mut unused_mutations: list<review_direct_mutation> = list();
+    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, false, mutref unused_mutations);
+    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, false, mutref unused_mutations);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
     if before_ok.error_count > 0 or after_ok.error_count > 0 {
@@ -1454,10 +1468,13 @@ fn main() -> i32 {
             return run_facts(request.workspace_root, request.entry_module, request.entry_path, 3);
         },
         driver_review => {
-            return run_review(request.workspace_root, request.entry_module, request.entry_path, false);
+            return run_review(request.workspace_root, request.entry_module, request.entry_path, 1);
         },
         driver_review_v2 => {
-            return run_review(request.workspace_root, request.entry_module, request.entry_path, true);
+            return run_review(request.workspace_root, request.entry_module, request.entry_path, 2);
+        },
+        driver_review_v3 => {
+            return run_review(request.workspace_root, request.entry_module, request.entry_path, 3);
         },
         driver_review_diff => {
             return run_review_diff(request.entry_path, request.output_path, false);

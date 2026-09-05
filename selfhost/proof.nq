@@ -1,5 +1,8 @@
 use files;
+use diag;
+use handoff;
 use host_c;
+use review;
 use text;
 
 type norm_mapping {
@@ -1725,6 +1728,10 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
     if not run_cli_identity_gate(driver_path, mutref failed_phase) {
         return false;
     }
+    if not run_m54_8b_review_gate(driver_path) {
+        failed_phase = "tooling.golden";
+        return false;
+    }
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
         failed_phase = "tooling.golden";
         return false;
@@ -2574,6 +2581,141 @@ fn m39_manifest_has_all_suite_entries(text: str) -> bool {
     return true;
 }
 
+fn m54_8b_binding(case_id: i32) -> checked_binding {
+    let mut id = 1;
+    if case_id == 2 { id = 2; }
+    let mut function_id = 1;
+    if case_id == 3 { function_id = 2; }
+    let mut type_id = 1;
+    if case_id == 10 { type_id = 0; }
+    let mut param_index = 0;
+    if case_id == 11 { param_index = -1; }
+    return checked_binding {
+        id: id, function_id: function_id, module_name: "probe", function_name: "write",
+        scope_id: 1, name: "value", at: 0, kind: checked_binding_param,
+        type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: true,
+        borrow_mutable: true, type_id: type_id, origin_stmt_id: -1, origin_arm_id: -1, param_index: param_index,
+    };
+}
+
+fn m54_8b_param(case_id: i32) -> checked_param {
+    let mut index = 0;
+    if case_id == 5 { index = 1; }
+    if case_id == 11 { index = -1; }
+    let mut mutable = true;
+    if case_id == 6 { mutable = false; }
+    let mut type_id = 1;
+    if case_id == 7 { type_id = 2; }
+    if case_id == 10 { type_id = 0; }
+    return checked_param {
+        function_id: 1, binding_id: 1, module_name: "probe", function_name: "write",
+        index: index, name: "value", at: 0, type_name: "i32", type_arg1_name: "",
+        type_arg2_name: "", is_borrow: true, borrow_mutable: mutable, type_id: type_id,
+    };
+}
+
+fn m54_8b_statement(case_id: i32) -> checked_stmt {
+    let mut target = 1;
+    if case_id == 9 { target = 0; }
+    return checked_stmt {
+        id: 1, function_id: 1, module_name: "probe", function_name: "write",
+        block_id: 1, scope_id: 1, at: 8, kind: checked_stmt_assign, name: "value",
+        field_owner_module: "", field_owner_type: "", field_name: "",
+        type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: true,
+        borrow_mutable: true, type_id: 1, target_binding_id: target, expr_id: 1,
+        child_block_id: -1, alt_block_id: -1,
+    };
+}
+
+fn run_m54_8b_identity_cases() -> bool {
+    let mut case_id = 0;
+    while case_id < 12 {
+        let mut bindings: list<checked_binding> = list();
+        let mut params: list<checked_param> = list();
+        let mut statements: list<checked_stmt> = list();
+        let mut writes: list<review_direct_mutation> = list();
+        let mut diags: list<diag> = list();
+        if case_id != 1 { list_push(mutref bindings, m54_8b_binding(case_id)); }
+        if case_id != 4 { list_push(mutref params, m54_8b_param(case_id)); }
+        if case_id == 8 { list_push(mutref params, m54_8b_param(case_id)); }
+        list_push(mutref statements, m54_8b_statement(case_id));
+        list_push(mutref statements, m54_8b_statement(case_id));
+        collect_review_direct_mutations(ref bindings, ref params, ref statements, mutref writes, mutref diags);
+        if case_id == 0 {
+            if list_len(ref diags) != 0 or list_len(ref writes) != 1 { return false; }
+            match list_get(ref writes, 0) {
+                Some(write) => {
+                    if write.binding_id != 1 or write.param_index != 0 or write.name != "value" { return false; }
+                },
+                None => { return false; },
+            }
+        } else {
+            if list_len(ref diags) != 1 or list_len(ref writes) != 0 { return false; }
+            match list_get(ref diags, 0) {
+                Some(error) => {
+                    if error.code != "NQ-INTERNAL-012" or error.start != 8 or error.end != 9 { return false; }
+                },
+                None => { return false; },
+            }
+        }
+        case_id = case_id + 1;
+    }
+    return true;
+}
+
+fn run_m54_8b_empty_failure(label: str, result: result<process_result, io_err>, diagnostic: str) -> bool {
+    match result {
+        Ok(status) => {
+            if status.exit_code == 0 or status.stdout != "" or not text_contains(status.stderr, diagnostic) {
+                eprint_line(str_concat(label, " did not reject without JSON"));
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn run_m54_8b_unsupported_format(label: str, result: result<process_result, io_err>, diagnostic: str) -> bool {
+    match result {
+        Ok(status) => {
+            let output = str_concat(status.stdout, status.stderr);
+            if status.exit_code == 0 or not text_contains(output, diagnostic) or text_contains(output, "\"version\"") {
+                eprint_line(str_concat(label, " changed legacy invalid-format behavior"));
+                emit_process_output(status);
+                return false;
+            }
+            return true;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn run_m54_8b_review_gate(driver_path: str) -> bool {
+    if not run_m54_8b_identity_cases() {
+        eprint_line("M54.8b checked mutation identity probe failed");
+        return false;
+    }
+    let fixture = "tests/fixtures/m54_8b/review_v3.nq";
+    if not run_json_golden_warning_result("review v3 partial evidence", run_driver_review(driver_path, fixture, "v3"), "tests/golden/review/review_v3.json", "NQ-CONTRACT-001", 1) { return false; }
+    if not run_json_golden_warning_result("review v3 deterministic replay", run_driver_review(driver_path, fixture, "v3"), "tests/golden/review/review_v3.json", "NQ-CONTRACT-001", 1) { return false; }
+    if not run_json_golden_result("review legacy v1 unchanged", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v1"), "tests/golden/review/review_v1.json") { return false; }
+    if not run_json_golden_result("review legacy v2 unchanged", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") { return false; }
+    if not run_m54_8b_empty_failure("review v3 invalid contract", run_driver_review(driver_path, "tests/fixtures/m54_8a/missing_effect.nq", "v3"), "NQ-CONTRACT-008") { return false; }
+    if not run_m54_8b_empty_failure("review v3 missing source", run_driver_review(driver_path, "tests/fixtures/m54_8b/missing.nq", "v3"), "NQ-IO-001") { return false; }
+    if not run_m54_8b_unsupported_format("review-diff still rejects v3", run_driver_review_diff(driver_path, fixture, fixture, "v3"), "expected review-diff format") { return false; }
+    let mut args: list<str> = list();
+    list_push(mutref args, "change-report");
+    list_push(mutref args, fixture);
+    list_push(mutref args, fixture);
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v3");
+    if not run_m54_8b_unsupported_format("change-report still rejects v3", run_process(driver_path, ref args, "."), "expected change-report format") { return false; }
+    if not run_quiet_result("review v3 fixture formatting", run_driver_fmt_check(driver_path, fixture)) { return false; }
+    return true;
+}
+
 fn run_m39_fixture_manifest_gate() -> bool {
     let loaded = read_file("tests/fixtures/m39_fixture_manifest.txt");
     match loaded {
@@ -2633,6 +2775,9 @@ audit {
         return 1;
     }
     if not run_m54_8a_contract_gate(driver_path) {
+        return 1;
+    }
+    if not run_m54_8b_review_gate(driver_path) {
         return 1;
     }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {

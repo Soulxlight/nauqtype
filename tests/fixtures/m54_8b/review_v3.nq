@@ -1,0 +1,69 @@
+use writes;
+
+pub fn absent_public() -> i32 {
+    return 1;
+}
+
+fn absent_private() -> i32 {
+    return 2;
+}
+
+fn direct(first: mutref i32, second: mutref i32) -> unit
+audit {
+    intent("Write parameters in reverse order and repeat one assignment.");
+    mutates(first, second);
+    effects();
+}
+{
+    second = 2;
+    first = 1;
+    second = 3;
+    return;
+}
+
+fn shadow(value: mutref i32) -> unit
+audit {
+    intent("Write a distinct shadowing local, not the parameter.");
+    mutates(value);
+    effects();
+}
+{
+    if true {
+        let mut value = 0;
+        value = 1;
+    }
+    return;
+}
+
+fn builtin_only(items: mutref list<i32>) -> unit
+audit {
+    intent("Expose a builtin-only write outside the direct-assignment lower bound.");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, 1);
+    return;
+}
+
+fn local_only(first: mutref i32, second: mutref i32) -> unit
+audit {
+    intent("Expose local call writes outside the direct-assignment lower bound.");
+    mutates(first, second);
+    effects();
+}
+{
+    direct(mutref first, mutref second);
+    return;
+}
+
+fn imported_only(value: mutref i32) -> unit
+audit {
+    intent("Expose an imported call write outside the direct-assignment lower bound.");
+    mutates(value);
+    effects();
+}
+{
+    writes::write_value(mutref value);
+    return;
+}

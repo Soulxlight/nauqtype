@@ -507,3 +507,20 @@
   must separately version evidence changes for absent declarations, partial
   mutation coverage, and failed or unprovided inputs. This is not a silent
   schema correction or a claim that all audit findings are closed.
+
+## D060: Review Coverage Is Versioned And Explicitly Partial
+
+- Decision: opt-in review v3 distinguishes absent/declared audits and derives
+  direct mutable-parameter writes from checked binding identities. Every
+  function exposes the same partial lower-bound scope and ordered uncovered
+  builtin/local/imported call-write categories.
+- Reason: a name-only assignment can target a shadowing local, and an empty
+  direct-write list cannot prove absence of call-mediated mutation. Evidence
+  must not turn either limitation into a completeness claim.
+- Compatibility: review v1/v2 success output and all source-contract
+  acceptance remain unchanged. v3 is successful-output-only and exclusive to
+  review. Missing checked identity fails with NQ-INTERNAL-012, not a guess.
+- Boundary: no new syntax, ownership, effects, or runtime behavior. b1 proves
+  emitter/golden coherence only. Checked call summaries, validation migration,
+  standing standards-schema enforcement, and diff/change failure envelopes
+  require their own reviewed follow-up; no general JSON engine is added here.
