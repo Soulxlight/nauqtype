@@ -20,7 +20,7 @@ trap 'rm -rf "$temp_build_dir"' EXIT
     cd "$repo_root"
     "$seed_exe" emit-c selfhost/main.nq -o "$temp_stage1_c"
 )
-"${CC:-cc}" -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I"$repo_root/bootstrap/seed" "$temp_stage1_c" "$repo_root/bootstrap/seed/runtime.c" -o "$temp_stage1_exe"
+"${CC:-cc}" -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I"$repo_root/stdlib" "$temp_stage1_c" "$repo_root/stdlib/runtime.c" -o "$temp_stage1_exe"
 mv -f "$temp_stage1_c" "$stage1_c"
 mv -f "$temp_stage1_exe" "$stage1_exe"
 rm -rf "$temp_build_dir"

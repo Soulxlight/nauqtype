@@ -23,7 +23,7 @@ unless the user explicitly assigns them.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8a and M54.8b1 complete after Sol xhigh audits and frozen gates; b1's seven phases passed in 1,574 seconds | Review v3 truthfully labels absent audits and partial checked direct writes. Call summaries/validation, standing schema enforcement, diff/change failures, and F15 remain open. No changes to Libraries, AIML, Tool Codex's study, syntax, runtime, or ownership. |
+| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8 complete after independent audits and a 1,908-second seven-phase frozen gate; M54.9/M54.10 corrective work continues in isolated preparation trees | Call summaries/validation, versioned evidence failures, bounded schema enforcement, and F15 are evidenced. Integer/allocation and dependency/seed/cache/gate provenance remain open. No other repository edits or M55 feature work. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -79,6 +79,11 @@ unless the user explicitly assigns them.
   and absent/declared audit provenance. All 1,467 selfhost functions passed
   the v3 smoke. Legacy review outputs remain unchanged; the parent corrective
   milestone remains open for call summaries, validation, and failure evidence.
+- M54.8 final closure now supersedes those intermediate open items: checked
+  call summaries, review v4/change-report v3, evidence-error v1, bounded schema
+  enforcement, and F15 passed independent audits and the seven-phase gate.
+  See `M54_8_CONTRACTS.md` for frozen tree and artifact identities. This does
+  not freeze M54.9/M54.10 or change external dependency lock contracts yet.
 - M54.5 development-loop efficiency is complete and evidenced: content-verified
   stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
   close ordering, and quick/full CI tiers all passed the 2,132-second

@@ -1,8 +1,7 @@
 # M54.8 Contract And Evidence Corrections
 
-Status: M54.8a and M54.8b1 complete, 2026-09-05. Both passed independent
-audits and frozen-candidate executable gates. M54.8b1 closes only review-v3
-emitter/golden coherence; the parent M54.8 milestone remains open.
+Status: M54.8 complete, 2026-09-05. Independent trailing audits passed and the
+reviewed frozen candidate passed all seven milestone phases in 1,908 seconds.
 
 The owning repository is NauqType. Library, AIML, and Tool Codex workspaces and
 their drafts are outside this write set. No new syntax, runtime authority,
@@ -151,6 +150,50 @@ repeated replacement run closes the repaired candidate.
 
 ## Remaining M54.8 Work
 
+### Final Corrective Close Contract
+
+Independent Sol xhigh Gate A passed the final close on 2026-09-05.
+Grammar, declaration-name, effect, and propagation validation stay before
+handoff. Mutation comparison moves to one shared checked-ID pass after
+handoff, seeded by direct assignments and `list_push` argument zero and
+closed over resolved calls with canonical parameter-index argument mapping.
+The finite monotone analysis includes recursive calls and shadowing. Missing,
+duplicate, or cross-function checked identities fail internally; an unmodeled
+builtin marks coverage partial rather than implying no writes. Known writes
+must be declared even under partial coverage; absence warnings require
+complete coverage. This describes syntactic may-writes, not path feasibility.
+Existing borrowed field paths are followed through checked child links to the
+same root binding; no source-level borrowing capability is added. Source,
+handoff, value-plan, and borrow failures stop before later phases can produce
+cascading diagnostics from invalid input.
+
+- Review v4 is opt-in; v1/v2 and direct-only v3 success schemas stay locked.
+  v4 reports `syntactic_may_write`, `checked_mutref_parameters`, and
+  per-function `complete` with no uncovered categories, or `partial` with
+  `unmodeled_builtin_summary`. Current builtins must all be modeled.
+- Change-report v3 is opt-in with a strict policy contract: absent, checked,
+  or failed. Absent policy is never labeled checked. Malformed/unreadable
+  supplied policy produces a failed-policy report, not successful evidence.
+- Diff/change source failures use `evidence-error` v1: `version`, `command`,
+  numeric `requested_format`, `ok: false`, `stage`, `code`, and `message`.
+  Stages distinguish before/after load/check; no success fields are allowed.
+  This explicitly replaces legacy load-error structures. Review-diff still
+  accepts only v1/v2; unsupported CLI formats remain argument errors.
+- Standing schema tests implement only the documented
+  `nauqtype.evidence-schema-profile.v1`, including exact `oneOf`, local refs,
+  and schema coherence. Unknown assertion keywords and unmapped schema files
+  fail closed. No general Draft 2020-12 compliance claim or Python dependency.
+- Typecheck producers deduplicate complete diagnostic identities, not output
+  rendering. Non-copy `list_get` receives `NQ-TYPE-044`, the builtin token
+  span, and a truthful supported alternative. Distinct same-span errors stay.
+
+Acceptance includes builtin/local/imported/recursive/named/alias/read-only
+and shadowed mutation cases, all checked-command rejection paths, current
+selfhost complete coverage, positive/negative schema profile fixtures,
+absent/valid/malformed policy, missing/stale/invalid input, and exact diagnostic
+identity tests. Focused evidence and trailing audit precede one frozen full
+gate. This contract does not itself claim implementation or closure.
+
 ### M54.8b1: Review Evidence Migration
 
 Gate A: independent Sol xhigh PASS after locking the following bounded slice.
@@ -263,9 +306,151 @@ Canonical `scripts/stage1_cache.sh require` and
 `scripts/verify_linux_release.sh build/linux-release/nauqtype` passed.
 The M54.7 seed remains unchanged. Logs live under `build/m54_8b/`.
 
-M54.8a is not completion of M54.8. A separately reviewed versioned migration
-must close F05's mutation coverage and call summaries, F08's absent-audit
-provenance, and F11's policy/schema/failure-envelope inconsistencies. General
-F15 producer duplication and repair guidance remain open. In particular,
-current change-report v2 failure envelopes and review v2 absent-audit evidence
-are known limitations, not made truthful by consistent rejection alone.
+### Final Corrective Focused Evidence
+
+The final implementation adds review v4, change-report v3, shared diff/change
+source-error envelopes, checked mutation validation, producer-level diagnostic
+identity deduplication, and the bounded schema profile. Legacy successful
+review v1/v2/v3 and change-report v1/v2 formats stay unchanged; consumers must
+migrate to the newer truthful evidence surfaces explicitly.
+
+- The preceding installed compiler emitted candidate3 C in 339.90s, peak RSS
+  94,752 KiB. `cc -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -Istdlib
+  build/m54_8_final/candidate3.c stdlib/runtime.c -o
+  build/m54_8_final/candidate3` passed.
+- `build/m54_8_final/candidate3 test` passed in 7.48s; it covers ten synthetic
+  identity/coverage cases, all source-contract routes, versioned error and
+  policy evidence, actual-output schema checks, and distinct same-span errors.
+- `build/m54_8_final/candidate3 prove-corpus` passed all 42 cases in 22.85s.
+  The existing composite-field corpus case exposed and now protects the
+  checked field-borrow root traversal repair.
+- The preceding candidate2 full-tree review v4 passed in 306.64s, peak RSS
+  89,660 KiB, with 1,497 captured-source functions complete and no compiler
+  diagnostics. This predates final schema imports and is focused evidence,
+  not the final full-tree acceptance gate.
+- The schema worker separately compiled and ran the latest repaired profile
+  selftest and all-schema probes from
+  `/tmp/schema-profile-repair-selftest.ksg0Yc/` and
+  `/tmp/schema-profile-repair-gate.EkcQVL/`, both exit 0. That final repair
+  rejects unsupported control escapes rather than relying on source escape
+  behavior. The profile's explicit bounds are in `EVIDENCE_SCHEMA_PROFILE.md`.
+- Main-owned new fixtures and probes passed formatter-lite checks. No Python
+  test or active implementation was added. Logs are in `build/m54_8_final/`.
+
+Development failures are retained as failed evidence: early-return bootstrap
+borrow flow in the sort helper, a runtime-only record literal in a test, a
+wrong JSON span assertion, the overly strict field-borrow validator, and
+downstream cascades after source errors. Each was repaired in its smallest
+owning layer; no language or ownership boundary was widened.
+
+The final independent audit and one frozen-candidate executable gate remain
+required before parent M54.8 completion, commit, or publication.
+
+### Final Audit Repair
+
+The first final Gate B returned REVISE: a field path could have plausible
+strings and a positive type ID without matching any checked field declaration.
+Mutation collection now consumes canonical checked type shapes, product
+declarations, and field declarations. Each borrowed field path must resolve
+one owner and one field, match the base's named type identity and field result
+type/borrow shape, and terminate at the declared binding's pointee type.
+Name-expression borrow bits remain provenance, not a second reference wrapper.
+Twenty-seven synthetic cases cover valid roots plus missing/duplicate declarations,
+owner/result type mismatches, borrow-shape mismatches, and missing links.
+
+A follow-up acceptance probe found that runtime product fields do not use the
+user declaration table. The baseline accepts borrowing `process_result.stdout`;
+the earlier candidate rejected it. The repair validates the exact shipped
+`process_result` and `path_metadata` field map using canonical builtin shape
+kinds, result types, and empty origin, with no fallback for unknown fields.
+One real fixture covers all nine shipped runtime product fields. The builtin
+shape itself must also have empty origin; a forged origin is the final negative
+identity case identified by the repair audit.
+
+The repaired candidate4 emission passed in 343.40s, peak RSS 94,296 KiB, and
+the host C11/O2 compile passed. `build/m54_8_final/candidate4 test` passed in
+7.32s, peak RSS 46,464 KiB, with exact success stdout and no compiler stderr.
+`build/m54_8_final/candidate4 prove-corpus` passed all 42 cases in 22.38s,
+peak RSS 46,700 KiB. This precedes the runtime-field acceptance repair.
+Candidate5 emitted in 343.40s, peak RSS 92,848 KiB, and compiled with C11/O2.
+Its `test` passed in 7.20s and all 42 corpus cases passed in 22.17s. Both
+commands had exact success stdout and no compiler stderr. The final one-line
+builtin-origin guard and negative case passed in a standalone Nauqtype
+contract-gate probe, avoiding an unrelated whole-driver development rebuild.
+Candidate5 built `/tmp/nauqtype-m548-origin-probe-Ctcj1A/probe.nq` in 88.16s;
+`build/m54_8_final/origin-repair-probe` passed in 1.69s with exact stdout
+`checked mutation repair ok` and no compiler stderr. Its review and contract
+test sources match the staged files by SHA-256. The probe exercises the final
+27 identity cases; source command checks use candidate5, whose only missing
+repair is the internal forged-origin guard. The full gate builds all current
+source together. Independent Sol xhigh Gate B returned PASS for the final
+narrow repair, with no blocking findings. One frozen full gate remains
+required; rejected or superseded candidates are not final acceptance evidence.
+
+### Frozen-Gate Bootstrap Repair
+
+The first final frozen candidate (`12eff8046a2a5253acab9b37f819d7e1529891cc`)
+failed `stage1.driver` after 330.11 seconds. Current schema tests exercise the
+already-shipped `read_dir`, but the build scripts linked current emitted C
+against the historical seed runtime, which lacks that API and carrier.
+This run is failure evidence only; no milestone phase passed.
+
+The bounded repair links generated current-source stage1 C with current
+`stdlib/runtime.c,h` in both normal and cold seed-proof paths, and includes
+those files in the cache fingerprint. The seed executable still links its
+matching pinned runtime. No runtime, seed C, checksum, API, or schema-test
+change is involved. Independent primary and adversarial design reviews
+accepted this boundary; focused route/cache checks and trailing repair review
+must precede a new frozen full gate.
+
+`bash -n` on the three changed scripts and `git diff --check` passed. The
+ignored bounded shell probe `build/m54_8_final/route_probe.sh` passed both
+normal/cold compiler-route assertions and cache invalidation for changing or
+removing either current runtime file, with positive restoration. These are
+stubbed route checks, not a compiler proof. The new full gate must perform the
+real seed/current compilation and normalized-C comparison.
+
+The resumed original primary reported a GPT-6 session for its repair-design
+review. A fresh explicitly selected `gpt-5.6-sol`/`xhigh` primary was therefore
+assigned the actual narrow repair rather than silently treating that resumed
+review as the required model. The independent `gpt-5.5`/`xhigh` adversarial
+review remains separately assigned.
+
+The explicitly selected Sol xhigh primary and independent GPT-5.5 xhigh
+adversarial trailing repair audits both returned PASS, with no blocking
+findings. They approved one fresh real milestone gate after the bounded
+route/cache checks; neither treated the failed run or stub probe as proof.
+
+### Final Frozen Acceptance
+
+`scripts/check_milestone.sh` passed on frozen index tree
+`79a954257ea43e976d2a5f0003561af060f1d874` in the native isolated checkout
+`/tmp/nauqtype-m54-8-runtime-link-7NDSy9`. The source tree stayed unchanged
+during the gate and matched the canonical staged candidate before this
+completion-only documentation delta. No README, packaged artifact, source,
+schema, runtime, fixture, or script changed after verification.
+
+| Phase | Wall Seconds | Peak RSS KiB | Result |
+| --- | ---: | ---: | --- |
+| stage1.driver | 359.19 | 419272 | PASS |
+| seed_bootstrap | 448.12 | 92948 | PASS |
+| proof | 1085.08 | 419388 | PASS |
+| linux_alpha | 2.99 | 46220 | PASS |
+| stress_leg | 1.28 | 46292 | PASS |
+| owned_tests | 7.75 | 46340 | PASS |
+| ownership_sanitizers | 2.70 | 43336 | PASS |
+
+The command exited 0 with `milestone verification ok`; stderr was empty.
+The copied selfhost, 42-case corpus, Linux layout, focused schema/contract
+tests, and nine ownership sanitizer cases all passed. The historical Python
+suite was not run: it is not an active gate. This closes only
+F03/F05/F08/F11/F15; integer/allocation and provenance findings remain in
+M54.9/M54.10.
+
+Exact SHA-256 evidence (retained under ignored `build/m54_8_final/`):
+
+- milestone summary: `1a0cada2d1bd736b2b9b28f5964e6beb0f16f3e56457dad042564f32de2dc042`
+- performance summary: `7cd5e1eb0bd16994a344b068597975976951bdaf039e8f185bd301cf42b6fbf4`
+- proof summary: `f225bc93215511f7beed2c36d50c6af7d961499097cab42c6d005a6dfc0d934d`
+- current-source stage1 C: `d20794a00c7d590fd254d100a920bcb06b7ad1caab951a2c80ec199d34c850b0`
+- stage1 executable: `159a0da06ba28e5983874ffafb00f306b92c3c1dc6d9d5ba4bc6d4d741751bf8`

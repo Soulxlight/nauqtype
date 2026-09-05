@@ -24,8 +24,568 @@ pub type review_direct_mutation {
     name: str,
 }
 
+pub type review_mutation_coverage {
+    module: str,
+    function_name: str,
+    partial: bool,
+}
+
+pub fn emit_review_v4(entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, summary: review_summary, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>) -> review_summary
+audit {
+    intent("Emit checked syntactic parameter may-write evidence with explicit per-function coverage");
+    mutates();
+    effects(print);
+}
+{
+    if summary.error_count > 0 { return summary; }
+    let mut lines: list<str> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, 4);
+    emit_lines(ref lines);
+    return summary;
+}
+
+type review_param_window {
+    start: i32,
+    count: i32,
+}
+
+type review_mutation_edge {
+    caller_binding: i32,
+    callee_binding: i32,
+}
+
+type review_call_edge {
+    caller: i32,
+    callee: i32,
+}
+
+fn review_mutation_has(writes: ref list<review_direct_mutation>, binding_id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref writes) {
+        match list_get(ref writes, index) {
+            Some(write) => { if write.binding_id == binding_id { return true; } },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn review_mutation_add(bindings: ref list<checked_binding>, binding_id: i32, writes: mutref list<review_direct_mutation>) -> bool {
+    if review_mutation_has(ref writes, binding_id) { return false; }
+    match list_get(ref bindings, binding_id - 1) {
+        Some(binding) => {
+            if review_is_param(binding.kind) and binding.is_borrow and binding.borrow_mutable {
+                list_push(mutref writes, review_direct_mutation { module: binding.module_name, function_name: binding.function_name, binding_id: binding.id, param_index: binding.param_index, name: binding.name });
+                return true;
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn review_builtin_mutation_profile(name: str) -> i32 {
+    if name == "list_push" { return 0; }
+    if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" { return -1; }
+    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" { return -1; }
+    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" { return -1; }
+    if name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" or name == "str_from_bytes" or name == "io_err_kind" or name == "io_err_operation" or name == "io_err_path" or name == "io_err_other_path" or name == "io_err_os_code" { return -1; }
+    if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" or name == "list" or name == "list_len" or name == "list_get" { return -1; }
+    return -2;
+}
+
+fn review_mutation_partial(coverage: ref list<review_mutation_coverage>, module: str, function_name: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref coverage) {
+        match list_get(ref coverage, index) {
+            Some(value) => { if value.module == module and value.function_name == function_name { return value.partial; } },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn review_child_before(left: checked_expr_child, right: checked_expr_child) -> bool {
+    return left.parent_expr_id < right.parent_expr_id or (left.parent_expr_id == right.parent_expr_id and left.index <= right.index);
+}
+
+fn review_sort_children(children: ref list<checked_expr_child>, start: i32, end: i32) -> list<checked_expr_child> {
+    let mut out: list<checked_expr_child> = list();
+    if end - start <= 1 {
+        if start < end { match list_get(ref children, start) { Some(value) => { list_push(mutref out, value); }, None => {}, } }
+    } else {
+        let middle = start + (end - start) / 2;
+        let left = review_sort_children(ref children, start, middle);
+        let right = review_sort_children(ref children, middle, end);
+        let mut l = 0;
+        let mut r = 0;
+        while l < list_len(ref left) or r < list_len(ref right) {
+            let mut take_left = r == list_len(ref right);
+            match list_get(ref left, l) {
+                Some(a) => { match list_get(ref right, r) { Some(b) => { take_left = review_child_before(a, b); }, None => {}, } },
+                None => { take_left = false; },
+            }
+            if take_left {
+                match list_get(ref left, l) { Some(value) => { list_push(mutref out, value); }, None => {}, }
+                l = l + 1;
+            } else {
+                match list_get(ref right, r) { Some(value) => { list_push(mutref out, value); }, None => {}, }
+                r = r + 1;
+            }
+        }
+    }
+    return out;
+}
+
+fn review_value_type_id(type_id: i32, is_borrow: bool, mutable: bool, shapes: ref list<checked_type_shape>) -> i32 {
+    match list_get(ref shapes, type_id - 1) {
+        Some(shape) => {
+            if shape.id != type_id { return -1; }
+            match shape.kind {
+                checked_type_ref => {
+                    if not is_borrow or shape.mutable != mutable { return -1; }
+                    match list_get(ref shapes, shape.arg1_id - 1) {
+                        Some(value) => { if value.id != shape.arg1_id { return -1; } match value.kind { checked_type_ref => { return -1; }, _ => {}, } },
+                        None => { return -1; },
+                    }
+                    return shape.arg1_id;
+                },
+                _ => { if is_borrow or mutable { return -1; } return type_id; },
+            }
+        },
+        None => { return -1; },
+    }
+}
+
+fn review_expr_value_type_id(expr: checked_expr, shapes: ref list<checked_type_shape>) -> i32 {
+    // Name types are pointees; their borrow bits record binding provenance.
+    match expr.kind {
+        checked_expr_name => { return review_value_type_id(expr.type_id, false, false, ref shapes); },
+        _ => { return review_value_type_id(expr.type_id, expr.is_borrow, expr.borrow_mutable, ref shapes); },
+    }
+}
+
+fn review_builtin_field_type(field: checked_expr, owner: checked_type_shape) -> str {
+    if field.field_owner_module != "" or owner.origin_module != "" or field.is_borrow or field.borrow_mutable { return ""; }
+    match owner.kind {
+        checked_type_process_result => {
+            if field.field_owner_type != "process_result" { return ""; }
+            if field.field_name == "exit_code" { return "i32"; }
+            if field.field_name == "stdout" or field.field_name == "stderr" { return "str"; }
+        },
+        checked_type_path_metadata => {
+            if field.field_owner_type != "path_metadata" { return ""; }
+            if field.field_name == "is_file" or field.field_name == "is_directory" or field.field_name == "is_symlink" { return "bool"; }
+            if field.field_name == "size" or field.field_name == "modified_ns" { return "i64"; }
+            if field.field_name == "mode" { return "i32"; }
+        },
+        _ => {},
+    }
+    return "";
+}
+
+fn review_validate_field_target(field: checked_expr, base: checked_expr, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>) -> bool {
+    if field.type_id < 1 or field.field_owner_type == "" or field.field_name == "" { return false; }
+    let base_type_id = review_expr_value_type_id(base, ref shapes);
+    if base_type_id < 1 or review_value_type_id(field.type_id, field.is_borrow, field.borrow_mutable, ref shapes) < 1 { return false; }
+    match list_get(ref shapes, base_type_id - 1) {
+        Some(shape) => {
+            if field.field_owner_module == "" {
+                let expected = review_builtin_field_type(field, shape);
+                if expected == "" { return false; }
+                match list_get(ref shapes, field.type_id - 1) {
+                    Some(result) => {
+                        match result.kind {
+                            checked_type_i32 => { return expected == "i32"; },
+                            checked_type_i64 => { return expected == "i64"; },
+                            checked_type_str => { return expected == "str"; },
+                            checked_type_bool => { return expected == "bool"; },
+                            _ => { return false; },
+                        }
+                    },
+                    None => { return false; },
+                }
+            }
+            match shape.kind { checked_type_named => {}, _ => { return false; }, }
+            if shape.origin_module != field.field_owner_module or shape.name != field.field_owner_type { return false; }
+        },
+        None => { return false; },
+    }
+    let mut owner_id = -1;
+    let mut index = 0;
+    while index < list_len(ref types) {
+        match list_get(ref types, index) {
+            Some(owner) => {
+                if owner.module_name == field.field_owner_module and owner.name == field.field_owner_type {
+                    if owner_id > 0 or owner.id != index + 1 { return false; }
+                    owner_id = owner.id;
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if owner_id < 1 { return false; }
+    let mut matches = 0;
+    index = 0;
+    while index < list_len(ref fields) {
+        match list_get(ref fields, index) {
+            Some(decl) => {
+                if decl.module_name == field.field_owner_module and decl.type_name == field.field_owner_type and decl.name == field.field_name {
+                    if decl.type_id != owner_id or decl.field_type_id != field.type_id or decl.field_is_borrow != field.is_borrow or decl.field_borrow_mutable != field.borrow_mutable { return false; }
+                    matches = matches + 1;
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return matches == 1;
+}
+
+fn review_validate_borrow_root(expr: checked_expr, bindings: ref list<checked_binding>, expressions: ref list<checked_expr>, first_children: ref list<i32>, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>) -> bool {
+    if expr.binding_id < 1 { return false; }
+    let borrowed_type = review_value_type_id(expr.type_id, expr.is_borrow, expr.borrow_mutable, ref shapes);
+    if borrowed_type < 1 or not expr.is_borrow { return false; }
+    match expr.kind {
+        checked_expr_ref => { if expr.borrow_mutable { return false; } },
+        checked_expr_mutref => { if not expr.borrow_mutable { return false; } },
+        _ => { return false; },
+    }
+    match list_get(ref bindings, expr.binding_id - 1) {
+        Some(binding) => { if binding.id != expr.binding_id or binding.function_id != expr.function_id or binding.module_name != expr.module_name or binding.function_name != expr.function_name { return false; } },
+        None => { return false; },
+    }
+    let mut parent = expr.id;
+    let mut depth = 0;
+    while depth < list_len(ref expressions) {
+        match list_get(ref first_children, parent - 1) {
+            Some(child_id) => {
+                match list_get(ref expressions, child_id - 1) {
+                    Some(child) => {
+                        if child.id != child_id or child.function_id != expr.function_id or child.module_name != expr.module_name or child.function_name != expr.function_name { return false; }
+                        if parent == expr.id and review_expr_value_type_id(child, ref shapes) != borrowed_type { return false; }
+                        match child.kind {
+                            checked_expr_name => {
+                                if child.binding_id != expr.binding_id { return false; }
+                                match list_get(ref bindings, expr.binding_id - 1) {
+                                    Some(binding) => { return child.type_id == review_value_type_id(binding.type_id, binding.is_borrow, binding.borrow_mutable, ref shapes) and child.is_borrow == binding.is_borrow and child.borrow_mutable == binding.borrow_mutable and review_expr_value_type_id(child, ref shapes) > 0; },
+                                    None => { return false; },
+                                }
+                            },
+                            checked_expr_field => {
+                                match list_get(ref first_children, child.id - 1) {
+                                    Some(base_id) => {
+                                        match list_get(ref expressions, base_id - 1) {
+                                            Some(base) => { if not review_validate_field_target(child, base, ref shapes, ref types, ref fields) { return false; } },
+                                            None => { return false; },
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                                parent = child.id;
+                            },
+                            _ => { return false; },
+                        }
+                    },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        depth = depth + 1;
+    }
+    return false;
+}
+
+fn review_validate_call_children(shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, bindings: ref list<checked_binding>, expressions: ref list<checked_expr>, targets: ref list<i32>, windows: ref list<review_param_window>, children: ref list<checked_expr_child>, diags: mutref list<diag>) -> bool {
+    let mut cursor = 0;
+    let mut index = 0;
+    let mut first_children: list<i32> = list();
+    while index < list_len(ref expressions) {
+        match list_get(ref expressions, index) {
+            Some(expr) => {
+                let mut count = 0;
+                let mut first_child = -1;
+                let mut scanning = true;
+                while scanning and cursor < list_len(ref children) {
+                    match list_get(ref children, cursor) {
+                        Some(link) => {
+                            if link.parent_expr_id < expr.id { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                            if link.parent_expr_id == expr.id {
+                                if link.index != count { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                                if count == 0 { first_child = link.child_expr_id; }
+                                count = count + 1;
+                                cursor = cursor + 1;
+                            } else { scanning = false; }
+                        },
+                        None => { return false; },
+                    }
+                }
+                match list_get(ref targets, index) {
+                    Some(target) => {
+                        if target > 0 {
+                            match list_get(ref windows, target - 1) {
+                                Some(window) => { if count != window.count { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; } },
+                                None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; },
+                            }
+                        } else {
+                            if target == -1 and review_builtin_mutation_profile(expr.name) == 0 and count != 2 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                        }
+                    },
+                    None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; },
+                }
+                list_push(mutref first_children, first_child);
+                let mut single_child = false;
+                match expr.kind {
+                    checked_expr_ref => { single_child = true; },
+                    checked_expr_mutref => { single_child = true; },
+                    checked_expr_field => { single_child = true; },
+                    _ => {},
+                }
+                if single_child and count != 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if cursor != list_len(ref children) { review_mutation_identity_error(mutref diags, "", -1); return false; }
+    index = 0;
+    while index < list_len(ref expressions) {
+        match list_get(ref expressions, index) {
+            Some(expr) => {
+                let mut explicit_borrow = false;
+                match expr.kind {
+                    checked_expr_ref => { explicit_borrow = true; },
+                    checked_expr_mutref => { explicit_borrow = true; },
+                    _ => {},
+                }
+                if explicit_borrow and not review_validate_borrow_root(expr, ref bindings, ref expressions, ref first_children, ref shapes, ref types, ref fields) { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+            },
+            None => { review_mutation_identity_error(mutref diags, "", -1); return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub fn collect_review_mutations(functions: ref list<checked_function>, bindings: ref list<checked_binding>, params: ref list<checked_param>, statements: ref list<checked_stmt>, expressions: ref list<checked_expr>, children: ref list<checked_expr_child>, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, writes: mutref list<review_direct_mutation>, coverage: mutref list<review_mutation_coverage>, diags: mutref list<diag>) -> unit
+audit {
+    intent("Compute checked parameter may-writes over resolved calls without inferring purity or path feasibility");
+    mutates(writes, coverage, diags);
+    effects();
+}
+{
+    if diagnostics_have_errors(ref diags) { return; }
+    let mut windows: list<review_param_window> = list();
+    let mut param_cursor = 0;
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        match list_get(ref functions, index) {
+            Some(function) => {
+                if function.id != index + 1 { review_mutation_identity_error(mutref diags, function.module_name, function.at); return; }
+                let start = param_cursor;
+                let mut scanning = true;
+                while scanning and param_cursor < list_len(ref params) {
+                    match list_get(ref params, param_cursor) {
+                        Some(param) => {
+                            if param.function_id != function.id {
+                                scanning = false;
+                            } else {
+                                if param.index != param_cursor - start or param.module_name != function.module_name or param.function_name != function.name or param.type_id < 1 {
+                                    review_mutation_identity_error(mutref diags, function.module_name, param.at); return;
+                                }
+                                match list_get(ref bindings, param.binding_id - 1) {
+                                    Some(binding) => {
+                                        if binding.id != param.binding_id or binding.function_id != function.id or binding.module_name != param.module_name or binding.function_name != param.function_name or binding.name != param.name or binding.param_index != param.index or not review_is_param(binding.kind) or binding.type_id != param.type_id or binding.is_borrow != param.is_borrow or binding.borrow_mutable != param.borrow_mutable {
+                                            review_mutation_identity_error(mutref diags, function.module_name, param.at); return;
+                                        }
+                                    },
+                                    None => { review_mutation_identity_error(mutref diags, function.module_name, param.at); return; },
+                                }
+                                param_cursor = param_cursor + 1;
+                            }
+                        },
+                        None => { review_mutation_identity_error(mutref diags, function.module_name, function.at); return; },
+                    }
+                }
+                list_push(mutref windows, review_param_window { start: start, count: param_cursor - start });
+            },
+            None => { review_mutation_identity_error(mutref diags, "", -1); return; },
+        }
+        index = index + 1;
+    }
+    if param_cursor != list_len(ref params) { review_mutation_identity_error(mutref diags, "", -1); return; }
+    collect_review_direct_mutations(ref bindings, ref params, ref statements, mutref writes, mutref diags);
+    if diagnostics_have_errors(ref diags) { return; }
+
+    // Resolve each call once. Child indexes are already in canonical parameter order.
+    let mut targets: list<i32> = list();
+    let mut calls: list<review_call_edge> = list();
+    let mut partial: list<i32> = list();
+    index = 0;
+    while index < list_len(ref expressions) {
+        match list_get(ref expressions, index) {
+            Some(expr) => {
+                if expr.id != index + 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; }
+                let mut target = 0;
+                match expr.kind {
+                    checked_expr_call => {
+                        match list_get(ref functions, expr.function_id - 1) {
+                            Some(owner) => {
+                                if owner.module_name != expr.module_name or owner.name != expr.function_name { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; }
+                            },
+                            None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; },
+                        }
+                        match expr.target_kind {
+                            checked_target_function => {
+                                let mut fn_index = 0;
+                                while fn_index < list_len(ref functions) {
+                                    match list_get(ref functions, fn_index) {
+                                        Some(callee) => {
+                                            if callee.module_name == expr.target_origin_module and callee.name == expr.name {
+                                                if target != 0 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; }
+                                                target = callee.id;
+                                            }
+                                        },
+                                        None => {},
+                                    }
+                                    fn_index = fn_index + 1;
+                                }
+                                if target < 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; }
+                                list_push(mutref calls, review_call_edge { caller: expr.function_id, callee: target });
+                            },
+                            checked_target_builtin_function => {
+                                target = -1;
+                                let profile = review_builtin_mutation_profile(expr.name);
+                                if profile == -2 and not list_contains_i32(ref partial, expr.function_id) { list_push(mutref partial, expr.function_id); }
+                            },
+                            checked_target_constructor => {},
+                            checked_target_builtin_constructor => {},
+                            _ => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return; },
+                        }
+                    },
+                    _ => {},
+                }
+                list_push(mutref targets, target);
+            },
+            None => { review_mutation_identity_error(mutref diags, "", -1); return; },
+        }
+        index = index + 1;
+    }
+
+    let ordered_children = review_sort_children(ref children, 0, list_len(ref children));
+    if not review_validate_call_children(ref shapes, ref types, ref fields, ref bindings, ref expressions, ref targets, ref windows, ref ordered_children, mutref diags) { return; }
+    let mut edges: list<review_mutation_edge> = list();
+    index = 0;
+    while index < list_len(ref children) {
+        match list_get(ref children, index) {
+            Some(link) => {
+                match list_get(ref expressions, link.parent_expr_id - 1) {
+                    Some(parent) => {
+                        match list_get(ref targets, parent.id - 1) {
+                            Some(target) => {
+                                if target != 0 {
+                                    let mut mutated_param = 0;
+                                    if target > 0 {
+                                        match list_get(ref windows, target - 1) {
+                                            Some(window) => {
+                                                if link.index >= window.count { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; }
+                                                match list_get(ref params, window.start + link.index) {
+                                                    Some(param) => { if param.is_borrow and param.borrow_mutable { mutated_param = param.binding_id; } },
+                                                    None => { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; },
+                                                }
+                                            },
+                                            None => { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; },
+                                        }
+                                    } else {
+                                        if review_builtin_mutation_profile(parent.name) == link.index { mutated_param = -1; }
+                                    }
+                                    match list_get(ref expressions, link.child_expr_id - 1) {
+                                        Some(child) => {
+                                            if child.function_id != parent.function_id or child.module_name != parent.module_name or child.function_name != parent.function_name { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; }
+                                            if mutated_param != 0 {
+                                                let mut borrow_node = false;
+                                                match child.kind {
+                                                    checked_expr_mutref => { borrow_node = true; },
+                                                    checked_expr_name => { borrow_node = child.is_borrow and child.borrow_mutable; },
+                                                    _ => {},
+                                                }
+                                                if not borrow_node or child.binding_id < 1 { review_mutation_identity_error(mutref diags, parent.module_name, child.at); return; }
+                                                match list_get(ref bindings, child.binding_id - 1) {
+                                                    Some(binding) => {
+                                                        if binding.id != child.binding_id or binding.function_id != parent.function_id or binding.module_name != parent.module_name or binding.function_name != parent.function_name { review_mutation_identity_error(mutref diags, parent.module_name, child.at); return; }
+                                                        if review_is_param(binding.kind) {
+                                                            if not binding.is_borrow or not binding.borrow_mutable { review_mutation_identity_error(mutref diags, parent.module_name, child.at); return; }
+                                                            if mutated_param == -1 {
+                                                                let added = review_mutation_add(ref bindings, binding.id, mutref writes);
+                                                            } else {
+                                                                list_push(mutref edges, review_mutation_edge { caller_binding: binding.id, callee_binding: mutated_param });
+                                                            }
+                                                        }
+                                                    },
+                                                    None => { review_mutation_identity_error(mutref diags, parent.module_name, child.at); return; },
+                                                }
+                                            }
+                                        },
+                                        None => { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; },
+                                    }
+                                }
+                            },
+                            None => { review_mutation_identity_error(mutref diags, parent.module_name, parent.at); return; },
+                        }
+                    },
+                    None => { review_mutation_identity_error(mutref diags, "", -1); return; },
+                }
+            },
+            None => { review_mutation_identity_error(mutref diags, "", -1); return; },
+        }
+        index = index + 1;
+    }
+    let mut changed = true;
+    let mut rounds = 0;
+    while changed {
+        if rounds > list_len(ref bindings) + list_len(ref functions) { review_mutation_identity_error(mutref diags, "", -1); return; }
+        changed = false;
+        index = 0;
+        while index < list_len(ref edges) {
+            match list_get(ref edges, index) {
+                Some(edge) => {
+                    if review_mutation_has(ref writes, edge.callee_binding) {
+                        if review_mutation_add(ref bindings, edge.caller_binding, mutref writes) { changed = true; }
+                    }
+                },
+                None => {},
+            }
+            index = index + 1;
+        }
+        index = 0;
+        while index < list_len(ref calls) {
+            match list_get(ref calls, index) {
+                Some(call) => {
+                    if list_contains_i32(ref partial, call.callee) and not list_contains_i32(ref partial, call.caller) { list_push(mutref partial, call.caller); changed = true; }
+                },
+                None => {},
+            }
+            index = index + 1;
+        }
+        rounds = rounds + 1;
+    }
+    index = 0;
+    while index < list_len(ref functions) {
+        match list_get(ref functions, index) {
+            Some(function) => { list_push(mutref coverage, review_mutation_coverage { module: function.module_name, function_name: function.name, partial: list_contains_i32(ref partial, function.id) }); },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn review_mutation_identity_error(diags: mutref list<diag>, module: str, at: i32) -> unit {
-    list_push(mutref diags, make_error("NQ-INTERNAL-012", diag_internal, module, at, at + 1, "stage1 internal error: review direct mutation has inconsistent checked binding or parameter identity"));
+    list_push(mutref diags, make_error("NQ-INTERNAL-012", diag_internal, module, at, at + 1, "stage1 internal error: review mutation has inconsistent checked binding, parameter, or expression identity"));
     return;
 }
 
@@ -1535,7 +2095,6 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
         let entry = list_get(ref functions, index);
         match entry {
             Some(value) => {
-                let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
                 let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
                 let inferred_print = list_contains(ref print_effects, function_internal_name(value.module, value.name));
                 let inferred_io = list_contains(ref io_effects, function_internal_name(value.module, value.name));
@@ -1646,38 +2205,6 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
                                 },
                             }
                             propagate_index = propagate_index + 1;
-                        }
-
-                        let mut inferred_index = 0;
-                        while inferred_index < list_len(ref inferred_mutate_names) {
-                            let inferred_entry = list_get(ref inferred_mutate_names, inferred_index);
-                            match inferred_entry {
-                                Some(inferred_name) => {
-                                    if not list_contains(ref valid_mutates, inferred_name) {
-                                        push_contract_diag(mutref diags, value.module, value.at, value.name, "NQ-CONTRACT-005", diag_error, concat3("`audit` omits mutated `mutref` parameter `", inferred_name, "`"), "Declare the directly written mutref parameter in mutates(...).");
-                                        error_count = error_count + 1;
-                                    }
-                                },
-                                None => {
-                                },
-                            }
-                            inferred_index = inferred_index + 1;
-                        }
-
-                        let mut declared_index = 0;
-                        while declared_index < list_len(ref valid_mutates) {
-                            let declared_entry = list_get(ref valid_mutates, declared_index);
-                            match declared_entry {
-                                Some(declared_name) => {
-                                    if not list_contains(ref inferred_mutate_names, declared_name) and function_call_count(ref calls, value.module, value.name) == 0 {
-                                        push_contract_diag(mutref diags, value.module, value.at, value.name, "NQ-CONTRACT-006", diag_warning, concat3("`audit` declares mutation of `", declared_name, "` but no write-through was inferred"), "Remove the unused mutation declaration, or implement the intended direct write.");
-                                        warning_count = warning_count + 1;
-                                    }
-                                },
-                                None => {
-                                },
-                            }
-                            declared_index = declared_index + 1;
                         }
 
                         if inferred_print and not list_contains(ref valid_effects, "print") {
@@ -1959,7 +2486,8 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
     return;
 }
 
-fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, use_v3: bool) -> unit {
+fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32) -> unit {
+    let use_v3 = format_version >= 3;
     let print_effects = build_print_effects(ref functions, ref calls, ref uses);
     let io_effects = build_io_effects(ref functions, ref calls, ref uses);
     let io_kind_effects = build_io_kind_effects(ref functions, ref calls, ref uses);
@@ -2026,10 +2554,22 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 if use_v3 {
                     list_push(mutref lines, "        \"inferred\": \"checked\",");
                     list_push(mutref lines, "        \"mutation_coverage\": {");
+                    if format_version == 4 {
+                        list_push(mutref lines, "          \"interpretation\": \"syntactic_may_write\",");
+                        list_push(mutref lines, "          \"scope\": \"checked_mutref_parameters\",");
+                        if review_mutation_partial(ref coverage, value.module, value.name) {
+                            list_push(mutref lines, "          \"completeness\": \"partial\",");
+                            list_push(mutref lines, "          \"uncovered\": [\"unmodeled_builtin_summary\"]");
+                        } else {
+                            list_push(mutref lines, "          \"completeness\": \"complete\",");
+                            list_push(mutref lines, "          \"uncovered\": []");
+                        }
+                    } else {
                     list_push(mutref lines, "          \"interpretation\": \"lower_bound\",");
                     list_push(mutref lines, "          \"scope\": \"direct_mutref_parameter_assignments\",");
                     list_push(mutref lines, "          \"completeness\": \"partial\",");
                     list_push(mutref lines, "          \"uncovered\": [\"builtin_call_writes\", \"local_call_writes\", \"imported_call_writes\"]");
+                    }
                     list_push(mutref lines, "        }");
                 } else {
                     list_push(mutref lines, "        \"inferred\": \"checked\"");
@@ -2186,17 +2726,14 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
     return;
 }
 
-fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, use_v3: bool) -> unit {
+fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32) -> unit {
+    let use_v3 = format_version >= 3;
     list_push(mutref lines, "{");
-    if use_v3 {
-        list_push(mutref lines, "  \"version\": 3,");
-    } else {
-        list_push(mutref lines, "  \"version\": 2,");
-    }
+    list_push(mutref lines, concat3("  \"version\": ", i32_to_str(format_version), ","));
     list_push(mutref lines, "  \"command\": \"review\",");
     list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
-    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, use_v3);
+    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, format_version);
     append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses);
     append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true);
     append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref locals);
@@ -2266,6 +2803,54 @@ audit {
     }
     let summary = validate_contracts(ref functions_out, ref decls_out, ref function_facts, ref function_params, ref assignments, ref calls, ref locals, ref uses, mutref diags);
     return make_review_summary(summary.function_count, summary.declaration_count, summary.warning_count, summary.error_count + invalid_types);
+}
+
+pub fn validate_checked_mutation_contracts(base: review_summary, contracts: ref list<review_function_fact>, decls: ref list<review_decl_entry>, functions: ref list<checked_function>, bindings: ref list<checked_binding>, params: ref list<checked_param>, statements: ref list<checked_stmt>, expressions: ref list<checked_expr>, children: ref list<checked_expr_child>, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, writes: mutref list<review_direct_mutation>, coverage: mutref list<review_mutation_coverage>, diags: mutref list<diag>) -> review_summary
+audit {
+    intent("Validate declared mutation against one shared checked call-aware parameter footprint");
+    mutates(writes, coverage, diags);
+    effects();
+}
+{
+    if diagnostics_have_errors(ref diags) { return make_review_summary(base.function_count, base.declaration_count, base.warning_count, base.error_count + 1); }
+    collect_review_mutations(ref functions, ref bindings, ref params, ref statements, ref expressions, ref children, ref shapes, ref types, ref fields, mutref writes, mutref coverage, mutref diags);
+    if diagnostics_have_errors(ref diags) { return make_review_summary(base.function_count, base.declaration_count, base.warning_count, base.error_count + 1); }
+    let mut errors = base.error_count;
+    let mut warnings = base.warning_count;
+    let mut index = 0;
+    while index < list_len(ref contracts) {
+        match list_get(ref contracts, index) {
+            Some(contract) => {
+                if contract.has_audit {
+                    let declared = decl_entries_for_function(ref decls, contract.module, contract.name, review_decl_mutates);
+                    let mut param_index = 0;
+                    while param_index < list_len(ref params) {
+                        match list_get(ref params, param_index) {
+                            Some(param) => {
+                                if param.module_name == contract.module and param.function_name == contract.name and param.is_borrow and param.borrow_mutable {
+                                    let written = review_mutation_has(ref writes, param.binding_id);
+                                    let named = list_contains(ref declared, param.name);
+                                    if written and not named {
+                                        push_contract_diag(mutref diags, contract.module, contract.at, contract.name, "NQ-CONTRACT-005", diag_error, concat3("`audit` omits mutated `mutref` parameter `", param.name, "`"), "Declare the checked direct or call-mediated parameter write in mutates(...).");
+                                        errors = errors + 1;
+                                    }
+                                    if named and not written and not review_mutation_partial(ref coverage, contract.module, contract.name) {
+                                        push_contract_diag(mutref diags, contract.module, contract.at, contract.name, "NQ-CONTRACT-006", diag_warning, concat3("`audit` declares mutation of `", param.name, "` but no write-through was inferred"), "Remove the unused mutation declaration; the complete syntactic parameter analysis found no direct or call-mediated write.");
+                                        warnings = warnings + 1;
+                                    }
+                                }
+                            },
+                            None => {},
+                        }
+                        param_index = param_index + 1;
+                    }
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return make_review_summary(base.function_count, base.declaration_count, warnings, errors);
 }
 
 fn join_strings(values: ref list<str>) -> str {
@@ -2792,7 +3377,8 @@ audit {
 
     let mut lines: list<str> = list();
     let writes: list<review_direct_mutation> = list();
-    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, false);
+    let coverage: list<review_mutation_coverage> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, 2);
     emit_lines(ref lines);
     return summary;
 }
@@ -2808,7 +3394,8 @@ audit {
         return summary;
     }
     let mut lines: list<str> = list();
-    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, true);
+    let coverage: list<review_mutation_coverage> = list();
+    append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, 3);
     emit_lines(ref lines);
     return summary;
 }

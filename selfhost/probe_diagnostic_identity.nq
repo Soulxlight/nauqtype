@@ -1,0 +1,187 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+use source;
+use token;
+use typecheck;
+
+fn first_named_token(tokens: ref list<token>, name: str) -> token {
+    let mut index = 0;
+    while index < list_len(ref tokens) {
+        let entry = list_get(ref tokens, index);
+        match entry {
+            Some(value) => {
+                if value.text == name {
+                    return value;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return eof_token(-1);
+}
+
+fn first_named_token_after(tokens: ref list<token>, name: str, min_start: i32) -> token {
+    let mut index = 0;
+    while index < list_len(ref tokens) {
+        let entry = list_get(ref tokens, index);
+        match entry {
+            Some(value) => {
+                if value.text == name and value.start >= min_start {
+                    return value;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return eof_token(-1);
+}
+
+fn is_error(value: diag_severity) -> bool {
+    match value {
+        diag_error => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn is_type_category(value: diag_category) -> bool {
+    match value {
+        diag_type => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn collect_program_diagnostics(source_name: str, text: str, value_pass_count: i32, diags: mutref list<diag>) -> unit {
+    let mut modules: list<str> = list();
+    let mut sources: list<source_file> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut match_arms: list<match_arm_fact> = list();
+    let mut local_inits: list<local_init_fact> = list();
+    let mut return_facts: list<return_expr_fact> = list();
+    let mut condition_facts: list<condition_fact> = list();
+    let mut assignments: list<assignment_fact> = list();
+    let tokens = lex(text);
+
+    list_push(mutref modules, source_name);
+    list_push(mutref sources, make_source_file(source_name, text));
+
+    parse_file(source_name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    collect_typecheck_facts(source_name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+    collect_value_type_facts(source_name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignments, mutref diags);
+
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
+
+    let mut pass_index = 0;
+    while pass_index < value_pass_count {
+        typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignments, ref uses, ref items, ref sources, mutref diags);
+        pass_index = pass_index + 1;
+    }
+    return;
+}
+
+fn expect_list_get_noncopy_identity() -> bool {
+    let text = "type Cargo {\n    values: list<i32>,\n}\n\nfn main() -> i32 {\n    let cargoes: list<Cargo> = [Cargo { values: [1, 2] }];\n    let first = list_get(ref cargoes, 0);\n    match first {\n        Some(value) => {\n            return list_len(ref value.values);\n        },\n        None => {\n            return 0;\n        },\n    }\n}\n";
+    let tokens = lex(text);
+    let list_get_token = first_named_token(ref tokens, "list_get");
+    let mut diags: list<diag> = list();
+    collect_program_diagnostics("main", text, 3, mutref diags);
+    if list_len(ref diags) != 1 {
+        return false;
+    }
+    let entry = list_get(ref diags, 0);
+    match entry {
+        Some(value) => {
+            if value.code != "NQ-TYPE-044" {
+                return false;
+            }
+            if not is_type_category(value.category) or not is_error(value.severity) {
+                return false;
+            }
+            if value.source_name != "main" or value.start != list_get_token.start or value.end != list_get_token.end {
+                return false;
+            }
+            if value.message != "list_get requires a copy element type" {
+                return false;
+            }
+            if value.help != "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet." {
+                return false;
+            }
+            return true;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn expect_distinct_same_span_diagnostics() -> bool {
+    let text = "fn add(left: i32, right: i32) -> i32 { return left + right; }\nfn main() -> i32 {\n    let value = add(left: true, spare: 2);\n    return value;\n}\n";
+    let tokens = lex(text);
+    let call_token = first_named_token_after(ref tokens, "add", 80);
+    let mut diags: list<diag> = list();
+    collect_program_diagnostics("main", text, 1, mutref diags);
+    if list_len(ref diags) != 3 {
+        return false;
+    }
+    let mut unknown_named = false;
+    let mut missing_named = false;
+    let mut type_mismatch = false;
+    let mut index = 0;
+    while index < list_len(ref diags) {
+        let entry = list_get(ref diags, index);
+        match entry {
+            Some(value) => {
+                if value.source_name != "main" or value.start != call_token.start or value.end != call_token.start + 1 {
+                    return false;
+                }
+                if value.message == "unknown named argument" {
+                    unknown_named = true;
+                }
+                if value.message == "missing named argument for parameter" {
+                    missing_named = true;
+                }
+                if value.message == "call argument type does not match parameter type" {
+                    type_mismatch = true;
+                }
+            },
+            None => {
+                return false;
+            },
+        }
+        index = index + 1;
+    }
+    return unknown_named and missing_named and type_mismatch;
+}
+
+fn main() -> i32 {
+    if not expect_list_get_noncopy_identity() {
+        return 1;
+    }
+    if not expect_distinct_same_span_diagnostics() {
+        return 2;
+    }
+    return 0;
+}

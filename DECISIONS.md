@@ -524,3 +524,26 @@
   emitter/golden coherence only. Checked call summaries, validation migration,
   standing standards-schema enforcement, and diff/change failure envelopes
   require their own reviewed follow-up; no general JSON engine is added here.
+
+## D061: Checked Mutation And Versioned Failure Evidence
+
+- Decision: source-contract validity uses one checked-ID direct/builtin/call
+  may-write analysis after handoff, with canonical parameter mapping and a
+  finite recursive fixed point. Known omissions are errors; absence warnings
+  require complete coverage. Failed source or checked phases do not feed
+  invalid data into later compiler passes.
+- Evidence: opt-in review v4 reports the precise checked-parameter scope;
+  legacy review v3 remains an explicitly partial direct-write lower bound.
+  Complete does not mean pure, reachable, or ownership-complete.
+- Compatibility: keep earlier successful schemas unchanged. Change-report v3
+  distinguishes absent/checked/failed policy and malformed policy. Source
+  failures in all supported diff/change formats deliberately migrate to the
+  seven-field evidence-error v1 envelope with requested-format identity.
+- Verification: an owned bounded schema profile checks all repository schemas
+  and negative coherence fixtures. Unsupported JSON/profile features reject;
+  this is not a general JSON library or full standards-conformance claim.
+- Diagnostics: producer deduplication uses the complete diagnostic identity.
+  Distinct same-span errors survive, and unsupported non-copy list_get uses
+  NQ-TYPE-044 with its full builtin token span and actionable help.
+- Boundary: no syntax, ownership, effect, runtime, or Python feature growth.
+  M54.9 integer/allocation semantics and M54.10 provenance remain separate.

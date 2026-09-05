@@ -2594,7 +2594,7 @@ fn collect_impacted_local_callers(workspace_root: str, entry_module: str, change
     return;
 }
 
-pub fn emit_workspace_change_report(before_workspace_root: str, before_entry_module: str, before_items: ref list<top_item>, before_uses: ref list<module_use>, before_variants: ref list<variant_fact>, before_calls: ref list<call_fact>, after_workspace_root: str, after_entry_module: str, after_items: ref list<top_item>, after_uses: ref list<module_use>, after_variants: ref list<variant_fact>, after_calls: ref list<call_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32) -> facts_summary
+pub fn emit_workspace_change_report(before_workspace_root: str, before_entry_module: str, before_items: ref list<top_item>, before_uses: ref list<module_use>, before_variants: ref list<variant_fact>, before_calls: ref list<call_fact>, after_workspace_root: str, after_entry_module: str, after_items: ref list<top_item>, after_uses: ref list<module_use>, after_variants: ref list<variant_fact>, after_calls: ref list<call_fact>, policy_provided: bool, policy_path: str, policy_targets: i32, policy_errors: i32, policy_malformed: bool, format_version: i32) -> bool
 audit {
     intent("Emit canonical workspace dependency impact evidence for supervised organizational change review");
     mutates();
@@ -2606,7 +2606,7 @@ audit {
     let mut before_dependencies: list<workspace_locked_dependency> = list();
     let mut after_dependencies: list<workspace_locked_dependency> = list();
     if not before_identity.valid or not after_identity.valid or not append_workspace_locked_dependencies(before_workspace_root, mutref before_dependencies) or not append_workspace_locked_dependencies(after_workspace_root, mutref after_dependencies) {
-        return make_facts_summary(0, 0, 0, 0);
+        return false;
     }
     let mut added: list<str> = list();
     let mut removed: list<str> = list();
@@ -2616,13 +2616,18 @@ audit {
     collect_impacted_local_callers(after_workspace_root, after_entry_module, ref changed, ref after_items, ref after_uses, ref after_variants, ref after_calls, mutref impacted);
     let mut lines: list<str> = list();
     list_push(mutref lines, "{");
-    list_push(mutref lines, "  \"version\": 2,");
+    list_push(mutref lines, concat3("  \"version\": ", i32_to_str(format_version), ","));
     list_push(mutref lines, "  \"command\": \"change-report\",");
     list_push(mutref lines, concat3("  \"ok\": ", bool_text(policy_errors == 0), ","));
     list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.workspace.v1\",");
     list_push(mutref lines, concat5("  \"before\": { \"workspace\": ", json_quote(before_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(before_workspace_root, before_entry_module)), " },"));
     list_push(mutref lines, concat5("  \"after\": { \"workspace\": ", json_quote(after_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(after_workspace_root, after_entry_module)), " },"));
-    list_push(mutref lines, "  \"evidence\": { \"dependencies\": \"checked\", \"call_impact\": \"checked\", \"policy\": \"checked\" },");
+    let mut policy_evidence = "checked";
+    if format_version == 3 {
+        if not policy_provided { policy_evidence = "absent"; }
+        if policy_errors > 0 { policy_evidence = "failed"; }
+    }
+    list_push(mutref lines, concat3("  \"evidence\": { \"dependencies\": \"checked\", \"call_impact\": \"checked\", \"policy\": ", json_quote(policy_evidence), " },"));
     list_push(mutref lines, "  \"summary\": {");
     list_push(mutref lines, concat3("    \"added_dependencies\": ", i32_to_str(list_len(ref added)), ","));
     list_push(mutref lines, concat3("    \"removed_dependencies\": ", i32_to_str(list_len(ref removed)), ","));
@@ -2641,11 +2646,16 @@ audit {
     list_push(mutref lines, concat3("    \"provided\": ", bool_text(policy_provided), ","));
     list_push(mutref lines, concat5("    \"path\": ", json_quote(policy_path), ",", "", ""));
     list_push(mutref lines, concat3("    \"targets\": ", i32_to_str(policy_targets), ","));
-    list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(policy_errors), ""));
+    if format_version == 3 {
+        list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(policy_errors), ","));
+        list_push(mutref lines, concat3("    \"malformed\": ", bool_text(policy_malformed), ""));
+    } else {
+        list_push(mutref lines, concat3("    \"errors\": ", i32_to_str(policy_errors), ""));
+    }
     list_push(mutref lines, "  }");
     list_push(mutref lines, "}");
     emit_lines(ref lines);
-    return make_facts_summary(0, 0, list_len(ref impacted), list_len(ref changed));
+    return true;
 }
 
 fn root_workspace_name(workspace_root: str) -> str {

@@ -16,7 +16,7 @@ claims run once through `nauqc prove` in the composed milestone gate. The
 archived Python unit suite is not part of milestone or release verification.
 
 `check_fast.sh` reuses `selfhost/build/nauqc` only when
-`scripts/stage1_cache.sh` proves that the complete selfhost/seed input
+`scripts/stage1_cache.sh` proves that the complete selfhost/seed/current-runtime input
 fingerprint and both generated artifacts still match. A missing or stale cache
 rebuilds automatically; explicit `--reuse-stage1` gates fail closed instead of
 silently accepting an executable that merely exists.

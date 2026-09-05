@@ -1,0 +1,18 @@
+fn forwards(target: mutref i32, depth: i32) -> unit
+audit {
+    intent("Reject a mutation omitted across a recursive wrapper.");
+    mutates();
+    effects();
+}
+{
+    if depth > 0 { writes(mutref target, depth - 1); }
+    return;
+}
+
+fn writes(target: mutref i32, depth: i32) -> unit {
+    target = 1;
+    if depth > 0 { forwards(mutref target, depth - 1); }
+    return;
+}
+
+fn main() -> i32 { return 0; }

@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/review-v4.schema.json",
+  "title": "Nauqtype Review v4",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "module",
+    "identity_scheme",
+    "functions",
+    "references",
+    "call_graph",
+    "propagation_sites"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 4
+    },
+    "command": {
+      "const": "review"
+    },
+    "module": {
+      "type": "string"
+    },
+    "identity_scheme": {
+      "const": "nauqtype.semantic.v1"
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/function"
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reference"
+      }
+    },
+    "call_graph": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/call_graph_edge"
+      }
+    },
+    "propagation_sites": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/propagation_site"
+      }
+    }
+  },
+  "$defs": {
+    "string_array": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "enum": [
+        "checked",
+        "builtin",
+        "unresolved"
+      ]
+    },
+    "io_kind": {
+      "enum": [
+        "read",
+        "write",
+        "create_dir",
+        "process",
+        "arguments",
+        "environment",
+        "cwd",
+        "stdin",
+        "stdout",
+        "stderr",
+        "metadata",
+        "traversal",
+        "create_file",
+        "temporary",
+        "remove",
+        "rename",
+        "atomic_replace"
+      ]
+    },
+    "span": {
+      "type": "object",
+      "required": [
+        "start"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "audit_contract": {
+      "type": "object",
+      "required": [
+        "intent",
+        "mutates",
+        "effects",
+        "propagates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "type": "string"
+        },
+        "mutates": {
+          "$ref": "#/$defs/string_array"
+        },
+        "effects": {
+          "$ref": "#/$defs/string_array"
+        },
+        "propagates": {
+          "$ref": "#/$defs/string_array"
+        }
+      }
+    },
+    "inferred_contract": {
+      "type": "object",
+      "required": [
+        "mutates",
+        "effects",
+        "propagates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mutates": {
+          "$ref": "#/$defs/string_array"
+        },
+        "effects": {
+          "$ref": "#/$defs/string_array"
+        },
+        "propagates": {
+          "$ref": "#/$defs/string_array"
+        },
+        "io_kinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/io_kind"
+          }
+        }
+      }
+    },
+    "function_evidence": {
+      "type": "object",
+      "required": [
+        "audit",
+        "inferred",
+        "mutation_coverage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "audit": {
+          "enum": [
+            "absent",
+            "declared"
+          ]
+        },
+        "inferred": {
+          "const": "checked"
+        },
+        "mutation_coverage": {
+          "$ref": "#/$defs/mutation_coverage"
+        }
+      }
+    },
+    "mutation_coverage": {
+      "type": "object",
+      "required": [
+        "interpretation",
+        "scope",
+        "completeness",
+        "uncovered"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "interpretation": {
+          "const": "syntactic_may_write"
+        },
+        "scope": {
+          "const": "checked_mutref_parameters"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "uncovered": {
+          "type": "array",
+          "items": {
+            "const": "unmodeled_builtin_summary"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "completeness": {
+              "const": "complete"
+            },
+            "uncovered": {
+              "const": []
+            }
+          }
+        },
+        {
+          "properties": {
+            "completeness": {
+              "const": "partial"
+            },
+            "uncovered": {
+              "const": [
+                "unmodeled_builtin_summary"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "function": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "qualified_name",
+        "module",
+        "name",
+        "public",
+        "span",
+        "audit",
+        "inferred",
+        "evidence",
+        "calls"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "function"
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "audit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/audit_contract"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inferred": {
+          "$ref": "#/$defs/inferred_contract"
+        },
+        "evidence": {
+          "$ref": "#/$defs/function_evidence"
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/call_ref"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "audit": {
+              "type": "null"
+            },
+            "evidence": {
+              "properties": {
+                "audit": {
+                  "const": "absent"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "audit": {
+              "$ref": "#/$defs/audit_contract"
+            },
+            "evidence": {
+              "properties": {
+                "audit": {
+                  "const": "declared"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "call_ref": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "target_kind",
+        "target_id",
+        "target_module",
+        "evidence",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "target_kind": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "target_module": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "io_kind": {
+          "$ref": "#/$defs/io_kind"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "name",
+        "target_kind",
+        "target_id",
+        "evidence",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "call"
+        },
+        "from": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "target_kind": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "io_kind": {
+          "$ref": "#/$defs/io_kind"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "call_graph_edge": {
+      "type": "object",
+      "required": [
+        "caller",
+        "callee",
+        "call_site",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caller": {
+          "type": "string"
+        },
+        "callee": {
+          "type": "string"
+        },
+        "call_site": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "io_kind": {
+          "$ref": "#/$defs/io_kind"
+        }
+      }
+    },
+    "propagation_site": {
+      "type": "object",
+      "required": [
+        "id",
+        "function",
+        "error",
+        "target_kind",
+        "target_id",
+        "evidence",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "function": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "target_kind": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "context": {
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    }
+  }
+}

@@ -41,18 +41,22 @@ audit {
 
 ## Compiler Inference
 
-- Mutation inference is direct only in this phase.
-- The compiler marks a `mutref` parameter as mutated when the function writes through that parameter.
+- Mutation validation uses checked binding identities for direct assignments,
+  `list_push`, and resolved local/imported calls. Argument mapping follows
+  canonical parameter indexes, including reordered named arguments.
+- A finite fixed point propagates parameter may-writes through recursive
+  calls. Shadowing locals remain separate bindings. Owned-local field writes
+  are outside the outward mutable-parameter contract.
 - `print` is inferred directly from `print_line(...)` / `eprint_line(...)` calls and transitively through checked calls.
 - `io` is inferred directly from authority-bearing argument, environment, cwd, stream, filesystem, and process builtins and transitively through checked calls.
 - Facts v2 and review v2 expose checked IO evidence in canonical order as `read`, `write`, `create_dir`, `process`, `arguments`, `environment`, `cwd`, `stdin`, `stdout`, `stderr`, `metadata`, `traversal`, `create_file`, `temporary`, `remove`, `rename`, and `atomic_replace`; these subkinds are descriptive evidence, not new audit atoms.
 - Propagation is inferred from accepted `let name = result_expr?;` sites and checked against exact `propagates(E)` entries.
 - Missing inferred facts are errors.
 - Overdeclared facts are warnings.
-- For mutation, an overdeclaration warning is only justified for a call-free
-  body: the current direct-only analysis cannot prove the absence of mutation
-  through calls. Omitting a directly inferred write remains an error. This
-  does not make the existing mutation footprint complete.
+- Known parameter writes omitted from `mutates(...)` are errors, even when
+  coverage is partial. An overdeclaration warning requires complete coverage.
+  Every current builtin has a mutation summary; an unmodeled future builtin
+  makes its caller and transitive callers partial rather than pure.
 
 ## Review Output
 
@@ -73,7 +77,7 @@ audit {
 - propagation contracts and checked propagation sites
 - legacy evidence fields; v2 incorrectly labels absent audits as declared
 
-`nauqc review <file> --format v3` is the explicit migration for new consumers.
+`nauqc review <file> --format v3` is the first explicit provenance migration.
 It preserves the v2 identities and successful-output structure, but makes
 `evidence.audit` exactly `absent` for `audit: null`, otherwise `declared`.
 `inferred.mutates` now comes from checked assignment target/binding/parameter
@@ -96,15 +100,34 @@ It describes syntactically observed writes, not path feasibility. Empty
 `mutates` does not prove purity or a complete footprint, even for a call-free
 function. Owned-local field writes are outside this parameter contract.
 Effects, IO kinds, and propagation retain their existing analysis.
-Source-contract validation remains the legacy direct/name-based analysis in
-all versions; v3 does not silently strengthen acceptance or suppression rules.
+M54.8's final correction now validates source contracts using the shared
+call-aware analysis in every command/version. v3's successful evidence stays
+direct-only and partial for compatibility; use v4 for the broader footprint.
 
 v3 is opt-in and successful-output-only. Errors return nonzero, empty stdout,
 and diagnostics on stderr; warnings remain nonfatal and appear once.
-`review-diff` and `change-report` do not accept v3 yet. The strict
+`review-diff` still accepts only v1/v2. The strict
 [review-v3 schema](schemas/review-v3.schema.json) describes audit/evidence
-coherence. Owned goldens check emitter coherence; a general standards-compliant
-schema-validation gate remains open, not implied by those golden checks.
+coherence without changing its historical partial footprint.
+
+`nauqc review <file> --format v4` preserves those identities and audit
+provenance while emitting checked call-aware may-writes. Its coverage is:
+
+```json
+"mutation_coverage": {
+  "interpretation": "syntactic_may_write",
+  "scope": "checked_mutref_parameters",
+  "completeness": "complete",
+  "uncovered": []
+}
+```
+
+An unmodeled builtin instead produces `partial` with the single uncovered
+category `unmodeled_builtin_summary`. Complete coverage describes this fixed
+syntactic parameter analysis, not reachability, purity, effects, or every
+possible ownership property. Missing required checked identities fail with
+`NQ-INTERNAL-012`, never a guessed empty footprint. v4 is also opt-in and
+successful-output-only; diagnostics remain on stderr and warnings are nonfatal.
 
 `nauqc review-diff <before> <after>` consumes the same checked review facts and emits deterministic JSON for semantic changes:
 
@@ -116,6 +139,21 @@ schema-validation gate remains open, not implied by those golden checks.
 
 `nauqc change-report <before> <after> --format v1` combines the semantic diff basis with deterministic evidence and diagnostics for supervised change review. With `--policy <path>`, it also reports advisory policy target status without approving, repairing, or mutating code.
 
+`nauqc change-report <before> <after> [--policy <path>] --format v3` retains
+the workspace dependency/call-impact report introduced by v2 and corrects
+policy truth. Absent policy has `provided: false`, no path/targets/errors, and
+evidence `absent`. A valid supplied policy is `checked`. Invalid, malformed,
+or unreadable supplied policy is `failed`, with nonzero errors and `ok: false`;
+`malformed` is explicit. No policy becomes compiler enforcement or approval.
+
+For review-diff v1/v2 and change-report v1/v2/v3, source/load failures now
+emit [evidence-error v1](schemas/evidence-error-v1.schema.json) instead of a
+success-shaped or misleading v1 fallback document. The exact fields are
+`version`, `command`, `requested_format`, `ok: false`, `stage`, `code`, and
+`message`. Stages distinguish before/after load/check, and exit remains 1.
+Consumers must inspect this envelope before assuming the requested success
+shape. Unsupported CLI formats remain ordinary argument errors.
+
 This output is intended to be consumed by both humans and future AI tooling.
 
 During the current Nauqtype-only toolchain transition, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, and `fmt` are now owned by the active stage1 executable driver alongside `check`, `emit-c`, `build`, `run`, and the proof/corpus gates. The frozen stage0 path remains in-repo only as bootstrap/reference code.
@@ -126,11 +164,16 @@ different from `review`, but both commands require the same valid source
 contracts. Review renders the already-extracted, validated declarations rather
 than applying a second acceptance policy.
 
-M54.8b1 preserves the legacy review v1/v2 successful formats. v3 corrects
-absent-audit emission and labels partial checked direct-write evidence, but
-call-aware mutation summaries/validation, standing schema enforcement,
-diff/change migration, and change-report v2 failure defects remain open.
-Consistent source rejection alone does not close those evidence findings.
+Legacy review v1/v2 and change-report v1/v2 success documents stay unchanged;
+in particular, v2's absent-audit and absent-policy labels must not be treated
+as stronger evidence. New consumers should use review v4 and change-report v3.
+The Nauqtype-owned `test` and `prove` gates validate every owned schema against
+mapped evidence and reject coherence-negative fixtures using
+`nauqtype.evidence-schema-profile.v1`. This is an explicitly bounded fixture
+validator, not full Draft 2020-12 or a general JSON library. Its supported
+keywords, string/number bounds, and exclusions are documented in
+[EVIDENCE_SCHEMA_PROFILE.md](EVIDENCE_SCHEMA_PROFILE.md); it does not narrow
+the compiler's source language or public JSON string support.
 
 ## Supervised Workflow Alpha
 

@@ -1,0 +1,1598 @@
+use text;
+
+enum sp_json_kind {
+    sp_json_null,
+    sp_json_bool,
+    sp_json_integer,
+    sp_json_string,
+    sp_json_array,
+    sp_json_object,
+}
+
+type sp_json_node {
+    id: i32,
+    kind: sp_json_kind,
+    text: str,
+    int_value: i32,
+    bool_value: bool,
+    first_member: i32,
+    member_count: i32,
+    first_element: i32,
+    element_count: i32,
+}
+
+type sp_json_member {
+    owner_id: i32,
+    key: str,
+    value_id: i32,
+}
+
+type sp_json_element {
+    owner_id: i32,
+    index: i32,
+    value_id: i32,
+}
+
+type sp_json_tree {
+    ok: bool,
+    root_id: i32,
+    nodes: list<sp_json_node>,
+    members: list<sp_json_member>,
+    elements: list<sp_json_element>,
+}
+
+type sp_parse_value_result {
+    ok: bool,
+    node_id: i32,
+    next_index: i32,
+}
+
+type sp_string_result {
+    ok: bool,
+    text: str,
+    next_index: i32,
+}
+
+fn sp_make_node(id: i32, kind: sp_json_kind, text_value: str, int_value: i32, bool_value: bool, first_member: i32, member_count: i32, first_element: i32, element_count: i32) -> sp_json_node {
+    return sp_json_node {
+        id: id,
+        kind: kind,
+        text: text_value,
+        int_value: int_value,
+        bool_value: bool_value,
+        first_member: first_member,
+        member_count: member_count,
+        first_element: first_element,
+        element_count: element_count,
+    };
+}
+
+fn sp_add_node(nodes: mutref list<sp_json_node>, node: sp_json_node) -> i32
+audit {
+    intent("Append one parsed JSON node to the private schema-profile arena");
+    mutates(nodes);
+    effects();
+}
+{
+    let id = node.id;
+    list_push(mutref nodes, node);
+    return id;
+}
+
+fn sp_next_node_id(next_id: mutref i32) -> i32
+audit {
+    intent("Allocate one private schema-profile JSON arena node identifier");
+    mutates(next_id);
+    effects();
+}
+{
+    let id = next_id;
+    next_id = next_id + 1;
+    return id;
+}
+
+fn sp_make_tree(ok: bool, root_id: i32, nodes: list<sp_json_node>, members: list<sp_json_member>, elements: list<sp_json_element>) -> sp_json_tree {
+    return sp_json_tree {
+        ok: ok,
+        root_id: root_id,
+        nodes: nodes,
+        members: members,
+        elements: elements,
+    };
+}
+
+fn sp_parse_ok(node_id: i32, next_index: i32) -> sp_parse_value_result {
+    return sp_parse_value_result {
+        ok: true,
+        node_id: node_id,
+        next_index: next_index,
+    };
+}
+
+fn sp_parse_fail(next_index: i32) -> sp_parse_value_result {
+    return sp_parse_value_result {
+        ok: false,
+        node_id: -1,
+        next_index: next_index,
+    };
+}
+
+fn sp_string_ok(value: str, next_index: i32) -> sp_string_result {
+    return sp_string_result {
+        ok: true,
+        text: value,
+        next_index: next_index,
+    };
+}
+
+fn sp_string_fail(next_index: i32) -> sp_string_result {
+    return sp_string_result {
+        ok: false,
+        text: "",
+        next_index: next_index,
+    };
+}
+
+fn sp_is_ws(ch: i32) -> bool {
+    return ch == 32 or ch == 9 or ch == 10 or ch == 13;
+}
+
+fn sp_is_digit(ch: i32) -> bool {
+    return ch >= 48 and ch <= 57;
+}
+
+fn sp_is_hex(ch: i32) -> bool {
+    return (ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 70) or (ch >= 97 and ch <= 102);
+}
+
+fn sp_hex_value(ch: i32) -> i32 {
+    if ch >= 48 and ch <= 57 {
+        return ch - 48;
+    }
+    if ch >= 65 and ch <= 70 {
+        return ch - 55;
+    }
+    if ch >= 97 and ch <= 102 {
+        return ch - 87;
+    }
+    return -1;
+}
+
+fn sp_skip_ws(value: str, index: i32) -> i32 {
+    let mut cursor = index;
+    while cursor < str_len(value) and sp_is_ws(char_at(value, cursor)) {
+        cursor = cursor + 1;
+    }
+    return cursor;
+}
+
+fn sp_ascii_table() -> str {
+    return " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+}
+
+fn sp_ascii_code_text(code: i32) -> str {
+    if code == 9 {
+        return "\t";
+    }
+    if code == 10 {
+        return "\n";
+    }
+    if code >= 32 and code <= 126 {
+        return slice_text(sp_ascii_table(), code - 32, code - 31);
+    }
+    return "";
+}
+
+fn sp_parse_unicode_escape(value: str, index: i32) -> sp_string_result {
+    if index + 6 > str_len(value) {
+        return sp_string_fail(index);
+    }
+    let h1 = char_at(value, index + 2);
+    let h2 = char_at(value, index + 3);
+    let h3 = char_at(value, index + 4);
+    let h4 = char_at(value, index + 5);
+    if not sp_is_hex(h1) or not sp_is_hex(h2) or not sp_is_hex(h3) or not sp_is_hex(h4) {
+        return sp_string_fail(index);
+    }
+    let code = (((sp_hex_value(h1) * 16) + sp_hex_value(h2)) * 16 + sp_hex_value(h3)) * 16 + sp_hex_value(h4);
+    let rendered = sp_ascii_code_text(code);
+    if rendered == "" {
+        return sp_string_fail(index);
+    }
+    return sp_string_ok(rendered, index + 6);
+}
+
+fn sp_parse_string(value: str, index: i32) -> sp_string_result {
+    if char_at(value, index) != 34 {
+        return sp_string_fail(index);
+    }
+    let mut out = "";
+    let mut cursor = index + 1;
+    while cursor < str_len(value) {
+        let ch = char_at(value, cursor);
+        if ch == 34 {
+            return sp_string_ok(out, cursor + 1);
+        }
+        if ch < 32 {
+            return sp_string_fail(cursor);
+        }
+        if ch > 126 {
+            return sp_string_fail(cursor);
+        }
+        if ch == 92 {
+            if cursor + 1 >= str_len(value) {
+                return sp_string_fail(cursor);
+            }
+            let esc = char_at(value, cursor + 1);
+            if esc == 34 or esc == 92 or esc == 47 {
+                out = str_concat(out, slice_text(value, cursor + 1, cursor + 2));
+                cursor = cursor + 2;
+            } else {
+                if esc == 98 {
+                    return sp_string_fail(cursor);
+                } else {
+                    if esc == 102 {
+                        return sp_string_fail(cursor);
+                    } else {
+                        if esc == 110 {
+                            out = str_concat(out, "\n");
+                            cursor = cursor + 2;
+                        } else {
+                            if esc == 114 {
+                                return sp_string_fail(cursor);
+                            } else {
+                                if esc == 116 {
+                                    out = str_concat(out, "\t");
+                                    cursor = cursor + 2;
+                                } else {
+                                    if esc == 117 {
+                                        let escaped = sp_parse_unicode_escape(value, cursor);
+                                        if not escaped.ok {
+                                            return sp_string_fail(cursor);
+                                        }
+                                        out = str_concat(out, escaped.text);
+                                        cursor = escaped.next_index;
+                                    } else {
+                                        return sp_string_fail(cursor);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            out = str_concat(out, slice_text(value, cursor, cursor + 1));
+            cursor = cursor + 1;
+        }
+    }
+    return sp_string_fail(cursor);
+}
+
+fn sp_consumes(value: str, index: i32, expected: str) -> bool {
+    return starts_with_at(value, index, expected);
+}
+
+fn sp_parse_literal(value: str, index: i32, literal: str, nodes: mutref list<sp_json_node>, next_id: mutref i32, kind: sp_json_kind, bool_value: bool) -> sp_parse_value_result
+audit {
+    intent("Parse one JSON literal into the private schema-profile arena");
+    mutates(nodes, next_id);
+    effects();
+}
+{
+    if not sp_consumes(value, index, literal) {
+        return sp_parse_fail(index);
+    }
+    let id = sp_next_node_id(mutref next_id);
+    sp_add_node(mutref nodes, sp_make_node(id, kind, "", 0, bool_value, 0, 0, 0, 0));
+    return sp_parse_ok(id, index + str_len(literal));
+}
+
+fn sp_parse_integer(value: str, index: i32, nodes: mutref list<sp_json_node>, next_id: mutref i32) -> sp_parse_value_result
+audit {
+    intent("Parse one bounded JSON integer into the private schema-profile arena");
+    mutates(nodes, next_id);
+    effects();
+}
+{
+    let mut cursor = index;
+    let mut negative = false;
+    if char_at(value, cursor) == 45 {
+        negative = true;
+        cursor = cursor + 1;
+    }
+    if cursor >= str_len(value) or not sp_is_digit(char_at(value, cursor)) {
+        return sp_parse_fail(index);
+    }
+    if char_at(value, cursor) == 48 and cursor + 1 < str_len(value) and sp_is_digit(char_at(value, cursor + 1)) {
+        return sp_parse_fail(index);
+    }
+    let mut parsed = 0;
+    let mut digits = 0;
+    while cursor < str_len(value) and sp_is_digit(char_at(value, cursor)) {
+        if digits >= 9 {
+            return sp_parse_fail(index);
+        }
+        parsed = (parsed * 10) + (char_at(value, cursor) - 48);
+        digits = digits + 1;
+        cursor = cursor + 1;
+    }
+    if negative {
+        parsed = 0 - parsed;
+    }
+    let id = sp_next_node_id(mutref next_id);
+    sp_add_node(mutref nodes, sp_make_node(id, sp_json_integer, "", parsed, false, 0, 0, 0, 0));
+    return sp_parse_ok(id, cursor);
+}
+
+fn sp_member_duplicate(members: ref list<sp_json_member>, owner_id: i32, key: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref members) {
+        let entry = list_get(ref members, index);
+        match entry {
+            Some(value) => {
+                if value.owner_id == owner_id and value.key == key {
+                    return true;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn sp_parse_value(value: str, index: i32, nodes: mutref list<sp_json_node>, members: mutref list<sp_json_member>, elements: mutref list<sp_json_element>, next_id: mutref i32, depth: i32) -> sp_parse_value_result
+audit {
+    intent("Parse one JSON value into the private schema-profile arenas with bounded depth");
+    mutates(nodes, members, elements, next_id);
+    effects();
+}
+{
+    if depth > 96 {
+        return sp_parse_fail(index);
+    }
+    let cursor = sp_skip_ws(value, index);
+    let ch = char_at(value, cursor);
+    if ch == 123 {
+        let object_id = sp_next_node_id(mutref next_id);
+        let mut member_count = 0;
+        let mut object_cursor = sp_skip_ws(value, cursor + 1);
+        if char_at(value, object_cursor) == 125 {
+            sp_add_node(mutref nodes, sp_make_node(object_id, sp_json_object, "", 0, false, 0, 0, 0, 0));
+            return sp_parse_ok(object_id, object_cursor + 1);
+        }
+        while object_cursor < str_len(value) {
+            let key_result = sp_parse_string(value, object_cursor);
+            if not key_result.ok {
+                return sp_parse_fail(object_cursor);
+            }
+            if sp_member_duplicate(ref members, object_id, key_result.text) {
+                return sp_parse_fail(object_cursor);
+            }
+            object_cursor = sp_skip_ws(value, key_result.next_index);
+            if char_at(value, object_cursor) != 58 {
+                return sp_parse_fail(object_cursor);
+            }
+            let parsed = sp_parse_value(value, object_cursor + 1, mutref nodes, mutref members, mutref elements, mutref next_id, depth + 1);
+            if not parsed.ok {
+                return sp_parse_fail(object_cursor);
+            }
+            list_push(mutref members, sp_json_member { owner_id: object_id, key: key_result.text, value_id: parsed.node_id });
+            member_count = member_count + 1;
+            object_cursor = sp_skip_ws(value, parsed.next_index);
+            if char_at(value, object_cursor) == 44 {
+                object_cursor = sp_skip_ws(value, object_cursor + 1);
+            } else {
+                if char_at(value, object_cursor) == 125 {
+                    sp_add_node(mutref nodes, sp_make_node(object_id, sp_json_object, "", 0, false, 0, member_count, 0, 0));
+                    return sp_parse_ok(object_id, object_cursor + 1);
+                } else {
+                    return sp_parse_fail(object_cursor);
+                }
+            }
+        }
+        return sp_parse_fail(object_cursor);
+    }
+    if ch == 91 {
+        let array_id = sp_next_node_id(mutref next_id);
+        let mut element_count = 0;
+        let mut array_cursor = sp_skip_ws(value, cursor + 1);
+        if char_at(value, array_cursor) == 93 {
+            sp_add_node(mutref nodes, sp_make_node(array_id, sp_json_array, "", 0, false, 0, 0, 0, 0));
+            return sp_parse_ok(array_id, array_cursor + 1);
+        }
+        while array_cursor < str_len(value) {
+            let parsed = sp_parse_value(value, array_cursor, mutref nodes, mutref members, mutref elements, mutref next_id, depth + 1);
+            if not parsed.ok {
+                return sp_parse_fail(array_cursor);
+            }
+            list_push(mutref elements, sp_json_element { owner_id: array_id, index: element_count, value_id: parsed.node_id });
+            element_count = element_count + 1;
+            array_cursor = sp_skip_ws(value, parsed.next_index);
+            if char_at(value, array_cursor) == 44 {
+                array_cursor = sp_skip_ws(value, array_cursor + 1);
+            } else {
+                if char_at(value, array_cursor) == 93 {
+                    sp_add_node(mutref nodes, sp_make_node(array_id, sp_json_array, "", 0, false, 0, 0, 0, element_count));
+                    return sp_parse_ok(array_id, array_cursor + 1);
+                } else {
+                    return sp_parse_fail(array_cursor);
+                }
+            }
+        }
+        return sp_parse_fail(array_cursor);
+    }
+    if ch == 34 {
+        let parsed = sp_parse_string(value, cursor);
+        if not parsed.ok {
+            return sp_parse_fail(cursor);
+        }
+        let id = sp_next_node_id(mutref next_id);
+        sp_add_node(mutref nodes, sp_make_node(id, sp_json_string, parsed.text, 0, false, 0, 0, 0, 0));
+        return sp_parse_ok(id, parsed.next_index);
+    }
+    if ch == 116 {
+        return sp_parse_literal(value, cursor, "true", mutref nodes, mutref next_id, sp_json_bool, true);
+    }
+    if ch == 102 {
+        return sp_parse_literal(value, cursor, "false", mutref nodes, mutref next_id, sp_json_bool, false);
+    }
+    if ch == 110 {
+        return sp_parse_literal(value, cursor, "null", mutref nodes, mutref next_id, sp_json_null, false);
+    }
+    if ch == 45 or sp_is_digit(ch) {
+        return sp_parse_integer(value, cursor, mutref nodes, mutref next_id);
+    }
+    return sp_parse_fail(cursor);
+}
+
+fn sp_parse_json_into(value: str, nodes: mutref list<sp_json_node>, members: mutref list<sp_json_member>, elements: mutref list<sp_json_element>, root_id: mutref i32) -> bool
+audit {
+    intent("Parse one bounded JSON text into caller-owned schema-profile arena lists");
+    mutates(nodes, members, elements, root_id);
+    effects();
+}
+{
+    root_id = -1;
+    let mut next_id = 1;
+    let parsed = sp_parse_value(value, 0, mutref nodes, mutref members, mutref elements, mutref next_id, 0);
+    if parsed.ok {
+        let end = sp_skip_ws(value, parsed.next_index);
+        if end == str_len(value) {
+            root_id = parsed.node_id;
+            return true;
+        }
+    }
+    return false;
+}
+
+fn sp_node_at(nodes: ref list<sp_json_node>, node_id: i32) -> option<sp_json_node> {
+    if node_id <= 0 {
+        return None;
+    }
+    let mut index = 0;
+    while index < list_len(ref nodes) {
+        let entry = list_get(ref nodes, index);
+        match entry {
+            Some(node) => {
+                if node.id == node_id {
+                    return Some(node);
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn sp_node_is_object(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_object => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_node_is_array(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_array => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_node_is_string(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_string => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_node_is_integer(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_integer => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_node_is_bool(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_bool => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_node_is_null(node: sp_json_node) -> bool {
+    match node.kind {
+        sp_json_null => { return true; },
+        _ => {},
+    }
+    return false;
+}
+
+fn sp_same_kind(left: sp_json_node, right: sp_json_node) -> bool {
+    match left.kind {
+        sp_json_null => { return sp_node_is_null(right); },
+        sp_json_bool => { return sp_node_is_bool(right); },
+        sp_json_integer => { return sp_node_is_integer(right); },
+        sp_json_string => { return sp_node_is_string(right); },
+        sp_json_array => { return sp_node_is_array(right); },
+        sp_json_object => { return sp_node_is_object(right); },
+    }
+    return false;
+}
+
+fn sp_member_at(members: ref list<sp_json_member>, object_id: i32, offset: i32) -> option<sp_json_member> {
+    let mut seen = 0;
+    let mut index = 0;
+    while index < list_len(ref members) {
+        let member_entry = list_get(ref members, index);
+        match member_entry {
+            Some(member) => {
+                if member.owner_id == object_id {
+                    if seen == offset {
+                        return Some(member);
+                    }
+                    seen = seen + 1;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn sp_object_prop(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, object_id: i32, key: str) -> option<i32> {
+    let node_entry = sp_node_at(ref nodes, object_id);
+    match node_entry {
+        Some(node) => {
+            if not sp_node_is_object(node) {
+                return None;
+            }
+            let mut index = 0;
+            while index < list_len(ref members) {
+                let member_entry = list_get(ref members, index);
+                match member_entry {
+                    Some(member) => {
+                        if member.owner_id == object_id and member.key == key {
+                            return Some(member.value_id);
+                        }
+                    },
+                    None => {},
+                }
+                index = index + 1;
+            }
+        },
+        None => {},
+    }
+    return None;
+}
+
+fn sp_object_has_prop(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, object_id: i32, key: str) -> bool {
+    let entry = sp_object_prop(ref nodes, ref members, object_id, key);
+    match entry {
+        Some(_) => { return true; },
+        None => { return false; },
+    }
+}
+
+fn sp_element_id(elements: ref list<sp_json_element>, array_node: sp_json_node, offset: i32) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref elements) {
+        let entry = list_get(ref elements, index);
+        match entry {
+            Some(value) => {
+                if value.owner_id == array_node.id and value.index == offset {
+                    return value.value_id;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn sp_string_list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn sp_clone_string_list(items: ref list<str>) -> list<str> {
+    let mut out: list<str> = list();
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                list_push(mutref out, value);
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return out;
+}
+
+fn sp_schema_keyword_allowed(key: str) -> bool {
+    if key == "$schema" or key == "$id" or key == "title" {
+        return true;
+    }
+    if key == "$defs" or key == "$ref" {
+        return true;
+    }
+    if key == "type" or key == "const" or key == "enum" {
+        return true;
+    }
+    if key == "properties" or key == "required" or key == "additionalProperties" {
+        return true;
+    }
+    if key == "items" or key == "minimum" or key == "minItems" or key == "minLength" {
+        return true;
+    }
+    if key == "pattern" or key == "anyOf" or key == "oneOf" {
+        return true;
+    }
+    return false;
+}
+
+fn sp_supported_type_name(value: str) -> bool {
+    return value == "object" or value == "array" or value == "string" or value == "integer" or value == "boolean" or value == "null";
+}
+
+fn sp_supported_pattern(value: str) -> bool {
+    return value == "^module:" or value == "^[a-f0-9]{64}$" or value == "^(human|agent):";
+}
+
+fn sp_ref_name(ref_text: str) -> str {
+    if not starts_with_at(ref_text, 0, "#/$defs/") {
+        return "";
+    }
+    let name = slice_text(ref_text, 8, str_len(ref_text));
+    if name == "" or text_contains(name, "/") {
+        return "";
+    }
+    return name;
+}
+
+fn sp_resolve_ref(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, root_id: i32, ref_text: str) -> i32 {
+    let name = sp_ref_name(ref_text);
+    if name == "" {
+        return -1;
+    }
+    let defs_entry = sp_object_prop(ref nodes, ref members, root_id, "$defs");
+    match defs_entry {
+        Some(defs_id) => {
+            let target = sp_object_prop(ref nodes, ref members, defs_id, name);
+            match target {
+                Some(value_id) => { return value_id; },
+                None => {},
+            }
+        },
+        None => {},
+    }
+    return -1;
+}
+
+fn sp_schema_string_prop_ok(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, schema_id: i32, key: str) -> bool {
+    let prop = sp_object_prop(ref nodes, ref members, schema_id, key);
+    match prop {
+        Some(value_id) => {
+            let node_entry = sp_node_at(ref nodes, value_id);
+            match node_entry {
+                Some(node) => { return sp_node_is_string(node); },
+                None => { return false; },
+            }
+        },
+        None => { return true; },
+    }
+}
+
+fn sp_schema_type_value_ok(nodes: ref list<sp_json_node>, elements: ref list<sp_json_element>, type_id: i32) -> bool {
+    let node_entry = sp_node_at(ref nodes, type_id);
+    match node_entry {
+        Some(node) => {
+            if sp_node_is_string(node) {
+                return sp_supported_type_name(node.text);
+            }
+            if sp_node_is_array(node) {
+                let mut seen: list<str> = list();
+                let mut index = 0;
+                while index < node.element_count {
+                    let element_id = sp_element_id(ref elements, node, index);
+                    let element_entry = sp_node_at(ref nodes, element_id);
+                    match element_entry {
+                        Some(element) => {
+                            if not sp_node_is_string(element) or not sp_supported_type_name(element.text) {
+                                return false;
+                            }
+                            if sp_string_list_contains(ref seen, element.text) {
+                                return false;
+                            }
+                            list_push(mutref seen, element.text);
+                        },
+                        None => { return false; },
+                    }
+                    index = index + 1;
+                }
+                return node.element_count > 0;
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_string_array_ok(nodes: ref list<sp_json_node>, elements: ref list<sp_json_element>, array_id: i32, require_unique: bool) -> bool {
+    let node_entry = sp_node_at(ref nodes, array_id);
+    match node_entry {
+        Some(node) => {
+            if not sp_node_is_array(node) {
+                return false;
+            }
+            let mut seen: list<str> = list();
+            let mut index = 0;
+            while index < node.element_count {
+                let element_id = sp_element_id(ref elements, node, index);
+                let element_entry = sp_node_at(ref nodes, element_id);
+                match element_entry {
+                    Some(element) => {
+                        if not sp_node_is_string(element) {
+                            return false;
+                        }
+                        if require_unique and sp_string_list_contains(ref seen, element.text) {
+                            return false;
+                        }
+                        list_push(mutref seen, element.text);
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_check_ref(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32, ref_text: str, visiting: ref list<str>, depth: i32) -> bool {
+    if depth > 96 {
+        return false;
+    }
+    let target_id = sp_resolve_ref(ref nodes, ref members, root_id, ref_text);
+    if target_id <= 0 {
+        return false;
+    }
+    if sp_string_list_contains(ref visiting, ref_text) {
+        return false;
+    }
+    let mut next = sp_clone_string_list(ref visiting);
+    list_push(mutref next, ref_text);
+    return sp_schema_check_node(ref nodes, ref members, ref elements, root_id, target_id, ref next, depth + 1);
+}
+
+fn sp_schema_check_schema_array(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32, array_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    let node_entry = sp_node_at(ref nodes, array_id);
+    match node_entry {
+        Some(node) => {
+            if not sp_node_is_array(node) or node.element_count == 0 {
+                return false;
+            }
+            let mut index = 0;
+            while index < node.element_count {
+                let child_id = sp_element_id(ref elements, node, index);
+                if not sp_schema_check_node(ref nodes, ref members, ref elements, root_id, child_id, ref visiting, depth + 1) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_check_properties(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32, properties_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    let node_entry = sp_node_at(ref nodes, properties_id);
+    match node_entry {
+        Some(node) => {
+            if not sp_node_is_object(node) {
+                return false;
+            }
+            let mut index = 0;
+            while index < node.member_count {
+                let member_entry = sp_member_at(ref members, properties_id, index);
+                match member_entry {
+                    Some(member) => {
+                        if not sp_schema_check_node(ref nodes, ref members, ref elements, root_id, member.value_id, ref visiting, depth + 1) {
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_check_defs(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32, defs_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    let node_entry = sp_node_at(ref nodes, defs_id);
+    match node_entry {
+        Some(node) => {
+            if not sp_node_is_object(node) {
+                return false;
+            }
+            let mut index = 0;
+            while index < node.member_count {
+                let member_entry = sp_member_at(ref members, defs_id, index);
+                match member_entry {
+                    Some(member) => {
+                        if member.key == "" or text_contains(member.key, "/") {
+                            return false;
+                        }
+                        if not sp_schema_check_node(ref nodes, ref members, ref elements, root_id, member.value_id, ref visiting, depth + 1) {
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_integer_prop_ok(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, schema_id: i32, key: str) -> bool {
+    let prop = sp_object_prop(ref nodes, ref members, schema_id, key);
+    match prop {
+        Some(value_id) => {
+            let node_entry = sp_node_at(ref nodes, value_id);
+            match node_entry {
+                Some(node) => { return sp_node_is_integer(node) and node.int_value >= 0; },
+                None => { return false; },
+            }
+        },
+        None => { return true; },
+    }
+}
+
+fn sp_schema_bool_prop_ok(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, schema_id: i32, key: str) -> bool {
+    let prop = sp_object_prop(ref nodes, ref members, schema_id, key);
+    match prop {
+        Some(value_id) => {
+            let node_entry = sp_node_at(ref nodes, value_id);
+            match node_entry {
+                Some(node) => { return sp_node_is_bool(node); },
+                None => { return false; },
+            }
+        },
+        None => { return true; },
+    }
+}
+
+fn sp_schema_check_node(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32, schema_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    if depth > 96 {
+        return false;
+    }
+    let schema_entry = sp_node_at(ref nodes, schema_id);
+    match schema_entry {
+        Some(schema) => {
+            if not sp_node_is_object(schema) {
+                return false;
+            }
+            let mut index = 0;
+            while index < schema.member_count {
+                let member_entry = sp_member_at(ref members, schema_id, index);
+                match member_entry {
+                    Some(member) => {
+                        if not sp_schema_keyword_allowed(member.key) {
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            if not sp_schema_string_prop_ok(ref nodes, ref members, schema_id, "$schema") {
+                return false;
+            }
+            if not sp_schema_string_prop_ok(ref nodes, ref members, schema_id, "$id") {
+                return false;
+            }
+            if not sp_schema_string_prop_ok(ref nodes, ref members, schema_id, "title") {
+                return false;
+            }
+            let defs_prop = sp_object_prop(ref nodes, ref members, schema_id, "$defs");
+            match defs_prop {
+                Some(defs_id) => {
+                    if schema_id != root_id {
+                        return false;
+                    }
+                    if not sp_schema_check_defs(ref nodes, ref members, ref elements, root_id, defs_id, ref visiting, depth + 1) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            let ref_prop = sp_object_prop(ref nodes, ref members, schema_id, "$ref");
+            match ref_prop {
+                Some(ref_id) => {
+                    let ref_node_entry = sp_node_at(ref nodes, ref_id);
+                    match ref_node_entry {
+                        Some(ref_node) => {
+                            if not sp_node_is_string(ref_node) or not sp_schema_check_ref(ref nodes, ref members, ref elements, root_id, ref_node.text, ref visiting, depth + 1) {
+                                return false;
+                            }
+                        },
+                        None => { return false; },
+                    }
+                },
+                None => {},
+            }
+            let type_prop = sp_object_prop(ref nodes, ref members, schema_id, "type");
+            match type_prop {
+                Some(type_id) => {
+                    if not sp_schema_type_value_ok(ref nodes, ref elements, type_id) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            let enum_prop = sp_object_prop(ref nodes, ref members, schema_id, "enum");
+            match enum_prop {
+                Some(enum_id) => {
+                    let enum_entry = sp_node_at(ref nodes, enum_id);
+                    match enum_entry {
+                        Some(enum_node) => {
+                            if not sp_node_is_array(enum_node) {
+                                return false;
+                            }
+                        },
+                        None => { return false; },
+                    }
+                },
+                None => {},
+            }
+            let properties_prop = sp_object_prop(ref nodes, ref members, schema_id, "properties");
+            match properties_prop {
+                Some(properties_id) => {
+                    if not sp_schema_check_properties(ref nodes, ref members, ref elements, root_id, properties_id, ref visiting, depth + 1) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            let required_prop = sp_object_prop(ref nodes, ref members, schema_id, "required");
+            match required_prop {
+                Some(required_id) => {
+                    if not sp_schema_string_array_ok(ref nodes, ref elements, required_id, true) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            if not sp_schema_bool_prop_ok(ref nodes, ref members, schema_id, "additionalProperties") {
+                return false;
+            }
+            let items_prop = sp_object_prop(ref nodes, ref members, schema_id, "items");
+            match items_prop {
+                Some(items_id) => {
+                    if not sp_schema_check_node(ref nodes, ref members, ref elements, root_id, items_id, ref visiting, depth + 1) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            if not sp_schema_integer_prop_ok(ref nodes, ref members, schema_id, "minimum") {
+                return false;
+            }
+            if not sp_schema_integer_prop_ok(ref nodes, ref members, schema_id, "minItems") {
+                return false;
+            }
+            if not sp_schema_integer_prop_ok(ref nodes, ref members, schema_id, "minLength") {
+                return false;
+            }
+            let pattern_prop = sp_object_prop(ref nodes, ref members, schema_id, "pattern");
+            match pattern_prop {
+                Some(pattern_id) => {
+                    let pattern_entry = sp_node_at(ref nodes, pattern_id);
+                    match pattern_entry {
+                        Some(pattern_node) => {
+                            if not sp_node_is_string(pattern_node) or not sp_supported_pattern(pattern_node.text) {
+                                return false;
+                            }
+                        },
+                        None => { return false; },
+                    }
+                },
+                None => {},
+            }
+            let any_prop = sp_object_prop(ref nodes, ref members, schema_id, "anyOf");
+            match any_prop {
+                Some(any_id) => {
+                    if not sp_schema_check_schema_array(ref nodes, ref members, ref elements, root_id, any_id, ref visiting, depth + 1) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            let one_prop = sp_object_prop(ref nodes, ref members, schema_id, "oneOf");
+            match one_prop {
+                Some(one_id) => {
+                    if not sp_schema_check_schema_array(ref nodes, ref members, ref elements, root_id, one_id, ref visiting, depth + 1) {
+                        return false;
+                    }
+                },
+                None => {},
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_well_formed(nodes: ref list<sp_json_node>, members: ref list<sp_json_member>, elements: ref list<sp_json_element>, root_id: i32) -> bool {
+    let visiting: list<str> = list();
+    return sp_schema_check_node(ref nodes, ref members, ref elements, root_id, root_id, ref visiting, 0);
+}
+
+fn sp_json_structural_equal(left_nodes: ref list<sp_json_node>, left_members: ref list<sp_json_member>, left_elements: ref list<sp_json_element>, left_id: i32, right_nodes: ref list<sp_json_node>, right_members: ref list<sp_json_member>, right_elements: ref list<sp_json_element>, right_id: i32, depth: i32) -> bool {
+    if depth > 96 {
+        return false;
+    }
+    let left_entry = sp_node_at(ref left_nodes, left_id);
+    let right_entry = sp_node_at(ref right_nodes, right_id);
+    match left_entry {
+        Some(left) => {
+            match right_entry {
+                Some(right) => {
+                    if not sp_same_kind(left, right) {
+                        return false;
+                    }
+                    if sp_node_is_string(left) {
+                        return left.text == right.text;
+                    }
+                    if sp_node_is_integer(left) {
+                        return left.int_value == right.int_value;
+                    }
+                    if sp_node_is_bool(left) {
+                        return left.bool_value == right.bool_value;
+                    }
+                    if sp_node_is_array(left) {
+                        if left.element_count != right.element_count {
+                            return false;
+                        }
+                        let mut index = 0;
+                        while index < left.element_count {
+                            let left_child = sp_element_id(ref left_elements, left, index);
+                            let right_child = sp_element_id(ref right_elements, right, index);
+                            if not sp_json_structural_equal(ref left_nodes, ref left_members, ref left_elements, left_child, ref right_nodes, ref right_members, ref right_elements, right_child, depth + 1) {
+                                return false;
+                            }
+                            index = index + 1;
+                        }
+                        return true;
+                    }
+                    if sp_node_is_object(left) {
+                        if left.member_count != right.member_count {
+                            return false;
+                        }
+                        let mut index = 0;
+                        while index < left.member_count {
+                            let left_member_entry = sp_member_at(ref left_members, left_id, index);
+                            match left_member_entry {
+                                Some(left_member) => {
+                                    let right_value = sp_object_prop(ref right_nodes, ref right_members, right_id, left_member.key);
+                                    match right_value {
+                                        Some(right_child) => {
+                                            if not sp_json_structural_equal(ref left_nodes, ref left_members, ref left_elements, left_member.value_id, ref right_nodes, ref right_members, ref right_elements, right_child, depth + 1) {
+                                                return false;
+                                            }
+                                        },
+                                        None => { return false; },
+                                    }
+                                },
+                                None => { return false; },
+                            }
+                            index = index + 1;
+                        }
+                        return true;
+                    }
+                    return true;
+                },
+                None => {},
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_data_type_matches(data_node: sp_json_node, type_name: str) -> bool {
+    if type_name == "object" {
+        return sp_node_is_object(data_node);
+    }
+    if type_name == "array" {
+        return sp_node_is_array(data_node);
+    }
+    if type_name == "string" {
+        return sp_node_is_string(data_node);
+    }
+    if type_name == "integer" {
+        return sp_node_is_integer(data_node);
+    }
+    if type_name == "boolean" {
+        return sp_node_is_bool(data_node);
+    }
+    if type_name == "null" {
+        return sp_node_is_null(data_node);
+    }
+    return false;
+}
+
+fn sp_type_assertion_matches(schema_nodes: ref list<sp_json_node>, schema_elements: ref list<sp_json_element>, type_id: i32, data_node: sp_json_node) -> bool {
+    let type_entry = sp_node_at(ref schema_nodes, type_id);
+    match type_entry {
+        Some(type_node) => {
+            if sp_node_is_string(type_node) {
+                return sp_data_type_matches(data_node, type_node.text);
+            }
+            if sp_node_is_array(type_node) {
+                let mut index = 0;
+                while index < type_node.element_count {
+                    let element_id = sp_element_id(ref schema_elements, type_node, index);
+                    let element_entry = sp_node_at(ref schema_nodes, element_id);
+                    match element_entry {
+                        Some(element) => {
+                            if sp_node_is_string(element) and sp_data_type_matches(data_node, element.text) {
+                                return true;
+                            }
+                        },
+                        None => {},
+                    }
+                    index = index + 1;
+                }
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_hex64_matches(value: str) -> bool {
+    if str_len(value) != 64 {
+        return false;
+    }
+    let mut index = 0;
+    while index < str_len(value) {
+        let ch = char_at(value, index);
+        let ok = (ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102);
+        if not ok {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn sp_pattern_matches(pattern: str, value: str) -> bool {
+    if pattern == "^module:" {
+        return starts_with_at(value, 0, "module:");
+    }
+    if pattern == "^[a-f0-9]{64}$" {
+        return sp_hex64_matches(value);
+    }
+    if pattern == "^(human|agent):" {
+        return starts_with_at(value, 0, "human:") or starts_with_at(value, 0, "agent:");
+    }
+    return false;
+}
+
+fn sp_schema_ref_matches(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, root_id: i32, ref_text: str, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    let target_id = sp_resolve_ref(ref schema_nodes, ref schema_members, root_id, ref_text);
+    if target_id <= 0 {
+        return false;
+    }
+    if sp_string_list_contains(ref visiting, ref_text) {
+        return false;
+    }
+    let mut next = sp_clone_string_list(ref visiting);
+    list_push(mutref next, ref_text);
+    return sp_schema_matches(ref schema_nodes, ref schema_members, ref schema_elements, root_id, target_id, ref data_nodes, ref data_members, ref data_elements, data_id, ref next, depth + 1);
+}
+
+fn sp_eval_schema_array_count(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, root_id: i32, array_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_id: i32, visiting: ref list<str>, depth: i32) -> i32 {
+    let array_entry = sp_node_at(ref schema_nodes, array_id);
+    match array_entry {
+        Some(array_node) => {
+            let mut count = 0;
+            let mut index = 0;
+            while index < array_node.element_count {
+                let child_id = sp_element_id(ref schema_elements, array_node, index);
+                if sp_schema_matches(ref schema_nodes, ref schema_members, ref schema_elements, root_id, child_id, ref data_nodes, ref data_members, ref data_elements, data_id, ref visiting, depth + 1) {
+                    count = count + 1;
+                }
+                index = index + 1;
+            }
+            return count;
+        },
+        None => {},
+    }
+    return 0;
+}
+
+fn sp_required_matches(schema_nodes: ref list<sp_json_node>, schema_elements: ref list<sp_json_element>, required_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_id: i32) -> bool {
+    let required_entry = sp_node_at(ref schema_nodes, required_id);
+    match required_entry {
+        Some(required_node) => {
+            let mut index = 0;
+            while index < required_node.element_count {
+                let element_id = sp_element_id(ref schema_elements, required_node, index);
+                let element_entry = sp_node_at(ref schema_nodes, element_id);
+                match element_entry {
+                    Some(element) => {
+                        if not sp_object_has_prop(ref data_nodes, ref data_members, data_id, element.text) {
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_properties_match(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, root_id: i32, properties_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    let properties_entry = sp_node_at(ref schema_nodes, properties_id);
+    match properties_entry {
+        Some(properties_node) => {
+            let mut index = 0;
+            while index < properties_node.member_count {
+                let member_entry = sp_member_at(ref schema_members, properties_id, index);
+                match member_entry {
+                    Some(member) => {
+                        let data_value = sp_object_prop(ref data_nodes, ref data_members, data_id, member.key);
+                        match data_value {
+                            Some(data_child_id) => {
+                                if not sp_schema_matches(ref schema_nodes, ref schema_members, ref schema_elements, root_id, member.value_id, ref data_nodes, ref data_members, ref data_elements, data_child_id, ref visiting, depth + 1) {
+                                    return false;
+                                }
+                            },
+                            None => {},
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_no_additional_props(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, properties_id: i32, data_members: ref list<sp_json_member>, data_node: sp_json_node) -> bool {
+    let mut index = 0;
+    while index < data_node.member_count {
+        let member_entry = sp_member_at(ref data_members, data_node.id, index);
+        match member_entry {
+            Some(member) => {
+                if properties_id <= 0 or not sp_object_has_prop(ref schema_nodes, ref schema_members, properties_id, member.key) {
+                    return false;
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn sp_items_match(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, root_id: i32, items_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_node: sp_json_node, visiting: ref list<str>, depth: i32) -> bool {
+    let mut index = 0;
+    while index < data_node.element_count {
+        let child_id = sp_element_id(ref data_elements, data_node, index);
+        if not sp_schema_matches(ref schema_nodes, ref schema_members, ref schema_elements, root_id, items_id, ref data_nodes, ref data_members, ref data_elements, child_id, ref visiting, depth + 1) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn sp_enum_matches(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, enum_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_id: i32) -> bool {
+    let enum_entry = sp_node_at(ref schema_nodes, enum_id);
+    match enum_entry {
+        Some(enum_node) => {
+            let mut index = 0;
+            while index < enum_node.element_count {
+                let element_id = sp_element_id(ref schema_elements, enum_node, index);
+                if sp_json_structural_equal(ref schema_nodes, ref schema_members, ref schema_elements, element_id, ref data_nodes, ref data_members, ref data_elements, data_id, 0) {
+                    return true;
+                }
+                index = index + 1;
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+fn sp_schema_matches(schema_nodes: ref list<sp_json_node>, schema_members: ref list<sp_json_member>, schema_elements: ref list<sp_json_element>, root_id: i32, schema_id: i32, data_nodes: ref list<sp_json_node>, data_members: ref list<sp_json_member>, data_elements: ref list<sp_json_element>, data_id: i32, visiting: ref list<str>, depth: i32) -> bool {
+    if depth > 96 {
+        return false;
+    }
+    let schema_entry = sp_node_at(ref schema_nodes, schema_id);
+    let data_entry = sp_node_at(ref data_nodes, data_id);
+    match schema_entry {
+        Some(schema) => {
+            match data_entry {
+                Some(data) => {
+                    if not sp_node_is_object(schema) {
+                        return false;
+                    }
+                    let ref_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "$ref");
+                    match ref_prop {
+                        Some(ref_id) => {
+                            let ref_node_entry = sp_node_at(ref schema_nodes, ref_id);
+                            match ref_node_entry {
+                                Some(ref_node) => {
+                                    if not sp_schema_ref_matches(ref schema_nodes, ref schema_members, ref schema_elements, root_id, ref_node.text, ref data_nodes, ref data_members, ref data_elements, data_id, ref visiting, depth + 1) {
+                                        return false;
+                                    }
+                                },
+                                None => { return false; },
+                            }
+                        },
+                        None => {},
+                    }
+                    let any_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "anyOf");
+                    match any_prop {
+                        Some(any_id) => {
+                            if sp_eval_schema_array_count(ref schema_nodes, ref schema_members, ref schema_elements, root_id, any_id, ref data_nodes, ref data_members, ref data_elements, data_id, ref visiting, depth + 1) < 1 {
+                                return false;
+                            }
+                        },
+                        None => {},
+                    }
+                    let one_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "oneOf");
+                    match one_prop {
+                        Some(one_id) => {
+                            if sp_eval_schema_array_count(ref schema_nodes, ref schema_members, ref schema_elements, root_id, one_id, ref data_nodes, ref data_members, ref data_elements, data_id, ref visiting, depth + 1) != 1 {
+                                return false;
+                            }
+                        },
+                        None => {},
+                    }
+                    let type_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "type");
+                    match type_prop {
+                        Some(type_id) => {
+                            if not sp_type_assertion_matches(ref schema_nodes, ref schema_elements, type_id, data) {
+                                return false;
+                            }
+                        },
+                        None => {},
+                    }
+                    let const_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "const");
+                    match const_prop {
+                        Some(const_id) => {
+                            if not sp_json_structural_equal(ref schema_nodes, ref schema_members, ref schema_elements, const_id, ref data_nodes, ref data_members, ref data_elements, data_id, 0) {
+                                return false;
+                            }
+                        },
+                        None => {},
+                    }
+                    let enum_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "enum");
+                    match enum_prop {
+                        Some(enum_id) => {
+                            if not sp_enum_matches(ref schema_nodes, ref schema_members, ref schema_elements, enum_id, ref data_nodes, ref data_members, ref data_elements, data_id) {
+                                return false;
+                            }
+                        },
+                        None => {},
+                    }
+                    if sp_node_is_object(data) {
+                        let required_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "required");
+                        match required_prop {
+                            Some(required_id) => {
+                                if not sp_required_matches(ref schema_nodes, ref schema_elements, required_id, ref data_nodes, ref data_members, data_id) {
+                                    return false;
+                                }
+                            },
+                            None => {},
+                        }
+                        let properties_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "properties");
+                        let mut properties_id = -1;
+                        match properties_prop {
+                            Some(value) => {
+                                properties_id = value;
+                                if not sp_properties_match(ref schema_nodes, ref schema_members, ref schema_elements, root_id, value, ref data_nodes, ref data_members, ref data_elements, data_id, ref visiting, depth + 1) {
+                                    return false;
+                                }
+                            },
+                            None => {},
+                        }
+                        let additional_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "additionalProperties");
+                        match additional_prop {
+                            Some(additional_id) => {
+                                let additional_node_entry = sp_node_at(ref schema_nodes, additional_id);
+                                match additional_node_entry {
+                                    Some(additional_node) => {
+                                        if sp_node_is_bool(additional_node) and not additional_node.bool_value {
+                                            if not sp_no_additional_props(ref schema_nodes, ref schema_members, properties_id, ref data_members, data) {
+                                                return false;
+                                            }
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                    if sp_node_is_array(data) {
+                        let items_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "items");
+                        match items_prop {
+                            Some(items_id) => {
+                                if not sp_items_match(ref schema_nodes, ref schema_members, ref schema_elements, root_id, items_id, ref data_nodes, ref data_members, ref data_elements, data, ref visiting, depth + 1) {
+                                    return false;
+                                }
+                            },
+                            None => {},
+                        }
+                        let min_items_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "minItems");
+                        match min_items_prop {
+                            Some(min_items_id) => {
+                                let min_items_entry = sp_node_at(ref schema_nodes, min_items_id);
+                                match min_items_entry {
+                                    Some(min_items_node) => {
+                                        if data.element_count < min_items_node.int_value {
+                                            return false;
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                    if sp_node_is_string(data) {
+                        let min_length_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "minLength");
+                        match min_length_prop {
+                            Some(min_length_id) => {
+                                let min_length_entry = sp_node_at(ref schema_nodes, min_length_id);
+                                match min_length_entry {
+                                    Some(min_length_node) => {
+                                        if str_len(data.text) < min_length_node.int_value {
+                                            return false;
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                            },
+                            None => {},
+                        }
+                        let pattern_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "pattern");
+                        match pattern_prop {
+                            Some(pattern_id) => {
+                                let pattern_entry = sp_node_at(ref schema_nodes, pattern_id);
+                                match pattern_entry {
+                                    Some(pattern_node) => {
+                                        if not sp_pattern_matches(pattern_node.text, data.text) {
+                                            return false;
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                    if sp_node_is_integer(data) {
+                        let minimum_prop = sp_object_prop(ref schema_nodes, ref schema_members, schema_id, "minimum");
+                        match minimum_prop {
+                            Some(minimum_id) => {
+                                let minimum_entry = sp_node_at(ref schema_nodes, minimum_id);
+                                match minimum_entry {
+                                    Some(minimum_node) => {
+                                        if data.int_value < minimum_node.int_value {
+                                            return false;
+                                        }
+                                    },
+                                    None => { return false; },
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                    return true;
+                },
+                None => {},
+            }
+        },
+        None => {},
+    }
+    return false;
+}
+
+pub fn schema_profile_accepts(schema_text: str, data_text: str) -> bool
+audit {
+    intent("Evaluate one JSON document against the bounded Nauqtype evidence schema profile v1");
+    mutates();
+    effects();
+}
+{
+    let mut schema_nodes: list<sp_json_node> = list();
+    let mut schema_members: list<sp_json_member> = list();
+    let mut schema_elements: list<sp_json_element> = list();
+    let mut schema_root = -1;
+    if not sp_parse_json_into(schema_text, mutref schema_nodes, mutref schema_members, mutref schema_elements, mutref schema_root) {
+        return false;
+    }
+    if not sp_schema_well_formed(ref schema_nodes, ref schema_members, ref schema_elements, schema_root) {
+        return false;
+    }
+
+    let mut data_nodes: list<sp_json_node> = list();
+    let mut data_members: list<sp_json_member> = list();
+    let mut data_elements: list<sp_json_element> = list();
+    let mut data_root = -1;
+    if not sp_parse_json_into(data_text, mutref data_nodes, mutref data_members, mutref data_elements, mutref data_root) {
+        return false;
+    }
+    let visiting: list<str> = list();
+    return sp_schema_matches(ref schema_nodes, ref schema_members, ref schema_elements, schema_root, schema_root, ref data_nodes, ref data_members, ref data_elements, data_root, ref visiting, 0);
+}

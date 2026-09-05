@@ -1,0 +1,481 @@
+use schema_profile;
+use files;
+use text;
+
+fn spt_ends_with(value: str, suffix: str) -> bool {
+    if str_len(suffix) > str_len(value) {
+        return false;
+    }
+    return starts_with_at(value, str_len(value) - str_len(suffix), suffix);
+}
+
+fn spt_string_list_contains(items: ref list<str>, target: str) -> bool {
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn spt_record_failure(failures: mutref list<str>, label: str) -> unit
+audit {
+    intent("Record one schema-profile gate failure in the local test accumulator");
+    mutates(failures);
+    effects();
+}
+{
+    list_push(mutref failures, label);
+}
+
+fn spt_expect(failures: mutref list<str>, label: str, expected: bool, schema_text: str, data_text: str) -> unit
+audit {
+    intent("Compare one bounded schema-profile acceptance result against an expected boolean");
+    mutates(failures);
+    effects();
+}
+{
+    let actual = schema_profile_accepts(schema_text, data_text);
+    if actual != expected {
+        spt_record_failure(mutref failures, label);
+    }
+}
+
+fn spt_expect_accept(failures: mutref list<str>, label: str, schema_text: str, data_text: str) -> unit
+audit {
+    intent("Require one schema-profile positive example to be accepted");
+    mutates(failures);
+    effects();
+}
+{
+    spt_expect(mutref failures, label, true, schema_text, data_text);
+}
+
+fn spt_expect_reject(failures: mutref list<str>, label: str, schema_text: str, data_text: str) -> unit
+audit {
+    intent("Require one schema-profile negative example to be rejected");
+    mutates(failures);
+    effects();
+}
+{
+    spt_expect(mutref failures, label, false, schema_text, data_text);
+}
+
+fn spt_deep_array_text(depth: i32) -> str {
+    let mut out = "0";
+    let mut index = 0;
+    while index < depth {
+        out = str_concat("[", str_concat(out, "]"));
+        index = index + 1;
+    }
+    return out;
+}
+
+fn spt_deep_items_schema_text(depth: i32) -> str {
+    let mut out = "{\"type\":\"integer\"}";
+    let mut index = 0;
+    while index < depth {
+        out = str_concat("{\"type\":\"array\",\"items\":", str_concat(out, "}"));
+        index = index + 1;
+    }
+    return out;
+}
+
+fn spt_raw_non_ascii_json_string() -> str {
+    return "\"é\"";
+}
+
+fn spt_collect_selftests(failures: mutref list<str>) -> unit
+audit {
+    intent("Exercise the exact Nauqtype evidence schema profile v1 contract with local positive and negative cases");
+    mutates(failures);
+    effects();
+}
+{
+    spt_expect_accept(mutref failures, "type object/properties/required/additionalProperties positive", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"integer\"}},\"required\":[\"x\"],\"additionalProperties\":false}", "{\"x\":7}");
+    spt_expect_accept(mutref failures, "type union positive", "{\"type\":[\"string\",\"null\"]}", "null");
+    spt_expect_accept(mutref failures, "local ref positive", "{\"$defs\":{\"x\":{\"type\":\"integer\",\"minimum\":0}},\"$ref\":\"#/$defs/x\"}", "1");
+    spt_expect_accept(mutref failures, "anyOf positive", "{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}]}", "\"value\"");
+    spt_expect_accept(mutref failures, "oneOf exact single positive", "{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"integer\"}]}", "3");
+    spt_expect_accept(mutref failures, "const structural object positive", "{\"const\":{\"b\":[1,true],\"a\":\"x\"}}", "{\"a\":\"x\",\"b\":[1,true]}");
+    spt_expect_accept(mutref failures, "enum structural positive", "{\"enum\":[{\"a\":1},[\"x\"]]}", "{\"a\":1}");
+    spt_expect_accept(mutref failures, "supported module pattern positive", "{\"type\":\"string\",\"pattern\":\"^module:\"}", "\"module:main\"");
+    spt_expect_accept(mutref failures, "supported hash pattern positive", "{\"type\":\"string\",\"pattern\":\"^[a-f0-9]{64}$\"}", "\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"");
+    spt_expect_accept(mutref failures, "supported owner pattern positive", "{\"type\":\"string\",\"pattern\":\"^(human|agent):\"}", "\"agent:proof\"");
+
+    spt_expect_reject(mutref failures, "annotation keyword must be string", "{\"$schema\":1,\"type\":\"null\"}", "null");
+    spt_expect_reject(mutref failures, "$id annotation must be string", "{\"$id\":1,\"type\":\"null\"}", "null");
+    spt_expect_reject(mutref failures, "title annotation must be string", "{\"title\":1,\"type\":\"null\"}", "null");
+    spt_expect_reject(mutref failures, "type mismatch", "{\"type\":\"integer\"}", "\"x\"");
+    spt_expect_reject(mutref failures, "unsupported type name rejected", "{\"type\":\"number\"}", "1");
+    spt_expect_reject(mutref failures, "type union duplicate rejected", "{\"type\":[\"string\",\"string\"]}", "\"x\"");
+    spt_expect_reject(mutref failures, "const mismatch", "{\"const\":1}", "2");
+    spt_expect_reject(mutref failures, "enum must be array", "{\"enum\":\"x\"}", "\"x\"");
+    spt_expect_reject(mutref failures, "enum mismatch", "{\"enum\":[1,2]}", "3");
+    spt_expect_reject(mutref failures, "$defs must be object", "{\"$defs\":[],\"type\":\"null\"}", "null");
+    spt_expect_reject(mutref failures, "properties must be object", "{\"properties\":[]}", "{}");
+    spt_expect_reject(mutref failures, "properties child mismatch", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"integer\"}}}", "{\"x\":\"no\"}");
+    spt_expect_reject(mutref failures, "required duplicate rejected", "{\"required\":[\"x\",\"x\"]}", "{\"x\":1}");
+    spt_expect_reject(mutref failures, "required missing", "{\"type\":\"object\",\"required\":[\"x\"]}", "{}");
+    spt_expect_reject(mutref failures, "additionalProperties false rejects extra", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"integer\"}},\"additionalProperties\":false}", "{\"x\":1,\"y\":2}");
+    spt_expect_reject(mutref failures, "additionalProperties must be boolean", "{\"additionalProperties\":{\"type\":\"string\"}}", "{}");
+    spt_expect_reject(mutref failures, "items must be schema object", "{\"items\":true}", "[1]");
+    spt_expect_reject(mutref failures, "items child mismatch", "{\"type\":\"array\",\"items\":{\"type\":\"string\"}}", "[\"ok\",1]");
+    spt_expect_reject(mutref failures, "minimum rejects smaller integer", "{\"type\":\"integer\",\"minimum\":3}", "2");
+    spt_expect_reject(mutref failures, "minimum must be nonnegative bounded integer", "{\"minimum\":-1}", "0");
+    spt_expect_reject(mutref failures, "minItems rejects short array", "{\"type\":\"array\",\"minItems\":2}", "[1]");
+    spt_expect_reject(mutref failures, "minLength rejects short string", "{\"type\":\"string\",\"minLength\":2}", "\"a\"");
+    spt_expect_reject(mutref failures, "pattern rejects nonmatching string", "{\"type\":\"string\",\"pattern\":\"^module:\"}", "\"fn:main\"");
+    spt_expect_reject(mutref failures, "unsupported pattern rejected", "{\"type\":\"string\",\"pattern\":\"^x$\"}", "\"x\"");
+    spt_expect_reject(mutref failures, "anyOf requires at least one match", "{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}]}", "1");
+    spt_expect_reject(mutref failures, "anyOf must have branch", "{\"anyOf\":[]}", "\"x\"");
+    spt_expect_reject(mutref failures, "oneOf rejects two matches", "{\"oneOf\":[{\"type\":\"integer\"},{\"minimum\":0}]}", "2");
+    spt_expect_reject(mutref failures, "unresolved ref rejected", "{\"$ref\":\"#/$defs/missing\"}", "null");
+    spt_expect_reject(mutref failures, "nonlocal ref rejected", "{\"$ref\":\"https://example.invalid/schema\"}", "null");
+    spt_expect_reject(mutref failures, "ref cycle rejected", "{\"$defs\":{\"a\":{\"$ref\":\"#/$defs/a\"}},\"$ref\":\"#/$defs/a\"}", "null");
+    spt_expect_reject(mutref failures, "nested defs rejected", "{\"properties\":{\"x\":{\"$defs\":{}}}}", "{\"x\":1}");
+    spt_expect_reject(mutref failures, "unknown keyword rejected in unused branch", "{\"anyOf\":[{\"type\":\"string\"},{\"unknown\":true}]}", "\"ok\"");
+    spt_expect_reject(mutref failures, "invalid schema JSON rejected", "{", "null");
+    spt_expect_reject(mutref failures, "invalid data JSON rejected", "{\"type\":\"object\"}", "{");
+    spt_expect_reject(mutref failures, "raw non-ASCII string byte rejected", "{\"type\":\"string\",\"minLength\":2}", spt_raw_non_ascii_json_string());
+    spt_expect_reject(mutref failures, "JSON backspace escape does not equal literal b", "{\"const\":\"b\"}", "\"\\b\"");
+    spt_expect_reject(mutref failures, "JSON form-feed escape does not equal literal f", "{\"const\":\"f\"}", "\"\\f\"");
+    spt_expect_reject(mutref failures, "JSON carriage-return escape does not equal literal r", "{\"const\":\"r\"}", "\"\\r\"");
+    spt_expect_reject(mutref failures, "Unicode backspace escape rejected", "{\"const\":\"b\"}", "\"\\u0008\"");
+    spt_expect_reject(mutref failures, "Unicode form-feed escape rejected", "{\"const\":\"f\"}", "\"\\u000c\"");
+    spt_expect_reject(mutref failures, "Unicode carriage-return escape rejected", "{\"const\":\"r\"}", "\"\\u000d\"");
+    spt_expect_reject(mutref failures, "duplicate escaped data key rejected", "{\"type\":\"object\"}", "{\"a\":1,\"\\u0061\":2}");
+    spt_expect_reject(mutref failures, "duplicate escaped schema key rejected", "{\"type\":\"object\",\"\\u0074ype\":\"object\"}", "{}");
+    spt_expect_reject(mutref failures, "excessive data depth rejected", "{\"type\":\"array\"}", spt_deep_array_text(100));
+    spt_expect_reject(mutref failures, "excessive schema depth rejected", spt_deep_items_schema_text(100), "[]");
+}
+
+fn spt_schema_positive_path(name: str) -> str {
+    if name == "change-report-v1.schema.json" {
+        return "tests/golden/review/change_report_v1.json";
+    }
+    if name == "change-report-v2.schema.json" {
+        return "tests/golden/workspace_governance/change_report_v2.json";
+    }
+    if name == "change-report-v3.schema.json" {
+        return "tests/golden/workspace_governance/change_report_v3.json";
+    }
+    if name == "diagnostics-v1.schema.json" {
+        return "tests/golden/diagnostics/check_failure.json";
+    }
+    if name == "evidence-error-v1.schema.json" {
+        return "tests/golden/review/evidence_error_v1.json";
+    }
+    if name == "facts-v1.schema.json" {
+        return "tests/golden/facts/main.json";
+    }
+    if name == "facts-v2.schema.json" {
+        return "tests/golden/facts/main-v2.json";
+    }
+    if name == "facts-v3.schema.json" {
+        return "tests/golden/organizational_tool/facts_v3.json";
+    }
+    if name == "nauqtype.policy-v1.schema.json" {
+        return "tests/fixtures/workspace_local_dependency/policy.json";
+    }
+    if name == "nauqtype.workspace-lock-v1.schema.json" {
+        return "tests/fixtures/workspace_local_dependency/nauqtype.workspace.lock.json";
+    }
+    if name == "policy-check-v1.schema.json" {
+        return "tests/golden/evidence_parity/policy_check_v1.json";
+    }
+    if name == "proof-summary-v1.schema.json" {
+        return "tests/golden/schema_profile/proof-summary-v1-positive.json";
+    }
+    if name == "proof-summary-v2.schema.json" {
+        return "tests/golden/schema_profile/proof-summary-v2-positive.json";
+    }
+    if name == "refactor-rename-v1.schema.json" {
+        return "tests/golden/supervised_workflow/refactor_rename_v1.json";
+    }
+    if name == "review-diff-v1.schema.json" {
+        return "tests/golden/review/review_diff_v1.json";
+    }
+    if name == "review-diff-v2.schema.json" {
+        return "tests/golden/review/review_diff_v2.json";
+    }
+    if name == "review-v2.schema.json" {
+        return "tests/golden/review/review_v2.json";
+    }
+    if name == "review-v3.schema.json" {
+        return "tests/golden/review/review_v3.json";
+    }
+    if name == "review-v4.schema.json" {
+        return "tests/golden/review/review_v4.json";
+    }
+    return "";
+}
+
+fn spt_review_doc(version: i32, audit_value: str, evidence_audit: str, coverage: str) -> str {
+    let mut out = "{\"version\":";
+    out = str_concat(out, i32_to_str(version));
+    out = str_concat(out, ",\"command\":\"review\",\"module\":\"coherence\",\"identity_scheme\":\"nauqtype.semantic.v1\",\"functions\":[{\"id\":\"fn:coherence::f\",\"kind\":\"function\",\"qualified_name\":\"coherence::f\",\"module\":\"coherence\",\"name\":\"f\",\"public\":true,\"span\":{\"start\":0},\"audit\":");
+    out = str_concat(out, audit_value);
+    out = str_concat(out, ",\"inferred\":{\"mutates\":[],\"effects\":[],\"propagates\":[]},\"evidence\":{\"audit\":\"");
+    out = str_concat(out, evidence_audit);
+    out = str_concat(out, "\",\"inferred\":\"checked\",\"mutation_coverage\":");
+    out = str_concat(out, coverage);
+    out = str_concat(out, "},\"calls\":[]}],\"references\":[],\"call_graph\":[],\"propagation_sites\":[]}");
+    return out;
+}
+
+fn spt_audit_object() -> str {
+    return "{\"intent\":\"x\",\"mutates\":[],\"effects\":[],\"propagates\":[]}";
+}
+
+fn spt_v3_coverage() -> str {
+    return "{\"interpretation\":\"lower_bound\",\"scope\":\"direct_mutref_parameter_assignments\",\"completeness\":\"partial\",\"uncovered\":[\"builtin_call_writes\",\"local_call_writes\",\"imported_call_writes\"]}";
+}
+
+fn spt_v4_coverage(completeness: str, uncovered: str) -> str {
+    let mut out = "{\"interpretation\":\"syntactic_may_write\",\"scope\":\"checked_mutref_parameters\",\"completeness\":\"";
+    out = str_concat(out, completeness);
+    out = str_concat(out, "\",\"uncovered\":");
+    out = str_concat(out, uncovered);
+    out = str_concat(out, "}");
+    return out;
+}
+
+fn spt_change_v3_doc(ok_text: str, evidence_policy: str, provided_text: str, path_value: str, policy_targets: i32, policy_errors: i32, malformed_text: str, summary_targets: i32, summary_errors: i32) -> str {
+    let mut out = "{\"version\":3,\"command\":\"change-report\",\"ok\":";
+    out = str_concat(out, ok_text);
+    out = str_concat(out, ",\"identity_scheme\":\"nauqtype.workspace.v1\",\"before\":{\"workspace\":\"w\",\"entry_module\":\"module:before\"},\"after\":{\"workspace\":\"w\",\"entry_module\":\"module:after\"},\"evidence\":{\"dependencies\":\"checked\",\"call_impact\":\"checked\",\"policy\":\"");
+    out = str_concat(out, evidence_policy);
+    out = str_concat(out, "\"},\"summary\":{\"added_dependencies\":0,\"removed_dependencies\":0,\"changed_dependencies\":0,\"impacted_local_callers\":0,\"policy_targets\":");
+    out = str_concat(out, i32_to_str(summary_targets));
+    out = str_concat(out, ",\"policy_errors\":");
+    out = str_concat(out, i32_to_str(summary_errors));
+    out = str_concat(out, "},\"changes\":{\"added_dependencies\":[],\"removed_dependencies\":[],\"changed_dependencies\":[],\"impacted_local_callers\":[]},\"policy\":{\"provided\":");
+    out = str_concat(out, provided_text);
+    out = str_concat(out, ",\"path\":\"");
+    out = str_concat(out, path_value);
+    out = str_concat(out, "\",\"targets\":");
+    out = str_concat(out, i32_to_str(policy_targets));
+    out = str_concat(out, ",\"errors\":");
+    out = str_concat(out, i32_to_str(policy_errors));
+    out = str_concat(out, ",\"malformed\":");
+    out = str_concat(out, malformed_text);
+    out = str_concat(out, "}}");
+    return out;
+}
+
+fn spt_expect_schema_file_reject(failures: mutref list<str>, schema_path: str, label: str, data_text: str) -> unit
+audit {
+    intent("Require one actual schema file to reject a coherence-negative evidence document");
+    mutates(failures);
+    effects(io);
+}
+{
+    let mut schema_text = "";
+    if not spt_read_text(schema_path, str_concat("coherence schema read failed for ", schema_path), mutref schema_text, mutref failures) {
+        return;
+    }
+    if schema_profile_accepts(schema_text, data_text) {
+        spt_record_failure(mutref failures, label);
+    }
+}
+
+fn spt_collect_real_schema_negatives(failures: mutref list<str>) -> unit
+audit {
+    intent("Exercise real owned schema coherence rules with negative evidence documents");
+    mutates(failures);
+    effects(io);
+}
+{
+    let audit_declared_null_v3 = spt_review_doc(3, "null", "declared", spt_v3_coverage());
+    let audit_absent_object_v3 = spt_review_doc(3, spt_audit_object(), "absent", spt_v3_coverage());
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v3.schema.json", "review-v3 rejects null audit declared as present", audit_declared_null_v3);
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v3.schema.json", "review-v3 rejects object audit declared absent", audit_absent_object_v3);
+
+    let complete_nonempty = spt_v4_coverage("complete", "[\"unmodeled_builtin_summary\"]");
+    let partial_empty = spt_v4_coverage("partial", "[]");
+    let audit_declared_null_v4 = spt_review_doc(4, "null", "declared", spt_v4_coverage("complete", "[]"));
+    let audit_absent_object_v4 = spt_review_doc(4, spt_audit_object(), "absent", spt_v4_coverage("complete", "[]"));
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v4.schema.json", "review-v4 rejects null audit declared as present", audit_declared_null_v4);
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v4.schema.json", "review-v4 rejects object audit declared absent", audit_absent_object_v4);
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v4.schema.json", "review-v4 rejects complete mutation coverage with uncovered entries", spt_review_doc(4, spt_audit_object(), "declared", complete_nonempty));
+    spt_expect_schema_file_reject(mutref failures, "schemas/review-v4.schema.json", "review-v4 rejects partial mutation coverage with empty uncovered entries", spt_review_doc(4, spt_audit_object(), "declared", partial_empty));
+
+    spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects absent policy marked provided", spt_change_v3_doc("true", "absent", "true", "policy.json", 1, 0, "false", 1, 0));
+    spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects checked policy with errors", spt_change_v3_doc("true", "checked", "true", "policy.json", 1, 1, "false", 1, 1));
+    spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects failed policy without errors", spt_change_v3_doc("false", "failed", "true", "policy.json", 1, 0, "true", 1, 0));
+}
+
+fn spt_read_text(path: str, label: str, out: mutref str, failures: mutref list<str>) -> bool
+audit {
+    intent("Read one schema-profile gate input and record failure text instead of aborting");
+    mutates(out, failures);
+    effects(io);
+}
+{
+    let loaded = read_file(path);
+    match loaded {
+        Ok(text_value) => {
+            out = text_value;
+            return true;
+        },
+        Err(err) => {
+            spt_record_failure(mutref failures, str_concat(str_concat(label, ": "), io_err_text(err)));
+            return false;
+        },
+    }
+}
+
+fn spt_check_schema_positive(schema_name: str, failures: mutref list<str>) -> unit
+audit {
+    intent("Check one owned schema file against its configured positive evidence document");
+    mutates(failures);
+    effects(io);
+}
+{
+    let positive_path = spt_schema_positive_path(schema_name);
+    if positive_path == "" {
+        spt_record_failure(mutref failures, str_concat("unmapped schema: ", schema_name));
+        return;
+    }
+
+    let schema_path = join_path("schemas", schema_name);
+    let mut schema_text = "";
+    let mut data_text = "";
+    if not spt_read_text(schema_path, str_concat("schema read failed for ", schema_name), mutref schema_text, mutref failures) {
+        return;
+    }
+    if not spt_read_text(positive_path, str_concat("positive evidence read failed for ", schema_name), mutref data_text, mutref failures) {
+        return;
+    }
+    if not schema_profile_accepts(schema_text, data_text) {
+        spt_record_failure(mutref failures, str_concat(str_concat("positive evidence rejected for ", schema_name), str_concat(" -> ", positive_path)));
+    }
+}
+
+fn spt_expect_schema_present(names: ref list<str>, expected: str, failures: mutref list<str>) -> unit
+audit {
+    intent("Require a known owned schema name to appear in the schemas directory listing");
+    mutates(failures);
+    effects();
+}
+{
+    if not spt_string_list_contains(ref names, expected) {
+        spt_record_failure(mutref failures, str_concat("known schema missing from read_dir: ", expected));
+    }
+}
+
+fn spt_check_known_schemas_present(names: ref list<str>, failures: mutref list<str>) -> unit
+audit {
+    intent("Ensure the schema-profile gate cannot pass on a partial schemas directory view");
+    mutates(failures);
+    effects();
+}
+{
+    spt_expect_schema_present(ref names, "change-report-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "change-report-v2.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "change-report-v3.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "diagnostics-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "evidence-error-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "facts-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "facts-v2.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "facts-v3.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "nauqtype.policy-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "nauqtype.workspace-lock-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "policy-check-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "proof-summary-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "proof-summary-v2.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "refactor-rename-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-diff-v1.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-diff-v2.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-v2.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-v3.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-v4.schema.json", mutref failures);
+}
+
+fn spt_emit_failures(title: str, failures: ref list<str>) -> bool
+audit {
+    intent("Emit compact schema-profile gate failures for the caller");
+    mutates();
+    effects(print);
+}
+{
+    if list_len(ref failures) == 0 {
+        return true;
+    }
+    eprint_line(title);
+    let mut index = 0;
+    while index < list_len(ref failures) {
+        let entry = list_get(ref failures, index);
+        match entry {
+            Some(value) => {
+                eprint_line(str_concat("- ", value));
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn run_schema_profile_selftests() -> bool
+audit {
+    intent("Run bounded local schema-profile acceptance and rejection cases without filesystem fixtures");
+    mutates();
+    effects(print);
+}
+{
+    let mut failures: list<str> = list();
+    spt_collect_selftests(mutref failures);
+    return spt_emit_failures("schema-profile selftests failed", ref failures);
+}
+
+pub fn run_schema_profile_gate() -> bool
+audit {
+    intent("Gate all owned evidence schemas against the bounded schema-profile and configured positive evidence documents");
+    mutates();
+    effects(print, io);
+}
+{
+    let mut failures: list<str> = list();
+    spt_collect_selftests(mutref failures);
+    spt_collect_real_schema_negatives(mutref failures);
+
+    let entries = read_dir("schemas");
+    match entries {
+        Ok(names) => {
+            spt_check_known_schemas_present(ref names, mutref failures);
+            let mut found = 0;
+            let mut index = 0;
+            while index < list_len(ref names) {
+                let entry = list_get(ref names, index);
+                match entry {
+                    Some(name) => {
+                        if spt_ends_with(name, ".schema.json") {
+                            found = found + 1;
+                            spt_check_schema_positive(name, mutref failures);
+                        }
+                    },
+                    None => {},
+                }
+                index = index + 1;
+            }
+            if found == 0 {
+                spt_record_failure(mutref failures, "no schemas/*.schema.json files were found");
+            }
+        },
+        Err(err) => {
+            spt_record_failure(mutref failures, str_concat("schema directory read failed: ", io_err_text(err)));
+        },
+    }
+
+    return spt_emit_failures("schema-profile gate failed", ref failures);
+}

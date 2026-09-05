@@ -62,11 +62,15 @@ next feature milestone for structured process, time, timeout, and cancellation
 after those prerequisites. [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
 active implementation rather than the archived Python design.
 
-The M54.8 correction is deliberately split: shared source-contract validation
-comes first, then an explicit migration for incomplete or contradictory
-evidence. Compilation and evidence commands must agree on invalid `audit`
-blocks; a consistent rejection is not a claim that all evidence is complete.
-[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) records that boundary and its gates.
+M54.8 shares checked contract validity across compilation and evidence commands.
+Opt-in `review --format v4` reports direct, builtin, and resolved-call parameter
+may-writes, including recursive calls; complete coverage is not a purity claim.
+`change-report --format v3` distinguishes absent, checked, and failed policy.
+Diff/change source failures use a separate versioned error envelope carrying
+the requested format. Legacy successful formats stay available and unchanged.
+[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) records the corrective gates, and
+[EVIDENCE_SCHEMA_PROFILE.md](EVIDENCE_SCHEMA_PROFILE.md) defines the bounded
+Nauqtype-owned schema checks used by `test` and `prove`.
 
 ## Quick Start
 
@@ -344,6 +348,8 @@ Current AI-first compiler output:
 - `facts --format v2` JSON with explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields, locked by `schemas/facts-v2.schema.json`
 - checked facts for copy-only record-update overrides and inherited field provenance
 - `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
+- `review --format v4` adds truthful audit provenance and checked call-aware mutation coverage; v3 retains its explicit direct-only partial lower bound
+- `change-report --format v3` adds truthful advisory policy state to workspace change evidence; policy does not become enforcement or approval
 - `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
 - `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
 - `change-report --format v1` JSON that combines semantic diff evidence, optional policy status, and diagnostics for supervised change review

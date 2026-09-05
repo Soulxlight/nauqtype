@@ -1,6 +1,6 @@
 # Astra Audit Remediation
 
-Status: M54.7, M54.8a, and M54.8b1 complete, 2026-09-05. M54.8 remains open.
+Status: M54.7 and M54.8 complete, 2026-09-05. M54.9/M54.10 remain open.
 Feature expansion waits for
 the remaining evidence, numeric, and provenance prerequisites below.
 
@@ -91,6 +91,18 @@ coverage. Independent Sol xhigh audit PASS and one 1,574-second frozen gate
 close emitter/golden coherence only. It does not close call-summary validation,
 standing F08 standards
 schema enforcement, F11 diff/change failure envelopes, or F15 diagnostics.
+
+The final M54.8 implementation now has focused green evidence for those
+remaining contracts: checked call-aware mutation validation and review v4,
+explicit change-report v3 policy truth, shared evidence-error v1 failures,
+producer diagnostic deduplication, and an owned bounded schema profile.
+Candidate3 owned tests passed in 7.48s and all 42 corpus cases in 22.85s.
+The independently compiled final schema repair passed its focused probes.
+The final independent audits returned PASS. Frozen tree
+`79a954257ea43e976d2a5f0003561af060f1d874` passed all seven milestone phases
+in 1,908 seconds. `M54_8_CONTRACTS.md` records exact command, timing, hashes,
+and the bounded bootstrap-runtime repair. M54.8 is complete; no
+numeric/provenance finding is closed by this work.
 
 ## Architecture And Product Direction
 

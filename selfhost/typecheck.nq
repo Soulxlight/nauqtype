@@ -143,7 +143,7 @@ fn push_error(diags: mutref list<diag>, file: str, at: i32, code: str, category:
     if at >= 0 {
         end = at + 1;
     }
-    list_push(mutref diags, make_error(code, category, file, at, end, message));
+    push_diagnostic_once(mutref diags, make_error(code, category, file, at, end, message));
     return;
 }
 
@@ -168,7 +168,7 @@ fn push_token_range_error(diags: mutref list<diag>, file: str, tokens: ref list<
     if start >= 0 and start < end {
         let first = token_at(ref tokens, start);
         let last = token_at(ref tokens, end - 1);
-        list_push(mutref diags, make_error(code, diag_type, file, first.start, last.end, message));
+        push_diagnostic_once(mutref diags, make_error(code, diag_type, file, first.start, last.end, message));
         return;
     }
     push_error(mutref diags, file, -1, code, diag_type, message);
@@ -178,6 +178,204 @@ fn push_token_range_error(diags: mutref list<diag>, file: str, tokens: ref list<
 fn push_token_range_diag(diags: mutref list<diag>, file: str, tokens: ref list<token>, start: i32, end: i32, message: str) -> unit {
     push_token_range_error(mutref diags, file, ref tokens, start, end, "NQ-TYPE-042", message);
     return;
+}
+
+fn diag_severity_matches(left: diag_severity, right: diag_severity) -> bool {
+    match left {
+        diag_error => {
+            match right {
+                diag_error => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_warning => {
+            match right {
+                diag_warning => { return true; },
+                _ => { return false; },
+            }
+        },
+    }
+}
+
+fn diag_category_matches(left: diag_category, right: diag_category) -> bool {
+    match left {
+        diag_lex => {
+            match right {
+                diag_lex => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_parse => {
+            match right {
+                diag_parse => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_contract => {
+            match right {
+                diag_contract => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_import => {
+            match right {
+                diag_import => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_resolve => {
+            match right {
+                diag_resolve => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_type => {
+            match right {
+                diag_type => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_propagate => {
+            match right {
+                diag_propagate => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_try => {
+            match right {
+                diag_try => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_borrow => {
+            match right {
+                diag_borrow => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_handoff => {
+            match right {
+                diag_handoff => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_ir => {
+            match right {
+                diag_ir => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_c => {
+            match right {
+                diag_c => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_workspace => {
+            match right {
+                diag_workspace => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_io => {
+            match right {
+                diag_io => { return true; },
+                _ => { return false; },
+            }
+        },
+        diag_internal => {
+            match right {
+                diag_internal => { return true; },
+                _ => { return false; },
+            }
+        },
+    }
+}
+
+fn diagnostic_identity_matches(left: diag, right: diag) -> bool {
+    return left.code == right.code
+        and diag_category_matches(left.category, right.category)
+        and diag_severity_matches(left.severity, right.severity)
+        and left.source_name == right.source_name
+        and left.start == right.start
+        and left.end == right.end
+        and left.message == right.message
+        and left.note == right.note
+        and left.help == right.help;
+}
+
+fn push_diagnostic_once(diags: mutref list<diag>, entry: diag) -> unit {
+    let mut index = 0;
+    while index < list_len(ref diags) {
+        let current = list_get(ref diags, index);
+        match current {
+            Some(value) => {
+                if diagnostic_identity_matches(value, entry) {
+                    return;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    list_push(mutref diags, entry);
+    return;
+}
+
+fn push_token_error_with_help(diags: mutref list<diag>, file: str, tok: token, code: str, message: str, help: str) -> unit {
+    push_diagnostic_once(mutref diags, make_diagnostic(code, diag_type, diag_error, file, tok.start, tok.end, message, "", help));
+    return;
+}
+
+fn push_list_get_noncopy_diag(diags: mutref list<diag>, file: str, tok: token) -> unit {
+    push_token_error_with_help(mutref diags, file, tok, "NQ-TYPE-044", "list_get requires a copy element type", "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet.");
+    return;
+}
+
+pub fn typecheck_diagnostic_identity_self_test() -> bool
+audit {
+    intent("Self-test typecheck diagnostic producer identity without using rendered output");
+    mutates();
+    effects();
+}
+{
+    let mut diags: list<diag> = list();
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 18, "base", "", ""));
+    if list_len(ref diags) != 1 {
+        return false;
+    }
+
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-043", diag_type, diag_error, "probe", 10, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_try, diag_error, "probe", 10, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_warning, "probe", 10, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "other", 10, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 11, 18, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 19, "base", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 18, "message", "", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 18, "base", "note", ""));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, "probe", 10, 18, "base", "", "help"));
+    if list_len(ref diags) != 10 {
+        return false;
+    }
+
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-044", diag_type, diag_error, "probe", 10, 18, "list_get requires a copy element type", "", "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet."));
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-044", diag_type, diag_error, "probe", 10, 18, "list_get requires a copy element type", "", "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet."));
+    if list_len(ref diags) != 11 {
+        return false;
+    }
+    match list_get(ref diags, 10) {
+        Some(value) => {
+            return value.code == "NQ-TYPE-044"
+                and value.start == 10
+                and value.end == 18
+                and value.help == "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet.";
+        },
+        None => {
+            return false;
+        },
+    }
 }
 
 fn is_function_item(item: top_item) -> bool {
@@ -2418,24 +2616,6 @@ fn decimal_magnitude_fits(text_value: str, limit: str) -> bool {
 }
 
 fn push_integer_range_diag(diags: mutref list<diag>, module: str, tokens: ref list<token>, start: i32, end: i32, type_name: str) -> unit {
-    if start >= 0 and start < end {
-        let first = token_at(ref tokens, start);
-        let last = token_at(ref tokens, end - 1);
-        let mut index = 0;
-        while index < list_len(ref diags) {
-            let entry = list_get(ref diags, index);
-            match entry {
-                Some(value) => {
-                    if value.code == "NQ-TYPE-043" and value.source_name == module and value.start == first.start and value.end == last.end {
-                        return;
-                    }
-                },
-                None => {
-                },
-            }
-            index = index + 1;
-        }
-    }
     push_token_range_error(mutref diags, module, ref tokens, start, end, "NQ-TYPE-043", str_concat("integer literal is out of range for `", str_concat(type_name, "`")));
     return;
 }
@@ -4016,7 +4196,7 @@ fn infer_call_expr_type_ctx(functions: ref list<function_fact>, function_params:
             let element_ctx = expected_type_ctx_from_text(first_arg_ctx.arg1_name);
             let visiting: list<str> = list();
             if not type_ctx_is_copy(element_ctx, module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting) {
-                push_diag(mutref diags, module, head.start, "list_get requires a copy element type; move-only list elements must stay owned by the list");
+                push_list_get_noncopy_diag(mutref diags, module, head);
             }
             return make_expected_type_ctx("option", first_arg_ctx.arg1_name, "");
         }

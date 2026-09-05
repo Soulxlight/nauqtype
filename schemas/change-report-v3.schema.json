@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/change-report-v3.schema.json",
+  "title": "Nauqtype Workspace Change Report v3",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "ok",
+    "identity_scheme",
+    "before",
+    "after",
+    "evidence",
+    "summary",
+    "changes",
+    "policy"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 3
+    },
+    "command": {
+      "const": "change-report"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "identity_scheme": {
+      "const": "nauqtype.workspace.v1"
+    },
+    "before": {
+      "type": "object",
+      "required": [
+        "workspace",
+        "entry_module"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "workspace": {
+          "type": "string"
+        },
+        "entry_module": {
+          "type": "string"
+        }
+      }
+    },
+    "after": {
+      "type": "object",
+      "required": [
+        "workspace",
+        "entry_module"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "workspace": {
+          "type": "string"
+        },
+        "entry_module": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "dependencies",
+        "call_impact",
+        "policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dependencies": {
+          "const": "checked"
+        },
+        "call_impact": {
+          "const": "checked"
+        },
+        "policy": {
+          "enum": [
+            "absent",
+            "checked",
+            "failed"
+          ]
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "added_dependencies",
+        "removed_dependencies",
+        "changed_dependencies",
+        "impacted_local_callers",
+        "policy_targets",
+        "policy_errors"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "added_dependencies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_dependencies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changed_dependencies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "impacted_local_callers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy_targets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy_errors": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "required": [
+        "added_dependencies",
+        "removed_dependencies",
+        "changed_dependencies",
+        "impacted_local_callers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "added_dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed_dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed_dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "impacted_local_callers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "provided",
+        "path",
+        "targets",
+        "errors",
+        "malformed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provided": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "malformed": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "evidence": {
+          "properties": {
+            "policy": {
+              "const": "absent"
+            }
+          }
+        },
+        "policy": {
+          "properties": {
+            "provided": {
+              "const": false
+            },
+            "path": {
+              "const": ""
+            },
+            "targets": {
+              "const": 0
+            },
+            "errors": {
+              "const": 0
+            },
+            "malformed": {
+              "const": false
+            }
+          }
+        },
+        "summary": {
+          "properties": {
+            "policy_targets": {
+              "const": 0
+            },
+            "policy_errors": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "evidence": {
+          "properties": {
+            "policy": {
+              "const": "checked"
+            }
+          }
+        },
+        "policy": {
+          "properties": {
+            "provided": {
+              "const": true
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "errors": {
+              "const": 0
+            },
+            "malformed": {
+              "const": false
+            }
+          }
+        },
+        "summary": {
+          "properties": {
+            "policy_errors": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "evidence": {
+          "properties": {
+            "policy": {
+              "const": "failed"
+            }
+          }
+        },
+        "policy": {
+          "properties": {
+            "provided": {
+              "const": true
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "errors": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "summary": {
+          "properties": {
+            "policy_errors": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -63,6 +63,13 @@ The seed-generated and stage2-generated C match under the existing documented st
 
 A seed refresh is a trust-boundary change. It requires a recorded fixed-point proof, manifest/hash update, reviewable generated diff, and clean-checkout reproduction. Generated seed C is not disposable build output.
 
+The historical seed executable links against its matching
+`bootstrap/seed/runtime.c,h`. Newly emitted current-source stage1 C links
+against current `stdlib/runtime.c,h`, just like ordinary Nauqtype programs.
+The seed runtime is not the runtime API ceiling for current selfhost sources.
+Both current runtime files participate in the stage1 cache fingerprint; a
+header-only or implementation-only runtime change invalidates reuse.
+
 M54.7 records source identity as `nauqtype-selfhost-source/v1`: SHA-256 of the
 UTF-8 domain string followed by NUL, then every regular `.nq` file under
 `selfhost/` in C-locale relative-path order, each encoded as path, NUL,

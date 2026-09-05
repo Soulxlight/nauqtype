@@ -383,11 +383,11 @@
 - [x] M54.6: batch the profiled typecheck export/scope and borrow expression lookups without rewriting the semantic front end
 - [x] M54.6: prove a same-host cold wall-time improvement while keeping selfhost, corpus, release, and evidence contracts unchanged
 - [x] M54.7: close F01/F02/F04 with spec-derived runtime and cleanup fixtures, a refreshed seed, mixed-model audit, and the frozen-candidate gate
-- [ ] M54.8: unify contract validation and report truthful evidence completeness (F03/F05/F08/F11/F15)
+- [x] M54.8: unify contract validation and report truthful evidence completeness (F03/F05/F08/F11/F15)
 - [x] M54.8a: share validated source contracts and checked-plan readiness across compilation and evidence commands; independent audit and seven-phase frozen gate passed
-- [ ] M54.8b: explicitly migrate absent/partial/failed evidence, mutation summaries, failure envelopes, and diagnostic producer fixes
+- [x] M54.8b: explicitly migrate absent/partial/failed evidence, mutation summaries, failure envelopes, and diagnostic producer fixes
 - [x] M54.8b1: close reviewed v3 audit provenance and checked direct-write lower-bound emission; preserve legacy outputs; Sol xhigh audit and seven-phase frozen gate passed
-- [ ] M54.8b follow-up: checked call summaries/validation, standing schema enforcement, diff/change failure contracts, and F15 producer diagnostics
+- [x] M54.8b final close: checked call summaries/validation, review v4/change-report v3, schema profile, failure envelopes, and producer diagnostics passed independent audits and all seven frozen-gate phases in 1,908 seconds
 - [ ] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
 - [ ] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
 - [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)

@@ -33,10 +33,12 @@ enum driver_mode {
     driver_review,
     driver_review_v2,
     driver_review_v3,
+    driver_review_v4,
     driver_review_diff,
     driver_review_diff_v2,
     driver_change_report,
     driver_change_report_v2,
+    driver_change_report_v3,
     driver_refactor_rename,
     driver_policy_check,
     driver_fmt,
@@ -62,6 +64,14 @@ type driver_request {
 }
 
 fn make_driver_request(mode: driver_mode, entry_path: str, entry_module: str, workspace_root: str, output_path: str, extra_text: str, error_message: str) -> driver_request {
+    match mode {
+        driver_review_diff => { return driver_request { mode: mode, entry_path: entry_path, entry_module: entry_module, workspace_root: workspace_root, output_path: output_path, extra_text: extra_text, error_message: error_message }; },
+        driver_review_diff_v2 => { return driver_request { mode: mode, entry_path: entry_path, entry_module: entry_module, workspace_root: workspace_root, output_path: output_path, extra_text: extra_text, error_message: error_message }; },
+        driver_change_report => { return driver_request { mode: mode, entry_path: entry_path, entry_module: entry_module, workspace_root: workspace_root, output_path: output_path, extra_text: extra_text, error_message: error_message }; },
+        driver_change_report_v2 => { return driver_request { mode: mode, entry_path: entry_path, entry_module: entry_module, workspace_root: workspace_root, output_path: output_path, extra_text: extra_text, error_message: error_message }; },
+        driver_change_report_v3 => { return driver_request { mode: mode, entry_path: entry_path, entry_module: entry_module, workspace_root: workspace_root, output_path: output_path, extra_text: extra_text, error_message: error_message }; },
+        _ => {},
+    }
     if entry_path != "" and entry_module != "" {
         let resolved = resolve_workspace_entry(entry_path);
         if not resolved.valid {
@@ -303,7 +313,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2|v3] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3] | nauqc review <source> [--format v1|v2|v3|v4] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2|v3 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -466,7 +476,10 @@ fn parse_driver_request() -> driver_request {
             if format == "v3" {
                 return make_driver_request(driver_review_v3, source_path, entry_module, path_dir(source_path), "", "", "");
             }
-            return invalid_request("expected review format `v1`, `v2`, or `v3`");
+            if format == "v4" {
+                return make_driver_request(driver_review_v4, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            return invalid_request("expected review format `v1`, `v2`, `v3`, or `v4`");
         }
         return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "", "");
     }
@@ -539,7 +552,10 @@ fn parse_driver_request() -> driver_request {
         if format == "v2" {
             return make_driver_request(driver_change_report_v2, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
         }
-        return invalid_request("expected change-report format `v1` or `v2`");
+        if format == "v3" {
+            return make_driver_request(driver_change_report_v3, before_path, before_module, path_dir(before_path), after_path, policy_path, "");
+        }
+        return invalid_request("expected change-report format `v1`, `v2`, or `v3`");
     }
 
     if command == "refactor-rename" {
@@ -698,6 +714,15 @@ fn write_c_output(output_path: str, rendered_c: str, diags: mutref list<diag>) -
     return;
 }
 
+fn emit_pipeline_failure(diags: ref list<diag>, sources: ref list<source_file>, diagnostics_json: bool) -> i32 {
+    if diagnostics_json {
+        emit_diagnostics_json(ref diags, ref sources);
+    } else {
+        emit_all_with_sources(ref diags, ref sources);
+    }
+    return 1;
+}
+
 fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_path: str, require_entry: bool, write_output: bool, diagnostics_json: bool, success_message: str) -> i32 {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
@@ -780,8 +805,13 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     let mut contract_decls: list<review_decl_entry> = list();
     let contract_summary = build_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits, mutref contract_functions, mutref contract_decls, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(ref diags, ref sources, diagnostics_json); }
 
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let mut contract_mutations: list<review_direct_mutation> = list();
+    let mut contract_coverage: list<review_mutation_coverage> = list();
+    let checked_contract_summary = validate_checked_mutation_contracts(contract_summary, ref contract_functions, ref contract_decls, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements, ref checked_expressions, ref checked_expr_children, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
+    if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(ref diags, ref sources, diagnostics_json); }
 
     seen = list();
     loaded = list();
@@ -811,8 +841,11 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
 
     let value_property_summary = build_checked_type_properties(ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref checked_type_properties, mutref diags);
     let value_use_summary = plan_checked_value_uses(ref checked_functions, ref checked_params, ref checked_type_properties, ref checked_statements, ref checked_match_arms, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref checked_value_uses, mutref diags);
+    if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(ref diags, ref sources, diagnostics_json); }
     let borrow_summary = check_checked_handoff_borrows_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_properties, ref checked_value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+    if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(ref diags, ref sources, diagnostics_json); }
     let ir_summary = build_ir_program_for_entry_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_consts, ref checked_type_shapes, ref checked_type_properties, ref checked_value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, entry_module, require_entry, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+    if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(ref diags, ref sources, diagnostics_json); }
 
     checked_modules = list();
     checked_functions = list();
@@ -977,7 +1010,12 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     let mut contract_decls: list<review_decl_entry> = list();
     let contract_summary = build_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits, mutref contract_functions, mutref contract_decls, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    if diagnostics_have_errors(ref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let mut contract_mutations: list<review_direct_mutation> = list();
+    let mut contract_coverage: list<review_mutation_coverage> = list();
+    let checked_contract_summary = validate_checked_mutation_contracts(contract_summary, ref contract_functions, ref contract_decls, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements, ref checked_expressions, ref checked_expr_children, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
+    if diagnostics_have_errors(ref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     let borrow_summary = check_tooling_handoff_borrows(entry_module, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     emit_all_with_sources(ref diags, ref sources);
@@ -1047,7 +1085,12 @@ fn collect_facts_ready_project(workspace_root: str, entry_module: str, entry_pat
     let mut contract_decls: list<review_decl_entry> = list();
     let contract_summary = build_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits, mutref contract_functions, mutref contract_decls, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    if diagnostics_have_errors(ref diags) { return false; }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements_out, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions_out, mutref checked_expr_children_out, mutref checked_struct_fields_out, mutref diags);
+    let mut contract_mutations: list<review_direct_mutation> = list();
+    let mut contract_coverage: list<review_mutation_coverage> = list();
+    let checked_contract_summary = validate_checked_mutation_contracts(contract_summary, ref contract_functions, ref contract_decls, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements_out, ref checked_expressions_out, ref checked_expr_children_out, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
+    if diagnostics_have_errors(ref diags) { return false; }
     let borrow_summary = check_tooling_handoff_borrows(entry_module, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements_out, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions_out, ref checked_expr_children_out, ref checked_struct_fields_out, mutref diags);
 
     if diagnostics_have_errors(ref diags) {
@@ -1110,7 +1153,7 @@ fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, pol
     return emit_policy_check(workspace_root, entry_module, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
 }
 
-fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, collect_mutations: bool, direct_mutations: mutref list<review_direct_mutation>) -> review_summary {
+fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, mutation_mode: i32, direct_mutations: mutref list<review_direct_mutation>, coverage_out: mutref list<review_mutation_coverage>) -> review_summary {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut scopes: list<body_scope> = list();
@@ -1159,7 +1202,12 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
     typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
     let contract_summary = build_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, ref call_facts, ref local_inits, mutref contract_functions, mutref contract_decls, mutref diags);
     collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    if diagnostics_have_errors(ref diags) { return make_review_summary(contract_summary.function_count, contract_summary.declaration_count, contract_summary.warning_count, contract_summary.error_count + 1); }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let mut contract_mutations: list<review_direct_mutation> = list();
+    let mut contract_coverage: list<review_mutation_coverage> = list();
+    let checked_contract_summary = validate_checked_mutation_contracts(contract_summary, ref contract_functions, ref contract_decls, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements, ref checked_expressions, ref checked_expr_children, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
+    if diagnostics_have_errors(ref diags) { return make_review_summary(contract_summary.function_count, contract_summary.declaration_count, contract_summary.warning_count, contract_summary.error_count + 1); }
     let borrow_summary = check_tooling_handoff_borrows(entry_module, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
 
     if diagnostics_have_errors(ref diags) {
@@ -1169,10 +1217,12 @@ fn collect_review_ready_project(workspace_root: str, entry_module: str, entry_pa
         push_driver_error(mutref diags, "NQ-INTERNAL-009", diag_internal, entry_module, -1, -1, "stage1 internal error: review safety pass skipped checked functions");
         return make_review_summary(contract_summary.function_count, contract_summary.declaration_count, contract_summary.warning_count, contract_summary.error_count + 1);
     }
-    if collect_mutations {
+    if mutation_mode == 3 {
         collect_review_direct_mutations(ref checked_bindings, ref checked_params, ref checked_statements, mutref direct_mutations, mutref diags);
     }
-    return contract_summary;
+    if mutation_mode == 4 { direct_mutations = contract_mutations; }
+    coverage_out = contract_coverage;
+    return checked_contract_summary;
 }
 
 fn run_review(workspace_root: str, entry_module: str, entry_path: str, format_version: i32) -> i32 {
@@ -1189,19 +1239,24 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, format_ve
     let mut contract_decls: list<review_decl_entry> = list();
     let mut diags: list<diag> = list();
     let mut direct_mutations: list<review_direct_mutation> = list();
-    let contracts = collect_review_ready_project(workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags, format_version == 3, mutref direct_mutations);
+    let mut mutation_coverage: list<review_mutation_coverage> = list();
+    let contracts = collect_review_ready_project(workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags, format_version, mutref direct_mutations, mutref mutation_coverage);
     emit_all_with_sources(ref diags, ref sources);
     if diagnostics_have_errors(ref diags) or contracts.error_count > 0 {
         return 1;
     }
     let mut summary = make_review_summary(0, 0, 0, 1);
-    if format_version == 3 {
-        summary = emit_review_v3(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals, ref direct_mutations);
+    if format_version == 4 {
+        summary = emit_review_v4(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals, ref direct_mutations, ref mutation_coverage);
     } else {
-        if format_version == 2 {
-            summary = emit_review_v2(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals);
+        if format_version == 3 {
+            summary = emit_review_v3(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals, ref direct_mutations);
         } else {
-            summary = emit_review(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref functions, ref params, ref assignments, ref calls, ref locals);
+            if format_version == 2 {
+                summary = emit_review_v2(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals);
+            } else {
+                summary = emit_review(entry_module, ref contract_functions, ref contract_decls, contracts, ref uses, ref functions, ref params, ref assignments, ref calls, ref locals);
+            }
         }
     }
     if summary.error_count > 0 {
@@ -1211,15 +1266,17 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, format_ve
 }
 
 fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
+    let mut format_version = 1;
+    if use_v2 { format_version = 2; }
     let before_entry = resolve_workspace_entry(before_path);
     let after_entry = resolve_workspace_entry(after_path);
     if not before_entry.valid {
         eprint_line(before_entry.error_message);
-        return 1;
+        return emit_evidence_error("review-diff", format_version, "before_load", "NQ-EVIDENCE-001", before_entry.error_message);
     }
     if not after_entry.valid {
         eprint_line(after_entry.error_message);
-        return 1;
+        return emit_evidence_error("review-diff", format_version, "after_load", "NQ-EVIDENCE-001", after_entry.error_message);
     }
     let before_module = before_entry.module_name;
     let before_workspace = before_entry.source_root;
@@ -1252,13 +1309,13 @@ fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     let mut after_contract_decls: list<review_decl_entry> = list();
 
     let mut unused_mutations: list<review_direct_mutation> = list();
-    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, false, mutref unused_mutations);
-    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, false, mutref unused_mutations);
+    let mut unused_coverage: list<review_mutation_coverage> = list();
+    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
-    if before_ok.error_count > 0 or after_ok.error_count > 0 {
-        return 1;
-    }
+    if before_ok.error_count > 0 { return emit_checked_evidence_error("review-diff", format_version, "before", ref before_diags); }
+    if after_ok.error_count > 0 { return emit_checked_evidence_error("review-diff", format_version, "after", ref after_diags); }
 
     let summary = emit_review_diff_format(before_module, ref before_contract_functions, ref before_contract_decls, before_ok, ref before_uses, ref before_items, ref before_functions, ref before_variants, ref before_params, ref before_assignments, ref before_calls, ref before_locals, after_module, ref after_contract_functions, ref after_contract_decls, after_ok, ref after_uses, ref after_items, ref after_functions, ref after_variants, ref after_params, ref after_assignments, ref after_calls, ref after_locals, use_v2);
     if summary.error_count > 0 {
@@ -1271,10 +1328,10 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
     let before_entry = resolve_workspace_entry(before_path);
     let after_entry = resolve_workspace_entry(after_path);
     if not before_entry.valid {
-        return emit_change_report_load_error(path_stem(before_path), path_stem(after_path), before_entry.error_message);
+        return emit_evidence_error("change-report", format_version, "before_load", "NQ-EVIDENCE-001", before_entry.error_message);
     }
     if not after_entry.valid {
-        return emit_change_report_load_error(before_entry.module_name, path_stem(after_path), after_entry.error_message);
+        return emit_evidence_error("change-report", format_version, "after_load", "NQ-EVIDENCE-001", after_entry.error_message);
     }
     let before_module = before_entry.module_name;
     let before_workspace = before_entry.source_root;
@@ -1307,13 +1364,13 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
     let mut after_contract_decls: list<review_decl_entry> = list();
 
     let mut unused_mutations: list<review_direct_mutation> = list();
-    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, false, mutref unused_mutations);
-    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, false, mutref unused_mutations);
+    let mut unused_coverage: list<review_mutation_coverage> = list();
+    let before_ok = collect_review_ready_project(before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let after_ok = collect_review_ready_project(after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
-    if before_ok.error_count > 0 or after_ok.error_count > 0 {
-        return emit_change_report_load_error(before_module, after_module, "checked inputs could not be loaded");
-    }
+    if before_ok.error_count > 0 { return emit_checked_evidence_error("change-report", format_version, "before", ref before_diags); }
+    if after_ok.error_count > 0 { return emit_checked_evidence_error("change-report", format_version, "after", ref after_diags); }
 
     let mut policy_summary = make_policy_validation_summary(false, 0, 0, false);
     if policy_path != "" {
@@ -1334,13 +1391,15 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
         let mut checked_statements: list<checked_stmt> = list();
         let mut diags: list<diag> = list();
         if not collect_facts_ready_project(after_workspace, after_module, after_path, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref variant_facts, mutref field_facts, mutref call_facts, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref checked_statements, mutref diags) {
-            return emit_change_report_load_error(before_module, after_module, "policy target facts could not be loaded");
+            emit_all_with_sources(ref diags, ref sources);
+            return emit_evidence_error("change-report", format_version, "after_check", "NQ-EVIDENCE-002", "policy target facts could not be loaded");
         }
         policy_summary = validate_policy_summary(after_workspace, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
     }
 
-    if format_version == 2 {
-        let workspace_summary = emit_workspace_change_report(before_workspace, before_module, ref before_items, ref before_uses, ref before_variants, ref before_calls, after_workspace, after_module, ref after_items, ref after_uses, ref after_variants, ref after_calls, policy_summary.provided, policy_path, policy_summary.target_count, policy_summary.error_count);
+    if format_version == 2 or format_version == 3 {
+        let emitted = emit_workspace_change_report(before_workspace, before_module, ref before_items, ref before_uses, ref before_variants, ref before_calls, after_workspace, after_module, ref after_items, ref after_uses, ref after_variants, ref after_calls, policy_summary.provided, policy_path, policy_summary.target_count, policy_summary.error_count, policy_summary.malformed, format_version);
+        if not emitted { return emit_evidence_error("change-report", format_version, "after_check", "NQ-EVIDENCE-003", "workspace dependency identity changed during evidence collection"); }
         if policy_summary.error_count > 0 {
             return 1;
         }
@@ -1351,6 +1410,33 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
         return 1;
     }
     return 0;
+}
+
+fn emit_checked_evidence_error(command: str, format_version: i32, side: str, diags: ref list<diag>) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref diags) {
+        match list_get(ref diags, index) {
+            Some(value) => {
+                if value.code == "NQ-IO-001" { return emit_evidence_error(command, format_version, str_concat(side, "_load"), "NQ-EVIDENCE-001", value.message); }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return emit_evidence_error(command, format_version, str_concat(side, "_check"), "NQ-EVIDENCE-002", str_concat(side, " input failed checked compilation"));
+}
+
+fn emit_evidence_error(command: str, format_version: i32, stage: str, code: str, message: str) -> i32 {
+    print_line("{");
+    print_line("  \"version\": 1,");
+    print_line(concat3("  \"command\": ", json_quote(command), ","));
+    print_line(concat3("  \"requested_format\": ", i32_to_str(format_version), ","));
+    print_line("  \"ok\": false,");
+    print_line(concat3("  \"stage\": ", json_quote(stage), ","));
+    print_line(concat3("  \"code\": ", json_quote(code), ","));
+    print_line(concat3("  \"message\": ", json_quote(message), ""));
+    print_line("}");
+    return 1;
 }
 
 fn emit_text_output(text: str, to_stderr: bool) -> unit {
@@ -1476,6 +1562,9 @@ fn main() -> i32 {
         driver_review_v3 => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, 3);
         },
+        driver_review_v4 => {
+            return run_review(request.workspace_root, request.entry_module, request.entry_path, 4);
+        },
         driver_review_diff => {
             return run_review_diff(request.entry_path, request.output_path, false);
         },
@@ -1487,6 +1576,9 @@ fn main() -> i32 {
         },
         driver_change_report_v2 => {
             return run_change_report(request.entry_path, request.output_path, request.extra_text, 2);
+        },
+        driver_change_report_v3 => {
+            return run_change_report(request.entry_path, request.output_path, request.extra_text, 3);
         },
         driver_refactor_rename => {
             return run_refactor_rename(request.workspace_root, request.entry_module, request.entry_path, request.output_path, request.extra_text);

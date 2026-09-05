@@ -38,6 +38,8 @@ input_paths() {
         bootstrap/seed/nauqc-seed.c \
         bootstrap/seed/runtime.c \
         bootstrap/seed/runtime.h \
+        stdlib/runtime.c \
+        stdlib/runtime.h \
         scripts/bootstrap_seed.sh \
         scripts/build_stage1_from_seed.sh \
         scripts/stage1_cache.sh

@@ -1,0 +1,26 @@
+fn width(value: ref str) -> i32 { return str_len(value); }
+fn number(value: ref i32) -> i32 { return value; }
+fn flag(value: ref bool) -> bool { return value; }
+fn wide(value: ref i64) -> i64 { return value; }
+
+fn process(value: ref process_result) -> i32 {
+    return width(ref value.stdout) + width(ref value.stderr) + number(ref value.exit_code);
+}
+
+fn metadata(value: ref path_metadata) -> i64 {
+    let a = flag(ref value.is_file);
+    let b = flag(ref value.is_directory);
+    let c = flag(ref value.is_symlink);
+    let d = number(ref value.mode);
+    return wide(ref value.size) + wide(ref value.modified_ns);
+}
+
+pub fn main() -> i32
+audit {
+    intent("Keep checked borrows of shipped runtime product fields accepted");
+    mutates();
+    effects();
+}
+{
+    return 0;
+}

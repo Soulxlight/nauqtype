@@ -1,0 +1,89 @@
+use mutation_helper as writer;
+
+fn builtin(items: mutref list<i32>) -> unit
+audit {
+    intent("Append through the modeled list mutation builtin.");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, 9);
+    return;
+}
+
+fn readonly(items: ref list<i32>) -> i32
+audit {
+    intent("Read a list without claiming mutation.");
+    mutates();
+    effects();
+}
+{
+    return list_len(ref items);
+}
+
+fn imported(first: mutref i32, second: mutref i32) -> unit
+audit {
+    intent("Map reordered named arguments to the imported writer parameter.");
+    mutates(second);
+    effects();
+}
+{
+    writer::write(target: mutref second, amount: first);
+    return;
+}
+
+fn recursive_a(target: mutref i32, depth: i32) -> unit
+audit {
+    intent("Propagate the recursive cycle's parameter mutation.");
+    mutates(target);
+    effects();
+}
+{
+    if depth > 0 {
+        recursive_b(mutref target, depth - 1);
+    }
+    return;
+}
+
+fn recursive_b(target: mutref i32, depth: i32) -> unit
+audit {
+    intent("Seed a write and traverse the recursive cycle.");
+    mutates(target);
+    effects();
+}
+{
+    target = 7;
+    if depth > 0 {
+        recursive_a(mutref target, depth - 1);
+    }
+    return;
+}
+
+fn shadow(target: mutref i32) -> unit
+audit {
+    intent("Keep a same-named owned local distinct from the parameter.");
+    mutates();
+    effects();
+}
+{
+    if true {
+        let mut target = 0;
+        writer::write(target: mutref target, amount: 3);
+    }
+    return;
+}
+
+fn main() -> i32 {
+    let mut first = 5;
+    let mut second = 0;
+    imported(mutref first, mutref second);
+    if second != 5 { return 1; }
+    recursive_a(mutref second, 2);
+    if second != 7 { return 2; }
+    shadow(mutref first);
+    if first != 5 { return 3; }
+    let mut items: list<i32> = list();
+    builtin(mutref items);
+    if readonly(ref items) != 1 { return 4; }
+    return 0;
+}

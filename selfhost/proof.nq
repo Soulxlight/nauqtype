@@ -1,8 +1,10 @@
 use files;
+use contract_evidence_tests;
 use diag;
 use handoff;
 use host_c;
 use review;
+use schema_profile_tests;
 use text;
 
 type norm_mapping {
@@ -759,6 +761,7 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "build_info");
     list_push(mutref modules, "c_emit");
     list_push(mutref modules, "checked_coverage");
+    list_push(mutref modules, "contract_evidence_tests");
     list_push(mutref modules, "diag");
     list_push(mutref modules, "facts");
     list_push(mutref modules, "files");
@@ -772,6 +775,8 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "proof");
     list_push(mutref modules, "resolve");
     list_push(mutref modules, "review");
+    list_push(mutref modules, "schema_profile");
+    list_push(mutref modules, "schema_profile_tests");
     list_push(mutref modules, "source");
     list_push(mutref modules, "text");
     list_push(mutref modules, "token");
@@ -1725,6 +1730,7 @@ fn run_evidence_parity_gate(driver_path: str, failed_phase: mutref str) -> bool 
 }
 
 fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bool {
+    if not run_schema_profile_gate() { failed_phase = "tooling.schema_golden"; return false; }
     if not run_cli_identity_gate(driver_path, mutref failed_phase) {
         return false;
     }
@@ -1732,6 +1738,7 @@ fn run_tooling_confidence_gate(driver_path: str, failed_phase: mutref str) -> bo
         failed_phase = "tooling.golden";
         return false;
     }
+    if not run_contract_evidence_gate(driver_path) { failed_phase = "tooling.golden"; return false; }
     if not run_json_golden_result("facts v1", run_driver_facts(driver_path, "tests/fixtures/facts/main.nq", ""), "tests/golden/facts/main.json") {
         failed_phase = "tooling.golden";
         return false;
@@ -2353,11 +2360,12 @@ fn run_m54_8a_warning_result(label: str, result: result<process_result, io_err>,
 }
 
 fn run_m54_8a_missing_effect_route_matrix(driver_path: str) -> bool {
-    let invalid_path = "tests/fixtures/m54_8a/missing_effect.nq";
+    return run_contract_route_matrix(driver_path, "tests/fixtures/m54_8a/missing_effect.nq", "NQ-CONTRACT-008", "M54_8A_SHOULD_NOT_RUN");
+}
+
+fn run_contract_route_matrix(driver_path: str, invalid_path: str, code: str, marker: str) -> bool {
     let valid_path = "tests/fixtures/m54_8a/valid.nq";
     let policy_path = "tests/fixtures/m54_8a/invalid_policy.json";
-    let marker = "M54_8A_SHOULD_NOT_RUN";
-    let code = "NQ-CONTRACT-008";
 
     if not run_m54_8a_invalid_result("M54.8a check missing effect", run_driver_check(driver_path, invalid_path), code, marker) {
         return false;
@@ -2692,14 +2700,31 @@ fn run_m54_8b_unsupported_format(label: str, result: result<process_result, io_e
     }
 }
 
+fn run_m54_8_final_legacy_review(driver_path: str, fixture: str) -> bool {
+    match run_driver_review(driver_path, fixture, "v3") {
+        Ok(status) => {
+            if status.exit_code != 0 or count_text_occurrences(status.stderr, "NQ-CONTRACT-001") != 1 or count_text_occurrences(status.stderr, "NQ-CONTRACT-006") != 1 or m54_8a_contract_code_count(status.stderr) != 2 or has_stage1_failure_text(status) {
+                eprint_line("review v3 requires exactly the absent-audit and resolved-shadow warnings");
+                emit_process_output(status);
+                return false;
+            }
+            let mut golden = "";
+            if not read_text_or_report("tests/golden/review/review_v3.json", "legacy review v3 golden", mutref golden) { return false; }
+            if status.stdout != golden { eprint_line("legacy review v3 bytes changed"); return false; }
+            return true;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
 fn run_m54_8b_review_gate(driver_path: str) -> bool {
     if not run_m54_8b_identity_cases() {
         eprint_line("M54.8b checked mutation identity probe failed");
         return false;
     }
     let fixture = "tests/fixtures/m54_8b/review_v3.nq";
-    if not run_json_golden_warning_result("review v3 partial evidence", run_driver_review(driver_path, fixture, "v3"), "tests/golden/review/review_v3.json", "NQ-CONTRACT-001", 1) { return false; }
-    if not run_json_golden_warning_result("review v3 deterministic replay", run_driver_review(driver_path, fixture, "v3"), "tests/golden/review/review_v3.json", "NQ-CONTRACT-001", 1) { return false; }
+    if not run_m54_8_final_legacy_review(driver_path, fixture) { return false; }
+    if not run_m54_8_final_legacy_review(driver_path, fixture) { return false; }
     if not run_json_golden_result("review legacy v1 unchanged", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v1"), "tests/golden/review/review_v1.json") { return false; }
     if not run_json_golden_result("review legacy v2 unchanged", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") { return false; }
     if not run_m54_8b_empty_failure("review v3 invalid contract", run_driver_review(driver_path, "tests/fixtures/m54_8a/missing_effect.nq", "v3"), "NQ-CONTRACT-008") { return false; }
@@ -2710,8 +2735,8 @@ fn run_m54_8b_review_gate(driver_path: str) -> bool {
     list_push(mutref args, fixture);
     list_push(mutref args, fixture);
     list_push(mutref args, "--format");
-    list_push(mutref args, "v3");
-    if not run_m54_8b_unsupported_format("change-report still rejects v3", run_process(driver_path, ref args, "."), "expected change-report format") { return false; }
+    list_push(mutref args, "v4");
+    if not run_m54_8b_unsupported_format("change-report rejects unknown v4", run_process(driver_path, ref args, "."), "expected change-report format") { return false; }
     if not run_quiet_result("review v3 fixture formatting", run_driver_fmt_check(driver_path, fixture)) { return false; }
     return true;
 }
@@ -2744,6 +2769,7 @@ audit {
     effects(print, io);
 }
 {
+    if not run_schema_profile_gate() { return 1; }
     if not run_m39_fixture_manifest_gate() {
         return 1;
     }
@@ -2780,6 +2806,8 @@ audit {
     if not run_m54_8b_review_gate(driver_path) {
         return 1;
     }
+    if not run_contract_evidence_gate(driver_path) { return 1; }
+    if not run_contract_route_matrix(driver_path, "tests/fixtures/m54_8_final/missing_builtin.nq", "NQ-CONTRACT-005", "M54_8_SHOULD_NOT_RUN") { return 1; }
     if not run_expected_check_failure(driver_path, "tests/fixtures/diagnostics_failure.nq", "annotated local initializer does not match declared type") {
         return 1;
     }

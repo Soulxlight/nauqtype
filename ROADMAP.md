@@ -892,10 +892,12 @@ Status: complete.
   independent audit and the seven-phase frozen gate. M54.8b1 completes the
   versioned migration with review v3 absent-audit provenance and a checked
   direct-write lower bound, explicitly partial; its independent audit and
-  1,574-second frozen gate passed. Call summaries/validation,
-  standing schema enforcement, diff/change failure contracts, and F15
-  diagnostics remain subsequent corrective work; M54.8 remains open.
-  See [M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) for the bounded acceptance plan.
+  1,574-second frozen gate passed. The final correction implements checked
+  call summaries/validation, review v4, truthful change-report v3 policy,
+  versioned failure envelopes, bounded owned schema enforcement, and F15
+  diagnostics. M54.8 is complete: independent trailing audits passed, then
+  all seven frozen-candidate phases passed in 1,908 seconds.
+  See [M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) for exact acceptance evidence.
 - M54.9: exact ordinary integer overflow/division policy, safe allocation-size
   arithmetic, and runtime boundary regressions.
 - M54.10: framed dependency source hashes, enforced seed provenance, immutable
