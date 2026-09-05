@@ -1,13 +1,14 @@
 # Nauqtype Deferred Features
 
-This file records features intentionally excluded from v0.1 so that omissions are deliberate rather than forgotten.
+This file records current deliberate exclusions. Earlier milestone exclusions
+that have since shipped are historical, not current limitations.
 
 ## Language Features
 
 - User-defined generics
 - Methods and `impl` blocks
 - Traits or interfaces
-- Loop families beyond bootstrap `while`
+- Loop families beyond `while` and list-only `for`, including iterator protocols
 - labeled or valued `break` / `continue`
 - Stored references
 - Reference returns
@@ -49,13 +50,22 @@ time/cancellation remain deferred to M55.
 - Language server
 - Package manager
 
-Near-term language ergonomics resume only as explicit language milestones with examples and differential or stage1-owned coverage. Top-level `const`, list literals, match expressions, let-else, formatter-lite, named function arguments, direct module-qualified function calls, direct module-qualified data names, copy-only record update, and minimal nearest-`while` `break` / `continue` have now graduated from this deferred list in deliberately narrow first forms.
+Near-term language ergonomics resume only after the corrective prerequisites in
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md), as explicit language milestones
+with stage1-owned coverage. Top-level `const`, list literals, match expressions,
+let-else, formatter-lite, named arguments, qualified function/data names,
+copy-only record update, owned-local field assignment, nested patterns,
+manifest-governed nested modules, list-only `for`, and nearest-loop
+`break`/`continue` have already shipped in deliberately narrow forms.
 
 The shipped `?` path is intentionally narrow rather than Rustlike: statement-boundary `let name = result_expr?;` forwards exact errors with explicit `propagates(...)`, while an annotated local `try { expression }` captures expression-position propagation without returning from the function. Both forms emit versioned evidence. Function-scoped expression `?`, multi-statement `try`, short-circuit/match propagation inside a boundary, `option<T>?`, implicit conversions, and custom propagation protocols remain deferred.
 
 ## Why These Are Deferred
 
-- They are not required for a real v0.1 vertical slice.
+- They require demonstrated pressure from Linux tools or applications.
 - Several would materially increase parser, type checker, or ownership complexity.
-- The project should first prove the core pipeline: source -> checked IR -> C -> executable.
-- Stage1 already activates the minimum bootstrap-critical additions: flat-root imports, `read_file`, `write_file`, bootstrap string helpers, and builtin `list<T>`.
+- The existing source -> checked IR -> C -> executable path must remain
+  trustworthy while correcting the independently audited gaps.
+- Stage1 already self-builds and runs workspace projects with narrow Linux
+  input/filesystem authority. Those capabilities do not imply a package
+  manager, broad OS APIs, or complete numeric/resource contracts.

@@ -1,0 +1,49 @@
+type Record {
+    int: str,
+    float: i32,
+    _u: i32,
+    _: i32,
+}
+
+enum Choice {
+    switch(str),
+    union,
+}
+
+fn measure(value: ref Record) -> i32 {
+    return str_len(value.int) + value.float + value._u + value._;
+}
+
+fn chosen(value: Choice) -> str {
+    let text = match value {
+        switch(text) => text,
+        union => str_concat("emp", "ty"),
+    };
+    return text;
+}
+
+fn main() -> i32 {
+    let original = Record { int: str_concat("a", "bc"), float: 2, _u: 3, _: 4 };
+    let mut changed = Record { from original, float: 5 };
+    changed.int = str_concat("de", "fg");
+    if measure(ref original) != 12 or measure(ref changed) != 16 {
+        return 1;
+    }
+    let nested: option<result<Choice, str>> = Some(Ok(switch(original.int)));
+    match nested {
+        Some(Ok(switch(text))) => {
+            if text != "abc" {
+                return 2;
+            }
+        },
+        _ => { return 3; },
+    }
+    let values: list<Choice> = [switch(str_concat("x", "y")), union];
+    let Some(first) = list_get(ref values, 0) else {
+        return 4;
+    };
+    if chosen(first) != "xy" or chosen(union) != "empty" {
+        return 5;
+    }
+    return 0;
+}

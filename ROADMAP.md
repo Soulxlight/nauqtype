@@ -13,7 +13,11 @@ Nauqtype "compiles and runs code" when all of the following are true:
 - the produced executable runs successfully
 - example programs and tests cover the path
 
-## Bootstrap Terms
+## Historical Bootstrap Terms
+
+These terms describe the early milestones below. Since M40, active bootstrap
+uses the checked-in C seed and a host C compiler, not Python; see
+[BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md) for the current path.
 
 - `stage0`: the frozen Python bootstrap/reference compiler
 - `stage1`: a compiler semantic front end and active executable driver written in Nauqtype and built by stage0
@@ -808,7 +812,7 @@ Status:
   and other reusable modules; the exact handoff is recorded in
   `NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md`
 - M55 remains the next feature milestone after the M54.5/M54.6 efficiency
-  checkpoints; package versions/bundled resolution, qualified type annotations,
+  checkpoints and M54.7-M54.10 corrective audit work; package versions/bundled resolution, qualified type annotations,
   broader process control, time, networking, and implicit authority remain out
   of M54
 
@@ -860,7 +864,43 @@ Status:
   direct-import source order, alias qualification, enum/type classification,
   borrow child order, and the existing fail-closed boundaries
 
+### M54.7: Expression And C Backend Correctness
+
+Status: complete.
+
+- Close Astra F01/F02/F04 before new language surface: restore documented
+  left associativity/precedence, first-match source order, and collision-safe
+  C naming for user/module/type/member identities.
+- Add spec-derived Nauqtype runtime regressions, owned-payload sanitizer
+  coverage, and a multi-module collision fixture to the locked corpus.
+- Refresh the generated C seed with recorded transition provenance and the
+  unchanged structural-comparison contract; do not hide backend changes in
+  normalization.
+- Keep parser architecture, runtime APIs, evidence versions, and library lanes
+  unchanged. Correct the active architecture documentation.
+- Independent Sol xhigh and GPT-5.5 xhigh audits passed; the clean candidate
+  passed all seven milestone-gate phases in 1,390 seconds, with 42 corpus
+  cases and nine ownership sanitizer cases. Seed and copied-selfhost C
+  comparisons passed without relaxing normalization. Exact evidence is in
+  [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md).
+
+### M54.8-M54.10: Corrective Prerequisites
+
+- M54.8: canonical contract validation and truthful evidence coverage across
+  check/facts/review, including absent contracts and mutation coverage.
+- M54.9: exact ordinary integer overflow/division policy, safe allocation-size
+  arithmetic, and runtime boundary regressions.
+- M54.10: framed dependency source hashes, enforced seed provenance, immutable
+  source/artifact binding for cache/gate evidence, and honest proof identities.
+- The complete finding-to-owner and acceptance map is
+  [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md). No closed milestone erases an
+  independently confirmed finding; automatic seed-provenance enforcement
+  remains separate from the M54.7 seed refresh.
+
 ### M55: Structured Process, Time, And Cancellation
+
+- prerequisite: close the audit corrections above and repair interrupted
+  process read/wait handling (Astra F14) before adding deadlines/cancellation
 
 - add explicit process environment/stdin/output/timeout behavior
 - add wall time, monotonic time, sleep, and deadline support

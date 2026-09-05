@@ -23,6 +23,7 @@ unless the user explicitly assigns them.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
+| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.7 complete with mixed-model audit PASS and the clean milestone gate; M54.8 contract/evidence consistency is next | No edits to Libraries, AIML, or Tool Codex's study. Follow the Astra finding ledger in `AUDIT_REMEDIATION.md`; no runtime/schema/language widening in M54.7. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -60,8 +61,14 @@ unless the user explicitly assigns them.
 
 ### NauqType Compiler/Runtime
 
-- The next feature milestone is M55 structured process, time, timeout, and
-  cancellation.
+- M54.7 closes expression precedence, ordered matches, and C-name collisions,
+  including the sanitizer-discovered expression-arm binding leak. The seed
+  fixed point, 42-case corpus, Linux release, and nine ownership sanitizer
+  cases passed the one frozen-candidate gate after independent audit PASS.
+- The immediate work is M54.8-M54.10 corrective closure of the independent
+  Astra audit. See [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for findings,
+  acceptance evidence, and boundaries. M55 structured process, time, timeout,
+  and cancellation remains the next feature milestone after those repairs.
 - M54.5 development-loop efficiency is complete and evidenced: content-verified
   stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
   close ordering, and quick/full CI tiers all passed the 2,132-second
@@ -110,7 +117,8 @@ unless the user explicitly assigns them.
 ## Planned Dependency Order
 
 1. Preserve the M54.5/M54.6 development-loop and semantic-performance gains
-   without weakening cold release proof.
+   without weakening cold release proof; close M54.7-M54.10 audit corrections
+   before adding feature surface.
 2. Publish the current NQType Libraries tranche while AIML reviews and
    publishes its locally evidenced A1 shape groundwork.
 3. Complete M55 without treating time as entropy.

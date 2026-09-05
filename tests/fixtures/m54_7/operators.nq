@@ -1,0 +1,79 @@
+const SUB: i32 = 10 - 3 - 2;
+const DIV: i32 = 20 / 5 / 2;
+const MIX: i32 = 10 - 3 + 2;
+const WIDE: i64 = 18 / 3 * 2;
+
+type Box {
+    value: i32,
+}
+
+fn mark(order: mutref i32, value: i32, digit: i32) -> i32 {
+    order = (order * 10) + digit;
+    return value;
+}
+
+fn wide(value: i64) -> i64 {
+    return value;
+}
+
+fn flag(order: mutref i32) -> bool {
+    order = order + 1;
+    return false;
+}
+
+fn main() -> i32 {
+    if SUB != 5 or DIV != 2 or MIX != 9 or WIDE != 12 {
+        return 1;
+    }
+    if 10 - 3 - 2 != 5 or 20 / 5 / 2 != 2 {
+        return 2;
+    }
+    if 10 - 3 + 2 != 9 or 18 / 3 * 2 != 12 {
+        return 3;
+    }
+    if 10 - -3 - 2 != 11 or 10 - (3 - 2) != 9 {
+        return 4;
+    }
+    let a: i64 = 10 - 3 - 2;
+    let b: i64 = 20 / 5 / 2;
+    let c: i64 = 10 - 3 + 2;
+    let d: i64 = 18 / 3 * 2;
+    let e: i64 = 10 - -3 - 2;
+    let f: i64 = 10 - (3 - 2);
+    if a != 5 or b != 2 or c != 9 or d != 12 or e != 11 or f != 9 {
+        return 5;
+    }
+    if wide(20 / 5 / 2) != 2 {
+        return 6;
+    }
+    let relation = 1 < 2 == 3 < 4;
+    let unequal = 1 < 2 != 3 > 4;
+    if not relation or not unequal or not (true or false and false) {
+        return 7;
+    }
+    let mut order = 0;
+    let traced = mark(mutref order, 10, 1) - mark(mutref order, 3, 2) - mark(mutref order, 2, 3);
+    if traced != 5 or order != 123 {
+        return 8;
+    }
+    let short = true or flag(mutref order) and flag(mutref order);
+    if not short or order != 123 {
+        return 9;
+    }
+    let boxed = Box { value: 10 - 3 - 2 };
+    let values: list<i32> = [20 / 5 / 2, boxed.value + 1];
+    let Some(first) = list_get(ref values, 0) else {
+        return 10;
+    };
+    let Some(second) = list_get(ref values, 1) else {
+        return 11;
+    };
+    let nested: option<i64> = Some(10 - 3 - 2);
+    let Some(last) = nested else {
+        return 12;
+    };
+    if first != 2 or second != 6 or last != 5 {
+        return 13;
+    }
+    return 0;
+}

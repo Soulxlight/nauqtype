@@ -2732,10 +2732,12 @@ fn span_is_wrapped_in_parens(tokens: ref list<token>, start: i32, end: i32) -> b
     return depth == 0;
 }
 
+// The rightmost root preserves left associativity; keep these scans aligned with the handoff/typechecker.
 fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut bracket_depth = 0;
+    let mut found = -1;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -2766,7 +2768,7 @@ fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
             },
             tk_kw_or => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    found = index;
                 }
             },
             _ => {
@@ -2774,13 +2776,14 @@ fn find_root_or_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
         }
         index = index + 1;
     }
-    return -1;
+    return found;
 }
 
 fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut bracket_depth = 0;
+    let mut found = -1;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -2811,7 +2814,7 @@ fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 
             },
             tk_kw_and => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    found = index;
                 }
             },
             _ => {
@@ -2819,7 +2822,7 @@ fn find_root_and_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 
         }
         index = index + 1;
     }
-    return -1;
+    return found;
 }
 
 fn is_binary_operator_position(tokens: ref list<token>, start: i32, index: i32) -> bool {
@@ -2834,6 +2837,8 @@ fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> 
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut bracket_depth = 0;
+    let mut equality = -1;
+    let mut relational = -1;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -2864,32 +2869,32 @@ fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> 
             },
             tk_eqeq => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    equality = index;
                 }
             },
             tk_noteq => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    equality = index;
                 }
             },
             tk_lt => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    relational = index;
                 }
             },
             tk_gt => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    relational = index;
                 }
             },
             tk_lte => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    relational = index;
                 }
             },
             tk_gte => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 {
-                    return index;
+                    relational = index;
                 }
             },
             _ => {
@@ -2897,13 +2902,17 @@ fn find_root_compare_operator(tokens: ref list<token>, start: i32, end: i32) -> 
         }
         index = index + 1;
     }
-    return -1;
+    if equality >= 0 {
+        return equality;
+    }
+    return relational;
 }
 
 fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut bracket_depth = 0;
+    let mut found = -1;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -2934,12 +2943,12 @@ fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) ->
             },
             tk_plus => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
-                    return index;
+                    found = index;
                 }
             },
             tk_minus => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
-                    return index;
+                    found = index;
                 }
             },
             _ => {
@@ -2947,13 +2956,14 @@ fn find_root_additive_operator(tokens: ref list<token>, start: i32, end: i32) ->
         }
         index = index + 1;
     }
-    return -1;
+    return found;
 }
 
 fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     let mut depth = 0;
     let mut brace_depth = 0;
     let mut bracket_depth = 0;
+    let mut found = -1;
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -2984,12 +2994,12 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
             },
             tk_star => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
-                    return index;
+                    found = index;
                 }
             },
             tk_slash => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
-                    return index;
+                    found = index;
                 }
             },
             _ => {
@@ -2997,7 +3007,7 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
         }
         index = index + 1;
     }
-    return -1;
+    return found;
 }
 
 fn find_root_field_dot(tokens: ref list<token>, start: i32, end: i32) -> i32 {

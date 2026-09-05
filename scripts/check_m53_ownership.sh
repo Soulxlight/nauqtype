@@ -43,6 +43,9 @@ fixtures=(
     tests/fixtures/m53_ownership/bytes_cleanup.nq
     tests/fixtures/m53_ownership/temporary_field_snapshot.nq
     tests/fixtures/m54_runtime.nq
+    tests/fixtures/m54_7/ordered_match.nq
+    tests/fixtures/m54_7/c_names.nq
+    tests/fixtures/m54_7/names_workspace/src/app/main.nq
 )
 
 for fixture in "${fixtures[@]}"; do

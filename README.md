@@ -20,7 +20,7 @@ Current bootstrap status:
 - explicit annotated-local `try { expression }` boundaries that capture expression-position propagation without silently returning from the function
 - fixed `effects(io)` contracts with checked operation-specific evidence for arguments, environment, cwd, streams, files, metadata, traversal, creation, temporary paths, removal, rename, atomic replacement, and process execution
 - named function arguments, direct module-qualified function/data names, and explicit module aliases
-- minimal nearest-`while` `break` / `continue`
+- list-only `for` and nearest-loop `break` / `continue` for `while` and `for`
 - copy-only record update with explicit `Type { from base, field: value }` provenance
 - direct field assignment for owned `let mut` product locals
 - integer literal and nested constructor patterns with an explicit fallback arm
@@ -29,9 +29,9 @@ Current bootstrap status:
 - structural copy for all-copy user `type` / `enum`
 - deterministic clone/move/drop lowering for owned heap-backed values
 - compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
+- `selfhost/`: Nauqtype-written stage1 pipeline that can load workspace and legacy flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
 
-v0.3 organizational alpha status: `nauqtype-0.3.0-alpha.1` proves a locked two-workspace internal tool from the C seed through stage1 proof, checked facts/policy/change evidence, and a copied Linux release outside the source checkout. The language surface remains stable; this milestone hardens reproducibility and supervision rather than adding syntax.
+v0.3 organizational alpha checkpoint: `nauqtype-0.3.0-alpha.1` proved a locked two-workspace internal tool from the C seed through stage1 proof, facts/policy/change evidence, and a copied Linux release outside the source checkout. This is not a general semantic-completeness or stable-release claim. The subsequent Astra audit found correctness, evidence, numeric, and provenance gaps; [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) records their closure order.
 
 The active compiler, tests, proof, and release path are Nauqtype-owned and the
 Python bootstrap is archived. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md)
@@ -56,8 +56,11 @@ modules without requiring a fake `main`. M54.5 also made warm artifact reuse
 and milestone close ordering truthful and cheap. M54.6 then cut the measured
 full-tree semantic check from 349.76 seconds to repeat runs of 194.66 and
 194.51 seconds by batching private scope, borrow-child, and visible-item
-lookups. M55 is the next feature milestone and adds structured process, time,
-timeout, and cancellation foundations.
+lookups. M54.7-M54.10 now put audit-driven correctness, contract/evidence,
+numeric safety, and provenance repairs ahead of new features. M55 remains the
+next feature milestone for structured process, time, timeout, and cancellation
+after those prerequisites. [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
+active implementation rather than the archived Python design.
 
 ## Quick Start
 

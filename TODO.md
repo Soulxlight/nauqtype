@@ -382,7 +382,12 @@
 - [x] M54.5: pass the final frozen-candidate milestone gate and record measured timing evidence
 - [x] M54.6: batch the profiled typecheck export/scope and borrow expression lookups without rewriting the semantic front end
 - [x] M54.6: prove a same-host cold wall-time improvement while keeping selfhost, corpus, release, and evidence contracts unchanged
-- [ ] M55: add structured process, time, timeout, and cancellation foundations
+- [x] M54.7: close F01/F02/F04 with spec-derived runtime and cleanup fixtures, a refreshed seed, mixed-model audit, and the frozen-candidate gate
+- [ ] M54.8: unify contract validation and report truthful evidence completeness (F03/F05/F08/F11/F15)
+- [ ] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
+- [ ] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
+- [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)
+- [ ] M55: add structured process, time, timeout, and cancellation foundations after corrective closure
 - [ ] M56: add explicit generic reuse without trait or method-system drift
 - [ ] M57: add reusable collections and deterministic general JSON
 - [ ] M58: add an auditable native library and Linux C ABI boundary

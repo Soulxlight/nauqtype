@@ -455,3 +455,33 @@
 - Reason chosen: the current value model can preserve every Linux path byte except NUL, while NQType Libraries can own UTF-8 and lexical-path policy in ordinary Nauqtype. Explicit path dependencies and content hashes already provide reproducible provenance; hidden search and premature package versioning would add authority without solving the M54 runtime boundary.
 - Consequences: string indexing remains byte-based, OS-bound strings reject embedded NUL, public Linux path helpers use `/` only, and UTF-8 validation remains explicit library work. `std` is a conventional declared alias for workspace `nauqtype.std`, not a prelude or reserved resolver rule. M54 keeps `io_err` as the fallible carrier but adds stable kind, operation, path, secondary-path, and OS-code accessors plus fixed evidence subkinds. Qualified type annotations remain deferred, so official library nominal types use a collision-safe `Nq` prefix in V1. `check` accepts non-entry library modules; executable commands still require `main`.
 - Reversible later: a versioned package contract, bundled library resolution, qualified type annotations, validated text type, or stronger path authority may be added through separate evidence-backed decisions, but must not reinterpret these byte, error, or dependency contracts silently.
+
+## D058: Correct source semantics before extending the Linux surface
+
+- Decision: M54.7 repairs Astra F01/F02/F04 to the existing grammar and match
+  contract. Left-associative operators select the rightmost root at each
+  precedence level; equality is below relational comparison. Every match
+  uses source-ordered conditions with one scrutinee evaluation, including
+  fallback-first and duplicate-specific arms. Unreachable later arms are not
+  a new source rejection.
+- C spelling is a private backend encoding, not semantic identity. Escape
+  source `_` as `_u`, `:` as `_c`, and any other non-alphanumeric byte as
+  `_x<decimal>z`. Prefix user members with `nqf_`, nominal C types with
+  `NQ_User__`, and nominal type-mangle leaves with `named__`. Encoded source
+  atoms contain no double underscore, reserving that separator for recursive
+  generic type structure. Function, constant, and binding prefixes remain
+  distinct. Runtime-native records, generic carriers, and builtin members
+  retain their ABI spelling.
+- Alternatives considered: retain wrong output for bootstrap similarity,
+  reorder/reject legal match arms, add a blacklist of C keywords, or rewrite
+  the whole parser. None fixes the confirmed behavior as narrowly as restoring
+  source semantics and encoding all user identities consistently.
+- Consequences: add spec-derived Nauqtype execution/cleanup regressions, refresh
+  the generated seed through an audited fixed point, and keep proof
+  normalization unchanged. These repairs add no syntax, ownership rule,
+  runtime API, or machine-readable schema. The remaining audit findings stay
+  open in `AUDIT_REMEDIATION.md` ahead of M55 feature growth.
+- Reversible later: a measured IR optimization may replace the condition chain
+  with a switch only when it preserves first-match priority and every cleanup
+  edge. Any C encoding revision requires another explicit seed transition,
+  not altered comparison rules that erase semantic differences.

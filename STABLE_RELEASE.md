@@ -124,6 +124,11 @@ NQType Libraries workspace rather than becoming compiler builtins.
 
 ### M55: Structured Process, Time, And Cancellation
 
+Prerequisite: M54.7-M54.10 close the current correctness, evidence, numeric,
+and provenance audit findings, followed by the interrupted process read/wait
+repair. See [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md). The original
+M52-M61 product sequence is not permission to skip a confirmed defect.
+
 - replace the narrow toolchain-only process call with a structured process
   contract supporting environment overrides, stdin, capture/inherit modes,
   timeout, and explicit termination;

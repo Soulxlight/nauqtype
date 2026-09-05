@@ -63,6 +63,24 @@ The seed-generated and stage2-generated C match under the existing documented st
 
 A seed refresh is a trust-boundary change. It requires a recorded fixed-point proof, manifest/hash update, reviewable generated diff, and clean-checkout reproduction. Generated seed C is not disposable build output.
 
+M54.7 records source identity as `nauqtype-selfhost-source/v1`: SHA-256 of the
+UTF-8 domain string followed by NUL, then every regular `.nq` file under
+`selfhost/` in C-locale relative-path order, each encoded as path, NUL,
+lowercase file SHA-256 hex, NUL. This includes the intentionally retained
+selfhost probes. There is no concatenation-only or path-insensitive digest.
+The manifest records the parent revision plus this dirty-candidate identity,
+the actual generator/compiler inputs, unchanged runtime hashes, host compiler
+identity and flags, and comparisons. `SHA256SUMS` also binds the manifest.
+
+When repairing a defective seed backend, the first emitted compiler is only a
+bridge. Regenerate source with the repaired executable, compile that output,
+and compare a further emission using the existing normalizer before seed
+promotion. Validate the promoted candidate again, then run the seed bootstrap
+and milestone gates from a clean candidate snapshot. Never normalize away
+source-derived names, operators, or control flow to manufacture convergence.
+The M54.7 record is in `AUDIT_REMEDIATION.md`; automatic enforcement of all
+future lineage relationships remains M54.10 work.
+
 ## Archive Rule
 
 After cutover, retain the final Python stage0, tests, and audit generator as historical reference with a manifest naming their final commit and capability scope. Do not continue adding active behavior there. Historical benchmark source may remain as inert comparison data, but it must not run in required compiler or release gates.

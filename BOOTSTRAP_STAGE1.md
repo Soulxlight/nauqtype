@@ -1,144 +1,76 @@
-# Nauqtype Bootstrap Stage1
+# Nauqtype Stage1 Bootstrap
 
-## Goal
+## Active Status
 
-Define the minimum post-alpha language expansion needed to begin a realistic self-hosted Nauqtype compiler.
+The active Linux compiler, test runner, and proof runner are Nauqtype-owned.
+Python stage0 and its tests are archived references, not an active bootstrap
+or correctness fallback. Build from the checked C seed with
+`scripts/build_stage1_from_seed.sh`; use `bin/nauqc` for daily commands.
 
-## Locked Feature Order
+The operational pipeline is parse/resolve/typecheck -> checked handoff ->
+value plan/borrow -> IR -> C emission. It supports manifest-governed nested
+workspace modules and locked local dependencies as well as legacy flat-root
+sources. [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual files and remaining
+shared-truth gaps.
 
-1. Acyclic imports
-2. File input as `result<str, io_err>`
-3. Builtin `list<T>`
+Self-build consistency is proven for the copied in-repo selfhost target. It
+does not prove general semantic correctness: the Astra audit found
+expression grouping, match priority, C naming, evidence, numeric, and
+provenance gaps. [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) tracks corrective
+closure before further language/runtime growth.
 
-No other feature family should jump ahead of those three unless a concrete bootstrap blocker proves this order wrong.
+## Standing Proof Contract
 
-## Current Status
+The owned `selfhost/proof.nq` runner preserves this target:
 
-The current stage0 compiler implements all three locked Stage1 unlocks:
+1. Copy the in-repo selfhost workspace.
+2. Run the active stage1 compiler there and capture emitted `build/main.c`.
+3. Compile it with host C and the matching runtime into stage2.
+4. Run stage2 in the same copied workspace, retaining the first C artifact
+   before `write_file` overwrites the output.
+5. Compare emitted C under the existing structural normalization and require
+   matching success behavior, including `stage1 front-end ok\n` and no
+   limitation/C-error diagnostics.
 
-- flat-root acyclic imports
-- file input as `result<str, io_err>`
-- builtin `list<T>`
-- minimal bootstrap string helpers including `str_concat(left, right) -> str`
+Normalization may remove insignificant whitespace and incidental binding/temp
+numbers, not operators, source-derived names, types, or control flow. The
+runner also locks expected behavior for the example/regression corpus and
+supervision outputs. Spec-derived negative and runtime cases complement the
+fixed point; they must not be generated from a potentially defective compiler.
 
-The first selfhost workspace now lives in `selfhost/` and can flat-root load its module graph, reject missing modules and import cycles, lex, parse, resolve, and type-check the current trusted subset across its own module tree.
+The active seed chain is host C -> checked C seed -> stage1 C/executable ->
+stage2 C. Seed promotion requires recorded lineage, hashes, independent audit,
+fixed-point comparison, and clean-source reproduction under
+[BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md). Runtime-native ABI names
+must stay aligned with the matching seed runtime.
 
-Current trustworthy selfhost slice:
+Current commands and resource limits are in [VERIFICATION.md](VERIFICATION.md).
+The supported copied Linux layout is in
+[LINUX_RELEASE_MANIFEST.md](LINUX_RELEASE_MANIFEST.md). Historical Windows/Zig
+and Python-harness instructions are not active build requirements.
 
-- recursive span-based typing for the current supported expression subset
-- nested field-chain typing over supported base expressions
-- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, `list()`, and `[]` in the current value-flow contexts
-- match scrutinee typing and pattern-bound payload typing for the current enum / `option` / `result` subset
-- explicit stage1 limitation diagnostics for unsupported expression shapes
-- differential stage0-vs-stage1 coverage for the trusted subset
-- the in-repo `selfhost/` tree itself runs with no `stage1 limitation` diagnostics
-- stage1 borrow checking now runs on the structured checked handoff
-- stage1 IR lowering now runs on the structured checked handoff
-- stage1 C emission now runs on the structured IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the stage1 executable now preserves the no-arg copied-selfhost proof path and also owns the active `check` / `emit-c` / `facts` / `review` / `review-diff` / `change-report` / `refactor-rename` / `policy-check` / `fmt` / `build` / `run` / `prove` / `prove-selfhost` / `prove-corpus` driver workflow
+## Preserved Architecture Decision
 
-Current semantic near-parity milestone:
+The flat fact pipeline remains the current semantic front end. Its retention
+is not permission to build ownership or backend passes directly on flat
+facts. The structured checked handoff supplies binding identity, recursive
+types, resolved targets, expressions, patterns, and control-flow structure.
+Borrow analysis consumes it and the value plan; IR lowering consumes checked
+data; C emission consumes IR only.
 
-- stage1 is now trustworthy as a semantic front end for the trusted subset
-- stage0 remains the semantic reference in the differential harness
-- exact wording is not the parity target; accept/reject family is
-- the first backend-complete milestone now includes borrow checking, IR lowering, and deterministic C emission
-- the first copied-selfhost stage1-to-stage2 comparison proof is now complete
+See [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md). Incremental migration of
+span-reconstructed expressions toward parser-owned structures is a later
+reviewed project, not a prerequisite rewrite for the immediate audit repairs.
 
-## First Self-Build Proof Contract
+## Historical Bootstrap Unlocks
 
-The first stage1-to-stage2 self-build comparison proof is now complete for the in-repo copied selfhost workspace.
+The first selfhost front end was enabled in this order: acyclic flat-root
+imports, `read_file` returning `result<str, io_err>`, then builtin
+`list<T>` and minimal string helpers. The first differential comparison used
+Python stage0 as reference by accept/reject family, not exact diagnostic text.
 
-That proof target is locked to the in-repo copied selfhost workspace first:
-
-1. run `selfhost/main.nq` under stage0 in a copied workspace
-2. capture the stage1-emitted `build/main.c`
-3. compile that emitted C to a stage2 executable
-4. run the stage2 executable on the same copied workspace
-5. capture the stage2-emitted `build/main.c`
-6. compare stage1 vs stage2 output by normalized structural C, not raw byte-for-byte text
-7. also require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`
-
-The proof harness should reuse the existing copied-workspace helper, emitted-C compile/run helper, and structural C normalization already used by the stage1 C-emission tests.
-
-Current harness constraints to treat as proof-path facts, not surprise bugs:
-
-- run the copied-selfhost proof serially on Windows
-- keep the relaxed copied-selfhost timeout because stage1 now performs full C emission before success
-- keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories
-- tolerate Windows temp-dir cleanup friction from emitted executables and debug artifacts
-- lift the current structural C normalization out of the stage1 C-emission test module into a shared proof helper instead of duplicating it during the proof milestone
-- during the current driver cutover, invoke stage1 `build` / `run` from the repo root because that slice resolves pinned Zig from `.deps/ziglang/zig` or `.deps/ziglang/zig.exe`, with `cc` as the Linux development fallback, plus `stdlib/runtime.c` from the pinned workspace bootstrap layout
-- on Linux, prefer the repo-local `bin/nauqc` launcher for daily use; it normalizes caller paths and runs the active stage1 driver from the repo root
-- copied Linux alpha layouts use `bin/nauqc` plus `lib/nauqtype/nauqc-stage1`, `stdlib/`, schemas, examples, and docs so smoke checks no longer require invoking a repository-internal driver directly
-
-## Architecture Checkpoint
-
-The current selfhost parser/resolve/typecheck design is accepted for the trusted semantic front-end milestone.
-
-That means:
-
-- the flat fact pipeline stays in place as the truth-producing front end for the trusted subset
-- this is not a parser/typechecker rewrite checkpoint
-- the current front end has earned the right to stay as the semantic source of truth
-
-That does not mean:
-
-- borrow checking should be added as more flat-fact logic
-- IR lowering should target raw flat facts
-- C emission should target raw flat facts
-
-From this checkpoint onward, stage1 borrow checking, IR lowering, and C emission must consume a downstream structured checked handoff representation.
-
-See `SELFHOST_HANDOFF.md` for the contract that now sits between semantic front-end parity and genuine backend parity.
-
-## Acyclic Imports
-
-Stage1 import scope:
-
-- activate `use foo;`
-- one workspace/package root only
-- single source file still defines one module
-- imported `pub fn`, `pub type`, and `pub enum` become visible across files
-- imported public enum variants become visible as constructors/pattern names
-- import cycles are rejected
-- no package manager
-- no re-export system
-
-## File Input
-
-Minimum file input goal:
-
-- read a text file into `result<str, io_err>`
-- no broad filesystem API surface
-- no streaming API in the first pass
-
-This is enough for a compiler to read source files without committing to a large runtime.
-
-## Builtin `list<T>`
-
-Minimum collection goal:
-
-- one builtin growable sequence type
-- `list()` requires expected `list<T>` context
-- `[]` requires expected `list<T>` context
-- `[a, b, c]` requires homogeneous element types and may infer `list<T>` from the first element
-- `list_push`, `list_len`, and `list_get` are builtin helper functions
-- `list_get` is restricted to copy element types in stage1
-- no spreads, comprehensions, ranges, or const list initializers in list-literal V1
-- no `map`, `set`, or `dict` before `list<T>` proves necessary and stable
-
-## Relationship To AI Contracts
-
-- `review`, `facts`, `review-diff`, `change-report`, `refactor-rename`, and `policy-check` are current stage1-owned machine-readable supervision surfaces.
-- AI Contracts should remain small while Stage1 focuses on expressiveness needed for a self-hosted compiler.
-- Do not let the AI-first differentiator stall bootstrap-critical work.
-
-## Immediate Remaining Gap
-
-Stage1 has crossed the first copied-selfhost self-build proof and now owns the active proof/corpus runner gates. The next work is beyond semantic near parity:
-
-- broader proof hardening beyond the first copied-selfhost self-build checkpoint
-- Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- live-in-the-language ergonomics now resume after the completed AI tooling spine; top-level `const`, list literals, match expressions, let-else, formatter-lite, named arguments, qualified calls/data, break/continue, copy-only record update, and statement-boundary `?` are current completed items
-- retained explicit limitation boundary today: non-name callees and member-call syntax
+Later milestones added the checked handoff, borrow checking, IR, C emission,
+copied self-build proof, and the Nauqtype-owned driver/test/proof workflow.
+M40 retired Python from required build, test, proof, release, and CI paths.
+Those completed steps explain the current architecture; they are not pending
+work or permission to resume Python feature development.

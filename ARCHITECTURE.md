@@ -1,389 +1,119 @@
 # Nauqtype Compiler Architecture
 
-## Goals
-
-The v0.1 compiler should deliver a real vertical slice:
-
-- lex source
-- parse one source file or a flat-root module graph
-- resolve names
-- type-check a meaningful subset
-- enforce minimal move/borrow rules
-- lower to a small IR
-- emit readable C
-- compile and run with a system C compiler
-- report stable diagnostics
-
-## Implementation Language
-
-Active implementation language:
-
-- Nauqtype
-
-Frozen bootstrap/reference implementation in this workspace:
-
-- Python
-
-Reason:
-
-- The first stage1-to-stage2 self-build proof is complete.
-- The project now benefits more from teaching and exercising Nauqtype through its own implementation path than from continuing to grow the host-language bootstrap.
-- Python remains valuable as a pinned bootstrap/reference path while the active driver and proof/corpus gates are owned by stage1.
-
-## Top-Level Module Boundaries
-
-Planned project layout:
-
-- `compiler/lexer/`
-- `compiler/parser/`
-- `compiler/ast/`
-- `compiler/resolve/`
-- `compiler/types/`
-- `compiler/borrow/`
-- `compiler/ir/`
-- `compiler/codegen_c/`
-- `compiler/diagnostics/`
-- `stdlib/`
-- `examples/`
-- `tests/`
-
-The bootstrap compiler uses `compiler/` as its package root so the project layout matches the phase boundaries directly.
-
-## Compiler Phases
-
-### 1. Lexing
-
-Input:
-
-- source text
-
-Output:
-
-- token stream
-- trivia-stripped spans
-- lex diagnostics
-
-Responsibilities:
-
-- tokenize keywords, identifiers, literals, punctuation
-- preserve source spans
-- reject malformed strings and unknown characters
-
-### 2. Project Loading And Parsing
-
-Input:
-
-- entry source file path plus transitive `use` graph
-
-Output:
-
-- per-module ASTs
-- parse diagnostics
-
-Responsibilities:
-
-- load `<workspace-root>/<module>.nq` for flat-root imports
-- detect missing modules and import cycles
-- build a concrete AST with explicit nodes for items, statements, expressions, patterns, and types
-- recover enough after errors to continue collecting diagnostics
-
-Strategy:
-
-- hand-written recursive-descent parser
-- Pratt-style expression parser for operator precedence
-
-### 3. Name Resolution
-
-Input:
-
-- AST
-
-Output:
-
-- resolved symbol tables
-- name-linked AST or a lightweight resolved representation
-- unresolved-name diagnostics
-
-Responsibilities:
-
-- register top-level items
-- resolve local bindings
-- distinguish functions, types, enum variants, and fields where applicable
-- mark built-ins such as `print_line`, `option`, and `result`
-
-Stage1 simplification:
-
-- one workspace root only
-- no re-exports or nested modules
-
-### 4. Type Checking
-
-Input:
-
-- resolved AST
-
-Output:
-
-- typed AST / semantic model
-- type diagnostics
-
-Responsibilities:
-
-- validate local declarations and assignments
-- validate function calls
-- validate return statements
-- validate `while` conditions
-- validate imported type and function usage across the flat-root graph
-- infer AI Contract mutation, effect, and propagation facts
-- validate match exhaustiveness for supported patterns
-- distinguish copy vs move types
-
-v0.1 simplifications:
-
-- no user generics
-- exact type matching only
-- built-in generic utility types only
-- builtin `list<T>` only; no user-defined generics
-
-### 5. Borrow And Move Checking
-
-Input:
-
-- structured checked handoff
-- canonical checked type properties and value-use plan
-
-Output:
-
-- borrow/move diagnostics
-
-Responsibilities:
-
-- reject use after move for non-copy locals
-- ensure `mutref` is only taken from mutable locals
-- ensure temporary borrow rules are respected per call
-- prevent aliasing combinations within a call such as two `mutref` borrows of the same local
-- consume stable binding and expression identities without rediscovering ownership from names or spans
-
-v0.1 simplifications:
-
-- references never become first-class values
-- no stored refs
-- no field borrows
-- no interprocedural lifetime analysis
-
-### 6. IR Lowering
-
-Input:
-
-- structured checked handoff plus canonical checked value truth
-
-Output:
-
-- small typed IR
-
-Responsibilities:
-
-- linearize control flow enough for deterministic C emission
-- make enum construction and match lowering explicit
-- preserve source location links where practical
-- preserve binding identity and copy/move/drop requirements for C emission
-
-IR design goals:
-
-- simple, structured, and backend-agnostic enough to survive a future backend swap
-- not a giant SSA system in v0.1
-
-### 7. C Code Generation
-
-Input:
-
-- IR
-
-Output:
-
-- `.c` translation unit
-- optional `.h` or embedded runtime includes
-
-Responsibilities:
-
-- emit readable C
-- generate runtime types for `str`, `option`, `result`, structs, and enums
-- emit type-directed clone/move/drop operations and cleanup on normal control-flow exits
-- emit a simple `main` wrapper if needed
-- keep naming deterministic
-
-Codegen choices:
-
-- tagged unions for enums
-- direct C structs for `type`
-- helper runtime functions in `stdlib/`
-- typed list helpers and bootstrap file/string helpers in `stdlib/`
-
-## AST Strategy
-
-The AST should remain close to source structure.
-
-Key node groups:
-
-- `Item`
-- `TypeExpr`
-- `Stmt`
-- `Expr`
-- `Pattern`
-
-Important rule:
-
-- do not hide language semantics inside parser shortcuts
-
-## Name Resolution Strategy
-
-Resolver scopes:
-
-- file scope for top-level items and constructors
-- function scope
-- block scope
-
-The resolver should produce stable symbol IDs rather than depending on raw text comparisons later.
-
-## Type-Checking Strategy
-
-The checker operates function-by-function after top-level item collection.
-
-Main responsibilities:
-
-- assign types to expressions
-- validate statements
-- validate constructor usage
-- detect mismatch errors early and precisely
-
-The type system should classify each type as copy or move-sensitive.
-
-## Borrow-Checking Strategy
-
-The borrow checker is intentionally conservative.
-
-Rules enforced in v0.1:
-
-- move after use is illegal for non-copy locals
-- `mutref` requires a mutable local binding
-- a call may not borrow the same local both mutably and immutably
-- a call may not take two mutable borrows of the same local
-- bootstrap `while` loops are checked with a conservative loop-head move analysis over bindings visible outside the loop body
-
-Rules deferred:
-
-- borrow lifetimes beyond a single call
-- references in structs
-- reference returns
-- non-lexical lifetime-like refinements
-- loop values, labels, and broader loop families beyond statement-form `while`
-- transitive mutation contracts and richer effect atoms
-
-## Diagnostics Strategy
-
-Diagnostics are emitted by every phase through a shared structure.
-
-Required fields:
-
-- `code`
-- `category`
-- `message`
-- `span`
-- `notes`
-- `help`
-
-Example format:
+This is the active Linux implementation map, not the archived Python design.
+The compiler and its command/proof runners are written in Nauqtype. The narrow
+native runtime and generated bootstrap seed are C.
+
+## Pipeline And Ownership
 
 ```text
-error[NQ-TYPE-004]: cannot assign `bool` to `i32`
-  --> examples/bad_assign.nq:4:5
-  note: `count` was declared here as `i32`
-  help: change the value or update the binding type
+manifest / source files
+  -> tokens and source spans
+  -> flat parser facts
+  -> resolved and typed semantic facts
+  -> structured checked handoff
+  -> canonical value-use plan and borrow validation
+  -> structured typed IR
+  -> C text
+  -> host C compiler plus runtime
 ```
 
-Categories:
+| Layer | Active source | Responsibility |
+| --- | --- | --- |
+| Driver | `selfhost/main.nq`, `build_info.nq`, `host_c.nq` | Command dispatch, phase orchestration, diagnostics, executable entry validation, host-C invocation. |
+| Workspace | `workspace.nq`, `files.nq`, `source.nq` | Manifest-owned roots, nested module identities, aliases, locked local dependencies, physical source paths. Legacy flat-root projects remain supported separately. |
+| Lex/parse | `token.nq`, `lexer.nq`, `parser.nq`, `ast.nq` | Tokens, stable source spans, declarations/statements, and flat semantic facts. Despite its name, `ast.nq` is not a universal recursive expression AST. |
+| Semantic front end | `resolve.nq`, `typecheck.nq`, `type_text.nq` | Visible symbols, scope and type truth, context-driven expression validation, patterns, declarations and calls. Some expression families are still reconstructed from token spans. |
+| Checked boundary | `handoff.nq` | Typed expression/control-flow structure, recursive type shapes, stable binding IDs, resolved function/constructor/field targets. |
+| Values and borrowing | `value_plan.nq`, `borrow.nq` | Canonical copy/drop classification, copy/move/borrow use plans, move-state validation over checked identities. |
+| IR | `ir.nq` | Deterministic program, signature, declaration, local, expression, pattern, and control-flow records. No raw fact/token fallback for downstream consumers. |
+| C backend | `c_emit.nq` | IR-only C declarations, expressions, control flow, runtime calls, type-directed clone/move/drop, and private C identifier encoding. |
+| Evidence | `facts.nq`, `review.nq`, `diag.nq` | Versioned semantic facts, review/diff/change evidence, policy validation, plan-only refactoring, and producer diagnostics. |
+| Formatting/helpers | `fmt.nq`, `text.nq` | Output-only formatter-lite and exercised internal text/list helpers. No AST formatter or write mode. |
+| Owned verification | `proof.nq` | `test`, seed/selfhost/corpus proof, tooling fixtures, deterministic comparison, and proof summaries. |
+| Native runtime | `stdlib/runtime.h`, `stdlib/runtime.c` | Representations, value storage/reclamation, and explicitly modeled Linux authority. General-purpose library policy belongs outside the runtime. |
 
-- `LEX`
-- `PARSE`
-- `RESOLVE`
-- `TYPE`
-- `BORROW`
-- `CONTRACT`
-- `IR`
-- `INTERNAL`
-- `LINT`
+Paths without a directory in the table are relative to `selfhost/`.
 
-## Initial Diagnostics Coverage
+## Architectural Boundaries
 
-- Parse errors: unexpected token, missing delimiter, bad literal
-- Type errors: mismatched types, wrong argument count, wrong return type, invalid field access
-- Ownership errors: use after move, invalid `mutref`, aliasing in a call
-- Resolve errors: unknown name, duplicate definition, unknown field or variant
-- Pattern errors: non-exhaustive match, invalid constructor pattern
-- Fallibility misuse: discarded `result` warning
-- Contract errors: missing audit clauses, invalid `mutates(...)`, missing `effects(print)` / `effects(io)`, missing `propagates(E)`, public API missing `audit`
+The flat semantic pipeline is retained as the current front end, not the
+substrate for backend growth. Borrow analysis consumes the structured checked
+handoff and value plan. IR lowering consumes that checked representation; C
+emission consumes IR. Backend passes must not guess binding, type, target, or
+borrow meaning from names or source offsets. Missing required truth fails the
+build. [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md) records the detailed contract.
 
-## Testing Strategy
+The current exporter still reconstructs some expressions from spans. The
+duplicated operator scans in typecheck/handoff must agree with
+[GRAMMAR.md](GRAMMAR.md). M54.7 repairs their grouping; it does not claim to
+replace them with a parser-owned expression arena. Any later migration should
+be incremental, identity-preserving, and measured against the M54.6 baseline.
 
-### Unit Tests
+Evidence commands currently have separate collection/validation paths. They
+must not be described as equivalent whole-program contract gates: Astra F03,
+F05, F08, and F11 identify acceptance/coverage gaps. Canonical contract
+validation and truthful evidence completeness are scheduled in M54.8. See
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for the explicit closure criteria.
 
-- lexer tokenization
-- parser shapes
-- resolution rules
-- type rules
-- borrow rules
-- C emission snippets
+## Values And Generated Code
 
-### Golden Tests
+- `i32` and `i64` are distinct types with exact matching, contextual integer
+  literals, and no implicit conversion. Ordinary overflow/division edge
+  behavior remains an open corrective item; C behavior is not a language
+  specification.
+- Heap-backed `str` retains copy semantics through reference-counted runtime
+  storage. `list<T>` and `bytes` are move-only. Nominal products/enums derive
+  copy and drop behavior from their fields/payloads.
+- Checked binding IDs, not names, drive move state and IR locals. Explicit
+  `ref`/`mutref` nodes retain their target and type truth.
+- Cleanup covers replacement, block exits, returns, propagation, pattern
+  payloads, compiler temporaries, and nearest-loop `break`/`continue` for
+  `while` and list-only `for`.
+- Ordered match conditions preserve first-match source priority and evaluate
+  the scrutinee once. Private C spelling must be injective for module/type,
+  function, field, variant, and generic-carrier identities; runtime-native
+  names remain ABI-owned. These are M54.7 repair obligations, not new syntax.
 
-- diagnostics
-- emitted C for representative examples
-- `review`, `review-diff`, `change-report`, and `facts` JSON for representative examples
+The runtime remains a trust boundary. Allocation-size arithmetic and
+interrupted process wait/capture require the separate fixes recorded in the
+audit ledger. New Linux APIs must not outrun those foundations.
 
-### Integration Tests
+## Bootstrap And Verification
 
-- compile example `.nq` files
-- compile multi-file example graphs
-- emit C
-- invoke a system C compiler
-- run executables and assert outputs
-- run `selfhost/main.nq`
+`bootstrap/seed/nauqc-seed.c` is a versioned, checked-in bootstrap artifact,
+with its matching runtime, manifest, and checksums. The active path is:
 
-Determinism matters:
+```text
+host cc -> checked C seed -> Nauqtype stage1 -> emitted stage2 C -> stage2
+```
 
-- stable symbol naming
-- stable diagnostic ordering
-- stable generated C formatting
-- stable `review` JSON ordering
+`scripts/build_stage1_from_seed.sh` publishes the active driver;
+`bin/nauqc` is its repository launcher. `compiler/`, the Python unit suites,
+and Python audit generators are frozen historical references, not required
+build/test/proof dependencies. Seed promotion must satisfy
+[BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md); a self-consistent compiler
+can still miscompile source, so spec-derived runtime/diagnostic fixtures are
+required alongside the fixed-point proof.
 
-## Future Extensibility Boundaries
+Active cases live in `tests/fixtures/`, `tests/golden/`, and `examples/` and
+are exercised by the Nauqtype runner. Shell scripts provide narrow host build,
+resource, release-copy, and sanitizer integration. They are not another
+semantic reference implementation. Tracked historical probes and benchmark
+assets remain intentionally preserved.
 
-The architecture should make later additions possible without redoing the compiler:
+Development uses focused checks, independent audits, and one final frozen
+candidate gate. [VERIFICATION.md](VERIFICATION.md) defines exact commands and
+budgets; [STABLE_RELEASE.md](STABLE_RELEASE.md) defines independent release
+requirements. Cached success or bootstrap consistency is never evidence of
+semantic completeness by itself.
 
-- cross-file modules
-- user-defined generics
-- methods and traits
-- richer borrow analysis
-- additional backends
+## Direction
 
-To preserve that option:
-
-- keep AST, semantic typing, and IR separate
-- avoid baking C syntax into earlier phases
-
-## Runtime Boundary
-
-The runtime in `stdlib/` should remain tiny.
-
-Current bootstrap runtime responsibilities:
-
-- `str` representation
-- printing support
-- bootstrap file input helpers
-- bootstrap file output helpers
-- typed list allocation helpers
-- process argument access for the active stage1 driver
-- narrow directory creation and subprocess helpers for driver/proof orchestration
-- helper constructors or tag definitions if needed
-
-Everything else stays out unless it is required by the vertical slice.
+Close the confirmed wrong-code, evidence, numeric, and provenance issues
+before resuming M55 process/time/cancellation work. The product target is
+trustworthy Linux terminal and native application development, not feature
+parity with another language. Compiler/runtime changes stay here; general
+libraries and AI/ML algorithms have separate owners under
+[NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md). Apply
+[SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) before any language widening.
