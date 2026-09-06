@@ -1,0 +1,414 @@
+use text;
+
+// This parser accepts only the workspace/v1 and workspace-lock/v2 shapes.
+pub type workspace_json_dependency {
+    alias: str,
+    path: str,
+    workspace_name: str,
+    manifest_sha256: str,
+    legacy_source_sha256: str,
+    source_tree_format: str,
+    source_tree_sha256: str,
+}
+
+pub type workspace_json_document {
+    valid: bool,
+    version: str,
+    workspace_name: str,
+    source_root: str,
+    has_dependencies: bool,
+    error_message: str,
+}
+
+type wj_value {
+    valid: bool,
+    at: i32,
+    value: str,
+}
+
+type wj_field {
+    valid: bool,
+    done: bool,
+    at: i32,
+    key: str,
+}
+
+fn wj_space(value: str, start: i32) -> i32 {
+    let mut at = start;
+    while at < str_len(value) {
+        let ch = char_at(value, at);
+        if ch != 32 and ch != 9 and ch != 10 and ch != 13 { return at; }
+        at = at + 1;
+    }
+    return at;
+}
+
+fn wj_hex(ch: i32) -> i32 {
+    if ch >= 48 and ch <= 57 { return ch - 48; }
+    if ch >= 97 and ch <= 102 { return ch - 87; }
+    if ch >= 65 and ch <= 70 { return ch - 55; }
+    return -1;
+}
+
+fn wj_bad(at: i32) -> wj_value {
+    return wj_value { valid: false, at: at, value: "" };
+}
+
+fn wj_string(value: str, start: i32) -> wj_value {
+    let mut at = wj_space(value, start);
+    if char_at(value, at) != 34 { return wj_bad(at); }
+    at = at + 1;
+    let mut out = "";
+    while at < str_len(value) {
+        let ch = char_at(value, at);
+        if ch == 34 { return wj_value { valid: true, at: at + 1, value: out }; }
+        if ch < 32 or ch > 126 { return wj_bad(at); }
+        if ch == 92 {
+            at = at + 1;
+            let escaped = char_at(value, at);
+            if escaped == 34 or escaped == 92 or escaped == 47 {
+                out = str_concat(out, slice_text(value, at, at + 1));
+            } else {
+                if escaped != 117 or at + 4 >= str_len(value) { return wj_bad(at); }
+                let mut code = 0;
+                let mut digit = 1;
+                while digit <= 4 {
+                    let part = wj_hex(char_at(value, at + digit));
+                    if part < 0 { return wj_bad(at); }
+                    code = code * 16 + part;
+                    digit = digit + 1;
+                }
+                // Every string in these bounded schemas is printable ASCII.
+                if code < 32 or code > 126 { return wj_bad(at); }
+                let ascii = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+                out = str_concat(out, slice_text(ascii, code - 32, code - 31));
+                at = at + 4;
+            }
+        } else {
+            out = str_concat(out, slice_text(value, at, at + 1));
+        }
+        at = at + 1;
+    }
+    return wj_bad(at);
+}
+
+fn wj_next_field(value: str, start: i32, keys: mutref list<str>) -> wj_field
+audit {
+    intent("Read a unique decoded key at a typed workspace object boundary");
+    mutates(keys);
+    effects();
+}
+{
+    let mut at = wj_space(value, start);
+    if char_at(value, at) == 125 {
+        return wj_field { valid: true, done: true, at: at + 1, key: "" };
+    }
+    if list_len(ref keys) > 0 {
+        if char_at(value, at) != 44 { return wj_field { valid: false, done: false, at: at, key: "" }; }
+        at = wj_space(value, at + 1);
+    }
+    let key = wj_string(value, at);
+    if not key.valid or list_contains(ref keys, key.value) {
+        return wj_field { valid: false, done: false, at: at, key: "" };
+    }
+    at = wj_space(value, key.at);
+    if char_at(value, at) != 58 { return wj_field { valid: false, done: false, at: at, key: "" }; }
+    list_push(mutref keys, key.value);
+    return wj_field { valid: true, done: false, at: wj_space(value, at + 1), key: key.value };
+}
+
+pub fn workspace_valid_relative_path(value: str, leading_parents: bool) -> bool
+audit {
+    intent("Validate bounded Linux relative path spelling without consulting the filesystem");
+    mutates();
+    effects();
+}
+{
+    if value == "" or char_at(value, 0) == 47 { return false; }
+    let mut at = 0;
+    let mut start = 0;
+    let mut parents = leading_parents;
+    while at <= str_len(value) {
+        if at == str_len(value) or char_at(value, at) == 47 {
+            let segment = slice_text(value, start, at);
+            if segment == "" or segment == "." { return false; }
+            if segment == ".." {
+                if not parents or at == str_len(value) { return false; }
+            } else { parents = false; }
+            start = at + 1;
+        } else {
+            let ch = char_at(value, at);
+            if ch < 32 or ch > 126 or ch == 92 { return false; }
+            if at == 1 and ch == 58 { return false; }
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+pub fn workspace_valid_sha256(value: str) -> bool
+audit {
+    intent("Require exactly 64 lowercase hexadecimal hash digits");
+    mutates();
+    effects();
+}
+{
+    if str_len(value) != 64 { return false; }
+    let mut at = 0;
+    while at < 64 {
+        let ch = char_at(value, at);
+        if not ((ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102)) { return false; }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn wj_identifier(value: str) -> bool {
+    if value == "" { return false; }
+    let mut at = 0;
+    while at < str_len(value) {
+        let ch = char_at(value, at);
+        if not ((ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95 or (at > 0 and ch >= 48 and ch <= 57)) { return false; }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn wj_identity(value: str) -> bool {
+    let mut at = 0;
+    let mut start = 0;
+    while at <= str_len(value) {
+        if at == str_len(value) or char_at(value, at) == 46 {
+            if not wj_identifier(slice_text(value, start, at)) { return false; }
+            start = at + 1;
+        } else {
+            let ch = char_at(value, at);
+            if ch >= 65 and ch <= 90 { return false; }
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn wj_module(value: str) -> bool {
+    let mut at = 0;
+    let mut start = 0;
+    while at <= str_len(value) {
+        if at == str_len(value) or starts_with_at(value, at, "::") {
+            if not wj_identifier(slice_text(value, start, at)) { return false; }
+            if at == str_len(value) { return true; }
+            at = at + 2;
+            start = at;
+        } else { at = at + 1; }
+    }
+    return false;
+}
+
+fn wj_entrypoints(value: str, start: i32) -> i32 {
+    if char_at(value, start) != 123 { return -1; }
+    let mut at = start + 1;
+    let mut keys: list<str> = list();
+    while true {
+        let field = wj_next_field(value, at, mutref keys);
+        if not field.valid { return -1; }
+        if field.done { return field.at; }
+        if not wj_identifier(field.key) { return -1; }
+        let item = wj_string(value, field.at);
+        if not item.valid or not wj_module(item.value) { return -1; }
+        at = item.at;
+    }
+    return -1;
+}
+
+fn wj_workspace(value: str, start: i32, name: mutref str, source_root: mutref str) -> i32
+audit {
+    intent("Parse exactly the workspace identity, one source root, and optional entrypoints");
+    mutates(name, source_root);
+    effects();
+}
+{
+    if char_at(value, start) != 123 { return -1; }
+    let mut at = start + 1;
+    let mut keys: list<str> = list();
+    while true {
+        let field = wj_next_field(value, at, mutref keys);
+        if not field.valid { return -1; }
+        if field.done {
+            if name == "" or source_root == "" { return -1; }
+            return field.at;
+        }
+        if field.key == "name" {
+            let item = wj_string(value, field.at);
+            if not item.valid or not wj_identity(item.value) { return -1; }
+            name = item.value;
+            at = item.at;
+        } else {
+            if field.key == "source_roots" {
+                if char_at(value, field.at) != 91 { return -1; }
+                let item = wj_string(value, field.at + 1);
+                if not item.valid or not workspace_valid_relative_path(item.value, false) { return -1; }
+                at = wj_space(value, item.at);
+                if char_at(value, at) != 93 { return -1; }
+                source_root = item.value;
+                at = at + 1;
+            } else {
+                if field.key != "entrypoints" { return -1; }
+                at = wj_entrypoints(value, field.at);
+                if at < 0 { return -1; }
+            }
+        }
+    }
+    return -1;
+}
+
+fn wj_dependency(value: str, start: i32, locked: bool, out: mutref list<workspace_json_dependency>) -> i32
+audit {
+    intent("Parse and append one fully typed unique declared or v2 locked dependency");
+    mutates(out);
+    effects();
+}
+{
+    if char_at(value, start) != 123 { return -1; }
+    let mut dep = workspace_json_dependency { alias: "", path: "", workspace_name: "", manifest_sha256: "", legacy_source_sha256: "", source_tree_format: "", source_tree_sha256: "" };
+    let mut keys: list<str> = list();
+    let mut at = start + 1;
+    while true {
+        let field = wj_next_field(value, at, mutref keys);
+        if not field.valid { return -1; }
+        if field.done {
+            if not wj_identifier(dep.alias) or not wj_identity(dep.workspace_name) or not workspace_valid_relative_path(dep.path, true) { return -1; }
+            if locked {
+                if list_len(ref keys) != 7 or not workspace_valid_sha256(dep.manifest_sha256) or not workspace_valid_sha256(dep.legacy_source_sha256) or not workspace_valid_sha256(dep.source_tree_sha256) or dep.source_tree_format != "nauqtype-source-tree/v2" { return -1; }
+            } else { if list_len(ref keys) != 3 { return -1; } }
+            let mut i = 0;
+            while i < list_len(ref out) {
+                match list_get(ref out, i) {
+                    Some(previous) => { if previous.alias == dep.alias or previous.path == dep.path or previous.workspace_name == dep.workspace_name { return -1; } },
+                    None => { return -1; },
+                }
+                i = i + 1;
+            }
+            list_push(mutref out, dep);
+            return field.at;
+        }
+        let item = wj_string(value, field.at);
+        if not item.valid { return -1; }
+        if field.key == "alias" { dep.alias = item.value; }
+        else { if field.key == "path" { dep.path = item.value; }
+            else { if field.key == "workspace" { dep.workspace_name = item.value; }
+                else {
+                    if not locked { return -1; }
+                    if field.key == "manifest_sha256" { dep.manifest_sha256 = item.value; }
+                    else { if field.key == "legacy_source_sha256" { dep.legacy_source_sha256 = item.value; }
+                        else { if field.key == "source_tree_format" { dep.source_tree_format = item.value; }
+                            else { if field.key == "source_tree_sha256" { dep.source_tree_sha256 = item.value; }
+                                else { return -1; } } } }
+                } } }
+        at = item.at;
+    }
+    return -1;
+}
+
+fn wj_dependencies(value: str, start: i32, locked: bool, out: mutref list<workspace_json_dependency>) -> i32
+audit {
+    intent("Parse the complete dependency array without skipping malformed entries");
+    mutates(out);
+    effects();
+}
+{
+    if char_at(value, start) != 91 { return -1; }
+    let mut at = wj_space(value, start + 1);
+    if char_at(value, at) == 93 { return at + 1; }
+    while true {
+        at = wj_dependency(value, at, locked, mutref out);
+        if at < 0 { return -1; }
+        at = wj_space(value, at);
+        if char_at(value, at) == 93 { return at + 1; }
+        if char_at(value, at) != 44 { return -1; }
+        at = wj_space(value, at + 1);
+    }
+    return -1;
+}
+
+fn wj_legacy_lock(value: str) -> bool {
+    let mut at = 0;
+    let mut depth = 0;
+    while at < str_len(value) {
+        let ch = char_at(value, at);
+        if ch == 34 {
+            let item = wj_string(value, at);
+            if not item.valid { return false; }
+            let next = wj_space(value, item.at);
+            if depth == 1 and item.value == "version" and char_at(value, next) == 58 {
+                let version = wj_string(value, next + 1);
+                if version.valid and version.value == "workspace-lock/v1" { return true; }
+            }
+            at = item.at;
+        } else {
+            if ch == 123 or ch == 91 { depth = depth + 1; }
+            if ch == 125 or ch == 93 { depth = depth - 1; }
+            at = at + 1;
+        }
+    }
+    return false;
+}
+
+pub fn parse_workspace_document(value: str, locked: bool, dependencies: mutref list<workspace_json_dependency>) -> workspace_json_document
+audit {
+    intent("Decode one exact typed workspace manifest or v2 lock, rejecting unknown and duplicate fields");
+    mutates(dependencies);
+    effects();
+}
+{
+    let bad = workspace_json_document { valid: false, version: "", workspace_name: "", source_root: "", has_dependencies: false, error_message: "malformed workspace manifest or lock: expected unique known typed fields" };
+    if list_len(ref dependencies) != 0 { return bad; }
+    if locked and wj_legacy_lock(value) {
+        return workspace_json_document { valid: false, version: "workspace-lock/v1", workspace_name: "", source_root: "", has_dependencies: false, error_message: "workspace-lock/v1 requires explicit migration to workspace-lock/v2; regenerate and review framed dependency hashes" };
+    }
+    let mut at = wj_space(value, 0);
+    if char_at(value, at) != 123 { return bad; }
+    at = at + 1;
+    let mut keys: list<str> = list();
+    let mut version = "";
+    let mut name = "";
+    let mut source_root = "";
+    let mut has_dependencies = false;
+    while true {
+        let field = wj_next_field(value, at, mutref keys);
+        if not field.valid { return bad; }
+        if field.done {
+            if wj_space(value, field.at) != str_len(value) or name == "" { return bad; }
+            if locked {
+                if version != "workspace-lock/v2" or not has_dependencies { return bad; }
+            } else { if version != "workspace/v1" or source_root == "" { return bad; } }
+            return workspace_json_document { valid: true, version: version, workspace_name: name, source_root: source_root, has_dependencies: has_dependencies, error_message: "" };
+        }
+        if field.key == "version" {
+            let item = wj_string(value, field.at);
+            if not item.valid { return bad; }
+            version = item.value;
+            if locked and version == "workspace-lock/v1" {
+                return workspace_json_document { valid: false, version: version, workspace_name: "", source_root: "", has_dependencies: false, error_message: "workspace-lock/v1 requires explicit migration to workspace-lock/v2; regenerate and review framed dependency hashes" };
+            }
+            at = item.at;
+        } else {
+            if field.key == "workspace" {
+                if locked {
+                    let item = wj_string(value, field.at);
+                    if not item.valid or not wj_identity(item.value) { return bad; }
+                    name = item.value;
+                    at = item.at;
+                } else {
+                    at = wj_workspace(value, field.at, mutref name, mutref source_root);
+                    if at < 0 { return bad; }
+                }
+            } else {
+                if field.key != "dependencies" { return bad; }
+                has_dependencies = true;
+                at = wj_dependencies(value, field.at, locked, mutref dependencies);
+                if at < 0 { return bad; }
+            }
+        }
+    }
+    return bad;
+}

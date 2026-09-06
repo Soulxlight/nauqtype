@@ -1,0 +1,25 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+
+fn main() -> i32 {
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut diags: list<diag> = list();
+
+    let tokens = lex("enum parse_err { bad_digit, overflow, } fn main() -> i32 { let value = bad_digit; match value { bad_digit => { return 0; }, overflow => { return 1; }, } }");
+    parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+
+    let summary = resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    if summary.diag_count != 0 {
+        return 1;
+    }
+    return 0;
+}
+

@@ -1,0 +1,20 @@
+use diag;
+
+pub fn check_value_plan_coverage(source_name: str, expected_types: i32, actual_types: i32, expected_expressions: i32, actual_uses: i32, diags: mutref list<diag>) -> bool
+audit {
+    intent("Reject incomplete checked value plans identically in compiler and tooling paths");
+    mutates(diags);
+    effects();
+}
+{
+    let mut complete = true;
+    if actual_types < expected_types {
+        list_push(mutref diags, make_error("NQ-INTERNAL-010", diag_internal, source_name, -1, -1, "stage1 internal error: value planning skipped checked type identities"));
+        complete = false;
+    }
+    if actual_uses < expected_expressions {
+        list_push(mutref diags, make_error("NQ-INTERNAL-011", diag_internal, source_name, -1, -1, "stage1 internal error: value planning skipped checked expressions"));
+        complete = false;
+    }
+    return complete;
+}

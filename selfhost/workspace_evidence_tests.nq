@@ -1,0 +1,78 @@
+use text;
+
+fn wet_golden(driver: str, args: ref list<str>, golden_path: str) -> bool {
+    let result = run_process(driver, ref args, ".");
+    let expected = read_file(golden_path);
+    match result {
+        Ok(actual) => {
+            match expected {
+                Ok(golden) => {
+                    if actual.exit_code == 0 and actual.stderr == "" and actual.stdout == golden { return true; }
+                    eprint_line(str_concat("workspace evidence golden mismatch: ", golden_path));
+                    eprint_line(actual.stdout);
+                    eprint_line(actual.stderr);
+                },
+                Err(err) => { eprint_line(io_err_text(err)); },
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+fn wet_facts(driver: str, format: str, golden: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "facts");
+    list_push(mutref args, "tests/fixtures/organizational_tool/src/app/main.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, format);
+    return wet_golden(driver, ref args, golden);
+}
+
+fn wet_change(driver: str, format: str, golden: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "change-report");
+    list_push(mutref args, "tests/fixtures/workspace_impact/before/src/app/main.nq");
+    list_push(mutref args, "tests/fixtures/workspace_impact/after/src/app/main.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, format);
+    return wet_golden(driver, ref args, golden);
+}
+
+fn wet_renamed_empty(driver: str, format: str, changes: str, callers: str) -> bool {
+    // The parser-capture fixture intentionally has no public audit declaration.
+    let warning = "/vendor/dep/src/answer.nq:1:8: CONTRACT[NQ-CONTRACT-001]: public function `answer` is missing an `audit` block\n";
+    let expected_stderr = concat5("tests/fixtures/m54_10_workspace/valid", warning, "tests/fixtures/m54_10_workspace/renamed", warning, "");
+    let mut args: list<str> = list();
+    list_push(mutref args, "change-report");
+    list_push(mutref args, "tests/fixtures/m54_10_workspace/valid/src/main.nq");
+    list_push(mutref args, "tests/fixtures/m54_10_workspace/renamed/src/main.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, format);
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == expected_stderr and text_contains(status.stdout, concat3("\"changed_dependencies\": ", changes, ",")) and text_contains(status.stdout, concat3("\"impacted_local_callers\": ", callers, ",")) { return true; }
+            eprint_line(str_concat("workspace empty-file provenance comparison failed: ", format));
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+pub fn run_workspace_evidence_gate(driver: str) -> bool
+audit {
+    intent("Lock captured dependency evidence with explicit v4 identities while preserving legacy successful JSON bytes");
+    mutates();
+    effects(io, print);
+}
+{
+    if not wet_facts(driver, "v3", "tests/golden/organizational_tool/facts_v3.json") { return false; }
+    if not wet_facts(driver, "v4", "tests/golden/organizational_tool/facts_v4.json") { return false; }
+    if not wet_change(driver, "v3", "tests/golden/workspace_governance/change_report_v3.json") { return false; }
+    if not wet_change(driver, "v4", "tests/golden/workspace_governance/change_report_v4.json") { return false; }
+    if not wet_renamed_empty(driver, "v3", "0", "0") { return false; }
+    if not wet_renamed_empty(driver, "v4", "1", "1") { return false; }
+    return true;
+}

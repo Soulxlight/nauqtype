@@ -85,8 +85,20 @@ and compare a further emission using the existing normalizer before seed
 promotion. Validate the promoted candidate again, then run the seed bootstrap
 and milestone gates from a clean candidate snapshot. Never normalize away
 source-derived names, operators, or control flow to manufacture convergence.
-The M54.7 record is in `AUDIT_REMEDIATION.md`; automatic enforcement of all
-future lineage relationships remains M54.10 work.
+The M54.7 record is in `AUDIT_REMEDIATION.md`.
+
+M54.10 seed v2 retains the exact generating selfhost sources under
+`bootstrap/seed/source-snapshot/selfhost/`, with a mode/path/hash inventory and
+an exact checksum allowlist. Bootstrap validates canonical manifest bytes,
+snapshot identity, runtime, compiler C, and recorded generator fields before
+compiling. Historical generator identities are records, not signatures.
+
+The seed gate checks historical snapshot output against checked-in seed C as
+well as current-source stage1 against stage2 C. Identical captured source
+identities and emission inputs allow reuse of one emission for both direct
+comparisons; otherwise the historical edge runs separately. The normalizer
+does not change. `build/seed/seed-bootstrap-proof-v1.txt` records which branch
+ran and the compared identities. This adds no further compiler generation.
 
 ## Archive Rule
 

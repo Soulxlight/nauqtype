@@ -1,0 +1,147 @@
+use proof_artifacts;
+use schema_profile;
+use text;
+
+fn pat_expect(ok: bool, label: str) -> bool {
+    if not ok { eprint_line(str_concat("proof artifact test failed: ", label)); }
+    return ok;
+}
+
+fn pat_digest() -> str {
+    return "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+}
+
+fn pat_hash_cases() -> bool {
+    let path = "artifact.c";
+    let output = concat3(pat_digest(), "  ", "artifact.c\n");
+    if not pat_expect(proof_sha256_result(path, output, "", 0) == pat_digest(), "exact sha256sum output") { return false; }
+    if not pat_expect(proof_sha256_result(path, output, "", 1) == "", "nonzero hash process") { return false; }
+    if not pat_expect(proof_sha256_result(path, output, "warning", 0) == "", "hash stderr") { return false; }
+    if not pat_expect(proof_sha256_result("other.c", output, "", 0) == "", "wrong output path") { return false; }
+    if not pat_expect(proof_sha256_result(path, str_concat(output, output), "", 0) == "", "extra hash output") { return false; }
+    if not pat_expect(proof_sha256_result(path, str_concat(pat_digest(), "\n"), "", 0) == "", "missing output filename") { return false; }
+    if not pat_expect(proof_sha256_result(path, "", "", 0) == "", "empty successful output") { return false; }
+    if not pat_expect(not proof_sha256_valid(str_concat("B", slice_text(pat_digest(), 1, 64))), "uppercase hash") { return false; }
+    if not pat_expect(not proof_sha256_valid(str_concat("g", slice_text(pat_digest(), 1, 64))), "nonhex hash") { return false; }
+    if not pat_expect(not proof_sha256_valid(slice_text(pat_digest(), 0, 63)), "short hash") { return false; }
+    if not pat_expect(not proof_sha256_valid(str_concat(pat_digest(), "0")), "long hash") { return false; }
+    if not pat_expect(proof_structural_result_text(None) == "null", "unperformed comparison") { return false; }
+    if not pat_expect(proof_structural_result_text(Some(false)) == "false", "performed mismatch") { return false; }
+    return pat_expect(proof_structural_result_text(Some(true)) == "true", "performed equality");
+}
+
+fn pat_artifact_cases(path: str) -> bool {
+    let mut produced: list<proof_artifact_entry> = list();
+    let mut required: list<str> = list();
+    list_push(mutref required, path);
+    match write_file(path, "abc") {
+        Ok(_) => {},
+        Err(_) => { return false; },
+    }
+    if not pat_expect(proof_artifact_json(ref produced, path) == "null", "preexisting artifact is not inherited") { return false; }
+    if not pat_expect(proof_phase_artifact_json(ref produced, path, "failed") == "null", "failed unreached artifact is null") { return false; }
+    if not pat_expect(not proof_required_artifacts_present(ref produced, ref required, Some(true), true), "success cannot omit required output") { return false; }
+    if not pat_expect(proof_prepare_output(path), "clear expected producer output") { return false; }
+    if not pat_expect(not proof_register_artifact(mutref produced, path), "success without fresh output fails closed") { return false; }
+    if not pat_expect(proof_artifact_json(ref produced, path) == "null", "failed hash has no artifact") { return false; }
+    match write_file(path, "abc") {
+        Ok(_) => {},
+        Err(_) => { return false; },
+    }
+    if not pat_expect(proof_register_artifact(mutref produced, path), "register fresh output using native sha256sum") { return false; }
+    let artifact = concat5("{\"path\":", json_quote(path), ",\"hash\":{\"algorithm\":\"sha256\",\"value\":\"", pat_digest(), "\"}}");
+    if not pat_expect(proof_artifact_json(ref produced, path) == artifact, "exact artifact encoding and digest") { return false; }
+    if not pat_expect(proof_phase_artifact_json(ref produced, path, "skipped") == "null", "skipped phase never inherits another phase output") { return false; }
+    if not pat_expect(proof_phase_artifact_json(ref produced, path, "failed") == artifact, "failed invocation may retain its own output") { return false; }
+    if not pat_expect(proof_required_artifacts_present(ref produced, ref required, Some(true), true), "success includes required artifact and equality") { return false; }
+    if not pat_expect(not proof_required_artifacts_present(ref produced, ref required, None, true), "presence is not a comparison") { return false; }
+    if not pat_expect(not proof_required_artifacts_present(ref produced, ref required, Some(false), true), "mismatch cannot become success") { return false; }
+    let next_invocation: list<proof_artifact_entry> = list();
+    if not pat_expect(proof_artifact_json(ref next_invocation, path) == "null", "fresh invocation is isolated") { return false; }
+    proof_artifact_forget(mutref produced, path);
+    if not pat_expect(proof_artifact_json(ref produced, path) == "null", "failed replacement invalidates previous registration") { return false; }
+    list_push(mutref produced, proof_artifact_entry { path: path, digest: "nqsum:3:1" });
+    if not pat_expect(proof_artifact_json(ref produced, path) == "null", "invalid digest never renders as artifact") { return false; }
+    if not pat_expect(not proof_required_artifacts_present(ref produced, ref required, Some(true), true), "invalid digest fails success presence") { return false; }
+    return true;
+}
+
+fn pat_summary(status: str, comparison: str, artifact: str) -> str {
+    let mut out = "{\"version\":3,\"command\":\"prove-selfhost\",\"ok\":false,\"failed_phase\":\"\",\"failure\":{\"phase\":\"\",\"corpus_id\":\"\",\"artifact_path\":\"\"},\"phases\":[],\"selfhost\":{";
+    out = str_concat(out, concat5("\"status\":\"", status, "\",\"structural_c_equal\":", comparison, ",\"artifacts\":{"));
+    out = str_concat(out, concat5("\"workspace_main\":", artifact, ",\"stage1_c\":", artifact, ",\"stage2_c\":"));
+    return concat3(out, artifact, "}},\"corpus\":{\"status\":\"skipped\",\"cases\":0,\"ids\":[],\"artifacts\":[]},\"tooling\":{\"status\":\"skipped\",\"groups\":[]}}");
+}
+
+fn pat_schema_cases() -> bool {
+    let mut schema = "";
+    match read_file("schemas/proof-summary-v3.schema.json") {
+        Ok(value) => { schema = value; },
+        Err(_) => { return false; },
+    }
+    let mut names: list<str> = list();
+    list_push(mutref names, "success");
+    list_push(mutref names, "skipped");
+    list_push(mutref names, "failed");
+    list_push(mutref names, "mismatch");
+    let mut index = 0;
+    while index < list_len(ref names) {
+        match list_get(ref names, index) {
+            Some(name) => {
+                match read_file(concat3("tests/golden/schema_profile/proof-summary-v3-", name, ".json")) {
+                    Ok(data) => { if not pat_expect(schema_profile_accepts(schema, data), str_concat("v3 golden ", name)) { return false; } },
+                    Err(_) => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let artifact = concat3("{\"path\":\"output.c\",\"hash\":{\"algorithm\":\"sha256\",\"value\":\"", pat_digest(), "\"}}");
+    if not pat_expect(schema_profile_accepts(schema, pat_summary("passed", "true", artifact)), "schema successful artifact") { return false; }
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("passed", "true", "null")), "schema missing successful artifact") { return false; }
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("passed", "null", artifact)), "schema success without comparison") { return false; }
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("passed", "false", artifact)), "schema success with mismatch") { return false; }
+    if not pat_expect(schema_profile_accepts(schema, pat_summary("failed", "null", "null")), "schema failed absent output") { return false; }
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("skipped", "null", artifact)), "schema skipped stale artifact") { return false; }
+    let bad_hash = "{\"path\":\"output.c\",\"hash\":{\"algorithm\":\"sha256\",\"value\":\"NOT-SHA256\"}}";
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("failed", "null", bad_hash)), "schema invalid hash") { return false; }
+    let bad_algorithm = concat3("{\"path\":\"output.c\",\"hash\":{\"algorithm\":\"nqsum\",\"value\":\"", pat_digest(), "\"}}");
+    if not pat_expect(not schema_profile_accepts(schema, pat_summary("failed", "null", bad_algorithm)), "schema wrong algorithm") { return false; }
+    let extra = concat3("{\"path\":\"output.c\",\"extra\":true,\"hash\":{\"algorithm\":\"sha256\",\"value\":\"", pat_digest(), "\"}}");
+    return pat_expect(not schema_profile_accepts(schema, pat_summary("failed", "null", extra)), "schema unknown artifact field");
+}
+
+pub fn run_proof_artifact_gate() -> bool
+audit {
+    intent("Check bounded command-local proof artifact provenance, SHA-256 failures, and v3 schema states");
+    mutates();
+    effects(print, io);
+}
+{
+    let root = "tests/fixtures/m54_10_proof/build";
+    match create_dir_all(root) {
+        Ok(_) => {},
+        Err(_) => { return false; },
+    }
+    let path = str_concat(root, "/artifact.c");
+    let mut ok = pat_hash_cases();
+    if ok { ok = pat_artifact_cases(path); }
+    if ok { ok = pat_schema_cases(); }
+    if not proof_prepare_output(path) { return false; }
+    return ok;
+}
+
+fn main() -> i32
+audit {
+    intent("Run only the bounded proof artifact tests without building the compiler or selfhost proof");
+    mutates();
+    effects(print, io);
+}
+{
+    if run_proof_artifact_gate() {
+        print_line("proof artifact gate ok");
+        return 0;
+    }
+    return 1;
+}

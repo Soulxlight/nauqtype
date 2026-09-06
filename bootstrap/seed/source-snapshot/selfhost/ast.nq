@@ -1,0 +1,983 @@
+pub enum top_item_kind {
+    item_fn,
+    item_type,
+    item_enum,
+    item_variant,
+    item_const,
+}
+
+pub type top_item {
+    module: str,
+    name: str,
+    kind: top_item_kind,
+    is_public: bool,
+    at: i32,
+}
+
+pub fn make_top_item(module: str, name: str, kind: top_item_kind, is_public: bool, at: i32) -> top_item
+audit {
+    intent("Build a flat top-level item summary record");
+    mutates();
+    effects();
+}
+{
+    return top_item {
+        module: module,
+        name: name,
+        kind: kind,
+        is_public: is_public,
+        at: at,
+    };
+}
+
+pub type module_use {
+    module: str,
+    name: str,
+    alias: str,
+    at: i32,
+}
+
+pub fn make_module_use(module: str, name: str, alias: str, at: i32) -> module_use
+audit {
+    intent("Build a flat module-use summary record");
+    mutates();
+    effects();
+}
+{
+    return module_use {
+        module: module,
+        name: name,
+        alias: alias,
+        at: at,
+    };
+}
+
+pub type parse_summary {
+    item_count: i32,
+    use_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_parse_summary(item_count: i32, use_count: i32, diag_count: i32) -> parse_summary
+audit {
+    intent("Build a shallow parse summary record");
+    mutates();
+    effects();
+}
+{
+    return parse_summary {
+        item_count: item_count,
+        use_count: use_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type resolve_summary {
+    module_count: i32,
+    item_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_resolve_summary(module_count: i32, item_count: i32, diag_count: i32) -> resolve_summary
+audit {
+    intent("Build a top-level resolution summary record");
+    mutates();
+    effects();
+}
+{
+    return resolve_summary {
+        module_count: module_count,
+        item_count: item_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type body_scope {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    parent_scope_id: i32,
+    depth: i32,
+}
+
+pub fn make_body_scope(module: str, function_name: str, scope_id: i32, parent_scope_id: i32, depth: i32) -> body_scope
+audit {
+    intent("Build a flat body-scope record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return body_scope {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        parent_scope_id: parent_scope_id,
+        depth: depth,
+    };
+}
+
+pub enum body_binding_kind {
+    bind_param,
+    bind_let,
+    bind_pattern,
+}
+
+pub type body_binding {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    kind: body_binding_kind,
+}
+
+pub fn make_body_binding(module: str, function_name: str, scope_id: i32, name: str, at: i32, kind: body_binding_kind) -> body_binding
+audit {
+    intent("Build a flat local-binding record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return body_binding {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        kind: kind,
+    };
+}
+
+pub enum name_ref_kind {
+    ref_value,
+    ref_call,
+    ref_assign_target,
+    ref_borrow_target,
+    ref_struct_type,
+    ref_pattern_ctor,
+}
+
+pub type name_ref {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    kind: name_ref_kind,
+}
+
+pub fn make_name_ref(module: str, function_name: str, scope_id: i32, name: str, at: i32, kind: name_ref_kind) -> name_ref
+audit {
+    intent("Build a flat name-reference record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return name_ref {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        kind: kind,
+    };
+}
+
+pub enum type_ref_kind {
+    type_return,
+    type_param,
+    type_local_annotation,
+    type_field,
+    type_enum_payload,
+    type_const_annotation,
+}
+
+pub type type_ref {
+    module: str,
+    context_name: str,
+    name: str,
+    at: i32,
+    kind: type_ref_kind,
+}
+
+pub fn make_type_ref(module: str, context_name: str, name: str, at: i32, kind: type_ref_kind) -> type_ref
+audit {
+    intent("Build a flat type-reference record for selfhost resolver work");
+    mutates();
+    effects();
+}
+{
+    return type_ref {
+        module: module,
+        context_name: context_name,
+        name: name,
+        at: at,
+        kind: kind,
+    };
+}
+
+pub type type_resolve_summary {
+    ref_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_type_resolve_summary(ref_count: i32, diag_count: i32) -> type_resolve_summary
+audit {
+    intent("Build a type-resolution summary record");
+    mutates();
+    effects();
+}
+{
+    return type_resolve_summary {
+        ref_count: ref_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type function_fact {
+    module: str,
+    name: str,
+    at: i32,
+    param_count: i32,
+    return_name: str,
+    return_arg1_name: str,
+    return_arg2_name: str,
+    return_is_borrow: bool,
+    return_borrow_mutable: bool,
+}
+
+pub fn make_function_fact(module: str, name: str, at: i32, param_count: i32, return_name: str, return_arg1_name: str, return_arg2_name: str, return_is_borrow: bool, return_borrow_mutable: bool) -> function_fact
+audit {
+    intent("Build a flat function-signature fact record for selfhost type-checker work");
+    mutates();
+    effects();
+}
+{
+    return function_fact {
+        module: module,
+        name: name,
+        at: at,
+        param_count: param_count,
+        return_name: return_name,
+        return_arg1_name: return_arg1_name,
+        return_arg2_name: return_arg2_name,
+        return_is_borrow: return_is_borrow,
+        return_borrow_mutable: return_borrow_mutable,
+    };
+}
+
+pub type function_param_fact {
+    module: str,
+    function_name: str,
+    index: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+}
+
+pub fn make_function_param_fact(module: str, function_name: str, index: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool) -> function_param_fact
+audit {
+    intent("Build a flat function-parameter fact record for recursive selfhost type checking");
+    mutates();
+    effects();
+}
+{
+    return function_param_fact {
+        module: module,
+        function_name: function_name,
+        index: index,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+    };
+}
+
+pub type typed_name_fact {
+    module: str,
+    function_name: str,
+    name: str,
+    at: i32,
+    type_name: str,
+}
+
+pub fn make_typed_name_fact(module: str, function_name: str, name: str, at: i32, type_name: str) -> typed_name_fact
+audit {
+    intent("Build a flat typed-name fact record for selfhost type-checker work");
+    mutates();
+    effects();
+}
+{
+    return typed_name_fact {
+        module: module,
+        function_name: function_name,
+        name: name,
+        at: at,
+        type_name: type_name,
+    };
+}
+
+pub type field_fact {
+    module: str,
+    type_name: str,
+    name: str,
+    at: i32,
+    field_type_name: str,
+    field_type_arg1_name: str,
+    field_type_arg2_name: str,
+    field_is_borrow: bool,
+    field_borrow_mutable: bool,
+}
+
+pub fn make_field_fact(module: str, type_name: str, name: str, at: i32, field_type_name: str, field_type_arg1_name: str, field_type_arg2_name: str, field_is_borrow: bool, field_borrow_mutable: bool) -> field_fact
+audit {
+    intent("Build a flat type-field fact record for selfhost value inference");
+    mutates();
+    effects();
+}
+{
+    return field_fact {
+        module: module,
+        type_name: type_name,
+        name: name,
+        at: at,
+        field_type_name: field_type_name,
+        field_type_arg1_name: field_type_arg1_name,
+        field_type_arg2_name: field_type_arg2_name,
+        field_is_borrow: field_is_borrow,
+        field_borrow_mutable: field_borrow_mutable,
+    };
+}
+
+pub type variant_fact {
+    module: str,
+    enum_name: str,
+    name: str,
+    at: i32,
+    payload_count: i32,
+}
+
+pub fn make_variant_fact(module: str, enum_name: str, name: str, at: i32, payload_count: i32) -> variant_fact
+audit {
+    intent("Build a flat variant-signature fact record for selfhost type-checker work");
+    mutates();
+    effects();
+}
+{
+    return variant_fact {
+        module: module,
+        enum_name: enum_name,
+        name: name,
+        at: at,
+        payload_count: payload_count,
+    };
+}
+
+pub type variant_payload_fact {
+    module: str,
+    variant_name: str,
+    index: i32,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+}
+
+pub fn make_variant_payload_fact(module: str, variant_name: str, index: i32, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool) -> variant_payload_fact
+audit {
+    intent("Build a flat variant-payload fact record for recursive selfhost type checking");
+    mutates();
+    effects();
+}
+{
+    return variant_payload_fact {
+        module: module,
+        variant_name: variant_name,
+        index: index,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+    };
+}
+
+pub type const_fact {
+    module: str,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+    expr_start: i32,
+    expr_end: i32,
+}
+
+pub fn make_const_fact(module: str, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool, expr_start: i32, expr_end: i32) -> const_fact
+audit {
+    intent("Build a typed top-level constant fact for checked stage1 tooling and backend work");
+    mutates();
+    effects();
+}
+{
+    return const_fact {
+        module: module,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+        expr_start: expr_start,
+        expr_end: expr_end,
+    };
+}
+
+pub type call_fact {
+    module: str,
+    function_name: str,
+    name: str,
+    at: i32,
+    arg_count: i32,
+}
+
+pub fn make_call_fact(module: str, function_name: str, name: str, at: i32, arg_count: i32) -> call_fact
+audit {
+    intent("Build a flat call-site fact record for selfhost type-checker work");
+    mutates();
+    effects();
+}
+{
+    return call_fact {
+        module: module,
+        function_name: function_name,
+        name: name,
+        at: at,
+        arg_count: arg_count,
+    };
+}
+
+pub type pattern_ctor_fact {
+    module: str,
+    function_name: str,
+    name: str,
+    at: i32,
+    arg_count: i32,
+}
+
+pub fn make_pattern_ctor_fact(module: str, function_name: str, name: str, at: i32, arg_count: i32) -> pattern_ctor_fact
+audit {
+    intent("Build a flat pattern-constructor fact record for selfhost type-checker work");
+    mutates();
+    effects();
+}
+{
+    return pattern_ctor_fact {
+        module: module,
+        function_name: function_name,
+        name: name,
+        at: at,
+        arg_count: arg_count,
+    };
+}
+
+pub type typed_binding_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_mutable: bool,
+    is_borrow: bool,
+    borrow_mutable: bool,
+}
+
+pub fn make_typed_binding_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_mutable: bool, is_borrow: bool, borrow_mutable: bool) -> typed_binding_fact
+audit {
+    intent("Build a flat typed-binding fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return typed_binding_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_mutable: is_mutable,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+    };
+}
+
+pub type match_arm_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    match_at: i32,
+    scrutinee_start: i32,
+    scrutinee_end: i32,
+    pattern_start: i32,
+    pattern_end: i32,
+    body_start: i32,
+    body_end: i32,
+    is_expression: bool,
+}
+
+pub fn make_match_arm_fact(module: str, function_name: str, scope_id: i32, at: i32, match_at: i32, scrutinee_start: i32, scrutinee_end: i32, pattern_start: i32, pattern_end: i32, body_start: i32, body_end: i32, is_expression: bool) -> match_arm_fact
+audit {
+    intent("Build a flat match-arm fact record for selfhost pattern typing");
+    mutates();
+    effects();
+}
+{
+    return match_arm_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        match_at: match_at,
+        scrutinee_start: scrutinee_start,
+        scrutinee_end: scrutinee_end,
+        pattern_start: pattern_start,
+        pattern_end: pattern_end,
+        body_start: body_start,
+        body_end: body_end,
+        is_expression: is_expression,
+    };
+}
+
+pub enum stmt_fact_kind {
+    stmt_local,
+    stmt_expr,
+    stmt_assign,
+    stmt_field_assign,
+    stmt_return,
+    stmt_if,
+    stmt_while,
+    stmt_for,
+    stmt_match,
+    stmt_let_else,
+    stmt_propagate,
+    stmt_break,
+    stmt_continue,
+}
+
+pub type stmt_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    kind: stmt_fact_kind,
+    name: str,
+    field_name: str,
+    is_mutable: bool,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+    child_scope_id: i32,
+    alt_scope_id: i32,
+}
+
+pub fn make_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: stmt_fact_kind, name: str, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, child_scope_id: i32, alt_scope_id: i32) -> stmt_fact
+audit {
+    intent("Build a flat statement fact record for the structured checked handoff");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: kind,
+        name: name,
+        field_name: "",
+        is_mutable: false,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: child_scope_id,
+        alt_scope_id: alt_scope_id,
+    };
+}
+
+pub fn make_local_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, name: str, is_mutable: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> stmt_fact
+audit {
+    intent("Build a local statement fact with explicit mutability for field-assignment checks");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: stmt_local,
+        name: name,
+        field_name: "",
+        is_mutable: is_mutable,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: -1,
+        alt_scope_id: -1,
+    };
+}
+
+pub fn make_field_assign_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, name: str, field_name: str, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> stmt_fact
+audit {
+    intent("Build a direct owned-local field assignment fact for the checked handoff");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: stmt_field_assign,
+        name: name,
+        field_name: field_name,
+        is_mutable: false,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        child_scope_id: -1,
+        alt_scope_id: -1,
+    };
+}
+
+pub type pattern_binding_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    type_name: str,
+    type_arg1_name: str,
+    type_arg2_name: str,
+    is_borrow: bool,
+    borrow_mutable: bool,
+}
+
+pub fn make_pattern_binding_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, borrow_mutable: bool) -> pattern_binding_fact
+audit {
+    intent("Build a typed pattern-binding fact record for the structured checked handoff");
+    mutates();
+    effects();
+}
+{
+    return pattern_binding_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        type_name: type_name,
+        type_arg1_name: type_arg1_name,
+        type_arg2_name: type_arg2_name,
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+    };
+}
+
+pub enum expr_fact_kind {
+    expr_unknown,
+    expr_unit,
+    expr_bool,
+    expr_i32,
+    expr_str,
+    expr_name,
+    expr_field,
+    expr_call,
+    expr_struct,
+    expr_list,
+    expr_match,
+    expr_try,
+}
+
+pub type local_init_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    name: str,
+    at: i32,
+    expected_type_name: str,
+    expected_is_borrow: bool,
+    is_mutable: bool,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+    propagation_label: str,
+}
+
+pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, is_mutable: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, propagation_label: str) -> local_init_fact
+audit {
+    intent("Build a flat annotated-local fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return local_init_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        name: name,
+        at: at,
+        expected_type_name: expected_type_name,
+        expected_is_borrow: expected_is_borrow,
+        is_mutable: is_mutable,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+        propagation_label: propagation_label,
+    };
+}
+
+pub type return_expr_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+}
+
+pub fn make_return_expr_fact(module: str, function_name: str, scope_id: i32, at: i32, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> return_expr_fact
+audit {
+    intent("Build a flat return-expression fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return return_expr_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+    };
+}
+
+pub enum condition_fact_kind {
+    condition_if,
+    condition_while,
+}
+
+pub type condition_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    at: i32,
+    kind: condition_fact_kind,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+}
+
+pub fn make_condition_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: condition_fact_kind, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> condition_fact
+audit {
+    intent("Build a flat condition-expression fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return condition_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        at: at,
+        kind: kind,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+    };
+}
+
+pub type assignment_fact {
+    module: str,
+    function_name: str,
+    scope_id: i32,
+    target_name: str,
+    at: i32,
+    expr_start: i32,
+    expr_end: i32,
+    expr_kind: expr_fact_kind,
+    expr_name: str,
+    expr_member_name: str,
+}
+
+pub fn make_assignment_fact(module: str, function_name: str, scope_id: i32, target_name: str, at: i32, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str) -> assignment_fact
+audit {
+    intent("Build a flat assignment-expression fact record for the next selfhost type-checker slice");
+    mutates();
+    effects();
+}
+{
+    return assignment_fact {
+        module: module,
+        function_name: function_name,
+        scope_id: scope_id,
+        target_name: target_name,
+        at: at,
+        expr_start: expr_start,
+        expr_end: expr_end,
+        expr_kind: expr_kind,
+        expr_name: expr_name,
+        expr_member_name: expr_member_name,
+    };
+}
+
+pub type typecheck_summary {
+    function_count: i32,
+    call_count: i32,
+    pattern_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_typecheck_summary(function_count: i32, call_count: i32, pattern_count: i32, diag_count: i32) -> typecheck_summary
+audit {
+    intent("Build a first selfhost type-check summary record");
+    mutates();
+    effects();
+}
+{
+    return typecheck_summary {
+        function_count: function_count,
+        call_count: call_count,
+        pattern_count: pattern_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type value_typecheck_summary {
+    typed_binding_count: i32,
+    local_count: i32,
+    return_count: i32,
+    condition_count: i32,
+    assignment_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_value_typecheck_summary(typed_binding_count: i32, local_count: i32, return_count: i32, condition_count: i32, assignment_count: i32, diag_count: i32) -> value_typecheck_summary
+audit {
+    intent("Build a value-flow type-check summary record");
+    mutates();
+    effects();
+}
+{
+    return value_typecheck_summary {
+        typed_binding_count: typed_binding_count,
+        local_count: local_count,
+        return_count: return_count,
+        condition_count: condition_count,
+        assignment_count: assignment_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type body_resolve_summary {
+    function_count: i32,
+    ref_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_body_resolve_summary(function_count: i32, ref_count: i32, diag_count: i32) -> body_resolve_summary
+audit {
+    intent("Build a body-level resolution summary record");
+    mutates();
+    effects();
+}
+{
+    return body_resolve_summary {
+        function_count: function_count,
+        ref_count: ref_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type stmt_fact_summary {
+    stmt_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_stmt_fact_summary(stmt_count: i32, diag_count: i32) -> stmt_fact_summary
+audit {
+    intent("Build a statement-fact collection summary record");
+    mutates();
+    effects();
+}
+{
+    return stmt_fact_summary {
+        stmt_count: stmt_count,
+        diag_count: diag_count,
+    };
+}
+
+pub type resolved_binding_summary {
+    binding_count: i32,
+    pattern_binding_count: i32,
+    diag_count: i32,
+}
+
+pub fn make_resolved_binding_summary(binding_count: i32, pattern_binding_count: i32, diag_count: i32) -> resolved_binding_summary
+audit {
+    intent("Build a resolved-binding collection summary record");
+    mutates();
+    effects();
+}
+{
+    return resolved_binding_summary {
+        binding_count: binding_count,
+        pattern_binding_count: pattern_binding_count,
+        diag_count: diag_count,
+    };
+}

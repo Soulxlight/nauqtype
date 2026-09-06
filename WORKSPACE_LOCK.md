@@ -1,4 +1,4 @@
-# Nauqtype Local Workspace Lock v1
+# Nauqtype Local Workspace Lock v2
 
 M44 adds local dependencies without adding registry resolution, network fetching, package scripts, or an environment-dependent search path.
 
@@ -26,7 +26,7 @@ The checked lock file is `nauqtype.workspace.lock.json`:
 
 ```json
 {
-  "version": "workspace-lock/v1",
+  "version": "workspace-lock/v2",
   "workspace": "acme.tools",
   "dependencies": [
     {
@@ -34,35 +34,60 @@ The checked lock file is `nauqtype.workspace.lock.json`:
       "workspace": "acme.reporting",
       "path": "../reporting",
       "manifest_sha256": "<sha256>",
-      "source_sha256": "<sha256>"
+      "legacy_source_sha256": "<sha256 of captured sorted contents>",
+      "source_tree_format": "nauqtype-source-tree/v2",
+      "source_tree_sha256": "<sha256 of framed captured tree>"
     }
   ]
 }
 ```
 
-The lock is deterministic: entries are ordered by alias, paths retain their manifest spelling, and source hashes cover the dependency's single declared source root in canonical module-path order. On the Linux host contract, the compiler recomputes the source hash with:
+Entries retain explicit manifest path spellings. The authoritative tree hash
+frames the sorted relative path and exact captured content of every regular
+`.nq`, including empty files. The byte encoding is fixed in
+[M54_10_CONTRACTS.md](M54_10_CONTRACTS.md). Renaming an empty file changes
+this identity even though the old concatenated-content checksum does not.
 
-```sh
-find "$source_root" -type f -name '*.nq' -print0 | sort -z | xargs -0 cat | sha256sum
-```
-
-It recomputes `manifest_sha256` with `sha256sum <dependency>/nauqtype.workspace.json`. This requires the standard Linux `sh`, `find`, `sort`, `xargs`, `cat`, and `sha256sum` tools already used by the bootstrap/release environment. A stale or missing lock is a diagnostic, never a reason to fetch or silently refresh code.
+`manifest_sha256` hashes the captured dependency manifest bytes.
+`legacy_source_sha256` hashes concatenated captured source bytes for old JSON
+formats only; it is not authoritative dependency-change evidence. Hashing uses
+the standard Linux `sha256sum` tool. A stale or missing lock is a diagnostic,
+never a reason to fetch, silently refresh, or fall back to old hashing.
 
 The stage1 loader validates, before loading a dependency:
 
-- root workspace identity and `workspace-lock/v1` version
+- root workspace identity and `workspace-lock/v2` version
 - unique declared aliases and paths
 - matching alias, path, and workspace identity in the lock
 - valid lowercase SHA-256 fields
 - dependency manifest identity and source root
-- recomputed manifest and source-root hashes
+- recomputed manifest, legacy compatibility, and framed source-root hashes
+- exact manifest/lock dependency membership and strict duplicate-key rejection
+- regular source files only, with no symlink roots, ancestors, or descendants
+
+The command captures dependency source text once. Module loading and evidence
+use that validated capture rather than reopening original paths. Root source
+loading remains unchanged. This is not a hostile concurrent-filesystem
+transaction or a promise of descriptor-atomic capture. Transitive dependencies
+remain rejected; direct local roots are the entire bounded contract.
+
+Legacy `workspace-lock/v1` files are rejected with a migration diagnostic.
+Consumers must explicitly produce v2 framing and pin the new lock with their
+own source revision. NauqType updates only its owned fixtures; it does not
+silently edit external library or AIML locks.
 
 The source-visible alias is the dependency's import root. For example, `use reporting::render;` loads `vendor/reporting/src/render.nq`; an internal dependency import uses the same explicit root, such as `use reporting::model;`.
 
 ## Evidence
 
 - M44 facts retain the checked alias-rooted module graph, so imported dependency modules and call edges are visible without filesystem search.
-- M45 adds workspace-qualified facts, review/change-report impact, and policy targets. Canonical `workspace:<name>::module:<path>` IDs are not claimed as implemented before that milestone.
+- Workspace-qualified facts, change impact, and policy targets use canonical
+  `workspace:<name>::module:<path>` IDs.
+- Facts v3 retains its validated legacy `source_sha256` compatibility field.
+  Facts v4 exposes the explicit lock version and framed source identity.
+- Change-report v1-v3 retain their prior comparison behavior. Use v4 for
+  framed dependency-change evidence; it includes both captured dependency
+  sets and does not base its decision on the legacy checksum.
 - Refactor plans may rename symbols across locked local dependencies but do not rewrite manifests or locks in v1.
 
 ## Explicit Deferrals

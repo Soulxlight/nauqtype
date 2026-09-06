@@ -69,15 +69,20 @@ parser for proof evidence, not a general JSON API or CLI.
   `tests/golden/workspace_governance/change_report_v2.json`
 - `change-report-v3.schema.json` ->
   `tests/golden/workspace_governance/change_report_v3.json`
+- `change-report-v4.schema.json` ->
+  `tests/golden/workspace_governance/change_report_v4.json`
 - `diagnostics-v1.schema.json` -> `tests/golden/diagnostics/check_failure.json`
 - `evidence-error-v1.schema.json` ->
   `tests/golden/review/evidence_error_v1.json`
 - `facts-v1.schema.json` -> `tests/golden/facts/main.json`
 - `facts-v2.schema.json` -> `tests/golden/facts/main-v2.json`
 - `facts-v3.schema.json` -> `tests/golden/organizational_tool/facts_v3.json`
+- `facts-v4.schema.json` -> `tests/golden/organizational_tool/facts_v4.json`
 - `nauqtype.policy-v1.schema.json` ->
   `tests/fixtures/workspace_local_dependency/policy.json`
 - `nauqtype.workspace-lock-v1.schema.json` ->
+  `tests/golden/schema_profile/workspace-lock-v1-positive.json`
+- `nauqtype.workspace-lock-v2.schema.json` ->
   `tests/fixtures/workspace_local_dependency/nauqtype.workspace.lock.json`
 - `policy-check-v1.schema.json` ->
   `tests/golden/evidence_parity/policy_check_v1.json`
@@ -85,6 +90,9 @@ parser for proof evidence, not a general JSON API or CLI.
   `tests/golden/schema_profile/proof-summary-v1-positive.json`
 - `proof-summary-v2.schema.json` ->
   `tests/golden/schema_profile/proof-summary-v2-positive.json`
+- `proof-summary-v3.schema.json` ->
+  `tests/golden/schema_profile/proof-summary-v3-success.json`, with separate
+  skipped, failed, and mismatch positives
 - `refactor-rename-v1.schema.json` ->
   `tests/golden/supervised_workflow/refactor_rename_v1.json`
 - `review-diff-v1.schema.json` -> `tests/golden/review/review_diff_v1.json`

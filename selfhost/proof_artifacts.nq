@@ -1,0 +1,168 @@
+use text;
+
+pub type proof_artifact_entry {
+    path: str,
+    digest: str,
+}
+
+pub fn proof_sha256_valid(value: str) -> bool
+audit {
+    intent("Check exact lowercase SHA-256 text without accepting a triage checksum");
+    mutates();
+    effects();
+}
+{
+    if str_len(value) != 64 { return false; }
+    let mut index = 0;
+    while index < 64 {
+        let ch = char_at(value, index);
+        if not ((ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102)) { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub fn proof_sha256_result(path: str, output: str, errors: str, exit_code: i32) -> str
+audit {
+    intent("Validate the complete successful native sha256sum result for one exact path");
+    mutates();
+    effects();
+}
+{
+    if exit_code != 0 or errors != "" or path == "" { return ""; }
+    let digest = slice_text(output, 0, 64);
+    if not proof_sha256_valid(digest) { return ""; }
+    if output != concat5(digest, "  ", path, "\n", "") { return ""; }
+    return digest;
+}
+
+pub fn proof_artifact_forget(produced: mutref list<proof_artifact_entry>, path: str) -> unit
+audit {
+    intent("Invalidate the prior command-local record before an artifact replacement");
+    mutates(produced);
+    effects();
+}
+{
+    list_push(mutref produced, proof_artifact_entry { path: path, digest: "" });
+}
+
+fn proof_artifact_digest(produced: ref list<proof_artifact_entry>, path: str) -> str {
+    let mut index = list_len(ref produced);
+    while index > 0 {
+        index = index - 1;
+        match list_get(ref produced, index) {
+            Some(entry) => { if entry.path == path { return entry.digest; } },
+            None => {},
+        }
+    }
+    return "";
+}
+
+pub fn proof_artifact_present(produced: ref list<proof_artifact_entry>, path: str) -> bool
+audit {
+    intent("Check only the latest command-local artifact record");
+    mutates();
+    effects();
+}
+{
+    return path != "" and proof_sha256_valid(proof_artifact_digest(ref produced, path));
+}
+
+pub fn proof_required_artifacts_present(produced: ref list<proof_artifact_entry>, required: ref list<str>, compared: option<bool>, require_equal: bool) -> bool
+audit {
+    intent("Reject a successful proof with missing artifacts or an unperformed or unequal comparison");
+    mutates();
+    effects();
+}
+{
+    if require_equal and proof_structural_result_text(compared) != "true" { return false; }
+    let mut index = 0;
+    while index < list_len(ref required) {
+        match list_get(ref required, index) {
+            Some(path) => { if not proof_artifact_present(ref produced, path) { return false; } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub fn proof_artifact_json(produced: ref list<proof_artifact_entry>, path: str) -> str
+audit {
+    intent("Render only an invocation-produced artifact or explicit null without reopening files");
+    mutates();
+    effects();
+}
+{
+    if not proof_artifact_present(ref produced, path) { return "null"; }
+    return concat5("{\"path\":", json_quote(path), ",\"hash\":{\"algorithm\":\"sha256\",\"value\":\"", proof_artifact_digest(ref produced, path), "\"}}");
+}
+
+pub fn proof_phase_artifact_json(produced: ref list<proof_artifact_entry>, path: str, status: str) -> str
+audit {
+    intent("Keep skipped phase artifacts null even when another phase produced the same path");
+    mutates();
+    effects();
+}
+{
+    if status == "skipped" { return "null"; }
+    return proof_artifact_json(ref produced, path);
+}
+
+pub fn proof_structural_result_text(compared: option<bool>) -> str
+audit {
+    intent("Keep unperformed structural comparison distinct from true and false");
+    mutates();
+    effects();
+}
+{
+    match compared {
+        Some(equal) => { return bool_text(equal); },
+        None => { return "null"; },
+    }
+}
+
+pub fn proof_prepare_output(path: str) -> bool
+audit {
+    intent("Remove only an expected regular output before its producer to reject stale success");
+    mutates();
+    effects(io);
+}
+{
+    match path_metadata(path, false) {
+        Ok(metadata) => {
+            if not metadata.is_file or metadata.is_symlink { return false; }
+            match remove_file(path) {
+                Ok(_) => { return true; },
+                Err(_) => { return false; },
+            }
+        },
+        Err(err) => { return io_err_kind(ref err) == "not_found"; },
+    }
+}
+
+pub fn proof_register_artifact(produced: mutref list<proof_artifact_entry>, path: str) -> bool
+audit {
+    intent("Hash a freshly produced regular artifact and register its exact SHA-256 or fail closed");
+    mutates(produced);
+    effects(io);
+}
+{
+    proof_artifact_forget(mutref produced, path);
+    match path_metadata(path, false) {
+        Ok(metadata) => { if not metadata.is_file or metadata.is_symlink { return false; } },
+        Err(_) => { return false; },
+    }
+    let mut args: list<str> = list();
+    list_push(mutref args, "--");
+    list_push(mutref args, path);
+    match run_process("sha256sum", ref args, ".") {
+        Ok(status) => {
+            let digest = proof_sha256_result(path, status.stdout, status.stderr, status.exit_code);
+            if not proof_sha256_valid(digest) { return false; }
+            list_push(mutref produced, proof_artifact_entry { path: path, digest: digest });
+            return true;
+        },
+        Err(_) => { return false; },
+    }
+}

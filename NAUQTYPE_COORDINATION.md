@@ -61,6 +61,21 @@ unless the user explicitly assigns them.
 
 ### NauqType Compiler/Runtime
 
+- M54.10 migration notice: the completed compiler rejects old dependency locks and
+  requires explicit `workspace-lock/v2` path/content framing. Published
+  Libraries revision `bed7bf6` and provisional AIML source are not changed.
+  Their owners must regenerate and evidence consumer locks before upgrading
+  to this compiler; existing M54-pinned compiler/source evidence remains
+  historical evidence, not proof of compatibility with the new lock contract.
+  See `WORKSPACE_LOCK.md` and `M54_10_CONTRACTS.md`. No external lock edits or
+  new numerical/AI APIs are authorized by this correction.
+- M54.8-M54.10 corrective closure is now evidenced: M54.10's independent
+  Sol xhigh/GPT-5.5 xhigh audits passed and the unchanged candidate passed all
+  seven gate phases plus real attestation in 2,716 seconds. Exact source,
+  seed, cache, proof, and release identities are in `M54_10_CONTRACTS.md`.
+  No external repository was modified. M55 must first repair interrupted
+  process read/wait handling (F14); no process feature expansion landed here.
+
 - M54.7 closes expression precedence, ordered matches, and C-name collisions,
   including the sanitizer-discovered expression-arm binding leak. The seed
   fixed point, 42-case corpus, Linux release, and nine ownership sanitizer

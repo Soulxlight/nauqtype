@@ -1,8 +1,7 @@
 # Astra Audit Remediation
 
-Status: M54.7-M54.9 complete, 2026-09-05. M54.10 remains open.
-Feature expansion waits for
-the remaining evidence, numeric, and provenance prerequisites below.
+Status: M54.7-M54.10 complete, 2026-09-06 UTC. F14 remains the first M55
+process-correctness prerequisite; no M55 feature work is included here.
 
 The 2026-09-04 Astra audit reviewed `d2c7592ae5e4dc11fba7ffe715334a881d715b62`.
 Its report and executable evidence are retained locally in
@@ -114,6 +113,17 @@ Sol max and GPT-5.5 xhigh reviews returned PASS. Frozen tree
 in 2,048 seconds with empty stderr. `M54_9_CONTRACTS.md` records the exact
 focused checks, seed lineage, gate timings, and artifact hashes. Provenance
 enforcement remains M54.10; process interruption handling remains M55/F14.
+
+M54.10 now closes F07/F09/F10/F12 with captured dependency text, framed lock
+v2, explicit facts/change v4 compatibility, strict seed snapshots, builder-only
+cache derivation, proof-summary v3 SHA-256/null truth, and gate/closing
+attestations. Sol xhigh and GPT-5.5 xhigh final reviews passed. Frozen tree
+`6d548d35de4c5f4fd64ffd3a84f6fc32e09e9a31` passed all seven phases and final
+attestation verification in 2,716 seconds with empty stderr. An earlier
+supervisor-terminated attempt is retained as incomplete, not hidden or counted
+as acceptance. See `M54_10_CONTRACTS.md` for exact evidence and limitations.
+Old external workspace locks require explicit owner-managed migration;
+legacy evidence shapes remain compatible but are not secure-change claims.
 
 ## Architecture And Product Direction
 

@@ -33,3 +33,5 @@ if ! scripts/stage1_cache.sh check; then
     scripts/build_stage1_from_seed.sh >/dev/null
 fi
 bin/nauqc test
+scripts/check_m54_10_provenance.sh
+scripts/check_m54_10_attestation.sh

@@ -568,3 +568,25 @@
   limits. Private test macros do not become runtime builtins or release flags.
 - Boundary: no new syntax, numeric conversion, ownership, runtime builtin,
   exception, or unwinding promise. M54.10 owns provenance; M55/F14 remain open.
+
+## D063: Captured Provenance And Derivation Evidence
+
+- Dependency locks explicitly migrate to `workspace-lock/v2`, using framed
+  sorted paths and raw captured source bytes. Parsing, routing, and evidence
+  consume the validated capture. Root source loading is unchanged.
+- Legacy facts/change formats retain successful shapes and compatibility
+  meanings. Opt-in facts v4 and change-report v4 expose authoritative framed
+  source identities. External consumers migrate their own locks explicitly.
+- Seed v2 checks exact historical source inventory and pinned C/runtime;
+  generator identity records are not signatures. The seed gate checks both
+  historical-source reproduction and current stage1/stage2 structural C,
+  reusing an emission only under explicit source/input identity equality.
+- Builder-only cache v2 binds captured inputs, emitted artifacts, compiler
+  identity, target, and flags. Full milestone attestations bind the reviewed
+  candidate and proof/release outputs; disclosed completion deltas are
+  restricted to nonpackaged status documents.
+- Proof-summary v3 uses SHA-256 objects and null for unproduced artifacts or
+  unperformed comparisons. Keep the existing direct structural normalizer.
+- Scope is a trusted Linux host, not hostile-owner tamper resistance or an
+  atomic concurrent-filesystem transaction. No new language/runtime API,
+  generic JSON engine, transitive dependency solver, or stage3/stage4 chain.

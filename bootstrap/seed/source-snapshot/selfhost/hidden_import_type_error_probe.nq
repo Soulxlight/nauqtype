@@ -1,0 +1,35 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+
+fn main() -> i32 {
+    let mut modules: list<str> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut diags: list<diag> = list();
+
+    let helper_tokens = lex("type secret { value: i32, }");
+    let main_tokens = lex("use helper; fn reveal(value: secret) -> i32 { return 0; } fn main() -> i32 { return 0; }");
+
+    list_push(mutref modules, "helper");
+    list_push(mutref modules, "main");
+
+    parse_file("helper", ref helper_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    parse_file("main", ref main_tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+
+    if list_len(ref diags) == 0 {
+        return 1;
+    }
+    return 0;
+}
+

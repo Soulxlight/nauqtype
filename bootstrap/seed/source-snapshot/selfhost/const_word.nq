@@ -1,0 +1,217 @@
+// Private compiler arithmetic: byte limbs avoid depending on host signed overflow.
+pub type const_word {
+    b0: i32,
+    b1: i32,
+    b2: i32,
+    b3: i32,
+    b4: i32,
+    b5: i32,
+    b6: i32,
+    b7: i32,
+}
+
+fn word_zero() -> const_word {
+    return const_word { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, b7: 0 };
+}
+
+fn word_byte(value: const_word, index: i32) -> i32 {
+    if index == 0 { return value.b0; }
+    if index == 1 { return value.b1; }
+    if index == 2 { return value.b2; }
+    if index == 3 { return value.b3; }
+    if index == 4 { return value.b4; }
+    if index == 5 { return value.b5; }
+    if index == 6 { return value.b6; }
+    return value.b7;
+}
+
+fn word_set(value: const_word, index: i32, byte: i32) -> const_word {
+    let mut out = value;
+    if index == 0 { out.b0 = byte; }
+    if index == 1 { out.b1 = byte; }
+    if index == 2 { out.b2 = byte; }
+    if index == 3 { out.b3 = byte; }
+    if index == 4 { out.b4 = byte; }
+    if index == 5 { out.b5 = byte; }
+    if index == 6 { out.b6 = byte; }
+    if index == 7 { out.b7 = byte; }
+    return out;
+}
+
+fn word_compare_unsigned(left: const_word, right: const_word, width: i32) -> i32 {
+    let mut index = width;
+    while index > 0 {
+        index = index - 1;
+        let a = word_byte(left, index);
+        let b = word_byte(right, index);
+        if a < b { return -1; }
+        if a > b { return 1; }
+    }
+    return 0;
+}
+
+pub fn const_word_add(left: const_word, right: const_word, width: i32) -> const_word
+audit {
+    intent("Add compiler constant words modulo the selected integer width");
+    mutates();
+    effects();
+}
+{
+    let mut out = word_zero();
+    let mut carry = 0;
+    let mut index = 0;
+    while index < width {
+        let sum = word_byte(left, index) + word_byte(right, index) + carry;
+        carry = sum / 256;
+        out = word_set(out, index, sum - carry * 256);
+        index = index + 1;
+    }
+    return out;
+}
+
+pub fn const_word_neg(value: const_word, width: i32) -> const_word
+audit {
+    intent("Negate a compiler constant word without host signed overflow");
+    mutates();
+    effects();
+}
+{
+    let mut out = word_zero();
+    let mut carry = 1;
+    let mut index = 0;
+    while index < width {
+        let byte = 255 - word_byte(value, index) + carry;
+        carry = byte / 256;
+        out = word_set(out, index, byte - carry * 256);
+        index = index + 1;
+    }
+    return out;
+}
+
+pub fn const_word_mul(left: const_word, right: const_word, width: i32) -> const_word
+audit {
+    intent("Multiply compiler constant words with bounded byte intermediates");
+    mutates();
+    effects();
+}
+{
+    let mut out = word_zero();
+    let mut left_index = 0;
+    while left_index < width {
+        let mut right_index = 0;
+        let mut carry = 0;
+        while left_index + right_index < width {
+            let index = left_index + right_index;
+            let product = word_byte(left, left_index) * word_byte(right, right_index) + word_byte(out, index) + carry;
+            carry = product / 256;
+            out = word_set(out, index, product - carry * 256);
+            right_index = right_index + 1;
+        }
+        left_index = left_index + 1;
+    }
+    return out;
+}
+
+pub fn const_word_decimal(text: str, width: i32) -> const_word
+audit {
+    intent("Read an already range-validated decimal constant into byte limbs");
+    mutates();
+    effects();
+}
+{
+    let mut out = word_zero();
+    let ten = word_set(word_zero(), 0, 10);
+    let mut index = 0;
+    while index < str_len(text) {
+        let mut digit = 0;
+        match str_get(text, index) { Some(ch) => { digit = ch - 48; }, None => {}, }
+        out = const_word_add(const_word_mul(out, ten, width), word_set(word_zero(), 0, digit), width);
+        index = index + 1;
+    }
+    return out;
+}
+
+pub fn const_word_compare(left: const_word, right: const_word, width: i32) -> i32
+audit {
+    intent("Compare compiler constant words as signed integers");
+    mutates();
+    effects();
+}
+{
+    let left_negative = word_byte(left, width - 1) >= 128;
+    let right_negative = word_byte(right, width - 1) >= 128;
+    if left_negative and not right_negative { return -1; }
+    if right_negative and not left_negative { return 1; }
+    return word_compare_unsigned(left, right, width);
+}
+
+pub fn const_word_div(left: const_word, right: const_word, width: i32) -> result<const_word, i32>
+audit {
+    intent("Divide signed compiler constants or report zero and minimum-value overflow");
+    mutates();
+    effects();
+}
+{
+    if word_compare_unsigned(right, word_zero(), width) == 0 { return Err(1); }
+    let left_negative = word_byte(left, width - 1) >= 128;
+    let right_negative = word_byte(right, width - 1) >= 128;
+    let minimum = word_set(word_zero(), width - 1, 128);
+    let minus_one = const_word_neg(word_set(word_zero(), 0, 1), width);
+    if word_compare_unsigned(left, minimum, width) == 0 and word_compare_unsigned(right, minus_one, width) == 0 { return Err(2); }
+    let mut numerator = left;
+    let mut denominator = right;
+    if left_negative { numerator = const_word_neg(left, width); }
+    if right_negative { denominator = const_word_neg(right, width); }
+    let mut quotient = word_zero();
+    let mut remainder = word_zero();
+    let mut bit = width * 8;
+    while bit > 0 {
+        bit = bit - 1;
+        let byte_index = bit / 8;
+        let bit_index = bit - byte_index * 8;
+        let mut power = 1;
+        let mut index = 0;
+        while index < bit_index { power = power * 2; index = index + 1; }
+        let digit = word_byte(numerator, byte_index) / power;
+        let low_bit = digit - (digit / 2) * 2;
+        remainder = const_word_add(const_word_add(remainder, remainder, width), word_set(word_zero(), 0, low_bit), width);
+        if word_compare_unsigned(remainder, denominator, width) >= 0 {
+            remainder = const_word_add(remainder, const_word_neg(denominator, width), width);
+            quotient = word_set(quotient, byte_index, word_byte(quotient, byte_index) + power);
+        }
+    }
+    if left_negative != right_negative { quotient = const_word_neg(quotient, width); }
+    return Ok(quotient);
+}
+
+pub fn const_word_signed_text(value: const_word, width: i32) -> str
+audit {
+    intent("Render a signed compiler constant using bounded base-256 division by ten");
+    mutates();
+    effects();
+}
+{
+    let negative = word_byte(value, width - 1) >= 128;
+    let mut magnitude = value;
+    if negative { magnitude = const_word_neg(value, width); }
+    let mut out = "";
+    while word_compare_unsigned(magnitude, word_zero(), width) != 0 {
+        let mut quotient = word_zero();
+        let mut remainder = 0;
+        let mut index = width;
+        while index > 0 {
+            index = index - 1;
+            let digit = remainder * 256 + word_byte(magnitude, index);
+            quotient = word_set(quotient, index, digit / 10);
+            remainder = digit - (digit / 10) * 10;
+        }
+        match str_slice("0123456789", remainder, remainder + 1) {
+            Some(digit) => { out = str_concat(digit, out); },
+            None => {},
+        }
+        magnitude = quotient;
+    }
+    if out == "" { return "0"; }
+    if negative { return str_concat("-", out); }
+    return out;
+}

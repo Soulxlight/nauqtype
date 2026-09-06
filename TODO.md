@@ -390,7 +390,8 @@
 - [x] M54.8b final close: checked call summaries/validation, review v4/change-report v3, schema profile, failure envelopes, and producer diagnostics passed independent audits and all seven frozen-gate phases in 1,908 seconds
 - [x] M54.9: specify and implement safe integer/allocation edge behavior (F06/F13)
 - [x] M54.9 close: validate arithmetic/allocation, refresh the generated seed with recorded lineage, obtain mixed-model audit PASS, and run the frozen milestone gate
-- [ ] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
+- [x] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
+- [x] M54.10 close: verify captured-source and evidence migration, seed v2 reproduction, focused provenance/attestation tests, independent audits, and the exact frozen milestone attestation
 - [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)
 - [ ] M55: add structured process, time, timeout, and cancellation foundations after corrective closure
 - [ ] M56: add explicit generic reuse without trait or method-system drift

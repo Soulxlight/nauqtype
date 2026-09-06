@@ -1,0 +1,432 @@
+use workspace;
+use workspace_json;
+use files;
+use text;
+use source;
+use lexer;
+use parser;
+use ast;
+use diag;
+
+fn wct_expect(failures: mutref list<str>, condition: bool, label: str) -> unit
+audit {
+    intent("Record one focused workspace capture regression failure");
+    mutates(failures);
+    effects();
+}
+{
+    if not condition { list_push(mutref failures, label); }
+}
+
+fn wct_parse(value: str, locked: bool) -> bool {
+    let mut dependencies: list<workspace_json_dependency> = list();
+    return parse_workspace_document(value, locked, mutref dependencies).valid;
+}
+
+fn wct_parser_tests(failures: mutref list<str>) -> unit
+audit {
+    intent("Exercise strict typed workspace JSON, migration, duplicates, and bounded paths");
+    mutates(failures);
+    effects();
+}
+{
+    let workspace_object = "\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"src\"],\"entrypoints\":{\"tool\":\"app::main\"}}";
+    let manifest = concat3("{\"version\":\"workspace/v1\",", workspace_object, "}");
+    wct_expect(mutref failures, wct_parse(manifest, false), "valid manifest and entrypoint");
+    wct_expect(mutref failures, wct_parse("{\"workspace\":{\"source_roots\":[\"src\"],\"name\":\"tests.root\"},\"version\":\"workspace/v1\"}", false), "field order independence");
+    wct_expect(mutref failures, wct_parse("{\"ver\\u0073ion\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"src\"]}}", false), "ASCII escape decoding");
+    let mut bad_manifests: list<str> = list();
+    list_push(mutref bad_manifests, concat3("{\"version\":\"workspace/v1\",\"version\":\"workspace/v1\",", workspace_object, "}"));
+    list_push(mutref bad_manifests, concat3("{\"version\":\"workspace/v1\",\"ver\\u0073ion\":\"workspace/v1\",", workspace_object, "}"));
+    list_push(mutref bad_manifests, concat3("{\"version\":\"workspace/v1\",\"unknown\":\"x\",", workspace_object, "}"));
+    list_push(mutref bad_manifests, str_concat(manifest, "garbage"));
+    list_push(mutref bad_manifests, concat3("{\"version\":\"workspace/v1\",", workspace_object, ",}"));
+    list_push(mutref bad_manifests, "{\"version\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"name\":\"tests.evil\",\"source_roots\":[\"src\"]}}");
+    list_push(mutref bad_manifests, "{\"version\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"src\",\"other\"]}}");
+    list_push(mutref bad_manifests, "{\"version\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"../src\"]}}");
+    list_push(mutref bad_manifests, "{\"version\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"src\"],\"extra\":\"ignored\"}}");
+    list_push(mutref bad_manifests, "{\"version\":\"workspace/v1\",\"workspace\":{\"name\":\"tests.root\",\"source_roots\":[\"src\"],\"entrypoints\":{\"a\":\"main\",\"\\u0061\":\"other\"}}}");
+    list_push(mutref bad_manifests, concat3("{\"version\":\"workspace/v1\",", workspace_object, ",\"dependencies\":{}}"));
+    let declaration = "{\"alias\":\"dep\",\"path\":\"vendor/dep\",\"workspace\":\"tests.dep\"}";
+    list_push(mutref bad_manifests, concat5("{\"version\":\"workspace/v1\",", workspace_object, ",\"dependencies\":[", str_concat(declaration, str_concat(",", declaration)), "]}"));
+    let mut at = 0;
+    while at < list_len(ref bad_manifests) {
+        match list_get(ref bad_manifests, at) {
+            Some(value) => { wct_expect(mutref failures, not wct_parse(value, false), str_concat("reject malformed manifest ", i32_to_str(at))); },
+            None => { list_push(mutref failures, "missing malformed manifest test"); },
+        }
+        at = at + 1;
+    }
+    let lock = "{\"version\":\"workspace-lock/v2\",\"workspace\":\"tests.root\",\"dependencies\":[]}";
+    wct_expect(mutref failures, wct_parse(lock, true), "empty v2 lock accepted");
+    wct_expect(mutref failures, not wct_parse("{\"version\":\"workspace-lock/v2\",\"workspace\":\"tests.root\"}", true), "lock requires dependency array");
+    wct_expect(mutref failures, not wct_parse(str_concat(lock, "{}"), true), "trailing lock document rejected");
+    let mut legacy: list<workspace_json_dependency> = list();
+    let old = parse_workspace_document("{\"dependencies\":[{\"source_sha256\":\"old\"}],\"version\":\"workspace-lock/v1\",\"workspace\":\"tests.root\"}", true, mutref legacy);
+    wct_expect(mutref failures, not old.valid and text_contains(old.error_message, "migration"), "v1 gives migration even with version after entries");
+    wct_expect(mutref failures, workspace_valid_relative_path("../vendor/dep", true), "explicit leading dependency parent remains legal");
+    wct_expect(mutref failures, not workspace_valid_relative_path("x/../dep", true), "interior parent rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("../file.nq", false), "source parent rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("x//file.nq", false), "empty path segment rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("x/./file.nq", false), "dot path segment rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("x\\file.nq", false), "backslash path rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("x\nfile.nq", false), "control path rejected");
+    wct_expect(mutref failures, not workspace_valid_relative_path("C:/file.nq", false), "drive path rejected");
+}
+
+fn wct_source(path: str, content: str) -> workspace_captured_source {
+    return workspace_captured_source { alias: "dep", workspace_name: "tests.dep", module_name: "dep::test", relative_path: path, source_path: str_concat("not-a-real-path/", path), source_text: content };
+}
+
+fn wct_hash_tests(failures: mutref list<str>) -> unit
+audit {
+    intent("Test exact framed hashing, rename, empty files, resegmentation, and duplicate rejection without original reads");
+    mutates(failures);
+    effects(io);
+}
+{
+    wct_expect(mutref failures, workspace_sha256_captured("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "known SHA-256 captured bytes");
+    let mut empty: list<workspace_captured_source> = list();
+    let empty_hash = hash_captured_workspace_sources(ref empty);
+    wct_expect(mutref failures, empty_hash.valid and empty_hash.legacy_source_sha256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" and empty_hash.source_tree_sha256 == "3c19f86384ec230bae5149f90f9146c3c9e6fe5a0f25d832cc5452b72712484e", "empty source set golden hashes");
+    let mut base: list<workspace_captured_source> = list();
+    list_push(mutref base, wct_source("a.nq", "ab"));
+    list_push(mutref base, wct_source("b.nq", "c"));
+    let baseline = hash_captured_workspace_sources(ref base);
+    wct_expect(mutref failures, baseline.source_tree_sha256 == "6f46e0da6a364212546b6ff1ce17a254f5c9b16ab004d68b9e0cd1b87d79cac2", "independent exact framing golden");
+    let mut segmented: list<workspace_captured_source> = list();
+    list_push(mutref segmented, wct_source("a.nq", "a"));
+    list_push(mutref segmented, wct_source("b.nq", "bc"));
+    let changed_segments = hash_captured_workspace_sources(ref segmented);
+    wct_expect(mutref failures, baseline.valid and changed_segments.valid and baseline.legacy_source_sha256 == changed_segments.legacy_source_sha256 and baseline.source_tree_sha256 != changed_segments.source_tree_sha256, "resegmentation changes framed identity only");
+    let mut renamed: list<workspace_captured_source> = list();
+    list_push(mutref renamed, wct_source("aa.nq", "ab"));
+    list_push(mutref renamed, wct_source("b.nq", "c"));
+    let changed_name = hash_captured_workspace_sources(ref renamed);
+    wct_expect(mutref failures, changed_name.valid and baseline.legacy_source_sha256 == changed_name.legacy_source_sha256 and baseline.source_tree_sha256 != changed_name.source_tree_sha256, "rename changes framed identity only");
+    list_push(mutref base, wct_source("empty.nq", ""));
+    let with_empty = hash_captured_workspace_sources(ref base);
+    wct_expect(mutref failures, with_empty.valid and baseline.legacy_source_sha256 == with_empty.legacy_source_sha256 and baseline.source_tree_sha256 != with_empty.source_tree_sha256, "empty file changes framed identity only");
+    list_push(mutref base, wct_source("empty.nq", ""));
+    wct_expect(mutref failures, not hash_captured_workspace_sources(ref base).valid, "duplicate source record rejected");
+    let mut reversed: list<workspace_captured_source> = list();
+    list_push(mutref reversed, wct_source("z.nq", ""));
+    list_push(mutref reversed, wct_source("a.nq", ""));
+    wct_expect(mutref failures, not hash_captured_workspace_sources(ref reversed).valid, "unordered source records rejected");
+    let mut unsafe: list<workspace_captured_source> = list();
+    list_push(mutref unsafe, wct_source("../a.nq", ""));
+    wct_expect(mutref failures, not hash_captured_workspace_sources(ref unsafe).valid, "unsafe captured path rejected");
+}
+
+fn wct_process(command: str, args: ref list<str>) -> bool
+audit {
+    intent("Run a bounded native fixture preparation or cleanup operation");
+    mutates();
+    effects(io);
+}
+{
+    match run_process(command, ref args, ".") { Ok(result) => { return result.exit_code == 0; }, Err(_) => { return false; }, }
+}
+
+fn wct_two_args(command: str, first: str, second: str) -> bool
+audit {
+    intent("Invoke a fixture operation with two literal argument boundaries");
+    mutates();
+    effects(io);
+}
+{
+    let mut args: list<str> = list();
+    list_push(mutref args, first);
+    list_push(mutref args, second);
+    return wct_process(command, ref args);
+}
+
+fn wct_copy(source: str, target: str) -> bool
+audit {
+    intent("Copy only the owned capture test fixture to a private test directory");
+    mutates();
+    effects(io);
+}
+{
+    let mut args: list<str> = list();
+    list_push(mutref args, "-R");
+    list_push(mutref args, "--");
+    list_push(mutref args, source);
+    list_push(mutref args, target);
+    return wct_process("cp", ref args);
+}
+
+fn wct_write(path: str, value: str) -> bool
+audit {
+    intent("Write one owned mutable test fixture");
+    mutates();
+    effects(io);
+}
+{
+    match write_file(path, value) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+}
+
+fn wct_parses_captured(module: workspace_capture_module) -> bool {
+    let file = make_source_file_at("dep::answer", module.source_path, module.source_text);
+    let tokens = lex(file.text);
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut diags: list<diag> = list();
+    let summary = parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    if summary.diag_count != 0 or list_len(ref items) != 1 { return false; }
+    match list_get(ref items, 0) { Some(item) => { return item.name == "answer"; }, None => { return false; }, }
+}
+
+fn wct_mutation_test(root: str, failures: mutref list<str>) -> unit
+audit {
+    intent("Capture once, mutate originals, and prove parsing and evidence still consume verified captured text");
+    mutates(failures);
+    effects(io);
+}
+{
+    let entry = join_path(root, "src/main.nq");
+    let mut sources: list<workspace_captured_source> = list();
+    let mut dependencies: list<workspace_locked_dependency> = list();
+    let capture = capture_workspace(entry, mutref sources, mutref dependencies);
+    wct_expect(mutref failures, capture.valid, str_concat("positive capture: ", capture.error_message));
+    if not capture.valid { return; }
+    wct_expect(mutref failures, list_len(ref sources) == 2 and list_len(ref dependencies) == 1, "capture includes empty file and locked dependency");
+    let original_path = join_path(root, "vendor/dep/src/answer.nq");
+    let selected = resolve_captured_workspace_module(capture, ref sources, ref dependencies, "dep::answer");
+    wct_expect(mutref failures, selected.valid and selected.captured and selected.source_path == original_path, "source diagnostic path preserved");
+    wct_expect(mutref failures, wct_write(original_path, "this is intentionally not Nauqtype"), "mutate original dependency source");
+    let selected_after = resolve_captured_workspace_module(capture, ref sources, ref dependencies, "dep::answer");
+    wct_expect(mutref failures, selected_after.source_text == selected.source_text and wct_parses_captured(selected_after), "parse uses captured source after original mutation");
+    let mut fresh_sources: list<workspace_captured_source> = list();
+    let mut fresh_deps: list<workspace_locked_dependency> = list();
+    let stale = capture_workspace(entry, mutref fresh_sources, mutref fresh_deps);
+    wct_expect(mutref failures, not stale.valid and text_contains(stale.error_message, "hash is stale") and list_len(ref fresh_sources) == 0 and list_len(ref fresh_deps) == 0, "fresh capture rejects mutation without publishing partial lists");
+    wct_expect(mutref failures, wct_write(join_path(root, "nauqtype.workspace.json"), "{}"), "mutate root manifest");
+    wct_expect(mutref failures, wct_write(join_path(root, "nauqtype.workspace.lock.json"), "{}"), "mutate root lock");
+    wct_expect(mutref failures, wct_write(join_path(root, "vendor/dep/nauqtype.workspace.json"), "{}"), "mutate dependency manifest");
+    let identity = resolve_captured_workspace_identity(capture, ref dependencies, "dep::answer");
+    wct_expect(mutref failures, identity.valid and identity.workspace_name == "tests.capture_dep" and identity.module_name == "answer", "dependency identity does not reread mutated manifests");
+    let local_identity = resolve_captured_workspace_identity(capture, ref dependencies, "main");
+    wct_expect(mutref failures, local_identity.valid and local_identity.workspace_name == "tests.capture_root", "root identity stays captured");
+    let local_module = resolve_captured_workspace_module(capture, ref sources, ref dependencies, "main");
+    wct_expect(mutref failures, local_module.valid and not local_module.captured and local_module.source_path == entry, "ordinary root sources retain existing file loading");
+    let missing = resolve_captured_workspace_module(capture, ref sources, ref dependencies, "dep::not_captured");
+    wct_expect(mutref failures, not missing.valid, "missing dependency source never falls back to file loading");
+    match list_get(ref dependencies, 0) {
+        Some(dep) => {
+            wct_expect(mutref failures, dep.source_sha256 == "34f32ee7deb9d68811839aa6e273e41fcd2f7a2985eeb6b2e29c328156d4aea1" and dep.legacy_source_sha256 == dep.source_sha256 and dep.source_tree_sha256 == "75840d253c38f023b7d099405a530fb6ee13e0f696e6424876a7230b522234a9", "independent golden hashes and legacy compatibility");
+            wct_expect(mutref failures, dep.manifest_text != "{}" and capture.manifest_text != "{}" and capture.lock_text != "{}", "exact metadata bytes retained");
+        },
+        None => { list_push(mutref failures, "capture lost dependency record"); },
+    }
+}
+
+fn wct_replace(value: str, before: str, after: str) -> str {
+    let mut at = 0;
+    while at + str_len(before) <= str_len(value) {
+        if starts_with_at(value, at, before) { return concat3(slice_text(value, 0, at), after, slice_text(value, at + str_len(before), str_len(value))); }
+        at = at + 1;
+    }
+    return value;
+}
+
+fn wct_binary_test(root: str, failures: mutref list<str>) -> unit
+audit {
+    intent("Prove captured NUL and non-UTF8 source bytes survive reads and exact hash framing unchanged");
+    mutates(failures);
+    effects(io);
+}
+{
+    let mut args: list<str> = list();
+    list_push(mutref args, "%b");
+    list_push(mutref args, "A\\000\\377B\n");
+    let result = run_process("printf", ref args, ".");
+    let Ok(output) = result else { list_push(mutref failures, "raw-byte fixture generation failed"); return; };
+    let raw = output.stdout;
+    wct_expect(mutref failures, output.exit_code == 0 and str_len(raw) == 5 and char_at(raw, 1) == 0 and char_at(raw, 2) == 255, "raw-byte fixture has NUL and non-UTF8 byte");
+    wct_expect(mutref failures, workspace_sha256_captured(raw) == "237f3dd927edf19464a4f05da0f98f6df816395663426b981181d13a17cb0789", "raw-byte SHA-256 golden");
+    wct_expect(mutref failures, wct_write(join_path(root, "vendor/dep/src/answer.nq"), raw), "raw-byte fixture source write");
+    let lock_path = join_path(root, "nauqtype.workspace.lock.json");
+    let read_lock = read_file(lock_path);
+    let Ok(lock) = read_lock else { list_push(mutref failures, "raw-byte fixture lock read"); return; };
+    let with_legacy = wct_replace(lock, "34f32ee7deb9d68811839aa6e273e41fcd2f7a2985eeb6b2e29c328156d4aea1", "237f3dd927edf19464a4f05da0f98f6df816395663426b981181d13a17cb0789");
+    let with_framed = wct_replace(with_legacy, "75840d253c38f023b7d099405a530fb6ee13e0f696e6424876a7230b522234a9", "474aaf61d1857821eaf8471274759c9a3ba8ca0b70ef536f25fbf46c22654a2d");
+    wct_expect(mutref failures, wct_write(lock_path, with_framed), "raw-byte fixture locked golden write");
+    let mut sources: list<workspace_captured_source> = list();
+    let mut deps: list<workspace_locked_dependency> = list();
+    let capture = capture_workspace(join_path(root, "src/main.nq"), mutref sources, mutref deps);
+    wct_expect(mutref failures, capture.valid, str_concat("raw-byte source capture: ", capture.error_message));
+    let module = resolve_captured_workspace_module(capture, ref sources, ref deps, "dep::answer");
+    wct_expect(mutref failures, module.valid and module.captured and module.source_text == raw, "raw-byte captured source round trip");
+    let bad_name = str_concat("bad", slice_text(raw, 2, 3));
+    wct_expect(mutref failures, not workspace_valid_relative_path(bad_name, false), "non-ASCII path rejected");
+    wct_expect(mutref failures, wct_write(join_path(root, str_concat("vendor/dep/src/", bad_name)), ""), "non-ASCII path fixture");
+    let mut rejected_sources: list<workspace_captured_source> = list();
+    let mut rejected_deps: list<workspace_locked_dependency> = list();
+    wct_expect(mutref failures, not capture_workspace(join_path(root, "src/main.nq"), mutref rejected_sources, mutref rejected_deps).valid, "non-ASCII enumerated path rejected");
+}
+
+fn wct_negative_case(root: str, which: i32) -> bool
+audit {
+    intent("Apply one bounded negative capture mutation to a private fixture copy");
+    mutates();
+    effects(io);
+}
+{
+    let source = join_path(root, "vendor/dep/src/answer.nq");
+    let source_dir = join_path(root, "vendor/dep/src");
+    let lock_path = join_path(root, "nauqtype.workspace.lock.json");
+    let original_lock = read_file(lock_path);
+    let Ok(lock) = original_lock else { return false; };
+    if which == 0 { return wct_write(lock_path, wct_replace(lock, "workspace-lock/v2", "workspace-lock/v1")); }
+    if which == 1 { return wct_write(lock_path, wct_replace(lock, "\"source_tree_format\":", "\"extra\":\"ignored\",\"source_tree_format\":")); }
+    if which == 2 { return wct_write(lock_path, wct_replace(lock, "\"alias\":\"dep\"", "\"alias\":\"dep\",\"a\\u006cias\":\"dep\"")); }
+    if which == 3 { return wct_write(lock_path, wct_replace(lock, "75840d253c38f023b7d099405a530fb6ee13e0f696e6424876a7230b522234a9", "05840d253c38f023b7d099405a530fb6ee13e0f696e6424876a7230b522234a9")); }
+    if which == 4 { return wct_write(lock_path, wct_replace(lock, "34f32ee7deb9d68811839aa6e273e41fcd2f7a2985eeb6b2e29c328156d4aea1", "04f32ee7deb9d68811839aa6e273e41fcd2f7a2985eeb6b2e29c328156d4aea1")); }
+    if which == 5 { return wct_write(lock_path, wct_replace(lock, "83cb51bc1e1f7757d42ddde505be37fac21cae9af41401d0677d54f72313fb43", "03cb51bc1e1f7757d42ddde505be37fac21cae9af41401d0677d54f72313fb43")); }
+    if which == 6 { return wct_write(lock_path, wct_replace(lock, "nauqtype-source-tree/v2", "nauqtype-source-tree/v1")); }
+    if which == 7 { return wct_write(lock_path, wct_replace(lock, "vendor/dep", "vendor/../dep")); }
+    if which == 8 { return wct_write(lock_path, wct_replace(lock, "\"alias\":\"dep\"", "\"alias\":\"other\"")); }
+    if which == 9 { return wct_write(lock_path, wct_replace(lock, "}]", "},{\"alias\":\"extra\",\"path\":\"extra\",\"workspace\":\"tests.extra\"}]")); }
+    if which == 10 {
+        match remove_file(source) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "empty.nq"); list_push(mutref args, source);
+        return wct_process("ln", ref args);
+    }
+    if which == 11 {
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "."); list_push(mutref args, join_path(source_dir, "linked-dir"));
+        return wct_process("ln", ref args);
+    }
+    if which == 12 { return wct_two_args("mkfifo", "--", join_path(source_dir, "special.nq")); }
+    if which == 13 { return wct_two_args("mkfifo", "--", join_path(source_dir, "special.bin")); }
+    if which == 14 { return wct_two_args("chmod", "000", source); }
+    if which == 15 { return wct_two_args("chmod", "000", source_dir); }
+    if which == 16 { return wct_write(join_path(source_dir, "bad\nname.nq"), ""); }
+    if which == 17 { return wct_write(join_path(source_dir, "bad\\name.nq"), ""); }
+    if which == 18 {
+        match rename_path(source_dir, str_concat(source_dir, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "src-real"); list_push(mutref args, source_dir);
+        return wct_process("ln", ref args);
+    }
+    if which == 19 {
+        let dep_root = join_path(root, "vendor/dep");
+        match rename_path(dep_root, str_concat(dep_root, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "dep-real"); list_push(mutref args, dep_root);
+        return wct_process("ln", ref args);
+    }
+    if which == 20 { return wct_write(join_path(source_dir, "new-empty.nq"), ""); }
+    if which == 21 {
+        match rename_path(source, join_path(source_dir, "renamed.nq")) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+    }
+    if which == 22 { return wct_write(join_path(root, "vendor/dep/nauqtype.workspace.json"), "{}"); }
+    if which == 23 {
+        match remove_file(lock_path) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+    }
+    if which == 24 {
+        let start = str_len("{\"version\":\"workspace-lock/v2\",\"workspace\":\"tests.capture_root\",\"dependencies\":[");
+        let dep = slice_text(lock, start, str_len(lock) - 3);
+        let other = wct_replace(wct_replace(wct_replace(dep, "\"dep\"", "\"extra\""), "vendor/dep", "vendor/extra"), "tests.capture_dep", "tests.capture_extra");
+        return wct_write(lock_path, wct_replace(lock, "]}", str_concat(",", str_concat(other, "]}"))));
+    }
+    if which == 25 { return wct_write(lock_path, wct_replace(lock, "75840d253c38f023b7d099405a530fb6ee13e0f696e6424876a7230b522234a9", "ABC")); }
+    if which == 26 { return wct_write(lock_path, wct_replace(lock, "\"legacy_source_sha256\"", "\"source_sha256\"")); }
+    if which == 27 {
+        match rename_path(lock_path, str_concat(lock_path, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "nauqtype.workspace.lock.json-real"); list_push(mutref args, lock_path);
+        return wct_process("ln", ref args);
+    }
+    if which == 28 {
+        let manifest = join_path(root, "nauqtype.workspace.json");
+        match remove_file(manifest) { Ok(_) => {}, Err(_) => { return false; }, }
+        return wct_two_args("mkfifo", "--", manifest);
+    }
+    if which == 29 {
+        let vendor = join_path(root, "vendor");
+        match rename_path(vendor, str_concat(vendor, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "vendor-real"); list_push(mutref args, vendor);
+        return wct_process("ln", ref args);
+    }
+    if which == 30 { return wct_write(join_path(source_dir, "aa::bb.nq"), ""); }
+    if which == 31 {
+        let manifest = join_path(root, "vendor/dep/nauqtype.workspace.json");
+        match rename_path(manifest, str_concat(manifest, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, "nauqtype.workspace.json-real"); list_push(mutref args, manifest);
+        return wct_process("ln", ref args);
+    }
+    if which == 32 {
+        match rename_path(root, str_concat(root, "-real")) { Ok(_) => {}, Err(_) => { return false; }, }
+        let mut args: list<str> = list();
+        list_push(mutref args, "-s"); list_push(mutref args, str_concat(path_file_name(root), "-real")); list_push(mutref args, root);
+        return wct_process("ln", ref args);
+    }
+    return false;
+}
+
+pub fn run_workspace_capture_tests(fixture_root: str) -> bool
+audit {
+    intent("Run the bounded NQ dependency capture gate without rebuilding a compiler driver or seed");
+    mutates();
+    effects(io, print);
+}
+{
+    let mut failures: list<str> = list();
+    wct_parser_tests(mutref failures);
+    wct_hash_tests(mutref failures);
+    let created = create_temp_dir(fixture_root, "capture-test-");
+    let Ok(scratch) = created else { print_line("workspace capture test scratch creation failed"); return false; };
+    let valid = join_path(fixture_root, "valid");
+    let mutation = join_path(scratch, "mutation");
+    if wct_copy(valid, mutation) { wct_mutation_test(mutation, mutref failures); }
+    else { list_push(mutref failures, "mutation fixture copy failed"); }
+    let binary_root = join_path(scratch, "binary");
+    if wct_copy(valid, binary_root) { wct_binary_test(binary_root, mutref failures); }
+    else { list_push(mutref failures, "raw-byte fixture copy failed"); }
+    let mut which = 0;
+    while which < 33 {
+        let root = join_path(scratch, str_concat("negative-", i32_to_str(which)));
+        if wct_copy(valid, root) and wct_negative_case(root, which) {
+            let mut sources: list<workspace_captured_source> = list();
+            let mut deps: list<workspace_locked_dependency> = list();
+            let capture = capture_workspace(join_path(root, "src/main.nq"), mutref sources, mutref deps);
+            wct_expect(mutref failures, not capture.valid and list_len(ref sources) == 0 and list_len(ref deps) == 0, str_concat("negative capture rejected atomically ", i32_to_str(which)));
+            if which == 24 { wct_expect(mutref failures, text_contains(capture.error_message, "extra dependency entries"), "extra fully typed lock entry rejected by exact set equality"); }
+            if which == 28 { wct_expect(mutref failures, not resolve_workspace_entry(join_path(root, "src/main.nq")).valid, "preflight rejects special manifest before attempting read"); }
+            if which == 30 { wct_expect(mutref failures, text_contains(capture.error_message, "ambiguous module spelling"), "ambiguous file-to-module identity rejected before hashing"); }
+        } else { list_push(mutref failures, str_concat("negative fixture setup failed ", i32_to_str(which))); }
+        if which == 14 { wct_expect(mutref failures, wct_two_args("chmod", "600", join_path(root, "vendor/dep/src/answer.nq")), "restore file read permissions"); }
+        if which == 15 { wct_expect(mutref failures, wct_two_args("chmod", "700", join_path(root, "vendor/dep/src")), "restore directory traversal permissions"); }
+        which = which + 1;
+    }
+    let mut cleanup: list<str> = list();
+    list_push(mutref cleanup, "-rf"); list_push(mutref cleanup, "--"); list_push(mutref cleanup, scratch);
+    wct_expect(mutref failures, wct_process("rm", ref cleanup), "owned scratch cleanup");
+    let mut at = 0;
+    while at < list_len(ref failures) {
+        match list_get(ref failures, at) { Some(failure) => { print_line(str_concat("FAIL: ", failure)); }, None => {}, }
+        at = at + 1;
+    }
+    if list_len(ref failures) == 0 { return true; }
+    return false;
+}
+
+fn main() -> i32 {
+    let mut root = "tests/fixtures/m54_10_workspace";
+    match arg_get(1) { Some(value) => { root = value; }, None => {}, }
+    if root == "--expect-hash-failure" {
+        if workspace_sha256_captured("abc") == "" { return 0; }
+        return 1;
+    }
+    if run_workspace_capture_tests(root) { print_line("workspace capture tests: ok"); return 0; }
+    return 1;
+}

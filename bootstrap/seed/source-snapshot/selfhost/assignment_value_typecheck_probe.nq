@@ -1,0 +1,66 @@
+use ast;
+use diag;
+use lexer;
+use parser;
+use resolve;
+use source;
+use typecheck;
+
+fn main() -> i32 {
+    let mut modules: list<str> = list();
+    let mut sources: list<source_file> = list();
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut match_arms: list<match_arm_fact> = list();
+    let mut local_inits: list<local_init_fact> = list();
+    let mut return_facts: list<return_expr_fact> = list();
+    let mut condition_facts: list<condition_fact> = list();
+    let mut assignments: list<assignment_fact> = list();
+    let mut diags: list<diag> = list();
+
+    let text = "fn next_value() -> i32 { return 4; } fn main() -> i32 { let mut total: i32 = 1; if true { total = next_value(); total = total + 1; } return total; }";
+    let tokens = lex(text);
+
+    list_push(mutref modules, "main");
+    list_push(mutref sources, make_source_file("main", text));
+
+    parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
+    let collect_summary = collect_value_type_facts("main", ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignments, mutref diags);
+
+    resolve_modules(ref modules, ref uses, ref items, mutref diags);
+    resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    typecheck_modules(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, mutref diags);
+    let summary = typecheck_value_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignments, ref uses, ref items, ref sources, mutref diags);
+
+    if collect_summary.diag_count != 0 {
+        return 1;
+    }
+    if collect_summary.assignment_count != 2 {
+        return 2;
+    }
+    if summary.diag_count != 0 {
+        return 3;
+    }
+    if summary.assignment_count != 2 {
+        return 4;
+    }
+    return 0;
+}
+
+
+

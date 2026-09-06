@@ -1,0 +1,440 @@
+pub fn concat3(a: str, b: str, c: str) -> str
+audit {
+    intent("Concatenate three strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(str_concat(a, b), c);
+}
+
+pub fn concat4(a: str, b: str, c: str, d: str) -> str
+audit {
+    intent("Concatenate four strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(str_concat(a, b), str_concat(c, d));
+}
+
+pub fn concat5(a: str, b: str, c: str, d: str, e: str) -> str
+audit {
+    intent("Concatenate five strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(a, concat4(b, c, d, e));
+}
+
+pub fn concat6(a: str, b: str, c: str, d: str, e: str, f: str) -> str
+audit {
+    intent("Concatenate six strings deterministically without adding runtime surface");
+    mutates();
+    effects();
+}
+{
+    return str_concat(a, concat5(b, c, d, e, f));
+}
+
+pub fn lines_text(lines: ref list<str>, chunk_limit: i32) -> str
+audit {
+    intent("Render lines with trailing newlines while bounding intermediate string growth");
+    mutates();
+    effects();
+}
+{
+    let mut limit = chunk_limit;
+    if limit <= 0 {
+        limit = 64;
+    }
+    let mut chunks: list<str> = list();
+    let mut current = "";
+    let mut current_count = 0;
+    let mut index = 0;
+    while index < list_len(ref lines) {
+        let entry = list_get(ref lines, index);
+        match entry {
+            Some(value) => {
+                current = str_concat(current, value);
+                current = str_concat(current, "\n");
+                current_count = current_count + 1;
+                if current_count >= limit {
+                    list_push(mutref chunks, current);
+                    current = "";
+                    current_count = 0;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if current != "" {
+        list_push(mutref chunks, current);
+    }
+
+    let mut rendered = "";
+    let mut chunk_index = 0;
+    while chunk_index < list_len(ref chunks) {
+        let entry = list_get(ref chunks, chunk_index);
+        match entry {
+            Some(value) => {
+                rendered = str_concat(rendered, value);
+            },
+            None => {
+            },
+        }
+        chunk_index = chunk_index + 1;
+    }
+    return rendered;
+}
+
+pub fn slice_text(text: str, start: i32, end: i32) -> str
+audit {
+    intent("Return a string slice or an empty string when the slice is invalid");
+    mutates();
+    effects();
+}
+{
+    let value = str_slice(text, start, end);
+    match value {
+        Some(part) => {
+            return part;
+        },
+        None => {
+            return "";
+        },
+    }
+}
+
+pub fn char_at(text: str, index: i32) -> i32
+audit {
+    intent("Return a string byte value or -1 when the byte index is invalid");
+    mutates();
+    effects();
+}
+{
+    let value = str_get(text, index);
+    match value {
+        Some(ch) => {
+            return ch;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+pub fn starts_with_at(text: str, index: i32, pattern: str) -> bool
+audit {
+    intent("Check whether text contains pattern at a specific byte index");
+    mutates();
+    effects();
+}
+{
+    if index < 0 {
+        return false;
+    }
+    if index + str_len(pattern) > str_len(text) {
+        return false;
+    }
+    let mut offset = 0;
+    while offset < str_len(pattern) {
+        if char_at(text, index + offset) != char_at(pattern, offset) {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+pub fn text_contains(text: str, pattern: str) -> bool
+audit {
+    intent("Check whether text contains a literal substring");
+    mutates();
+    effects();
+}
+{
+    if pattern == "" {
+        return true;
+    }
+    let text_len = str_len(text);
+    let pattern_len = str_len(pattern);
+    if pattern_len > text_len {
+        return false;
+    }
+    let mut start = 0;
+    while start <= text_len - pattern_len {
+        if starts_with_at(text, start, pattern) {
+            return true;
+        }
+        start = start + 1;
+    }
+    return false;
+}
+
+fn digit_text(value: i32) -> str {
+    if value == 0 {
+        return "0";
+    }
+    if value == 1 {
+        return "1";
+    }
+    if value == 2 {
+        return "2";
+    }
+    if value == 3 {
+        return "3";
+    }
+    if value == 4 {
+        return "4";
+    }
+    if value == 5 {
+        return "5";
+    }
+    if value == 6 {
+        return "6";
+    }
+    if value == 7 {
+        return "7";
+    }
+    if value == 8 {
+        return "8";
+    }
+    return "9";
+}
+
+pub fn i32_to_str(value: i32) -> str
+audit {
+    intent("Render an i32 as deterministic decimal text");
+    mutates();
+    effects();
+}
+{
+    if value == -2147483648 { return "-2147483648"; }
+    if value == 0 {
+        return "0";
+    }
+    let mut remaining = value;
+    let mut negative = false;
+    if remaining < 0 {
+        negative = true;
+        remaining = 0 - remaining;
+    }
+    let mut reversed: list<str> = list();
+    while remaining > 0 {
+        let digit = remaining - ((remaining / 10) * 10);
+        list_push(mutref reversed, digit_text(digit));
+        remaining = remaining / 10;
+    }
+    let mut text = "";
+    if negative {
+        text = "-";
+    }
+    let mut index = list_len(ref reversed) - 1;
+    while index >= 0 {
+        let entry = list_get(ref reversed, index);
+        match entry {
+            Some(value_text) => {
+                text = str_concat(text, value_text);
+            },
+            None => {
+            },
+        }
+        index = index - 1;
+    }
+    return text;
+}
+
+pub fn bool_text(value: bool) -> str
+audit {
+    intent("Render a bool as JSON-compatible text");
+    mutates();
+    effects();
+}
+{
+    if value {
+        return "true";
+    }
+    return "false";
+}
+
+fn hex_digit_text(value: i32) -> str {
+    if value < 10 {
+        return digit_text(value);
+    }
+    if value == 10 {
+        return "a";
+    }
+    if value == 11 {
+        return "b";
+    }
+    if value == 12 {
+        return "c";
+    }
+    if value == 13 {
+        return "d";
+    }
+    if value == 14 {
+        return "e";
+    }
+    return "f";
+}
+
+fn json_control_escape(ch: i32) -> str {
+    let high = ch / 16;
+    let low = ch - (high * 16);
+    return concat4("\\u00", hex_digit_text(high), hex_digit_text(low), "");
+}
+
+pub fn json_escape(text: str) -> str
+audit {
+    intent("Escape a string for deterministic JSON output");
+    mutates();
+    effects();
+}
+{
+    let mut escaped = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let ch = char_at(text, index);
+        if ch == 92 {
+            escaped = str_concat(escaped, "\\\\");
+        } else {
+            if ch == 34 {
+                escaped = str_concat(escaped, "\\\"");
+            } else {
+                if ch == 10 {
+                    escaped = str_concat(escaped, "\\n");
+                } else {
+                    if ch == 9 {
+                        escaped = str_concat(escaped, "\\t");
+                    } else {
+                        if ch == 13 {
+                            escaped = str_concat(escaped, "\\r");
+                        } else {
+                            if ch == 8 {
+                                escaped = str_concat(escaped, "\\b");
+                            } else {
+                                if ch == 12 {
+                                    escaped = str_concat(escaped, "\\f");
+                                } else {
+                                    if ch >= 0 and ch < 32 {
+                                        escaped = str_concat(escaped, json_control_escape(ch));
+                                    } else {
+                                        escaped = str_concat(escaped, slice_text(text, index, index + 1));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        index = index + 1;
+    }
+    return escaped;
+}
+
+pub fn json_quote(text: str) -> str
+audit {
+    intent("Wrap deterministically escaped text as a JSON string");
+    mutates();
+    effects();
+}
+{
+    return concat3("\"", json_escape(text), "\"");
+}
+
+pub fn str_starts_with(text: str, prefix: str) -> bool
+audit {
+    intent("Check whether text starts with a literal prefix");
+    mutates();
+    effects();
+}
+{
+    return starts_with_at(text, 0, prefix);
+}
+
+pub fn str_ends_with(text: str, suffix: str) -> bool
+audit {
+    intent("Check whether text ends with a literal suffix");
+    mutates();
+    effects();
+}
+{
+    let text_len = str_len(text);
+    let suffix_len = str_len(suffix);
+    if suffix_len > text_len {
+        return false;
+    }
+    let value = str_slice(text, text_len - suffix_len, text_len);
+    match value {
+        Some(part) => {
+            return part == suffix;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+pub fn list_contains(items: ref list<str>, target: str) -> bool
+audit {
+    intent("Check whether a string list contains a target value");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+pub fn list_contains_str(items: ref list<str>, target: str) -> bool
+audit {
+    intent("Alias string list containment for call sites that name the element type");
+    mutates();
+    effects();
+}
+{
+    return list_contains(ref items, target);
+}
+
+pub fn list_contains_i32(items: ref list<i32>, target: i32) -> bool
+audit {
+    intent("Check whether an i32 list contains a target value");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref items) {
+        let entry = list_get(ref items, index);
+        match entry {
+            Some(value) => {
+                if value == target {
+                    return true;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}

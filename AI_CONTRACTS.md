@@ -2,6 +2,14 @@
 
 ## Purpose
 
+Dependency provenance is captured before semantic checking. Facts v4 and
+change-report v4 expose `workspace-lock/v2` and framed source-tree SHA-256;
+old formats remain compatibility outputs, not secure dependency-change
+attestations. Proof-summary v3 separates actual SHA-256 artifacts from null
+unreached outputs. See [M54_10_CONTRACTS.md](M54_10_CONTRACTS.md) for exact
+encodings and the trusted-host boundary. None of this adds audit clauses or
+hidden model decisions to compiler correctness.
+
 AI Contracts are Nauqtype's first explicitly AI-first language feature.
 
 They are designed to make AI-authored code easier to supervise by attaching a small, fixed-shape, compiler-checked review surface to functions.

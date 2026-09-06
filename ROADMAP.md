@@ -422,7 +422,7 @@ Status:
 Status:
 
 - done
-- proof-summary v2 is now the active proof evidence shape, while v1 remains historical/compatible
+- proof-summary v2 became the active proof evidence shape at M29; M54.10 supersedes it with v3 while retaining the historical v1/v2 schemas
 - summaries now include richer phase metadata, first-failure localization, corpus IDs, preserved proof artifacts, and deterministic content hashes
 - `prove`, `prove-selfhost`, and `prove-corpus` stdout stayed stable
 - no stage4 proof chain, source-language syntax, runtime helpers, or public command expansion were added
@@ -836,8 +836,9 @@ Status:
 - the cold composed gate did not become materially faster than its 2,128-second
   pre-pass baseline; M54.5 removes repeated work between edits and during
   milestone close rather than claiming a compiler-speed improvement
-- proof-summary v2, the copied-selfhost fixed point, release gates, language
-  semantics, and runtime APIs remain unchanged
+- M54.5 left proof-summary v2, the copied-selfhost fixed point, release gates,
+  language semantics, and runtime APIs unchanged; M54.10 separately versions
+  provenance evidence
 
 ### M54.6: Semantic Lookup Hot-Path Optimization
 
@@ -907,10 +908,16 @@ Status: complete.
   See [M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
 - M54.10: framed dependency source hashes, enforced seed provenance, immutable
   source/artifact binding for cache/gate evidence, and honest proof identities.
+  Complete: captured dependency text, lock v2 and
+  opt-in facts/change v4, strict seed/cache provenance, and proof-summary v3.
+  Focused tests and independent Sol xhigh/GPT-5.5 xhigh audits passed; the
+  exact candidate passed the attested seven-phase gate in 2,716 seconds.
+  External locks need explicit v2 migration. See
+  [M54_10_CONTRACTS.md](M54_10_CONTRACTS.md).
 - The complete finding-to-owner and acceptance map is
   [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md). No closed milestone erases an
-  independently confirmed finding; automatic seed-provenance enforcement
-  remains separate from the M54.7 seed refresh.
+  independently confirmed finding. M54.10 enforcement is separately evidenced
+  from the earlier M54.7 seed refresh; F14 remains the M55 prerequisite.
 
 ### M55: Structured Process, Time, And Cancellation
 

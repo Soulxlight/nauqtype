@@ -19,8 +19,9 @@ separate, deterministic-shape performance artifact at:
 build/verification/performance-summary.json
 ```
 
-Proof evidence remains in `build/proof/summary.json`; performance measurements
-do not change proof-summary v2.
+Proof evidence remains in `build/proof/summary.json`, using proof-summary v3
+after M54.10. Performance measurements remain a separate artifact and do not
+change that versioned proof contract; v1/v2 schemas are historical contracts.
 
 ## Initial Ceilings
 

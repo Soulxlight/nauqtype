@@ -1,0 +1,314 @@
+use source;
+use text;
+
+pub enum diag_severity {
+    diag_error,
+    diag_warning,
+}
+
+pub enum diag_category {
+    diag_lex,
+    diag_parse,
+    diag_contract,
+    diag_import,
+    diag_resolve,
+    diag_type,
+    diag_propagate,
+    diag_try,
+    diag_borrow,
+    diag_handoff,
+    diag_ir,
+    diag_c,
+    diag_workspace,
+    diag_io,
+    diag_internal,
+}
+
+pub type diag {
+    code: str,
+    category: diag_category,
+    severity: diag_severity,
+    source_name: str,
+    start: i32,
+    end: i32,
+    message: str,
+    note: str,
+    help: str,
+}
+
+type diag_position {
+    offset: i32,
+    line: i32,
+    column: i32,
+}
+
+pub fn make_diagnostic(code: str, category: diag_category, severity: diag_severity, source_name: str, start: i32, end: i32, message: str, note: str, help: str) -> diag
+audit {
+    intent("Build a diagnostic with stable producer identity and an exclusive byte span");
+    mutates();
+    effects();
+}
+{
+    return diag {
+        code: code,
+        category: category,
+        severity: severity,
+        source_name: source_name,
+        start: start,
+        end: end,
+        message: message,
+        note: note,
+        help: help,
+    };
+}
+
+pub fn make_error(code: str, category: diag_category, source_name: str, start: i32, end: i32, message: str) -> diag
+audit {
+    intent("Build a stable error diagnostic from producer-owned identity and location truth");
+    mutates();
+    effects();
+}
+{
+    return make_diagnostic(code, category, diag_error, source_name, start, end, message, "", "");
+}
+
+pub fn make_warning(code: str, category: diag_category, source_name: str, start: i32, end: i32, message: str) -> diag
+audit {
+    intent("Build a stable warning diagnostic from producer-owned identity and location truth");
+    mutates();
+    effects();
+}
+{
+    return make_diagnostic(code, category, diag_warning, source_name, start, end, message, "", "");
+}
+
+fn severity_text(severity: diag_severity) -> str {
+    match severity {
+        diag_error => { return "error"; },
+        diag_warning => { return "warning"; },
+    }
+}
+
+fn category_text(category: diag_category) -> str {
+    match category {
+        diag_lex => { return "LEX"; },
+        diag_parse => { return "PARSE"; },
+        diag_contract => { return "CONTRACT"; },
+        diag_import => { return "IMPORT"; },
+        diag_resolve => { return "RESOLVE"; },
+        diag_type => { return "TYPE"; },
+        diag_propagate => { return "PROPAGATE"; },
+        diag_try => { return "TRY"; },
+        diag_borrow => { return "BORROW"; },
+        diag_handoff => { return "HANDOFF"; },
+        diag_ir => { return "IR"; },
+        diag_c => { return "C"; },
+        diag_workspace => { return "WORKSPACE"; },
+        diag_io => { return "IO"; },
+        diag_internal => { return "INTERNAL"; },
+    }
+}
+
+fn lookup_source(sources: ref list<source_file>, name: str) -> option<source_file> {
+    let mut index = 0;
+    while index < list_len(ref sources) {
+        let entry = list_get(ref sources, index);
+        match entry {
+            Some(value) => {
+                if value.name == name {
+                    return Some(value);
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn source_position(text_value: str, requested: i32) -> diag_position {
+    let mut offset = requested;
+    if offset < 0 {
+        offset = 0;
+    }
+    if offset > str_len(text_value) {
+        offset = str_len(text_value);
+    }
+    let mut line = 1;
+    let mut column = 1;
+    let mut index = 0;
+    while index < offset {
+        let current = str_get(text_value, index);
+        match current {
+            Some(value) => {
+                if value == 10 {
+                    line = line + 1;
+                    column = 1;
+                } else {
+                    column = column + 1;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return diag_position { offset: offset, line: line, column: column };
+}
+
+fn rendered_without_source(entry: diag) -> str {
+    let identity = str_concat(str_concat(category_text(entry.category), "["), str_concat(entry.code, "]"));
+    return str_concat(str_concat(str_concat(entry.source_name, ": "), identity), str_concat(": ", entry.message));
+}
+
+fn rendered_with_source(entry: diag, file: source_file) -> str {
+    let position = source_position(file.text, entry.start);
+    let location = str_concat(str_concat(str_concat(file.path, ":"), i32_to_str(position.line)), str_concat(":", i32_to_str(position.column)));
+    let identity = str_concat(str_concat(category_text(entry.category), "["), str_concat(entry.code, "]"));
+    return str_concat(str_concat(str_concat(location, ": "), identity), str_concat(": ", entry.message));
+}
+
+fn rendered_diag(entry: diag, sources: ref list<source_file>) -> str {
+    if entry.start >= 0 {
+        let found = lookup_source(ref sources, entry.source_name);
+        match found {
+            Some(file) => { return rendered_with_source(entry, file); },
+            None => {
+            },
+        }
+    }
+    return rendered_without_source(entry);
+}
+
+pub fn emit_diag(entry: diag) -> unit
+audit {
+    intent("Print a deterministic compatibility diagnostic message to stderr");
+    mutates();
+    effects(print);
+}
+{
+    eprint_line(rendered_without_source(entry));
+    return;
+}
+
+pub fn emit_diag_with_sources(entry: diag, sources: ref list<source_file>) -> unit
+audit {
+    intent("Print a deterministic diagnostic with the physical source location when available");
+    mutates();
+    effects(print);
+}
+{
+    eprint_line(rendered_diag(entry, ref sources));
+    return;
+}
+
+pub fn diagnostics_have_errors(entries: ref list<diag>) -> bool
+audit {
+    intent("Report whether a diagnostic collection contains a build-failing error");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                match value.severity {
+                    diag_error => { return true; },
+                    diag_warning => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn emit_position_json(prefix: str, position: diag_position, suffix: str) -> unit {
+    let line = str_concat(str_concat(prefix, "{ \"offset\": "), i32_to_str(position.offset));
+    let with_line = str_concat(str_concat(line, ", \"line\": "), i32_to_str(position.line));
+    let with_column = str_concat(str_concat(with_line, ", \"column\": "), i32_to_str(position.column));
+    print_line(str_concat(str_concat(with_column, " }"), suffix));
+    return;
+}
+
+fn emit_span_json(entry: diag, sources: ref list<source_file>) -> unit {
+    if entry.start >= 0 and entry.end >= entry.start {
+        let found = lookup_source(ref sources, entry.source_name);
+        match found {
+            Some(file) => {
+                let start = source_position(file.text, entry.start);
+                let end = source_position(file.text, entry.end);
+                print_line("      \"span\": {");
+                print_line(str_concat(str_concat("        \"path\": ", json_quote(file.path)), ","));
+                emit_position_json("        \"start\": ", start, ",");
+                emit_position_json("        \"end\": ", end, "");
+                print_line("      },");
+                return;
+            },
+            None => {
+            },
+        }
+    }
+    print_line("      \"span\": null,");
+    return;
+}
+
+pub fn emit_diagnostics_json(entries: ref list<diag>, sources: ref list<source_file>) -> unit
+audit {
+    intent("Emit truthful stage1 diagnostics in the stable diagnostics JSON v1 envelope");
+    mutates();
+    effects(print);
+}
+{
+    print_line("{");
+    print_line("  \"version\": \"diagnostics/v1\",");
+    print_line("  \"command\": \"check\",");
+    if diagnostics_have_errors(ref entries) {
+        print_line("  \"ok\": false,");
+    } else {
+        print_line("  \"ok\": true,");
+    }
+    print_line("  \"diagnostics\": [");
+    let mut index = 0;
+    while index < list_len(ref entries) {
+        let entry = list_get(ref entries, index);
+        match entry {
+            Some(value) => {
+                print_line("    {");
+                print_line(str_concat(str_concat("      \"code\": ", json_quote(value.code)), ","));
+                print_line(str_concat(str_concat("      \"category\": ", json_quote(category_text(value.category))), ","));
+                print_line(str_concat(str_concat("      \"severity\": ", json_quote(severity_text(value.severity))), ","));
+                print_line(str_concat(str_concat("      \"message\": ", json_quote(value.message)), ","));
+                emit_span_json(value, ref sources);
+                if value.note == "" {
+                    print_line("      \"notes\": [],");
+                } else {
+                    print_line(str_concat(str_concat("      \"notes\": [", json_quote(value.note)), "],"));
+                }
+                if value.help == "" {
+                    print_line("      \"help\": null,");
+                } else {
+                    print_line(str_concat(str_concat("      \"help\": ", json_quote(value.help)), ","));
+                }
+                let mut suffix = "";
+                if index + 1 < list_len(ref entries) {
+                    suffix = ",";
+                }
+                print_line(str_concat("      \"rendered\": ", json_quote(rendered_diag(value, ref sources))));
+                print_line(str_concat("    }", suffix));
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    print_line("  ]");
+    print_line("}");
+    return;
+}

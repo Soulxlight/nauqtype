@@ -1,0 +1,470 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/proof-summary-v3.schema.json",
+  "title": "Nauqtype Proof Summary v3",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "ok",
+    "failed_phase",
+    "failure",
+    "phases",
+    "selfhost",
+    "corpus",
+    "tooling"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 3
+    },
+    "command": {
+      "enum": [
+        "prove",
+        "prove-selfhost",
+        "prove-corpus"
+      ]
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "failed_phase": {
+      "type": "string"
+    },
+    "failure": {
+      "$ref": "#/$defs/failure"
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    },
+    "selfhost": {
+      "$ref": "#/$defs/selfhost"
+    },
+    "corpus": {
+      "$ref": "#/$defs/corpus"
+    },
+    "tooling": {
+      "$ref": "#/$defs/tooling"
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "path",
+        "hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "required": [
+        "phase",
+        "corpus_id",
+        "artifact_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "corpus_id": {
+          "type": "string"
+        },
+        "artifact_path": {
+          "type": "string"
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": [
+        "id",
+        "group",
+        "ordinal",
+        "status",
+        "artifact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "selfhost.copy",
+            "selfhost.stage1_emit_c",
+            "selfhost.stage2_run",
+            "selfhost.structural_c_compare",
+            "corpus.emit_c",
+            "corpus.build",
+            "corpus.run",
+            "corpus.structural_c_compare",
+            "tooling.schema_golden",
+            "tooling.policy_check",
+            "tooling.refactor_plan",
+            "tooling.formatter_check"
+          ]
+        },
+        "group": {
+          "enum": [
+            "selfhost",
+            "corpus",
+            "tooling"
+          ]
+        },
+        "ordinal": {
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "skipped"
+            },
+            "artifact": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "passed"
+            },
+            "id": {
+              "enum": [
+                "selfhost.copy",
+                "selfhost.stage1_emit_c",
+                "selfhost.stage2_run",
+                "selfhost.structural_c_compare"
+              ]
+            },
+            "artifact": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "passed"
+            },
+            "id": {
+              "enum": [
+                "corpus.emit_c",
+                "corpus.build",
+                "corpus.run",
+                "corpus.structural_c_compare",
+                "tooling.schema_golden",
+                "tooling.policy_check",
+                "tooling.refactor_plan",
+                "tooling.formatter_check"
+              ]
+            },
+            "artifact": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "selfhost_artifacts": {
+      "type": "object",
+      "required": [
+        "workspace_main",
+        "stage1_c",
+        "stage2_c"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "workspace_main": {
+          "$ref": "#/$defs/artifact"
+        },
+        "stage1_c": {
+          "$ref": "#/$defs/artifact"
+        },
+        "stage2_c": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    },
+    "selfhost": {
+      "type": "object",
+      "required": [
+        "status",
+        "structural_c_equal",
+        "artifacts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "structural_c_equal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "artifacts": {
+          "$ref": "#/$defs/selfhost_artifacts"
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "passed"
+            },
+            "structural_c_equal": {
+              "const": true
+            },
+            "artifacts": {
+              "type": "object",
+              "properties": {
+                "workspace_main": {
+                  "type": "object"
+                },
+                "stage1_c": {
+                  "type": "object"
+                },
+                "stage2_c": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "skipped"
+            },
+            "structural_c_equal": {
+              "type": "null"
+            },
+            "artifacts": {
+              "type": "object",
+              "properties": {
+                "workspace_main": {
+                  "type": "null"
+                },
+                "stage1_c": {
+                  "type": "null"
+                },
+                "stage2_c": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        }
+      ]
+    },
+    "corpus_artifact": {
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "emit_c",
+        "build_c",
+        "run_c"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "emit_c": {
+          "$ref": "#/$defs/artifact"
+        },
+        "build_c": {
+          "$ref": "#/$defs/artifact"
+        },
+        "run_c": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "required": [
+        "status",
+        "cases",
+        "ids",
+        "artifacts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "cases": {
+          "type": "integer"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/corpus_artifact"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "passed"
+            },
+            "artifacts": {
+              "items": {
+                "type": "object",
+                "properties": {
+                  "emit_c": {
+                    "type": "object"
+                  },
+                  "build_c": {
+                    "type": "object"
+                  },
+                  "run_c": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "skipped"
+            },
+            "artifacts": {
+              "items": {
+                "type": "object",
+                "properties": {
+                  "emit_c": {
+                    "type": "null"
+                  },
+                  "build_c": {
+                    "type": "null"
+                  },
+                  "run_c": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          }
+        }
+      ]
+    },
+    "tooling": {
+      "type": "object",
+      "required": [
+        "status",
+        "groups"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "schema_golden",
+              "policy_check",
+              "refactor_plan",
+              "formatter_check"
+            ]
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

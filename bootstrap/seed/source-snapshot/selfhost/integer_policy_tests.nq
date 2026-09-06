@@ -1,0 +1,301 @@
+use text;
+use c_emit;
+
+fn integer_policy_path(name: str) -> str {
+    return str_concat("tests/fixtures/m54_9_arithmetic/", name);
+}
+
+fn integer_policy_count(value: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, index, needle) { count = count + 1; }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn integer_policy_expect(label: str, result: result<process_result, io_err>, code: i32, stdout: str, stderr: str) -> bool {
+    match result {
+        Ok(status) => {
+            if status.exit_code == code and status.stdout == stdout and status.stderr == stderr { return true; }
+            eprint_line(str_concat("integer policy failed: ", label));
+            eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+            eprint_line(str_concat("stdout: ", status.stdout));
+            eprint_line(str_concat("stderr: ", status.stderr));
+        },
+        Err(err) => { eprint_line(str_concat(label, io_err_text(err))); },
+    }
+    return false;
+}
+
+fn integer_policy_location(offset: i32, line: i32, column: i32) -> str {
+    return str_concat(concat5("{ \"offset\": ", i32_to_str(offset), ", \"line\": ", i32_to_str(line), ", \"column\": "), str_concat(i32_to_str(column), " }"));
+}
+
+fn integer_policy_slash_span(output: str, path: str) -> bool {
+    match read_file(path) {
+        Ok(source) => {
+            // These tiny fixtures each contain one slash and no comments. Derive
+            // its full byte/line/column span without a second JSON parser.
+            if integer_policy_count(source, "/") != 1 { return false; }
+            let mut offset = 0;
+            let mut line = 1;
+            let mut column = 1;
+            while offset < str_len(source) {
+                if char_at(source, offset) == 47 {
+                    let start = str_concat("\"start\": ", integer_policy_location(offset, line, column));
+                    let end = str_concat("\"end\": ", integer_policy_location(offset + 1, line, column + 1));
+                    return integer_policy_count(output, start) == 1 and integer_policy_count(output, end) == 1;
+                }
+                if char_at(source, offset) == 10 { line = line + 1; column = 1; }
+                else { column = column + 1; }
+                offset = offset + 1;
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+fn integer_policy_rejected(driver: str, name: str, code: str, message: str, slash: bool) -> bool {
+    let path = integer_policy_path(name);
+    let mut args: list<str> = list();
+    list_push(mutref args, "check");
+    list_push(mutref args, path);
+    list_push(mutref args, "--diagnostics");
+    list_push(mutref args, "json");
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            let output = status.stdout;
+            let mut ok = status.exit_code == 1 and status.stderr == "";
+            ok = ok and integer_policy_count(output, "\"code\":") == 1;
+            ok = ok and integer_policy_count(output, concat3("\"code\": \"", code, "\"")) == 1;
+            ok = ok and integer_policy_count(output, concat3("\"message\": \"", message, "\"")) == 1;
+            ok = ok and integer_policy_count(output, concat3("\"path\": \"", path, "\"")) == 1;
+            ok = ok and integer_policy_count(output, "\"severity\": \"error\"") == 1;
+            ok = ok and integer_policy_count(output, "\"ok\": false") == 1;
+            if slash { ok = ok and integer_policy_slash_span(output, path); }
+            if ok { return true; }
+            eprint_line(str_concat("integer diagnostic failed: ", name));
+            eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+fn integer_policy_diagnostics(driver: str) -> bool {
+    let zero = "constant integer division by zero";
+    let overflow = "constant integer division overflow";
+    if not integer_policy_rejected(driver, "zero32.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "zero64.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "overflow32.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "overflow64.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "wrapped_zero32.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "wrapped_zero64.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "wrapped_overflow32.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "wrapped_overflow64.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "live_and_zero.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "live_or_zero.nq", "NQ-TYPE-045", zero, true) { return false; }
+    if not integer_policy_rejected(driver, "live_and_overflow.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "live_or_overflow.nq", "NQ-TYPE-045", overflow, true) { return false; }
+    if not integer_policy_rejected(driver, "computed_live_zero.nq", "NQ-TYPE-045", zero, true) { return false; }
+    let range32 = "integer literal is out of range for `i32`";
+    let range64 = "integer literal is out of range for `i64`";
+    if not integer_policy_rejected(driver, "range_positive32.nq", "NQ-TYPE-043", range32, false) { return false; }
+    if not integer_policy_rejected(driver, "range_negative32.nq", "NQ-TYPE-043", range32, false) { return false; }
+    if not integer_policy_rejected(driver, "range_positive64.nq", "NQ-TYPE-043", range64, false) { return false; }
+    if not integer_policy_rejected(driver, "range_negative64.nq", "NQ-TYPE-043", range64, false) { return false; }
+    if not integer_policy_rejected(driver, "dead_range.nq", "NQ-TYPE-043", range32, false) { return false; }
+    let unsupported = "stage1 limitation: unsupported const initializer expression";
+    if not integer_policy_rejected(driver, "identifier_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
+    if not integer_policy_rejected(driver, "call_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
+    if not integer_policy_rejected(driver, "dead_call_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
+    let borrow_binding = "borrow expression must name a binding or field path";
+    if not integer_policy_rejected(driver, "ref_arithmetic32.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "ref_arithmetic64.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "ref_parenthesized32.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "ref_parenthesized64.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "ref_wrapped_arithmetic32.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "ref_wrapped_arithmetic64.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "mutref_arithmetic32.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    if not integer_policy_rejected(driver, "mutref_arithmetic64.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
+    return true;
+}
+
+fn integer_policy_emit(driver: str, name: str, output: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "emit-c");
+    list_push(mutref args, integer_policy_path(name));
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    return integer_policy_expect(str_concat("emit ", name), run_process(driver, ref args, "."), 0, "", "");
+}
+
+fn integer_policy_constant_bounds(source: str) -> bool {
+    // Bound the emitted initializers before invoking cc. Short source containing
+    // nested constant macros can otherwise expand exponentially in the C preprocessor.
+    if str_len(source) > 262144 or integer_policy_count(source, "NQ_I32_CONST_") != 0 or integer_policy_count(source, "NQ_I64_CONST_") != 0 { return false; }
+    let mut declarations = 0;
+    let mut index = 0;
+    while index < str_len(source) {
+        if starts_with_at(source, index, "static const ") {
+            let mut end = index;
+            while end < str_len(source) and char_at(source, end) != 10 { end = end + 1; }
+            let mut value_start = index;
+            while value_start < end and not starts_with_at(source, value_start, " = ") { value_start = value_start + 1; }
+            if value_start == end or end - (value_start + 3) > 64 { return false; }
+            declarations = declarations + 1;
+            index = end;
+        }
+        index = index + 1;
+    }
+    return declarations > 0;
+}
+
+fn integer_policy_carriers(path: str, constant: bool) -> bool {
+    match read_file(path) {
+        Ok(source) => {
+            if constant {
+                if integer_policy_constant_bounds(source) { return true; }
+                eprint_line(str_concat(path, " has unfolded or oversized constant initializers"));
+                return false;
+            }
+            let mut names: list<str> = list();
+            list_push(mutref names, "nq_i32_add");
+            list_push(mutref names, "nq_i32_sub");
+            list_push(mutref names, "nq_i32_mul");
+            list_push(mutref names, "nq_i32_neg");
+            list_push(mutref names, "nq_i32_div");
+            list_push(mutref names, "nq_i64_add");
+            list_push(mutref names, "nq_i64_sub");
+            list_push(mutref names, "nq_i64_mul");
+            list_push(mutref names, "nq_i64_neg");
+            list_push(mutref names, "nq_i64_div");
+            let mut index = 0;
+            while index < list_len(ref names) {
+                match list_get(ref names, index) {
+                    Some(name) => {
+                        if integer_policy_count(source, str_concat(name, "(")) == 0 {
+                            eprint_line(concat3(path, " missing integer carrier ", name));
+                            return false;
+                        }
+                    },
+                    None => { return false; },
+                }
+                index = index + 1;
+            }
+            return true;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+fn integer_policy_compile(source: str, output: str, profile: i32) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    if profile == 0 { list_push(mutref args, "-O0"); }
+    else { list_push(mutref args, "-O2"); }
+    if profile == 2 {
+        list_push(mutref args, "-fsanitize=undefined");
+        list_push(mutref args, "-fno-sanitize-recover=all");
+    }
+    list_push(mutref args, source);
+    list_push(mutref args, "stdlib/runtime.c");
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    return integer_policy_expect(str_concat("compile ", output), run_process("cc", ref args, "."), 0, "", "");
+}
+
+fn integer_policy_mode(executable: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, mode);
+    list_push(mutref args, "edge");
+    return integer_policy_expect(concat3(executable, " ", mode), run_process(executable, ref args, "."), code, stdout, stderr);
+}
+
+fn integer_policy_runtime(executable: str) -> bool {
+    let ok = "integer policy ok\n";
+    if not integer_policy_mode(executable, "boundaries32", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "boundaries64", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "order32", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "order64", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "short", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "borrow32", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "borrow64", 0, ok, "") { return false; }
+    if not integer_policy_mode(executable, "local32", 0, "local32:div\nlocal32:add\nlocal32:sub\nlocal32:mul\ninteger policy ok\n", "") { return false; }
+    if not integer_policy_mode(executable, "local64", 0, "local64:div\nlocal64:add\nlocal64:sub\nlocal64:mul\ninteger policy ok\n", "") { return false; }
+    if not integer_policy_mode(executable, "field32", 0, "field32:div\nfield32:add\nfield32:sub\nfield32:mul\ninteger policy ok\n", "") { return false; }
+    if not integer_policy_mode(executable, "field64", 0, "field64:div\nfield64:add\nfield64:sub\nfield64:mul\ninteger policy ok\n", "") { return false; }
+    if not integer_policy_mode(executable, "context32", 0, "return32\ncondition32\nassignment32\nargument32\nlist32\ninteger policy ok\n", "") { return false; }
+    if not integer_policy_mode(executable, "context64", 0, "return64\ncondition64\nassignment64\nargument64\nlist64\ninteger policy ok\n", "") { return false; }
+    let trace = "left\nright\n";
+    let zero = "nauqtype runtime: integer division by zero\n";
+    let overflow = "nauqtype runtime: integer division overflow\n";
+    if not integer_policy_mode(executable, "zero32", 1, trace, zero) { return false; }
+    if not integer_policy_mode(executable, "zero64", 1, trace, zero) { return false; }
+    if not integer_policy_mode(executable, "overflow32", 1, trace, overflow) { return false; }
+    if not integer_policy_mode(executable, "overflow64", 1, trace, overflow) { return false; }
+    return true;
+}
+
+pub fn run_integer_policy_gate(driver: str) -> bool
+audit {
+    intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
+    mutates();
+    effects(print, io);
+}
+{
+    if not check_c_arithmetic_export_failures() {
+        eprint_line("integer policy: malformed C export truth was accepted");
+        return false;
+    }
+    // Test the actual selfhost renderer here; fixtures do not gain an ambient
+    // import path merely to reach the private compiler text module.
+    if i32_to_str(-2147483648) != "-2147483648" {
+        eprint_line("integer policy: i32_to_str minimum failed");
+        return false;
+    }
+    if not integer_policy_diagnostics(driver) { return false; }
+    let mut macro_args: list<str> = list();
+    list_push(mutref macro_args, "-std=c11");
+    list_push(mutref macro_args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref macro_args, "-pedantic-errors");
+    list_push(mutref macro_args, "-Istdlib");
+    list_push(mutref macro_args, "-fsyntax-only");
+    list_push(mutref macro_args, integer_policy_path("constant_macros.c"));
+    if not integer_policy_expect("strict C11 constant macros", run_process("cc", ref macro_args, "."), 0, "", "") { return false; }
+    match create_dir_all("build/m54_9_arithmetic") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let runtime_c = "build/m54_9_arithmetic/runtime.c";
+    let constants_c = "build/m54_9_arithmetic/constants.c";
+    if not integer_policy_emit(driver, "runtime.nq", runtime_c) { return false; }
+    if not integer_policy_emit(driver, "constants.nq", constants_c) { return false; }
+    if not integer_policy_carriers(runtime_c, false) { return false; }
+    if not integer_policy_carriers(constants_c, true) { return false; }
+    // Emit each fixture once, compile once per profile, reuse the runtime binary
+    // for all success and failfast modes. No per-case compiler invocations.
+    let mut profile = 0;
+    while profile < 3 {
+        let mut suffix = "O0";
+        if profile == 1 { suffix = "O2"; }
+        if profile == 2 { suffix = "O2-ubsan"; }
+        let runtime_exe = str_concat("build/m54_9_arithmetic/runtime-", suffix);
+        let constants_exe = str_concat("build/m54_9_arithmetic/constants-", suffix);
+        if not integer_policy_compile(runtime_c, runtime_exe, profile) { return false; }
+        if not integer_policy_runtime(runtime_exe) { return false; }
+        if not integer_policy_compile(constants_c, constants_exe, profile) { return false; }
+        let args: list<str> = list();
+        if not integer_policy_expect(constants_exe, run_process(constants_exe, ref args, "."), 0, "integer constants ok\n", "") { return false; }
+        profile = profile + 1;
+    }
+    return true;
+}

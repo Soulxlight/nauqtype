@@ -60,6 +60,10 @@ This makes migration visible in facts and diffs instead of silently changing an 
 
 - Facts v3 retain canonical workspace/package/module IDs and locked dependency
   hashes in addition to the explicit dependency alias root.
+- Facts v4 adds explicit captured lock and framed source identities. v3's
+  content-only hash remains a compatibility value; use change-report v4 for
+  framed dependency-change evidence. See the explicit lock v2 migration in
+  [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md).
 - Review, review-diff, change-report, policy-check, and refactor plans use the
   shipped M45 cross-package canonical-ID behavior; no filesystem-text fallback
   is permitted.

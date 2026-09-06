@@ -21,6 +21,13 @@ fingerprint and both generated artifacts still match. A missing or stale cache
 rebuilds automatically; explicit `--reuse-stage1` gates fail closed instead of
 silently accepting an executable that merely exists.
 
+M54.10 cache v2 additionally validates the strict seed inventory, derivation
+receipt, physical compiler identity/target, and exact flags. Only the builder
+publishes a cache, after compiling captured inputs and verifying originals
+have not persistently changed. The old standalone `record` operation is gone.
+Fast feedback also runs focused provenance and attestation unit/stub checks;
+those are not substitutes for a real seed or copied-release proof.
+
 M54's focused upstream checks are also available when changing Linux
 input/filesystem or library-resolution contracts:
 
@@ -51,17 +58,32 @@ single invocation, after the stage1 driver and proof have freshly succeeded.
 
 The same invocation enforces the checked-in Linux wall-time and peak-RSS
 ceilings without rerunning a phase. It writes those measurements separately to
-`build/verification/performance-summary.json`; proof-summary v2 remains
-unchanged. See [PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md) for the runner
+`build/verification/performance-summary.json`; proof-summary v3 is separate.
+See [PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md) for the runner
 contract, initial ceilings, and CI rationale.
 
 The locked corpus performs one stage1 `emit-c`, one host-C compile, and one
 native run for every case. Exactly `hello`, `multi_file_main`, and
 `m53_ownership_values` additionally exercise the public `build` and `run`
 routes and compare their normalized C with the canonical `emit-c` output. The
-locked proof-summary v2 paths and hashes remain unchanged: `build_c` records the
+proof-summary v3 keeps the artifact roles: `build_c` records the
 C that was compiled and `run_c` records the C behind the executed program;
 `corpus.structural_c_compare` includes the three command-routing comparisons.
+
+Artifact hashes are explicit SHA-256 objects, never `nqsum` attestations.
+Skipped/unreached artifacts and unperformed comparisons are null, even when
+stale files exist. Earlier summary schemas remain available for historical
+evidence; active proof emits v3.
+
+The gate captures the indexed candidate before running and verifies source,
+toolchain, cache, proof, and copied-release identities afterward. Its strict
+`build/verification/milestone-attestation-v1.json` can be checked with
+`scripts/milestone_attestation.sh verify`. Run from a fully indexed frozen
+candidate. For the five explicitly allowlisted nonpackaged completion docs,
+`scripts/milestone_attestation.sh close <full-commit-id>` and `verify-close`
+bind a disclosed documentation delta; no source, schema, script, README, or
+release artifact change is permitted after the gate. These records detect
+staleness/transplants, not a malicious owner rewriting every trust root.
 
 ## Milestone Close Order
 
