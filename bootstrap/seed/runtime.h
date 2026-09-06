@@ -102,6 +102,20 @@ typedef struct {
     NQStr stderr;
 } NQ_process_result;
 
+/* Opaque to Nauqtype source; the C fields are runtime ABI, not constructors. */
+typedef struct { int64_t _ns; } NQ_duration;
+typedef struct { int64_t _ns; } NQ_instant;
+typedef struct NQProcessState NQProcessState;
+typedef struct { NQProcessState* _state; } NQ_process;
+
+typedef struct {
+    int32_t exit_code;
+    NQStr stdout;
+    NQStr stderr;
+    bool timed_out;
+    bool cancelled;
+} NQ_process_outcome;
+
 #define NQ_UNIT ((NQUnit){0})
 
 typedef enum NQ_Option__i32_Tag {
@@ -129,6 +143,60 @@ typedef struct NQ_Option__str {
         NQUnit None;
     } data;
 } NQ_Option__str;
+
+typedef enum NQ_Option__duration_Tag {
+    NQ_Option__duration_Tag_Some,
+    NQ_Option__duration_Tag_None,
+} NQ_Option__duration_Tag;
+typedef struct NQ_Option__duration {
+    NQ_Option__duration_Tag tag;
+    union { struct { NQ_duration _0; } Some; NQUnit None; } data;
+} NQ_Option__duration;
+
+typedef enum NQ_Option__instant_Tag {
+    NQ_Option__instant_Tag_Some,
+    NQ_Option__instant_Tag_None,
+} NQ_Option__instant_Tag;
+typedef struct NQ_Option__instant {
+    NQ_Option__instant_Tag tag;
+    union { struct { NQ_instant _0; } Some; NQUnit None; } data;
+} NQ_Option__instant;
+
+typedef enum NQ_Result__i64__io_err_Tag {
+    NQ_Result__i64__io_err_Tag_Ok,
+    NQ_Result__i64__io_err_Tag_Err,
+} NQ_Result__i64__io_err_Tag;
+typedef struct NQ_Result__i64__io_err {
+    NQ_Result__i64__io_err_Tag tag;
+    union { struct { int64_t _0; } Ok; struct { NQIoErr _0; } Err; } data;
+} NQ_Result__i64__io_err;
+
+typedef enum NQ_Result__instant__io_err_Tag {
+    NQ_Result__instant__io_err_Tag_Ok,
+    NQ_Result__instant__io_err_Tag_Err,
+} NQ_Result__instant__io_err_Tag;
+typedef struct NQ_Result__instant__io_err {
+    NQ_Result__instant__io_err_Tag tag;
+    union { struct { NQ_instant _0; } Ok; struct { NQIoErr _0; } Err; } data;
+} NQ_Result__instant__io_err;
+
+typedef enum NQ_Result__process__io_err_Tag {
+    NQ_Result__process__io_err_Tag_Ok,
+    NQ_Result__process__io_err_Tag_Err,
+} NQ_Result__process__io_err_Tag;
+typedef struct NQ_Result__process__io_err {
+    NQ_Result__process__io_err_Tag tag;
+    union { struct { NQ_process _0; } Ok; struct { NQIoErr _0; } Err; } data;
+} NQ_Result__process__io_err;
+
+typedef enum NQ_Result__process_outcome__io_err_Tag {
+    NQ_Result__process_outcome__io_err_Tag_Ok,
+    NQ_Result__process_outcome__io_err_Tag_Err,
+} NQ_Result__process_outcome__io_err_Tag;
+typedef struct NQ_Result__process_outcome__io_err {
+    NQ_Result__process_outcome__io_err_Tag tag;
+    union { struct { NQ_process_outcome _0; } Ok; struct { NQIoErr _0; } Err; } data;
+} NQ_Result__process_outcome__io_err;
 
 typedef enum NQ_Result__str__io_err_Tag {
     NQ_Result__str__io_err_Tag_Ok,
@@ -244,6 +312,20 @@ NQIoErr nq_io_err_clone(NQIoErr err);
 void nq_io_err_drop(NQIoErr* err);
 NQ_process_result nq_process_result_clone(NQ_process_result value);
 void nq_process_result_drop(NQ_process_result* value);
+void nq_process_drop(NQ_process* value);
+NQ_process_outcome nq_process_outcome_clone(NQ_process_outcome value);
+void nq_process_outcome_drop(NQ_process_outcome* value);
+NQ_Option__duration nq_option__duration_clone(NQ_Option__duration value);
+void nq_option__duration_drop(NQ_Option__duration* value);
+NQ_Option__instant nq_option__instant_clone(NQ_Option__instant value);
+void nq_option__instant_drop(NQ_Option__instant* value);
+NQ_Result__i64__io_err nq_result__i64__io_err_clone(NQ_Result__i64__io_err value);
+void nq_result__i64__io_err_drop(NQ_Result__i64__io_err* value);
+NQ_Result__instant__io_err nq_result__instant__io_err_clone(NQ_Result__instant__io_err value);
+void nq_result__instant__io_err_drop(NQ_Result__instant__io_err* value);
+void nq_result__process__io_err_drop(NQ_Result__process__io_err* value);
+NQ_Result__process_outcome__io_err nq_result__process_outcome__io_err_clone(NQ_Result__process_outcome__io_err value);
+void nq_result__process_outcome__io_err_drop(NQ_Result__process_outcome__io_err* value);
 NQ_Option__str nq_option__str_clone(NQ_Option__str value);
 void nq_option__str_drop(NQ_Option__str* value);
 NQ_Result__str__io_err nq_result__str__io_err_clone(NQ_Result__str__io_err value);
@@ -281,6 +363,18 @@ int32_t nq_arg_count(void);
 NQ_Option__str nq_arg_get(int32_t index);
 NQ_Result__unit__io_err nq_create_dir_all(NQStr path);
 NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__str* args, NQStr cwd);
+NQ_Option__duration nq_duration_from_ns(int64_t value);
+int64_t nq_duration_as_ns(NQ_duration value);
+NQ_Option__duration nq_duration_between(NQ_instant start, NQ_instant end);
+NQ_Result__i64__io_err nq_wall_time_ns(void);
+NQ_Result__instant__io_err nq_monotonic_now(void);
+NQ_Result__instant__io_err nq_deadline_after(NQ_duration delay);
+NQ_Result__unit__io_err nq_sleep_for(NQ_duration delay);
+NQ_Result__process__io_err nq_process_start(NQStr program, const NQ_List__str* args,
+    NQStr cwd, const NQ_List__str* env, NQ_Option__str input, bool capture, int64_t max_output_bytes);
+/* Consumes child, including on error. The emitter clears the moved source. */
+NQ_Result__process_outcome__io_err nq_process_wait(NQ_process child, NQ_Option__instant deadline);
+NQ_Result__unit__io_err nq_process_terminate(NQ_process* child);
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index);
 NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end);
 NQBytes nq_bytes_from_str(NQStr text);

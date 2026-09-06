@@ -921,12 +921,24 @@ Status: complete.
 
 ### M55: Structured Process, Time, And Cancellation
 
-- prerequisite: close the audit corrections above and repair interrupted
-  process read/wait handling (Astra F14) before adding deadlines/cancellation
-
-- add explicit process environment/stdin/output/timeout behavior
-- add wall time, monotonic time, sleep, and deadline support
-- prove cleanup, cancellation, and deterministic failures on Linux
+- status: complete, 2026-09-06. Baseline `e2f6801` closes M54.8-M54.10;
+  this checkpoint freezes the M55 contract after executable acceptance.
+- F14 interrupted legacy read/wait repair is implemented and covered by a
+  native signal/interruption fixture before new process behavior.
+- [M55_CONTRACTS.md](M55_CONTRACTS.md) locks owned process handles, consuming
+  wait, explicit environment/stdin/capture limits, nominal nanosecond time,
+  monotonic deadlines, cancellation, cleanup races, and Linux failure limits.
+- checked recursive owned-process types contribute conservative IO/process
+  authority; borrowed values alone do not. No syntax, schema enum, executor,
+  generic, FFI, or lifetime expansion.
+- independent Sol max and GPT-5.5 xhigh Gate B reviews passed after repairing
+  cleanup races, borrowed outcome metadata, and qualified-call evidence.
+  Checked call origins now distinguish user functions from same-named builtins.
+- the actual seed fixed point and all seven frozen milestone phases passed in
+  2,504 seconds, including copied-release process/time integration, 43 corpus
+  cases, owned tests, sanitizers, and final provenance attestation. No budget
+  increase. Exact identities and results are in `AUDIT_REMEDIATION.md`.
+- M56 generic reuse is next; no M56 implementation is included here.
 
 ### M56: Generic Reuse Foundation
 

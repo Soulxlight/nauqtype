@@ -373,6 +373,9 @@ fn imported_name_visible_before(uses: ref list<module_use>, items: ref list<top_
 }
 
 fn is_builtin_name(name: str) -> bool {
+    if name == "duration_from_ns" or name == "duration_as_ns" or name == "duration_between" or name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" {
+        return true;
+    }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
         return true;
     }
@@ -398,6 +401,9 @@ fn is_builtin_name(name: str) -> bool {
 }
 
 fn is_builtin_type_name(name: str) -> bool {
+    if name == "duration" or name == "instant" or name == "process" or name == "process_outcome" {
+        return true;
+    }
     if name == "bool" or name == "int" or name == "i32" or name == "i64" {
         return true;
     }
@@ -1125,6 +1131,13 @@ audit {
         let entry = list_get(ref items, item_index);
         match entry {
             Some(current) => {
+                if current.name == "duration" or current.name == "instant" or current.name == "process" or current.name == "process_outcome" {
+                    match current.kind {
+                        item_type => { push_diag(mutref diags, current.module, current.at, "process and time builtin type names cannot be redeclared"); },
+                        item_enum => { push_diag(mutref diags, current.module, current.at, "process and time builtin type names cannot be redeclared"); },
+                        _ => {},
+                    }
+                }
                 let mut prev_index = 0;
                 while prev_index < item_index {
                     let previous = list_get(ref items, prev_index);

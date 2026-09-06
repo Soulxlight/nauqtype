@@ -64,6 +64,7 @@ cp -R build/linux-release/nauqtype "$smoke_root/nauqtype"
 mkdir -p "$smoke_root/project"
 cp examples/hello.nq "$smoke_root/project/hello.nq"
 cp tests/fixtures/m54_runtime.nq "$smoke_root/project/m54_runtime.nq"
+cp tests/fixtures/m55_process/runtime.nq "$smoke_root/project/m55_process.nq"
 cp -R tests/fixtures/m54_library_dependency "$smoke_root/library-project"
 rm -rf "$smoke_root/library-project/src/app/build"
 (
@@ -72,6 +73,8 @@ rm -rf "$smoke_root/library-project/src/app/build"
     "$smoke_root/nauqtype/bin/nauqc" run hello.nq
     "$smoke_root/nauqtype/bin/nauqc" check m54_runtime.nq
     "$smoke_root/nauqtype/bin/nauqc" run m54_runtime.nq
+    "$smoke_root/nauqtype/bin/nauqc" check m55_process.nq
+    "$smoke_root/nauqtype/bin/nauqc" run m55_process.nq
 )
 (
     cd "$smoke_root/library-project"

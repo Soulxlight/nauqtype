@@ -1071,6 +1071,18 @@ fn set_call_borrow_kind(borrowed: mutref list<call_borrow_state>, binding_id: i3
 }
 
 fn builtin_function_param_count(name: str) -> i32 {
+    if name == "wall_time_ns" or name == "monotonic_now" {
+        return 0;
+    }
+    if name == "duration_from_ns" or name == "duration_as_ns" or name == "deadline_after" or name == "sleep_for" or name == "process_terminate" {
+        return 1;
+    }
+    if name == "duration_between" or name == "process_wait" {
+        return 2;
+    }
+    if name == "process_start" {
+        return 7;
+    }
     if name == "list" {
         return 0;
     }
@@ -1141,6 +1153,12 @@ fn builtin_function_param_count(name: str) -> i32 {
 }
 
 fn builtin_function_param_is_borrow(name: str, index: i32) -> bool {
+    if name == "process_start" and (index == 1 or index == 3) {
+        return true;
+    }
+    if name == "process_terminate" and index == 0 {
+        return true;
+    }
     if name == "list_push" and index == 0 {
         return true;
     }
@@ -1339,6 +1357,12 @@ fn type_key(module_name: str, type_name: str) -> str {
 fn is_copy_type(module_name: str, type_name: str, type_arg1_name: str, type_arg2_name: str, is_borrow: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, visiting: ref list<str>, file: str, at: i32, diags: mutref list<diag>) -> bool {
     if is_borrow {
         return true;
+    }
+    if type_name == "duration" or type_name == "instant" or type_name == "process_outcome" {
+        return true;
+    }
+    if type_name == "process" {
+        return false;
     }
     if type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" {
         return true;

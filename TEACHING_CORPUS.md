@@ -46,6 +46,7 @@ These examples demonstrate Nauqtype's unique AI supervision surfaces, contract e
 - [read_file_len.nq](examples/read_file_len.nq): Reading files and demonstrating the inferred `effects(io)` audit atom.
 - [propagation_question.nq](examples/propagation_question.nq): Statement-boundary `?` operator usage with a `?[context_label]` provenance label and required `propagates(...)` audit evidence.
 - [try_expression.nq](examples/try_expression.nq): Expression-position `?` captured at an explicitly typed local `try` boundary, with local evidence but no function-level propagation claim.
+- [process_deadline.nq](examples/process_deadline.nq): Absolute executable provenance, bounded capture, a nominal monotonic deadline, and consuming child wait with explicit outcome handling.
 
 ## Multi-File Entrypoints
 
@@ -77,6 +78,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `nested_break_continue.nq`
 - `nested_patterns.nq`
 - `propagation_question.nq`
+- `process_deadline.nq`
 - `qualified_call_chain.nq`
 - `qualified_calls.nq`
 - `qualified_data_names.nq`

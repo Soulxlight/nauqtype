@@ -1,0 +1,38 @@
+use compiler_import_provider as helper;
+
+fn pure_wait(value: duration) -> bool
+audit { intent("Keep qualified wait calls pure even when their name matches a builtin"); mutates(); effects(); }
+{
+    if helper::process_wait(bonus: 7, value: value) != 7 { return false; }
+    return helper::process_wait(value, 9) == 9;
+}
+
+fn pure_read(succeed: bool) -> result<i32, Failure>
+audit { intent("Propagate the imported custom error without builtin file authority"); mutates(); effects(); propagates(Failure); }
+{
+    let value = helper::read_file(succeed)?;
+    return Ok(value);
+}
+
+fn main() -> i32 {
+    let Some(zero) = duration_from_ns(0) else { return 1; };
+    if not pure_wait(zero) { return 2; }
+    let Ok(number) = pure_read(true) else { return 3; };
+    if number != 23 { return 3; }
+    match pure_read(false) {
+        Ok(value) => { return 3; },
+        Err(failure) => { match failure { helper::Rejected => {}, } },
+    }
+    let Ok(now) = monotonic_now() else { return 4; };
+    let Ok(returned_option) = helper::echo_time(value: Some(now)) else { return 5; };
+    let Some(again) = returned_option else { return 5; };
+    let Some(elapsed) = duration_between(now, again) else { return 6; };
+    if duration_as_ns(elapsed) != 0 { return 7; }
+    let empty: list<str> = [];
+    let Ok(child) = process_start("/bin/cat", ref empty, ".", ref empty, Some("imported"), true, 64) else { return 8; };
+    let forwarded = helper::forward(child: child);
+    let Ok(outcome) = process_wait(forwarded, None) else { return 9; };
+    if helper::outcome_text(value: outcome) != "imported" { return 10; }
+    if outcome.stdout != "imported" { return 11; }
+    return 0;
+}

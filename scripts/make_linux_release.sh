@@ -52,6 +52,7 @@ done < <(git ls-files 'examples/*')
 cp "$repo_root/README.md" "$release_root/share/doc/nauqtype/README.md"
 cp "$repo_root/LINUX.md" "$release_root/share/doc/nauqtype/LINUX.md"
 cp "$repo_root/LINUX_RELEASE_MANIFEST.md" "$release_root/share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md"
+cp "$repo_root/M55_CONTRACTS.md" "$release_root/share/doc/nauqtype/M55_CONTRACTS.md"
 
 cat > "$release_root/share/nauqtype/release.json" <<JSON
 {

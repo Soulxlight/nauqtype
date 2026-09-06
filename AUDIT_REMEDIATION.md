@@ -1,7 +1,7 @@
 # Astra Audit Remediation
 
-Status: M54.7-M54.10 complete, 2026-09-06 UTC. F14 remains the first M55
-process-correctness prerequisite; no M55 feature work is included here.
+Status: M54.7-M54.10 and M55 complete, 2026-09-06 UTC. M55 closes F14's
+process-correctness prerequisite and the separate process/time contract.
 
 The 2026-09-04 Astra audit reviewed `d2c7592ae5e4dc11fba7ffe715334a881d715b62`.
 Its report and executable evidence are retained locally in
@@ -124,6 +124,58 @@ supervisor-terminated attempt is retained as incomplete, not hidden or counted
 as acceptance. See `M54_10_CONTRACTS.md` for exact evidence and limitations.
 Old external workspace locks require explicit owner-managed migration;
 legacy evidence shapes remain compatible but are not secure-change claims.
+
+## M55: Process And Time Closure
+
+F14 is closed: interrupted legacy capture/read/wait operations retry safely,
+and persistent cleanup failures cannot silently abandon an owned child.
+M55 adds the narrow process/time surface in `M55_CONTRACTS.md`. Gate B found
+and required repairs for persistent legacy kill/reap failure, the final
+group signal after terminal observation and before draining/reaping, borrowed
+outcome-field metadata, and qualified user calls sharing builtin names.
+Those findings have focused permanent fixtures; none was waived.
+
+Final primary `gpt-5.6-sol` max and independent `gpt-5.5` xhigh reviews both
+returned PASS. Max followed the protocol's conflicting-verdict escalation.
+Native strict-C, optimized, ASan/UBSan, injected-fault, and child-lifecycle
+probes passed. The Nauqtype process gate covers move/borrow rejection,
+recursive cleanup, nominal/opaque types, deadlines, cancellation, evidence,
+policy, refactor plans, and imported call/propagation identity. The separate
+contract-evidence probe passed its missing/duplicate/noncontiguous-call tests
+and the existing mutation, schema-profile, diagnostic, and failure cases.
+
+`scripts/check_milestone.sh` ran once on frozen staged tree
+`64a0832a8bc73582949cefd9a5bcbc8f57a26d8c`: exit 0, empty stderr, all seven
+phases and real final attestation PASS in 2,504 seconds. Phase wall times:
+driver 488.33s, seed bootstrap 573.54s, proof 1213.77s, copied Linux alpha
+13.04s, stress leg 2.07s, owned tests 156.21s, ownership sanitizers 8.23s.
+All original wall/RSS ceilings held. The proof includes the copied selfhost,
+43-case corpus, and tooling confidence cases; copied release build/run emits
+`process and time ok`. Python suites were not used as active gates.
+
+The refreshed seed was produced by an actual compile and re-emission: raw C
+comparison and `prove-seed` both passed, followed by strict seed verification.
+The manifest honestly retains the unpublished repaired seed `2fd56266...` as
+its observed predecessor; no synthetic cache receipt or verifier change was
+used. Frozen identities:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Exact source tree | `be878c88dca696269c4c565c5b7f22f5d883d41ab1299b929c22a3d863b4a217` |
+| Generator input/output and seed C | `2ec30ab03c77d5b113eb414e18e5b4ba52c6217d9cf3283f938eea8b150c5084` |
+| Generator executable | `553e3d7e824d9e0e99aaf6361eb2d49cc0e743cc85dd42a8e298e56305209cbb` |
+| Runtime C | `afb8f0c7b618e5b7439a530ae2bd8e4a6d97fdb3277347d4ef9670600d12bf46` |
+| Full-gate driver | `faaad197d7b3291ddaea3684c7fbb3aff07ac729ba3caa119d5f494cee06c88d` |
+| Proof summary | `c374f5f6b0377a7ba91e1a0883b9f8ce38c62e6e01836c3ad652799c76fcc238` |
+| Copied release tree | `3c869702dd7771abc54d33b42a6192f70fe90f6936ca9be8943a74c81556bdd5` |
+
+Evidence remains in the isolated Linux preparation checkout
+`/tmp/nauqtype-m55-yzh3R7/build/verification/`; focused/audit packets are in
+its `build/m55_process/`. Only the existing completion-doc allowlist changed
+after the gate. A milestone-close attestation binds that text-only delta to
+the final commit. No M56, external repository, syntax, schema, or general
+ownership expansion is part of this checkpoint. Linux cleanup limits and the
+narrow unrecoverable-cleanup fatal exception remain as documented.
 
 ## Architecture And Product Direction
 

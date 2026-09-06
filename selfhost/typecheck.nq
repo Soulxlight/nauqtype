@@ -60,6 +60,12 @@ fn clone_type_keys(values: ref list<str>) -> list<str> {
 }
 
 fn type_ctx_is_copy(ctx: expected_type_ctx, module: str, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, visiting: ref list<str>) -> bool {
+    if ctx.head == "duration" or ctx.head == "instant" or ctx.head == "process_outcome" {
+        return true;
+    }
+    if ctx.head == "process" {
+        return false;
+    }
     if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" or ctx.head == "path_metadata" {
         return true;
     }
@@ -637,6 +643,18 @@ fn module_exports_type_name(items: ref list<top_item>, module: str, name: str) -
 }
 
 fn builtin_function_arity(name: str) -> i32 {
+    if name == "wall_time_ns" or name == "monotonic_now" {
+        return 0;
+    }
+    if name == "duration_from_ns" or name == "duration_as_ns" or name == "deadline_after" or name == "sleep_for" or name == "process_terminate" {
+        return 1;
+    }
+    if name == "duration_between" or name == "process_wait" {
+        return 2;
+    }
+    if name == "process_start" {
+        return 7;
+    }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "arg_get" or name == "create_dir_all" or name == "io_err_text" {
         return 1;
     }
@@ -857,6 +875,15 @@ audit {
 }
 
 fn builtin_function_return_name(name: str) -> str {
+    if name == "duration_from_ns" or name == "duration_between" {
+        return "option";
+    }
+    if name == "duration_as_ns" {
+        return "i64";
+    }
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" {
+        return "result";
+    }
     if name == "print_line" {
         return "unit";
     }
@@ -933,6 +960,24 @@ fn builtin_function_return_name(name: str) -> str {
 }
 
 fn builtin_function_return_arg1_name(name: str) -> str {
+    if name == "duration_from_ns" or name == "duration_between" {
+        return "duration";
+    }
+    if name == "wall_time_ns" {
+        return "i64";
+    }
+    if name == "monotonic_now" or name == "deadline_after" {
+        return "instant";
+    }
+    if name == "sleep_for" or name == "process_terminate" {
+        return "unit";
+    }
+    if name == "process_start" {
+        return "process";
+    }
+    if name == "process_wait" {
+        return "process_outcome";
+    }
     if name == "read_file" {
         return "str";
     }
@@ -982,6 +1027,9 @@ fn builtin_function_return_arg1_name(name: str) -> str {
 }
 
 fn builtin_function_return_arg2_name(name: str) -> str {
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" {
+        return "io_err";
+    }
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
     }
@@ -1878,6 +1926,28 @@ fn lookup_function_param_borrow_mutable(function_params: ref list<function_param
 }
 
 fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
+    if function_name == "duration_from_ns" and index == 0 {
+        return "i64";
+    }
+    if (function_name == "duration_as_ns" or function_name == "deadline_after" or function_name == "sleep_for") and index == 0 {
+        return "duration";
+    }
+    if function_name == "duration_between" and (index == 0 or index == 1) {
+        return "instant";
+    }
+    if (function_name == "process_wait" or function_name == "process_terminate") and index == 0 {
+        return "process";
+    }
+    if function_name == "process_wait" and index == 1 {
+        return "option";
+    }
+    if function_name == "process_start" {
+        if index == 0 or index == 2 { return "str"; }
+        if index == 1 or index == 3 { return "list"; }
+        if index == 4 { return "option"; }
+        if index == 5 { return "bool"; }
+        if index == 6 { return "i64"; }
+    }
     if function_name == "print_line" or function_name == "eprint_line" or function_name == "read_file" {
         if index == 0 {
             return "str";
@@ -1998,6 +2068,12 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
 }
 
 fn builtin_function_param_is_borrow(function_name: str, index: i32) -> bool {
+    if function_name == "process_start" and (index == 1 or index == 3) {
+        return true;
+    }
+    if function_name == "process_terminate" and index == 0 {
+        return true;
+    }
     if (function_name == "list_push" or function_name == "list_len" or function_name == "list_get") and index == 0 {
         return true;
     }
@@ -2020,7 +2096,7 @@ fn builtin_function_param_is_borrow(function_name: str, index: i32) -> bool {
 }
 
 fn builtin_function_param_borrow_mutable(function_name: str, index: i32) -> bool {
-    return function_name == "list_push" and index == 0;
+    return (function_name == "list_push" or function_name == "process_terminate") and index == 0;
 }
 
 fn builtin_function_param_ctx(function_name: str, index: i32) -> expected_type_ctx {
@@ -2030,6 +2106,13 @@ fn builtin_function_param_ctx(function_name: str, index: i32) -> expected_type_c
     }
     if function_name == "run_process" and index == 1 {
         return make_expected_type_ctx("list", "str", "");
+    }
+    if function_name == "process_start" {
+        if index == 1 or index == 3 { return make_expected_type_ctx("list", "str", ""); }
+        if index == 4 { return make_expected_type_ctx("option", "str", ""); }
+    }
+    if function_name == "process_wait" and index == 1 {
+        return make_expected_type_ctx("option", "instant", "");
     }
     return make_expected_type_ctx(builtin, "", "");
 }
@@ -2087,6 +2170,31 @@ fn visible_function_param_borrow_mutable(function_params: ref list<function_para
 }
 
 fn builtin_function_param_name(function_name: str, index: i32) -> str {
+    if (function_name == "duration_from_ns" or function_name == "duration_as_ns") and index == 0 {
+        return "value";
+    }
+    if function_name == "duration_between" {
+        if index == 0 { return "start"; }
+        if index == 1 { return "end"; }
+    }
+    if (function_name == "deadline_after" or function_name == "sleep_for") and index == 0 {
+        return "delay";
+    }
+    if (function_name == "process_wait" or function_name == "process_terminate") and index == 0 {
+        return "child";
+    }
+    if function_name == "process_wait" and index == 1 {
+        return "deadline";
+    }
+    if function_name == "process_start" {
+        if index == 0 { return "program"; }
+        if index == 1 { return "args"; }
+        if index == 2 { return "cwd"; }
+        if index == 3 { return "env"; }
+        if index == 4 { return "input"; }
+        if index == 5 { return "capture"; }
+        if index == 6 { return "max_output_bytes"; }
+    }
     if function_name == "print_line" or function_name == "eprint_line" {
         if index == 0 {
             return "text";
@@ -4239,6 +4347,10 @@ fn infer_struct_expr_type_ctx(functions: ref list<function_fact>, function_param
     let open_index = span_struct_open_index(ref tokens, start, end);
     let type_token = token_at(ref tokens, name_index);
     let type_name = type_token.text;
+    if type_name == "duration" or type_name == "instant" or type_name == "process" {
+        push_diag(mutref diags, module, type_token.start, "opaque type has no source constructor");
+        return empty_expected_type_ctx();
+    }
     let qualifier = span_struct_qualifier(ref tokens, start, end);
     let mut origin_module = visible_type_origin_module(ref uses, ref items, module, type_name);
     if qualifier != "" {
@@ -5126,6 +5238,9 @@ audit {
         if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
             push_diag(mutref diags, module, at, "comparison operands must have matching types");
         }
+        if left_type_ctx.head == "duration" or left_type_ctx.head == "instant" or left_type_ctx.head == "process" or left_type_ctx.head == "process_outcome" or right_type_ctx.head == "duration" or right_type_ctx.head == "instant" or right_type_ctx.head == "process" or right_type_ctx.head == "process_outcome" {
+            push_diag(mutref diags, module, at, "process and time values do not support comparison operators");
+        }
         return make_expected_type_ctx("bool", "", "");
     }
 
@@ -5326,12 +5441,15 @@ audit {
                             push_diag(mutref diags, module, field_token.start, "field access base has type `token_kind`");
                             return empty_expected_type_ctx();
                         }
-                        if base_type_ctx.head == "process_result" {
+                        if base_type_ctx.head == "process_result" or base_type_ctx.head == "process_outcome" {
                             if field_token.text == "exit_code" {
                                 return make_expected_type_ctx("i32", "", "");
                             }
                             if field_token.text == "stdout" or field_token.text == "stderr" {
                                 return make_expected_type_ctx("str", "", "");
+                            }
+                            if base_type_ctx.head == "process_outcome" and (field_token.text == "timed_out" or field_token.text == "cancelled") {
+                                return make_expected_type_ctx("bool", "", "");
                             }
                             push_diag(mutref diags, module, field_token.start, "field does not exist on base type");
                             return empty_expected_type_ctx();
@@ -6190,7 +6308,7 @@ audit {
                                                     }
                                                 } else {
                                                     if local_init_is_propagate(current) {
-                                                        let return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
+                                                        let return_ctx = make_expected_type_ctx(current_function.return_name, current_function.return_arg1_name, current_function.return_arg2_name);
                                                         let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
                                                         if current.expected_type_name != "" {
                                                             if expected_ctx.head != "" and has_known_type_ctx(payload_ctx) and not type_ctx_matches(expected_ctx, payload_ctx) {
@@ -6293,8 +6411,8 @@ audit {
                                     let return_entry = list_get(ref function_returns, return_index);
                                     match return_entry {
                                         Some(current) => {
-                                            let expected_return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
-                                            let expected_is_borrow = visible_function_return_is_borrow(ref functions, ref uses, ref items, current.module, current.function_name);
+                                            let expected_return_ctx = make_expected_type_ctx(current_function.return_name, current_function.return_arg1_name, current_function.return_arg2_name);
+                                            let expected_is_borrow = current_function.return_is_borrow;
                                             if expected_return_ctx.head != "" and not expected_is_borrow {
                                                 let actual_ctx = infer_expr_type_ctx(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref function_scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_return_ctx, mutref diags);
                                                 if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_return_ctx, actual_ctx) {
@@ -6471,7 +6589,7 @@ audit {
                                                     }
                                                 } else {
                                                     if local_init_is_propagate(current) {
-                                                        let return_ctx = visible_function_return_ctx(ref functions, ref uses, ref items, current.module, current.function_name);
+                                                        let return_ctx = make_expected_type_ctx(current_function.return_name, current_function.return_arg1_name, current_function.return_arg2_name);
                                                         let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
                                                         if current.name != "" and has_known_type_ctx(payload_ctx) {
                                                             list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.scope_id, current.name, current.at, payload_ctx.head, payload_ctx.arg1_name, payload_ctx.arg2_name, current.is_mutable, false, false));

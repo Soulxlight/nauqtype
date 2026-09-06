@@ -1,0 +1,21 @@
+type Stamp { value: result<option<instant>, io_err>, }
+
+fn copy_stamp(value: Stamp) -> Stamp { return value; }
+
+fn main() -> i32 {
+    let Some(zero) = duration_from_ns(0) else { return 1; };
+    let mut values: list<duration> = [zero];
+    list_push(mutref values, zero);
+    let Some(copy) = list_get(ref values, 1) else { return 2; };
+    if duration_as_ns(copy) != 0 or list_len(ref values) != 2 { return 3; }
+    let Ok(now) = monotonic_now() else { return 4; };
+    let original = Stamp { value: Ok(Some(now)) };
+    let cloned = copy_stamp(original);
+    let Ok(cloned_option) = cloned.value else { return 5; };
+    let Some(again) = cloned_option else { return 5; };
+    let Some(elapsed) = duration_between(now, again) else { return 6; };
+    if duration_as_ns(elapsed) != 0 { return 7; }
+    let Ok(original_option) = original.value else { return 8; };
+    let Some(original_instant) = original_option else { return 8; };
+    return 0;
+}

@@ -1,0 +1,28 @@
+type Job { child: process, }
+enum Owned { Pending(option<Job>), Done, }
+
+pub fn discard(child: process) -> unit
+audit { intent("Own child cleanup without an explicit lifecycle call"); mutates(); effects(io); }
+{ return; }
+
+pub fn discard_nested(value: result<list<Owned>, io_err>) -> unit
+audit { intent("Own recursive aggregate cleanup authority"); mutates(); effects(io); }
+{ return; }
+
+pub fn observe(child: ref process) -> unit
+audit { intent("Borrowing a child alone grants no cleanup authority"); mutates(); effects(); }
+{ return; }
+
+pub fn observe_nested(value: ref result<list<Owned>, io_err>) -> unit
+audit { intent("Borrow an aggregate without owning its child cleanup"); mutates(); effects(); }
+{ return; }
+
+pub fn forward(child: process) -> process
+audit { intent("Transfer child ownership explicitly"); mutates(); effects(io); }
+{ return child; }
+
+pub fn transitive(child: process) -> unit
+audit { intent("Call an owner without claiming purity"); mutates(); effects(io); }
+{ discard(child); return; }
+
+fn main() -> i32 { return 0; }

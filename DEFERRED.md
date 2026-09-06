@@ -31,13 +31,19 @@ that have since shipped are historical, not current limitations.
 - Formatting machinery beyond formatter-lite
 - Mutable strings
 - Networking
-- Time / randomness APIs
-- Structured process control, environment overrides, timeouts, and cancellation
+- Randomness/entropy APIs and general calendar/timezone facilities
+- Background process pumping, async scheduling, and task/executor APIs
 
 M54 provides checked arguments, environment lookup, cwd, streams, and
 filesystem authority as narrow builtins. Reusable UTF-8, lexical-path, sorting,
-and CLI composition remain library-owned. Structured process control and
-time/cancellation remain deferred to M55.
+and CLI composition remain library-owned. M55 implements structured owned
+process control and nominal time/deadlines under `M55_CONTRACTS.md`; acceptance
+status remains in `ROADMAP.md`. These clocks are not entropy sources.
+
+Focused M55 authoring exposed existing boundaries, not new supported forms:
+nested constructor patterns in `let-else` still require separate bindings;
+repeating `let Ok(_)` in one scope is diagnosed as a duplicate binding. Use
+distinct explicit payload names pending a separately scoped wildcard fix.
 
 ## Compiler / Tooling
 

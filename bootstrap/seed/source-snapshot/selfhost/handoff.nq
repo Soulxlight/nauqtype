@@ -79,6 +79,10 @@ pub enum checked_type_shape_kind {
     checked_type_unit,
     checked_type_io_err,
     checked_type_process_result,
+    checked_type_duration,
+    checked_type_instant,
+    checked_type_process,
+    checked_type_process_outcome,
     checked_type_path_metadata,
     checked_type_bytes,
     checked_type_named,
@@ -278,6 +282,7 @@ pub type checked_expr {
     name: str,
     target_kind: checked_target_kind,
     target_origin_module: str,
+    target_at: i32,
     field_owner_module: str,
     field_owner_type: str,
     field_name: str,
@@ -2586,6 +2591,30 @@ fn lookup_binding_borrow_mutable(bindings: ref list<checked_binding>, binding_id
 
 fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked_type_shape_kind) -> bool {
     match left {
+        checked_type_duration => {
+            match right {
+                checked_type_duration => { return true; },
+                _ => { return false; },
+            }
+        },
+        checked_type_instant => {
+            match right {
+                checked_type_instant => { return true; },
+                _ => { return false; },
+            }
+        },
+        checked_type_process => {
+            match right {
+                checked_type_process => { return true; },
+                _ => { return false; },
+            }
+        },
+        checked_type_process_outcome => {
+            match right {
+                checked_type_process_outcome => { return true; },
+                _ => { return false; },
+            }
+        },
         checked_type_bool => {
             match right {
                 checked_type_bool => {
@@ -2776,6 +2805,9 @@ fn push_type_shape(type_shapes: mutref list<checked_type_shape>, kind: checked_t
 }
 
 fn canonical_type_origin_module(uses: ref list<module_use>, items: ref list<top_item>, module_name: str, type_name: str) -> str {
+    if type_name == "duration" or type_name == "instant" or type_name == "process" or type_name == "process_outcome" {
+        return "";
+    }
     if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" or type_name == "bytes" or type_name == "list" or type_name == "option" or type_name == "result" {
         return "";
     }
@@ -2823,6 +2855,10 @@ fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: s
     if type_name == "" {
         return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing checked type information");
     }
+    if (type_name == "duration" or type_name == "instant" or type_name == "process" or type_name == "process_outcome") and (type_arg1_name != "" or type_arg2_name != "") {
+        list_push(mutref diags, make_diagnostic("NQ-TYPE-001", diag_type, diag_error, module_name, at, at + 1, "process and time builtin types do not accept type arguments", "", "Use the opaque builtin without type arguments."));
+        return -1;
+    }
     if type_name == "bool" {
         return push_type_shape(mutref type_shapes, checked_type_bool, "", "", -1, -1, false);
     }
@@ -2843,6 +2879,18 @@ fn intern_checked_type_id(type_name: str, type_arg1_name: str, type_arg2_name: s
     }
     if type_name == "process_result" {
         return push_type_shape(mutref type_shapes, checked_type_process_result, "", "", -1, -1, false);
+    }
+    if type_name == "duration" {
+        return push_type_shape(mutref type_shapes, checked_type_duration, "", "", -1, -1, false);
+    }
+    if type_name == "instant" {
+        return push_type_shape(mutref type_shapes, checked_type_instant, "", "", -1, -1, false);
+    }
+    if type_name == "process" {
+        return push_type_shape(mutref type_shapes, checked_type_process, "", "", -1, -1, false);
+    }
+    if type_name == "process_outcome" {
+        return push_type_shape(mutref type_shapes, checked_type_process_outcome, "", "", -1, -1, false);
     }
     if type_name == "path_metadata" {
         return push_type_shape(mutref type_shapes, checked_type_path_metadata, "", "", -1, -1, false);
@@ -3010,6 +3058,31 @@ fn qualified_function_origin_module(uses: ref list<module_use>, items: ref list<
 }
 
 fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
+    if (function_name == "duration_from_ns" or function_name == "duration_as_ns") and index == 0 {
+        return "value";
+    }
+    if function_name == "duration_between" {
+        if index == 0 { return "start"; }
+        if index == 1 { return "end"; }
+    }
+    if (function_name == "deadline_after" or function_name == "sleep_for") and index == 0 {
+        return "delay";
+    }
+    if (function_name == "process_wait" or function_name == "process_terminate") and index == 0 {
+        return "child";
+    }
+    if function_name == "process_wait" and index == 1 {
+        return "deadline";
+    }
+    if function_name == "process_start" {
+        if index == 0 { return "program"; }
+        if index == 1 { return "args"; }
+        if index == 2 { return "cwd"; }
+        if index == 3 { return "env"; }
+        if index == 4 { return "input"; }
+        if index == 5 { return "capture"; }
+        if index == 6 { return "max_output_bytes"; }
+    }
     if function_name == "print_line" or function_name == "eprint_line" {
         if index == 0 {
             return "text";
@@ -3163,6 +3236,18 @@ fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
 }
 
 fn handoff_builtin_function_param_count(function_name: str) -> i32 {
+    if function_name == "wall_time_ns" or function_name == "monotonic_now" {
+        return 0;
+    }
+    if function_name == "duration_from_ns" or function_name == "duration_as_ns" or function_name == "deadline_after" or function_name == "sleep_for" or function_name == "process_terminate" {
+        return 1;
+    }
+    if function_name == "duration_between" or function_name == "process_wait" {
+        return 2;
+    }
+    if function_name == "process_start" {
+        return 7;
+    }
     if function_name == "list" or function_name == "arg_count" or function_name == "stdin_read" or function_name == "stdin_read_bytes" or function_name == "stdin_read_line" or function_name == "stdout_flush" or function_name == "stderr_flush" or function_name == "current_dir" {
         return 0;
     }
@@ -3231,16 +3316,29 @@ fn handoff_function_param_count(functions: ref list<function_fact>, function_nam
 }
 
 fn handoff_function_param_name(function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module_name: str, qualifier: str, function_name: str, origin_module: str, index: i32) -> str {
-    if qualifier == "" {
-        let builtin_name = handoff_builtin_function_param_name(function_name, index);
-        if builtin_name != "" {
-            return builtin_name;
-        }
-    }
     if origin_module != "" and origin_module != "__builtin__" {
         return lookup_function_param_name(ref function_params, origin_module, function_name, index);
     }
+    if origin_module == "__builtin__" {
+        return handoff_builtin_function_param_name(function_name, index);
+    }
     return "";
+}
+
+fn handoff_resolved_function_param_ctx(function_params: ref list<function_param_fact>, origin_module: str, function_name: str, index: i32) -> expected_type_ctx {
+    let mut cursor = 0;
+    while cursor < list_len(ref function_params) {
+        match list_get(ref function_params, cursor) {
+            Some(value) => {
+                if value.module == origin_module and value.function_name == function_name and value.index == index {
+                    return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                }
+            },
+            None => {},
+        }
+        cursor = cursor + 1;
+    }
+    return empty_expected_type_ctx();
 }
 
 fn lookup_field_is_borrow(field_facts: ref list<field_fact>, module_name: str, type_name: str, field_name: str) -> bool {
@@ -3328,6 +3426,7 @@ fn build_literal_expr(function_id: i32, module_name: str, function_name: str, sc
         name: name,
         target_kind: checked_target_none,
         target_origin_module: "",
+        target_at: -1,
         field_owner_module: "",
         field_owner_type: "",
         field_name: "",
@@ -3336,6 +3435,10 @@ fn build_literal_expr(function_id: i32, module_name: str, function_name: str, sc
 }
 
 fn push_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, is_borrow: bool, borrow_mutable: bool, binding_id: i32, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, diags: mutref list<diag>) -> i32 {
+    return push_target_expr_record(function_id, module_name, function_name, scope_id, at, start, end, kind, type_ctx, is_borrow, borrow_mutable, binding_id, name, target_kind, target_origin_module, field_owner_module, field_owner_type, field_name, -1, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+}
+
+fn push_target_expr_record(function_id: i32, module_name: str, function_name: str, scope_id: i32, at: i32, start: i32, end: i32, kind: checked_expr_kind, type_ctx: expected_type_ctx, is_borrow: bool, borrow_mutable: bool, binding_id: i32, name: str, target_kind: checked_target_kind, target_origin_module: str, field_owner_module: str, field_owner_type: str, field_name: str, target_at: i32, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, expressions: mutref list<checked_expr>, diags: mutref list<diag>) -> i32 {
     let expr_id = next_expr_id(ref expressions);
     let mut type_shape_is_borrow = is_borrow;
     let mut type_shape_borrow_mutable = borrow_mutable;
@@ -3369,6 +3472,7 @@ fn push_expr_record(function_id: i32, module_name: str, function_name: str, scop
         name: name,
         target_kind: target_kind,
         target_origin_module: target_origin_module,
+        target_at: target_at,
         field_owner_module: field_owner_module,
         field_owner_type: field_owner_type,
         field_name: field_name,
@@ -3782,7 +3886,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
         if qualifier != "" and function_origin == "" and variant_origin == "" {
             return consume_handoff_limitation_detail(mutref diags, module_name, head.start, str_concat("unresolved qualified call or constructor target: ", head.text));
         }
-        let expr_id = push_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, exported_ctx, function_return_is_borrow_from_origin(ref functions, target_origin, head.text), function_return_borrow_mutable_from_origin(ref functions, target_origin, head.text), -1, head.text, target_kind, target_origin, "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        let expr_id = push_target_expr_record(function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_call, exported_ctx, function_return_is_borrow_from_origin(ref functions, target_origin, head.text), function_return_borrow_mutable_from_origin(ref functions, target_origin, head.text), -1, head.text, target_kind, target_origin, "", "", "", head.start, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         let mut arg_start = open_index + 1;
         let arg_end_limit = expr_end - 1;
         let mut arg_index = 0;
@@ -3801,7 +3905,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
                 let segment_end = next_top_level_comma(ref tokens, segment_start, arg_end_limit);
                 let mut arg_expected_ctx = empty_expected_type_ctx();
                 if checked_target_kind_matches(target_kind, checked_target_function) {
-                    arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, target_origin, head.text, arg_index);
+                    arg_expected_ctx = handoff_resolved_function_param_ctx(ref function_params, target_origin, head.text, arg_index);
                 } else {
                     if checked_target_kind_matches(target_kind, checked_target_builtin_function) {
                         arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module_name, head.text, arg_index);
@@ -3822,7 +3926,7 @@ fn build_expr_tree(functions: ref list<function_fact>, function_params: ref list
             let mut arg_expected_ctx = empty_expected_type_ctx();
             match target_kind {
                 checked_target_function => {
-                    arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, target_origin, head.text, arg_index);
+                    arg_expected_ctx = handoff_resolved_function_param_ctx(ref function_params, target_origin, head.text, arg_index);
                 },
                 checked_target_builtin_function => {
                     arg_expected_ctx = visible_function_param_ctx(ref function_params, ref uses, ref items, module_name, head.text, arg_index);

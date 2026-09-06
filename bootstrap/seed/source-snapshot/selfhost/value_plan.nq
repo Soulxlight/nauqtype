@@ -171,6 +171,10 @@ fn classify_type_id(type_id: i32, type_shapes: ref list<checked_type_shape>, typ
                 checked_type_str => { property = make_type_property(type_id, true, true); },
                 checked_type_io_err => { property = make_type_property(type_id, true, true); },
                 checked_type_process_result => { property = make_type_property(type_id, true, true); },
+                checked_type_duration => { property = make_type_property(type_id, true, false); },
+                checked_type_instant => { property = make_type_property(type_id, true, false); },
+                checked_type_process => { property = make_type_property(type_id, false, true); },
+                checked_type_process_outcome => { property = make_type_property(type_id, true, true); },
                 checked_type_path_metadata => { property = make_type_property(type_id, true, false); },
                 checked_type_bytes => { property = make_type_property(type_id, false, true); },
                 checked_type_list => {
@@ -509,6 +513,12 @@ fn target_is_constructor(kind: checked_target_kind) -> bool {
 }
 
 fn builtin_arg_is_borrow(name: str, index: i32) -> bool {
+    if name == "process_start" and (index == 1 or index == 3) {
+        return true;
+    }
+    if name == "process_terminate" and index == 0 {
+        return true;
+    }
     if (name == "list_push" or name == "list_len" or name == "list_get") and index == 0 {
         return true;
     }

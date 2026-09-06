@@ -1,3 +1,4 @@
+use ast;
 use text;
 use diag;
 use handoff;
@@ -9,7 +10,7 @@ fn synthetic_mutation_expr(id: i32, kind: checked_expr_kind, binding_id: i32, na
     let mut type_id = 1;
     if binding_id > 0 { type_id = 2; }
     match kind { checked_expr_name => { type_id = 1; }, _ => {}, }
-    return checked_expr { id: id, function_id: 1, module_name: "probe", function_name: "owner", scope_id: 1, at: 0, start: 0, end: 1, kind: kind, type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: binding_id > 0, borrow_mutable: binding_id > 0, type_id: type_id, binding_id: binding_id, name: name, target_kind: target, target_origin_module: "probe", field_owner_module: "", field_owner_type: "", field_name: "" };
+    return checked_expr { id: id, function_id: 1, module_name: "probe", function_name: "owner", scope_id: 1, at: 0, start: 0, end: 1, kind: kind, type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: binding_id > 0, borrow_mutable: binding_id > 0, type_id: type_id, binding_id: binding_id, name: name, target_kind: target, target_origin_module: "probe", target_at: -1, field_owner_module: "", field_owner_type: "", field_name: "" };
 }
 
 fn synthetic_mutation_link(parent: i32, index: i32, child: i32) -> checked_expr_child {
@@ -79,7 +80,7 @@ fn mutation_identity_cases() -> bool {
             if case_id == 21 { borrow_expr.type_id = 14; }
             if case_id == 23 { borrow_expr.type_id = 6; }
             list_push(mutref expressions, borrow_expr);
-            let mut field_expr = checked_expr { id: 3, function_id: 1, module_name: "probe", function_name: "owner", scope_id: 1, at: 0, start: 0, end: 1, kind: checked_expr_field, type_name: "list", type_arg1_name: "i32", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 3, binding_id: -1, name: "", target_kind: checked_target_none, target_origin_module: "", field_owner_module: "probe", field_owner_type: "Box", field_name: "values" };
+            let mut field_expr = checked_expr { id: 3, function_id: 1, module_name: "probe", function_name: "owner", scope_id: 1, at: 0, start: 0, end: 1, kind: checked_expr_field, type_name: "list", type_arg1_name: "i32", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 3, binding_id: -1, name: "", target_kind: checked_target_none, target_origin_module: "", target_at: -1, field_owner_module: "probe", field_owner_type: "Box", field_name: "values" };
             if case_id >= 20 { field_expr.type_id = 9; field_expr.field_owner_module = ""; field_expr.field_owner_type = "process_result"; field_expr.field_name = "stdout"; }
             if case_id == 21 { field_expr.type_id = 13; field_expr.field_owner_type = "path_metadata"; field_expr.field_name = "size"; }
             if case_id == 22 { field_expr.field_name = "missing"; }
@@ -197,6 +198,36 @@ fn evidence_golden(label: str, result: result<process_result, io_err>, path: str
     }
 }
 
+fn checked_call_identity_cases() -> bool {
+    let calls = [make_call_fact("probe", "owner", "process_wait", 20, 2)];
+    let mut expr = synthetic_mutation_expr(1, checked_expr_call, -1, "process_wait", checked_target_function);
+    expr.target_at = 20;
+    expr.target_origin_module = "provider";
+    let mut expressions = [expr];
+    let mut diags: list<diag> = list();
+    let resolved = checked_evidence_calls(ref calls, ref expressions, mutref diags);
+    if list_len(ref diags) != 0 or list_len(ref resolved) != 1 { return false; }
+    match list_get(ref resolved, 0) {
+        Some(value) => { if value.checked_origin != "provider" or value.checked_kind != "function" or value.at != 20 { return false; } },
+        None => { return false; },
+    }
+    let mut later = expr;
+    later.target_at = 40;
+    let mut other = expr;
+    other.function_name = "other";
+    expressions = [expr, other, later];
+    let more_calls = [make_call_fact("probe", "owner", "process_wait", 20, 2), make_call_fact("probe", "owner", "process_wait", 40, 2)];
+    let split_runs = checked_evidence_calls(ref more_calls, ref expressions, mutref diags);
+    if list_len(ref diags) != 0 or list_len(ref split_runs) != 2 { return false; }
+    list_push(mutref expressions, expr);
+    let duplicate = checked_evidence_calls(ref calls, ref expressions, mutref diags);
+    if list_len(ref diags) != 1 { return false; }
+    diags = list();
+    expressions = list();
+    let missing = checked_evidence_calls(ref calls, ref expressions, mutref diags);
+    return list_len(ref diags) == 1;
+}
+
 pub fn run_contract_evidence_gate(driver: str) -> bool
 audit {
     intent("Lock checked mutation, versioned failure, and policy evidence through the active driver");
@@ -205,6 +236,7 @@ audit {
 }
 {
     let fixture = "tests/fixtures/m54_8_final/mutations.nq";
+    if not checked_call_identity_cases() { eprint_line("checked call identity fail-closed cases failed"); return false; }
     if not mutation_identity_cases() { eprint_line("checked mutation identity/coverage cases failed"); return false; }
     if not typecheck_diagnostic_identity_self_test() { eprint_line("producer diagnostic identities were not preserved"); return false; }
     let mut diagnostic_args: list<str> = list();

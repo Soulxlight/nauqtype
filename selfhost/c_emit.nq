@@ -618,6 +618,10 @@ fn type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 checked_type_process_result => {
                     return "process_result";
                 },
+                checked_type_duration => { return "duration"; },
+                checked_type_instant => { return "instant"; },
+                checked_type_process => { return "process"; },
+                checked_type_process_outcome => { return "process_outcome"; },
                 checked_type_path_metadata => {
                     return "path_metadata";
                 },
@@ -676,6 +680,10 @@ fn c_type(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 checked_type_process_result => {
                     return "NQ_process_result";
                 },
+                checked_type_duration => { return "NQ_duration"; },
+                checked_type_instant => { return "NQ_instant"; },
+                checked_type_process => { return "NQ_process"; },
+                checked_type_process_outcome => { return "NQ_process_outcome"; },
                 checked_type_path_metadata => {
                     return "NQ_path_metadata";
                 },
@@ -751,6 +759,8 @@ fn is_runtime_native_option(type_shapes: ref list<ir_type_shape>, payload_type_i
     match entry {
         Some(value) => {
             match value.kind {
+                checked_type_duration => { return true; },
+                checked_type_instant => { return true; },
                 checked_type_i32 => {
                     return true;
                 },
@@ -834,6 +844,10 @@ fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i3
                     match err_value.kind {
                         checked_type_io_err => {
                             match ok_value.kind {
+                                checked_type_i64 => { return true; },
+                                checked_type_instant => { return true; },
+                                checked_type_process => { return true; },
+                                checked_type_process_outcome => { return true; },
                                 checked_type_str => {
                                     return true;
                                 },
@@ -850,7 +864,17 @@ fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i3
                                     return true;
                                 },
                                 checked_type_option => {
-                                    return is_runtime_native_option(ref type_shapes, ok_value.arg1_id);
+                                    // Only option<str> has a runtime-native result carrier.
+                                    let payload = lookup_type_shape(ref type_shapes, ok_value.arg1_id);
+                                    match payload {
+                                        Some(value) => {
+                                            match value.kind {
+                                                checked_type_str => { return true; },
+                                                _ => { return false; },
+                                            }
+                                        },
+                                        None => { return false; },
+                                    }
                                 },
                                 checked_type_list => {
                                     return is_runtime_native_list(ref type_shapes, ok_value.arg1_id);
@@ -1573,6 +1597,8 @@ fn drop_statement_text(type_shapes: ref list<ir_type_shape>, type_id: i32, targe
                 checked_type_str => { return concat3("nq_str_drop(&", target_expr, ");"); },
                 checked_type_io_err => { return concat3("nq_io_err_drop(&", target_expr, ");"); },
                 checked_type_process_result => { return concat3("nq_process_result_drop(&", target_expr, ");"); },
+                checked_type_process => { return concat3("nq_process_drop(&", target_expr, ");"); },
+                checked_type_process_outcome => { return concat3("nq_process_outcome_drop(&", target_expr, ");"); },
                 checked_type_bytes => { return concat3("nq_bytes_drop(&", target_expr, ");"); },
                 _ => {
                 },
@@ -1814,10 +1840,16 @@ fn emit_expr_discard_cleanup(lines: mutref list<str>, type_shapes: ref list<ir_t
 }
 
 fn call_arg_transfers_ownership(call: ir_expr, arg_index: i32) -> bool {
+    if call.target_origin_module != "__builtin__" {
+        return true;
+    }
+    if call.target_name == "process_wait" and arg_index == 0 {
+        return true;
+    }
     if call.target_name == "list_push" and arg_index == 1 {
         return true;
     }
-    if builtin_call_name(call.target_name) != "" {
+    if builtin_call_name(call.target_name, call.target_origin_module) != "" {
         return false;
     }
     if call.target_name == "list" {
@@ -1999,6 +2031,7 @@ fn emit_value_clone_definition(lines: mutref list<str>, type_shapes: ref list<ir
         checked_type_str => { append_line(mutref lines, "    return nq_str_clone(value);"); },
         checked_type_io_err => { append_line(mutref lines, "    return nq_io_err_clone(value);"); },
         checked_type_process_result => { append_line(mutref lines, "    return nq_process_result_clone(value);"); },
+        checked_type_process_outcome => { append_line(mutref lines, "    return nq_process_outcome_clone(value);"); },
         checked_type_option => {
             append_line(mutref lines, concat3("    ", c_name, " out = value;"));
             if type_needs_drop(ref type_shapes, shape.arg1_id) {
@@ -2109,6 +2142,8 @@ fn emit_value_drop_definition(lines: mutref list<str>, type_shapes: ref list<ir_
         checked_type_str => { append_line(mutref lines, "    nq_str_drop(value);"); },
         checked_type_io_err => { append_line(mutref lines, "    nq_io_err_drop(value);"); },
         checked_type_process_result => { append_line(mutref lines, "    nq_process_result_drop(value);"); },
+        checked_type_process => { append_line(mutref lines, "    nq_process_drop(value);"); },
+        checked_type_process_outcome => { append_line(mutref lines, "    nq_process_outcome_drop(value);"); },
         checked_type_bytes => { append_line(mutref lines, "    nq_bytes_drop(value);"); },
         checked_type_list => {
             if type_needs_drop(ref type_shapes, shape.arg1_id) {
@@ -2570,7 +2605,20 @@ fn function_signature(function: ir_function, locals: ref list<ir_local>, type_sh
     return "";
 }
 
-fn builtin_call_name(name: str) -> str {
+fn builtin_call_name(name: str, origin_module: str) -> str {
+    if origin_module != "__builtin__" {
+        return "";
+    }
+    if name == "duration_from_ns" { return "nq_duration_from_ns"; }
+    if name == "duration_as_ns" { return "nq_duration_as_ns"; }
+    if name == "duration_between" { return "nq_duration_between"; }
+    if name == "wall_time_ns" { return "nq_wall_time_ns"; }
+    if name == "monotonic_now" { return "nq_monotonic_now"; }
+    if name == "deadline_after" { return "nq_deadline_after"; }
+    if name == "sleep_for" { return "nq_sleep_for"; }
+    if name == "process_start" { return "nq_process_start"; }
+    if name == "process_wait" { return "nq_process_wait"; }
+    if name == "process_terminate" { return "nq_process_terminate"; }
     if name == "print_line" {
         return "nq_print_line";
     }
@@ -3310,7 +3358,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         }
                         arg_index = arg_index + 1;
                     }
-                    let builtin = builtin_call_name(expr.target_name);
+                    let builtin = builtin_call_name(expr.target_name, expr.target_origin_module);
                     if builtin != "" {
                         return concat4(builtin, "(", args, ")");
                     }
@@ -3640,7 +3688,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                         arg_index = arg_index + 1;
                     }
                     let mut call_text = "";
-                    let builtin = builtin_call_name(expr.target_name);
+                    let builtin = builtin_call_name(expr.target_name, expr.target_origin_module);
                     if builtin != "" {
                         call_text = concat4(builtin, "(", args, ")");
                     } else {

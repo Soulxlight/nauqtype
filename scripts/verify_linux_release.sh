@@ -48,6 +48,7 @@ require_dir "share/nauqtype/examples"
 require_file "share/doc/nauqtype/README.md"
 require_file "share/doc/nauqtype/LINUX.md"
 require_file "share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md"
+require_file "share/doc/nauqtype/M55_CONTRACTS.md"
 
 verify_cli_golden() {
     local label="$1"

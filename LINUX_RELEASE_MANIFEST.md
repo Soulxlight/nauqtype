@@ -17,6 +17,7 @@ The repository version is stored in `VERSION`. The stage1 compiler owns its `hel
 - `build/linux-release/nauqtype/share/doc/nauqtype/README.md`
 - `build/linux-release/nauqtype/share/doc/nauqtype/LINUX.md`
 - `build/linux-release/nauqtype/share/doc/nauqtype/LINUX_RELEASE_MANIFEST.md`
+- `build/linux-release/nauqtype/share/doc/nauqtype/M55_CONTRACTS.md`
 
 The launcher runs from `lib/nauqtype` so `build` and `run` can find `stdlib/runtime.c` without relying on a source checkout. The stage1 driver binary is named `nauqc-stage1`; the public executable remains `nauqc`.
 

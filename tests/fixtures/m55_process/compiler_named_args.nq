@@ -1,0 +1,19 @@
+fn main() -> i32 {
+    let Some(zero) = duration_from_ns(value: 0) else { return 1; };
+    if duration_as_ns(value: zero) != 0 { return 2; }
+    let Ok(start) = monotonic_now() else { return 3; };
+    let Ok(slept) = sleep_for(delay: zero) else { return 4; };
+    let Ok(end) = deadline_after(delay: zero) else { return 5; };
+    let Some(elapsed) = duration_between(end: end, start: start) else { return 6; };
+    if duration_as_ns(elapsed) < 0 { return 7; }
+    let args: list<str> = [];
+    let env: list<str> = [];
+    let Ok(child) = process_start(max_output_bytes: 64, capture: true, input: Some("named"), env: ref env, cwd: ".", args: ref args, program: "/bin/cat") else { return 8; };
+    let Ok(outcome) = process_wait(deadline: None, child: child) else { return 9; };
+    if outcome.stdout != "named" or outcome.exit_code != 0 { return 10; }
+    let Ok(other) = process_start("/bin/true", ref args, ".", ref env, None, false, 0) else { return 11; };
+    let mut owned = other;
+    let Ok(terminated) = process_terminate(child: mutref owned) else { return 12; };
+    let Ok(waited) = process_wait(deadline: None, child: owned) else { return 13; };
+    return 0;
+}

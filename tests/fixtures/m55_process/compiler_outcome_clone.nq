@@ -1,0 +1,26 @@
+fn copy_outcome(value: process_outcome) -> process_outcome { return value; }
+fn only_stdout(value: process_outcome) -> str { return value.stdout; }
+fn only_stderr(value: process_outcome) -> str { return value.stderr; }
+fn text_width(value: ref str) -> i32 { return str_len(value); }
+fn exit_value(value: ref i32) -> i32 { return value; }
+fn outcome_flag(value: ref bool) -> bool { return value; }
+fn borrowed_fields(value: ref process_outcome) -> bool {
+    return text_width(ref value.stdout) == 10 and text_width(ref value.stderr) == 10
+        and exit_value(ref value.exit_code) == 0
+        and not outcome_flag(ref value.timed_out) and not outcome_flag(ref value.cancelled);
+}
+
+fn main() -> i32 {
+    let args = ["-c", "printf cloned-out; printf cloned-err >&2"];
+    let env: list<str> = [];
+    let Ok(child) = process_start("/bin/sh", ref args, ".", ref env, Some(""), true, 64) else { return 1; };
+    let Ok(original) = process_wait(child, None) else { return 2; };
+    let cloned = copy_outcome(original);
+    let output = only_stdout(cloned);
+    let error = only_stderr(cloned);
+    if output != "cloned-out" or error != "cloned-err" { return 3; }
+    if original.stdout != output or original.stderr != error { return 4; }
+    if cloned.exit_code != 0 or cloned.timed_out or cloned.cancelled { return 5; }
+    if not borrowed_fields(ref cloned) { return 6; }
+    return 0;
+}

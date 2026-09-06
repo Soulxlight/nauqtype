@@ -1,0 +1,23 @@
+fn main() -> i32 {
+    let Some(budget) = duration_from_ns(1000000000) else {
+        return 1;
+    };
+    let Ok(deadline) = deadline_after(budget) else {
+        return 2;
+    };
+    let args = ["Nauqtype process example\n"];
+    let env: list<str> = [];
+    let Ok(child) = process_start("/usr/bin/printf", ref args, ".", ref env, Some(""), true, 128) else {
+        return 3;
+    };
+    let Ok(outcome) = process_wait(child, Some(deadline)) else {
+        return 4;
+    };
+    if outcome.timed_out or outcome.cancelled or outcome.exit_code != 0 {
+        return 5;
+    }
+    let Ok(_) = stdout_write(outcome.stdout) else {
+        return 6;
+    };
+    return 0;
+}

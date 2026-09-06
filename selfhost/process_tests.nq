@@ -1,0 +1,360 @@
+use text;
+use schema_profile;
+
+fn process_test_find(value: str, needle: str, start: i32) -> i32 {
+    let mut index = start;
+    while index + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, index, needle) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn process_test_count(value: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut at = process_test_find(value, needle, 0);
+    while at >= 0 {
+        count = count + 1;
+        at = process_test_find(value, needle, at + str_len(needle));
+    }
+    return count;
+}
+
+fn process_test_object(required: str, properties: str) -> str {
+    return concat5("{\"type\":\"object\",\"required\":", required, ",\"properties\":{", properties, "}}");
+}
+
+fn process_test_const(value: str) -> str { return concat3("{\"const\":", value, "}"); }
+
+fn process_test_has_item(output: str, array: str, item_schema: str) -> bool {
+    // The bounded profile has no contains: oneOf({}, S) excludes matching items.
+    let items = concat3("{\"type\":\"array\",\"items\":{\"oneOf\":[{},", item_schema, "]}}");
+    let schema = process_test_object(concat3("[", json_quote(array), "]"), concat3(json_quote(array), ":", items));
+    let shape = process_test_object(concat3("[", json_quote(array), "]"), str_concat(json_quote(array), ":{\"type\":\"array\"}"));
+    let empty = concat3("{", json_quote(array), ":[]}");
+    return schema_profile_accepts(schema, empty) and schema_profile_accepts(shape, output) and not schema_profile_accepts(schema, output);
+}
+
+fn process_test_evidence(driver: str, command: str, format: str, compare: bool) -> option<str> {
+    let mut args = [command, "tests/fixtures/m55_process/compiler_imported.nq"];
+    if compare { list_push(mutref args, "tests/fixtures/m55_process/compiler_imported.nq"); }
+    list_push(mutref args, "--format");
+    list_push(mutref args, format);
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" and schema_profile_accepts("{}", status.stdout) { return Some(status.stdout); }
+            eprint_line(concat3("import collision evidence failed: ", command, ""));
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+        },
+        Err(error) => { eprint_line(io_err_text(error)); },
+    }
+    return None;
+}
+
+fn process_test_call_json(owner: str, name: str, at: i32, builtin: bool, view: str) -> str {
+    let function = str_concat("fn:compiler_imported::", owner);
+    let site = concat4("compiler_imported::", owner, "@", i32_to_str(at));
+    let mut target = str_concat("fn:compiler_import_provider::", name);
+    let mut origin = "compiler_import_provider";
+    let mut kind = "function";
+    let mut evidence = "checked";
+    let mut io = "";
+    if builtin {
+        target = str_concat("builtin:", name);
+        origin = "__builtin__";
+        kind = "builtin";
+        evidence = "builtin";
+        io = ",\"io_kind\":\"process\"";
+    }
+    if view == "graph" {
+        let edge = concat6("{\"caller\":", json_quote(function), ",\"callee\":", json_quote(target), ",\"call_site\":", json_quote(str_concat("call:", site)));
+        return concat5(edge, ",\"evidence\":", json_quote(evidence), io, "}");
+    }
+    let mut id = str_concat("call:", site);
+    let mut context = "";
+    if view == "review_ref" or view == "facts_ref" {
+        context = str_concat(",\"kind\":\"call\",\"from\":", json_quote(function));
+    }
+    if view == "facts_ref" { id = str_concat("nameref:", site); io = ""; }
+    let mut output = concat6("{\"id\":", json_quote(id), context, ",\"name\":", json_quote(name), ",\"target_kind\":");
+    output = concat4(output, json_quote(kind), ",\"target_id\":", json_quote(target));
+    if view == "call" { output = concat3(output, ",\"target_module\":", json_quote(origin)); }
+    return str_concat(concat6(output, ",\"evidence\":", json_quote(evidence), io, ",\"span\":{\"start\":", i32_to_str(at)), "}}");
+}
+
+fn process_test_pure_function(output: str, owner: str, calls: str, propagates: str) -> bool {
+    let id = json_quote(str_concat("fn:compiler_imported::", owner));
+    let inferred = concat3("{\"mutates\":[],\"effects\":[],\"propagates\":", propagates, "}");
+    let audit_schema = process_test_object("[\"effects\",\"propagates\"]", str_concat("\"effects\":{\"const\":[]},\"propagates\":", process_test_const(propagates)));
+    let properties = concat6("\"id\":", process_test_const(id), ",\"inferred\":", process_test_const(inferred), ",\"audit\":", audit_schema);
+    let with_calls = concat3(properties, ",\"calls\":", process_test_const(calls));
+    return process_test_count(output, str_concat("\"id\": ", id)) == 1 and process_test_has_item(output, "functions", process_test_object("[\"id\",\"inferred\",\"audit\",\"calls\"]", with_calls));
+}
+
+fn process_test_import_rename(driver: str, source: str, provider: str) -> bool {
+    let target = "fn:compiler_import_provider::process_wait";
+    let args = ["refactor-rename", "tests/fixtures/m55_process/compiler_imported.nq", target, "provider_wait"];
+    let needles = ["fn process_wait", "helper::process_wait(bonus: 7, value: value)", "helper::process_wait(value, 9)"];
+    let mut edits = "[";
+    let mut index = 0;
+    for needle in needles {
+        let mut text = source;
+        let mut module = "compiler_imported";
+        let mut kind = "reference";
+        let mut prefix = "helper::";
+        if index == 0 { text = provider; module = "compiler_import_provider"; kind = "definition"; prefix = "fn "; }
+        if process_test_count(text, needle) != 1 { return false; }
+        let at = process_test_find(text, needle, 0) + str_len(prefix);
+        let head = concat5("{\"module\":", json_quote(module), ",\"path\":", json_quote(concat3("tests/fixtures/m55_process/", module, ".nq")), ",\"span\":{");
+        let span = concat5("\"start\":", i32_to_str(at), ",\"end\":", i32_to_str(at + str_len("process_wait")), "},");
+        let tail = concat5("\"old_text\":\"process_wait\",\"replacement\":\"provider_wait\",\"kind\":", json_quote(kind), ",\"target_id\":", json_quote(target), "}");
+        if index > 0 { edits = str_concat(edits, ","); }
+        edits = concat4(edits, head, span, tail);
+        index = index + 1;
+    }
+    edits = str_concat(edits, "]");
+    let properties = concat6("\"ok\":{\"const\":true},\"target_id\":", process_test_const(json_quote(target)), ",\"edits\":", process_test_const(edits), ",\"diagnostics\":{\"const\":[]}", "");
+    let schema = process_test_object("[\"ok\",\"target_id\",\"edits\",\"diagnostics\"]", properties);
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) { return true; }
+            eprint_line("import rename must edit only provider declaration and two qualified calls");
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+        },
+        Err(error) => { eprint_line(io_err_text(error)); },
+    }
+    return false;
+}
+
+fn process_test_import_evidence(driver: str) -> bool {
+    let Ok(source) = read_file("tests/fixtures/m55_process/compiler_imported.nq") else { return false; };
+    let Ok(provider) = read_file("tests/fixtures/m55_process/compiler_import_provider.nq") else { return false; };
+    let Some(review) = process_test_evidence(driver, "review", "v4", false) else { return false; };
+    let Some(facts) = process_test_evidence(driver, "facts", "v2", false) else { return false; };
+    let owners = ["pure_wait", "pure_wait", "pure_read", "main"];
+    let names = ["process_wait", "process_wait", "read_file", "process_wait"];
+    let needles = ["helper::process_wait(bonus: 7, value: value)", "helper::process_wait(value, 9)", "helper::read_file(succeed)", "process_wait(forwarded, None)"];
+    let mut pure_calls = "[";
+    let mut read_calls = "[";
+    let mut previous_source = -1;
+    let mut previous_review = -1;
+    let mut previous_facts = -1;
+    let mut index = 0;
+    while index < list_len(ref needles) {
+        let Some(needle) = list_get(ref needles, index) else { return false; };
+        let Some(owner) = list_get(ref owners, index) else { return false; };
+        let Some(name) = list_get(ref names, index) else { return false; };
+        if process_test_count(source, needle) != 1 { return false; }
+        let mut at = process_test_find(source, needle, 0);
+        let builtin = owner == "main";
+        if not builtin { at = at + str_len("helper::"); }
+        if at <= previous_source { return false; }
+        previous_source = at;
+        let graph = process_test_const(process_test_call_json(owner, name, at, builtin, "graph"));
+        if not process_test_has_item(review, "call_graph", graph) or not process_test_has_item(facts, "call_graph", graph) { eprint_line("import call graph target/evidence/io kind regressed"); return false; }
+        if not process_test_has_item(review, "references", process_test_const(process_test_call_json(owner, name, at, builtin, "review_ref"))) or not process_test_has_item(facts, "references", process_test_const(process_test_call_json(owner, name, at, builtin, "facts_ref"))) { eprint_line("import call reference identity/span regressed"); return false; }
+        let suffix = concat4("compiler_imported::", owner, "@", i32_to_str(at));
+        if process_test_count(review, str_concat("\"id\": ", json_quote(str_concat("call:", suffix)))) != 2 or process_test_count(facts, str_concat("\"id\": ", json_quote(str_concat("nameref:", suffix)))) != 1 { return false; }
+        let site = str_concat("\"call_site\": ", json_quote(concat4("call:compiler_imported::", owner, "@", i32_to_str(at))));
+        let review_at = process_test_find(review, site, 0);
+        let facts_at = process_test_find(facts, site, 0);
+        if process_test_count(review, site) != 1 or process_test_count(facts, site) != 1 or review_at <= previous_review or facts_at <= previous_facts { eprint_line("import call source order regressed"); return false; }
+        previous_review = review_at;
+        previous_facts = facts_at;
+        if owner == "pure_wait" {
+            if index > 0 { pure_calls = str_concat(pure_calls, ","); }
+            pure_calls = str_concat(pure_calls, process_test_call_json(owner, name, at, false, "call"));
+        }
+        if owner == "pure_read" { read_calls = str_concat(read_calls, process_test_call_json(owner, name, at, false, "call")); }
+        index = index + 1;
+    }
+    pure_calls = str_concat(pure_calls, "]");
+    // The wrapper's Ok constructor follows the qualified read call in source order.
+    if process_test_count(source, "return Ok(value)") != 1 { eprint_line("import fixture must contain one return constructor"); return false; }
+    let ok_at = process_test_find(source, "return Ok(value)", 0) + str_len("return ");
+    let ok_call_head = concat3("{\"id\":", json_quote(str_concat("call:compiler_imported::pure_read@", i32_to_str(ok_at))), ",\"name\":\"Ok\",\"target_kind\":\"builtin_variant\",\"target_id\":\"builtin-variant:Ok\",\"target_module\":\"__builtin__\",\"evidence\":\"builtin\",\"span\":{\"start\":");
+    read_calls = concat6(read_calls, ",", ok_call_head, i32_to_str(ok_at), "}}", "]");
+    if not process_test_pure_function(review, "pure_wait", pure_calls, "[]") or not process_test_pure_function(review, "pure_read", read_calls, "[\"Failure\"]") { eprint_line("import pure wrapper effects/propagates/call order regressed"); return false; }
+    let outputs = [review, facts];
+    for output in outputs {
+        if process_test_count(output, "\"callee\": \"fn:compiler_import_provider::process_wait\"") != 2 or process_test_count(output, "\"callee\": \"builtin:process_wait\"") != 1 or process_test_count(output, "\"callee\": \"fn:compiler_import_provider::read_file\"") != 1 or process_test_contains(output, "\"callee\": \"builtin:read_file\"") { return false; }
+    }
+    if process_test_count(source, "value = helper::read_file(succeed)?") != 1 { return false; }
+    let propagation_at = process_test_find(source, "value = helper::read_file(succeed)?", 0);
+    let propagation_id = json_quote(str_concat("propagation:compiler_imported::pure_read@", i32_to_str(propagation_at)));
+    let propagation_tail = concat3(",\"target_kind\":\"enum\",\"target_id\":\"enum:compiler_import_provider::Failure\",\"evidence\":\"checked\",\"span\":{\"start\":", i32_to_str(propagation_at), "}}");
+    let review_site = concat4("{\"id\":", propagation_id, ",\"function\":\"fn:compiler_imported::pure_read\",\"error\":\"Failure\"", propagation_tail);
+    let facts_site = concat4("{\"id\":", propagation_id, ",\"kind\":\"propagation_site\",\"from\":\"fn:compiler_imported::pure_read\",\"name\":\"Failure\"", propagation_tail);
+    let site_schema = process_test_object("[\"propagation_sites\"]", str_concat("\"propagation_sites\":", process_test_const(concat3("[", review_site, "]"))));
+    if not schema_profile_accepts(site_schema, review) or not process_test_has_item(facts, "references", process_test_const(facts_site)) or process_test_count(facts, str_concat("\"id\": ", propagation_id)) != 1 { eprint_line("import propagation custom error identity/span regressed"); return false; }
+    let Some(workspace_facts) = process_test_evidence(driver, "facts", "v4", false) else { return false; };
+    let source_module = "{\"id\":\"workspace:legacy::module:compiler_import_provider\",\"workspace\":\"legacy\",\"module\":\"compiler_import_provider\",\"source_module\":\"compiler_import_provider\",\"evidence\":\"checked\"}";
+    if not process_test_has_item(workspace_facts, "modules", process_test_const(source_module)) { return false; }
+    let exported = ["process_wait", "read_file"];
+    for name in exported {
+        let declaration = str_concat("fn ", name);
+        if process_test_count(provider, declaration) != 1 { return false; }
+        let at = process_test_find(provider, declaration, 0) + str_len("fn ");
+        let record_head = concat6("{\"id\":", json_quote(str_concat("workspace:legacy::module:compiler_import_provider::fn:", name)), ",\"legacy_id\":", json_quote(str_concat("fn:compiler_import_provider::", name)), ",\"kind\":\"function\",\"name\":", json_quote(name));
+        let record = concat4(record_head, ",\"evidence\":\"checked\",\"span\":{\"start\":", i32_to_str(at), "}}");
+        if not process_test_has_item(workspace_facts, "exports", process_test_const(record)) { eprint_line("import export source origin/span regressed"); return false; }
+    }
+    let labels = ["bonus", "value"];
+    for name in labels {
+        let mut annotation = "bonus: i64";
+        let mut label = "bonus: 7";
+        if name == "value" { annotation = "value: duration"; label = "value: value"; }
+        if process_test_count(provider, annotation) != 1 or process_test_count(source, label) != 1 { return false; }
+        let binding_at = process_test_find(provider, annotation, 0);
+        let label_at = process_test_find(source, label, 0);
+        let target = concat4("binding:fn:compiler_import_provider::process_wait:1:", name, "@", i32_to_str(binding_at));
+        let head = concat3("{\"id\":", json_quote(str_concat("arglabel:compiler_imported::pure_wait@", i32_to_str(label_at))), ",\"kind\":\"argument_label\",\"from\":\"fn:compiler_imported::pure_wait\",\"name\":");
+        let record = concat6(head, json_quote(name), ",\"target_kind\":\"binding\",\"target_id\":", json_quote(target), ",\"evidence\":\"checked\",\"span\":{\"start\":", i32_to_str(label_at));
+        if not process_test_has_item(facts, "references", process_test_const(str_concat(record, "}}"))) { eprint_line("import named labels must target provider parameter bindings"); return false; }
+    }
+    if not process_test_import_rename(driver, source, provider) { return false; }
+    let comparisons = ["review-diff", "change-report"];
+    for command in comparisons {
+        let mut format = "v2";
+        if command == "change-report" { format = "v1"; }
+        let Some(output) = process_test_evidence(driver, command, format, true) else { return false; };
+        let mut changes = "{\"added_functions\":[],\"removed_functions\":[],\"changed_functions\":[],\"added_call_edges\":[],\"removed_call_edges\":[]";
+        if command == "change-report" { changes = str_concat(changes, ",\"added_propagates\":[],\"removed_propagates\":[]"); }
+        changes = str_concat(changes, "}");
+        let comparison_schema = process_test_object("[\"command\",\"changes\"]", concat4("\"command\":", process_test_const(json_quote(command)), ",\"changes\":", process_test_const(changes)));
+        if not schema_profile_accepts(comparison_schema, output) { eprint_line("import collision self-comparison regressed"); return false; }
+    }
+    return true;
+}
+
+fn process_test_contains(value: str, needle: str) -> bool {
+    let mut index = 0;
+    while index + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, index, needle) { return true; }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn process_test_run(driver: str, args: ref list<str>, code: i32, expected: str, exact: bool) -> bool {
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            let mut matched = process_test_contains(status.stdout, expected);
+            if exact { matched = status.stdout == expected; }
+            if status.exit_code == code and status.stderr == "" and matched { return true; }
+            eprint_line(concat3("process/time fixture failed, exit ", i32_to_str(status.exit_code), ":"));
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+        },
+        Err(error) => { eprint_line(io_err_text(error)); },
+    }
+    return false;
+}
+
+fn process_test_diagnostic_count(driver: str, name: str, message: str, expected: i32) -> bool {
+    let args = ["check", str_concat("tests/fixtures/m55_process/", name), "--diagnostics", "json"];
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            let needle = concat3("\"message\": \"", message, "\"");
+            let mut count = 0;
+            let mut index = 0;
+            while index + str_len(needle) <= str_len(status.stdout) {
+                if starts_with_at(status.stdout, index, needle) { count = count + 1; }
+                index = index + 1;
+            }
+            if status.exit_code == 1 and status.stderr == "" and count == expected { return true; }
+            eprint_line(str_concat("process diagnostic coverage failed: ", name));
+            eprint_line(status.stdout);
+        },
+        Err(error) => { eprint_line(io_err_text(error)); },
+    }
+    return false;
+}
+
+fn process_test_command(driver: str, command: str, name: str, code: i32, expected: str, exact: bool) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, command);
+    list_push(mutref args, str_concat("tests/fixtures/m55_process/", name));
+    if code != 0 { list_push(mutref args, "--diagnostics"); list_push(mutref args, "json"); }
+    return process_test_run(driver, ref args, code, expected, exact);
+}
+
+fn process_test_native(name: str, expected: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-O2");
+    list_push(mutref args, "-Wall");
+    list_push(mutref args, "-Wextra");
+    list_push(mutref args, "-Werror");
+    list_push(mutref args, "-fsanitize=address,undefined");
+    list_push(mutref args, "-fno-sanitize-recover=all");
+    list_push(mutref args, concat3("tests/fixtures/m55_process/", name, ".c"));
+    list_push(mutref args, "-o");
+    let output = str_concat("build/m55_process/", name);
+    list_push(mutref args, output);
+    if not process_test_run("cc", ref args, 0, "", true) { return false; }
+    args = list();
+    list_push(mutref args, "40s");
+    list_push(mutref args, output);
+    return process_test_run("timeout", ref args, 0, expected, true);
+}
+
+pub fn run_process_time_gate(driver: str) -> bool
+audit {
+    intent("Lock explicit process/time behavior, cleanup authority, and interrupted legacy waits");
+    mutates();
+    effects(print, io);
+}
+{
+    match create_dir_all("build/m55_process") { Ok(_) => {}, Err(_) => { return false; }, }
+    if not process_test_native("legacy_interrupt", "legacy process interruption ok\n") { return false; }
+    if not process_test_native("native_runtime", "native runtime ok\n") { return false; }
+    if not process_test_native("native_faults", "native faults ok\n") { return false; }
+    if not process_test_native("native_alloc", "native allocation ok\n") { return false; }
+    if not process_test_native("native_limits", "native limits ok\n") { return false; }
+    if not process_test_native("native_platform", "native platform ok\n") { return false; }
+    if not process_test_command(driver, "run", "runtime.nq", 0, "process and time ok\n", true) { return false; }
+    if not process_test_command(driver, "check", "authority.nq", 0, "", true) { return false; }
+    if not process_test_command(driver, "check", "missing_authority.nq", 1, "NQ-CONTRACT-008", false) { return false; }
+    if not process_test_command(driver, "check", "repeat_wait.nq", 1, "NQ-BORROW-001", false) { return false; }
+    if not process_test_command(driver, "check", "opaque.nq", 1, "\"ok\": false", false) { return false; }
+    if not process_test_command(driver, "check", "nominal.nq", 1, "\"ok\": false", false) { return false; }
+    let positives = ["compiler_named_args.nq", "compiler_carriers.nq", "compiler_outcome_clone.nq", "compiler_imported.nq", "compiler_owned_cleanup.nq"];
+    for name in positives {
+        if not process_test_command(driver, "run", name, 0, "", true) { return false; }
+    }
+    if not process_test_import_evidence(driver) { return false; }
+    let negatives = ["compiler_opaque_field.nq", "compiler_opaque_arithmetic.nq", "compiler_opaque_constructors.nq", "compiler_list_inners.nq", "compiler_option_inners.nq", "compiler_borrow_wait.nq", "compiler_terminate_ref.nq"];
+    for name in negatives {
+        if not process_test_command(driver, "check", name, 1, "\"ok\": false", false) { return false; }
+    }
+    if not process_test_diagnostic_count(driver, "compiler_comparisons.nq", "process and time values do not support comparison operators", 8) { return false; }
+    if not process_test_diagnostic_count(driver, "compiler_spoof_types.nq", "process and time builtin type names cannot be redeclared", 4) { return false; }
+    if not process_test_diagnostic_count(driver, "compiler_type_arguments.nq", "process and time builtin types do not accept type arguments", 4) { return false; }
+    let mut args: list<str> = list();
+    list_push(mutref args, "review");
+    list_push(mutref args, "tests/fixtures/m55_process/authority.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v4");
+    match read_file("tests/fixtures/m55_process/authority.review-v4.json") {
+        Ok(golden) => { if not process_test_run(driver, ref args, 0, golden, true) { return false; } },
+        Err(error) => { eprint_line(io_err_text(error)); return false; },
+    }
+    args = ["facts", "tests/fixtures/m55_process/authority.nq", "--format", "v4"];
+    match read_file("tests/fixtures/m55_process/authority.facts-v4.json") {
+        Ok(golden) => { if not process_test_run(driver, ref args, 0, golden, true) { return false; } },
+        Err(error) => { eprint_line(io_err_text(error)); return false; },
+    }
+    args = ["facts", "tests/fixtures/m55_process/runtime.nq", "--format", "v2"];
+    if not process_test_run(driver, ref args, 0, "builtin-field:process_outcome::timed_out", false) { return false; }
+    args = ["policy-check", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/m55_process/policy.json"];
+    if not process_test_run(driver, ref args, 0, "\"ok\": true", false) { return false; }
+    args = ["refactor-rename", "tests/fixtures/m55_process/authority.nq", "fn:authority::discard", "release_child"];
+    if not process_test_run(driver, ref args, 0, "\"replacement\": \"release_child\"", false) { return false; }
+    args = ["change-report", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/m55_process/authority.nq", "--policy", "tests/fixtures/m55_process/policy.json", "--format", "v4"];
+    if not process_test_run(driver, ref args, 0, "\"policy\": \"checked\"", false) { return false; }
+    return true;
+}

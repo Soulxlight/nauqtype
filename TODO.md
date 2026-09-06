@@ -392,8 +392,9 @@
 - [x] M54.9 close: validate arithmetic/allocation, refresh the generated seed with recorded lineage, obtain mixed-model audit PASS, and run the frozen milestone gate
 - [x] M54.10: enforce dependency/seed/cache/gate provenance (F07/F09/F10/F12)
 - [x] M54.10 close: verify captured-source and evidence migration, seed v2 reproduction, focused provenance/attestation tests, independent audits, and the exact frozen milestone attestation
-- [ ] M55 prerequisite: repair interrupted process capture/wait handling (F14)
-- [ ] M55: add structured process, time, timeout, and cancellation foundations after corrective closure
+- [x] M55 prerequisite: repair interrupted process capture/wait handling (F14), including fail-closed persistent cleanup failures
+- [x] M55: add structured process, time, timeout, and cancellation foundations after corrective closure
+- [x] M55 close: native fault/sanitizer and checked-evidence fixtures, actual seed fixed point, independent Sol max/GPT-5.5 xhigh audits, and all seven frozen milestone phases plus attestation passed in 2,504 seconds
 - [ ] M56: add explicit generic reuse without trait or method-system drift
 - [ ] M57: add reusable collections and deterministic general JSON
 - [ ] M58: add an auditable native library and Linux C ABI boundary

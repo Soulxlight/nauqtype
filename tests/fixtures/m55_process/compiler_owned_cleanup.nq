@@ -1,0 +1,165 @@
+type Job { child: process, }
+enum Owner { Occupied(option<Job>), Vacant, }
+type Jobs { entries: result<list<Owner>, io_err>, }
+
+fn pid_matches(path: str, alive: bool) -> bool
+audit { intent("Probe only the owned PID record with a bounded signal-zero check"); mutates(); effects(io); }
+{
+    let args = ["-c", "IFS= read -r pid < \"$1\" || exit 2; case \"$pid\" in ''|*[!0-9]*) exit 2;; esac; [ \"$pid\" -gt 1 ] || exit 2; if kill -0 \"$pid\" 2>/dev/null; then exit 0; else exit 1; fi", "m55-cleanup-probe", path];
+    let env: list<str> = [];
+    let Some(limit) = duration_from_ns(1000000000) else { return false; };
+    let Ok(deadline) = deadline_after(limit) else { return false; };
+    let Ok(probe) = process_start("/bin/sh", ref args, ".", ref env, Some(""), true, 256) else { return false; };
+    let Ok(outcome) = process_wait(probe, Some(deadline)) else { return false; };
+    if outcome.timed_out or outcome.cancelled { return false; }
+    if alive { return outcome.exit_code == 0; }
+    return outcome.exit_code == 1;
+}
+
+fn ready_child(path: str) -> option<process>
+audit { intent("Publish a child PID and prove it live before transferring ownership"); mutates(); effects(io); }
+{
+    // Exec preserves the direct-child PID; no background descendant is needed.
+    let args = ["-c", "printf '%s\\n' \"$$\" > \"$1\" || exit 2; exec /bin/sleep 30", "m55-cleanup-child", path];
+    let env: list<str> = [];
+    let Some(pause) = duration_from_ns(10000000) else { return None; };
+    let Ok(child) = process_start("/bin/sh", ref args, ".", ref env, Some(""), false, 0) else { return None; };
+    let mut attempt = 0;
+    let mut ready = false;
+    while attempt < 200 {
+        match read_file(path) {
+            Ok(text) => {
+                // A complete newline-terminated record avoids a partial-write race.
+                match str_get(text, str_len(text) - 1) {
+                    Some(last) => {
+                        if last == 10 {
+                            if not pid_matches(path, true) { return None; }
+                            ready = true;
+                            break;
+                        }
+                    },
+                    None => {},
+                }
+            },
+            Err(_) => {},
+        }
+        let Ok(_) = sleep_for(pause) else { return None; };
+        attempt = attempt + 1;
+    }
+    if not ready { return None; }
+    return Some(child);
+}
+
+fn drop_bare(path: str) -> bool
+audit { intent("Drop an unused owned local at function exit"); mutates(); effects(io); }
+{
+    let Some(child) = ready_child(path) else { return false; };
+    return true;
+}
+
+fn drop_nested(path: str) -> bool
+audit { intent("Drop a process recursively through products result list enum and option"); mutates(); effects(io); }
+{
+    let Some(child) = ready_child(path) else { return false; };
+    let entries: list<Owner> = [Occupied(Some(Job { child: child }))];
+    let jobs = Jobs { entries: Ok(entries) };
+    return true;
+}
+
+fn replace_owner(old_path: str, new_path: str) -> bool
+audit { intent("Reassignment drops the old owner while preserving the replacement"); mutates(); effects(io); }
+{
+    let Some(old_child) = ready_child(old_path) else { return false; };
+    let Some(new_child) = ready_child(new_path) else { return false; };
+    let mut child = old_child;
+    child = new_child;
+    if not pid_matches(old_path, false) { return false; }
+    return pid_matches(new_path, true);
+}
+
+fn consume(child: process) -> unit
+audit { intent("Drop an owned parameter after caller-side transfer"); mutates(); effects(io); }
+{ return; }
+
+fn consume_move(path: str) -> bool
+audit { intent("Prove callee cleanup before the moved-from caller local leaves scope"); mutates(); effects(io); }
+{
+    let Some(child) = ready_child(path) else { return false; };
+    consume(child);
+    return pid_matches(path, false);
+}
+
+fn return_early(path: str, leave: bool) -> bool
+audit { intent("Clean a branch-local child on an early function return"); mutates(); effects(io); }
+{
+    if leave {
+        let Some(child) = ready_child(path) else { return false; };
+        return true;
+    }
+    return false;
+}
+
+fn forward(child: process) -> process
+audit { intent("Return the moved child without destroying it in the callee"); mutates(); effects(io); }
+{ return child; }
+
+fn discard_temporary(path: str) -> bool
+audit { intent("Drop an owned call-result temporary at its statement boundary"); mutates(); effects(io); }
+{
+    let Some(child) = ready_child(path) else { return false; };
+    forward(child);
+    return pid_matches(path, false);
+}
+
+fn exercise(root: str) -> i32
+audit { intent("Verify six generated ownership paths using seven live children"); mutates(); effects(io); }
+{
+    let bare = str_concat(root, "/bare.pid");
+    if not drop_bare(bare) or not pid_matches(bare, false) { return 10; }
+    let nested = str_concat(root, "/nested.pid");
+    if not drop_nested(nested) or not pid_matches(nested, false) { return 20; }
+    let old = str_concat(root, "/old.pid");
+    let replacement = str_concat(root, "/replacement.pid");
+    if not replace_owner(old, replacement) or not pid_matches(replacement, false) { return 30; }
+    let moved = str_concat(root, "/moved.pid");
+    if not consume_move(moved) { return 40; }
+    let early = str_concat(root, "/early.pid");
+    if not return_early(early, true) or not pid_matches(early, false) { return 50; }
+    let temporary = str_concat(root, "/temporary.pid");
+    if not discard_temporary(temporary) { return 60; }
+    return 0;
+}
+
+fn cleanup_records(root: str) -> bool
+audit { intent("Remove only this invocation's PID files and private directory"); mutates(); effects(io); }
+{
+    let names = ["bare", "nested", "old", "replacement", "moved", "early", "temporary"];
+    let mut clean = true;
+    for name in names {
+        let path = str_concat(str_concat(str_concat(root, "/"), name), ".pid");
+        match remove_file(path) {
+            Ok(_) => {},
+            Err(error) => { if io_err_kind(ref error) != "not_found" { clean = false; } },
+        }
+    }
+    match remove_dir(root) { Ok(_) => {}, Err(_) => { clean = false; }, }
+    return clean;
+}
+
+fn main() -> i32
+audit { intent("Bound generated cleanup evidence below the children's fallback lifetime"); mutates(); effects(io); }
+{
+    let Ok(_) = create_dir_all("build/m55_process") else { return 1; };
+    let Ok(root) = create_temp_dir("build/m55_process", "compiler-cleanup-") else { return 2; };
+    let Ok(start) = monotonic_now() else { remove_dir(root); return 3; };
+    let status = exercise(root);
+    let finish = monotonic_now();
+    let cleaned = cleanup_records(root);
+    if status != 0 { return status; }
+    if not cleaned { return 4; }
+    let Ok(end) = finish else { return 5; };
+    let Some(elapsed) = duration_between(start, end) else { return 5; };
+    // A missing drop cannot pass merely because a 30-second child expired.
+    if duration_as_ns(elapsed) >= 10000000000 { return 6; }
+    return 0;
+}

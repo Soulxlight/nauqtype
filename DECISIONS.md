@@ -347,6 +347,7 @@
 ## D044: IO subkinds are checked evidence, not effects
 
 - Decision: expose the fixed IO subkinds `read`, `write`, `create_dir`, and `process` in versioned semantic evidence while retaining `io` as the only source-level IO audit atom.
+- M55 clarification: `read` includes wall/monotonic clock observations and deadline calculation; `process` includes current-process suspension (`sleep_for`) and checked owned-child cleanup authority, not only explicit subprocess calls. No schema enum or source effect atom changes.
 - Alternatives considered: separate `effects(read, write, ...)` declarations, user-defined effect atoms, subkind policy enforcement, or no subkind evidence.
 - Reason chosen: supervisors benefit from knowing how an `effects(io)` function touches the outside world, but splitting the declaration surface would make contracts noisier and less stable before real policy needs prove it worthwhile.
 - Consequences: facts v2 annotates direct IO builtin call edges; review v2 annotates direct calls and reports transitive `inferred.io_kinds` in canonical order. Review-diff and change-report surface subkind-only behavior through existing changed-function evidence. Policy remains intentionally keyed to stable semantic IDs and coarse `effects(io)` facts.
@@ -590,3 +591,19 @@
 - Scope is a trusted Linux host, not hostile-owner tamper resistance or an
   atomic concurrent-filesystem transaction. No new language/runtime API,
   generic JSON engine, transitive dependency solver, or stage3/stage4 chain.
+
+## D064: Owned Processes And Nominal Time
+
+- M55 uses opaque duration/instant types, explicit environment/stdin/capture
+  choices, absolute executable provenance, and an owned child process handle.
+  Wait consumes that handle; terminate mutably borrows it and caches a final
+  outcome. No background pumping or executor is implied.
+- Existing move/drop machinery owns cleanup. Checked recursive owned types
+  contribute conservative IO/process authority before audit validation, while
+  borrowed values alone do not. No fake source call edge represents a drop.
+- Deadlines use monotonic time, not wall time. Capture overflow is an error,
+  not truncation. Linux cleanup signals the owned process group while its
+  waitable direct child still anchors identity; only that child is reaped.
+- Exact signatures, races, terminal failures, and excluded guarantees are in
+  `M55_CONTRACTS.md`. Legacy run_process remains compatible. General helpers,
+  generics, tasks, FFI, and richer ownership analysis remain outside M55.

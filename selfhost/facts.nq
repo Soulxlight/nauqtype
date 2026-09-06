@@ -39,6 +39,13 @@ type fact_call_edge {
     io_kind: str,
 }
 
+type fact_expr_range {
+    module: str,
+    function_name: str,
+    start_index: i32,
+    end_index: i32,
+}
+
 type refactor_target {
     ok: bool,
     id: str,
@@ -248,6 +255,7 @@ fn builtin_param_identity(function_name: str, name: str) -> str {
 }
 
 fn is_builtin_function(name: str) -> bool {
+    if name == "duration_from_ns" or name == "duration_as_ns" or name == "duration_between" or name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return true; }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
         return true;
     }
@@ -270,6 +278,7 @@ fn is_builtin_function(name: str) -> bool {
 }
 
 fn is_builtin_type(name: str) -> bool {
+    if name == "duration" or name == "instant" or name == "process" or name == "process_outcome" { return true; }
     if name == "bool" or name == "i32" or name == "i64" or name == "str" or name == "unit" or name == "io_err" or name == "process_result" or name == "path_metadata" or name == "bytes" {
         return true;
     }
@@ -287,6 +296,7 @@ fn is_builtin_variant(name: str) -> bool {
 }
 
 fn builtin_propagation_error(name: str) -> str {
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "io_err"; }
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
     }
@@ -300,6 +310,8 @@ fn builtin_propagation_error(name: str) -> str {
 }
 
 fn io_kind_for_builtin(name: str) -> str {
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" { return "read"; }
+    if name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "process"; }
     if name == "read_file" {
         return "read";
     }
@@ -814,19 +826,140 @@ fn lookup_function_result_error(functions: ref list<function_fact>, module: str,
     return "";
 }
 
-fn propagation_error_name(functions: ref list<function_fact>, items: ref list<top_item>, uses: ref list<module_use>, local: local_init_fact) -> str {
-    let builtin = builtin_propagation_error(local.expr_name);
-    if builtin != "" {
-        return builtin;
+fn propagation_error_name(expressions: ref list<checked_expr>, local: local_init_fact) -> str {
+    let mut error_name = "";
+    let mut outer_start = local.expr_end;
+    let mut outer_end = local.expr_start;
+    let mut matched_start = local.expr_end;
+    let mut matched_end = local.expr_start;
+    let mut widest = -1;
+    let mut ambiguous = false;
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == local.module and value.function_name == local.function_name and value.name == local.expr_name and value.start >= local.expr_start and value.end <= local.expr_end {
+                    match value.kind {
+                        checked_expr_call => {
+                            if value.start < matched_start { matched_start = value.start; }
+                            if value.end > matched_end { matched_end = value.end; }
+                            let width = value.end - value.start;
+                            if width > widest {
+                                widest = width;
+                                outer_start = value.start;
+                                outer_end = value.end;
+                                ambiguous = false;
+                                error_name = "";
+                                if value.type_name == "result" {
+                                    error_name = value.type_arg2_name;
+                                }
+                            } else {
+                                if width == widest { ambiguous = true; }
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
     }
-    let origin = visible_function_origin(ref items, ref uses, local.module, local.expr_name);
-    if origin != "" and origin != "__builtin__" {
-        return lookup_function_result_error(ref functions, origin, local.expr_name);
+    // Only one outer call may contain every matching nested call at this site.
+    if ambiguous or outer_start != matched_start or outer_end != matched_end {
+        return "";
     }
-    return "";
+    return error_name;
 }
 
-fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref, start_index: i32, end_index: i32) -> fact_target {
+fn checked_call_target(variants: ref list<variant_fact>, name: str, origin: str, kind: str) -> fact_target {
+    if origin == "__builtin__" {
+        if kind == "builtin" {
+            return make_fact_target("builtin", str_concat("builtin:", name), "builtin");
+        }
+        if kind == "builtin_variant" {
+            return make_fact_target("builtin_variant", str_concat("builtin-variant:", name), "builtin");
+        }
+    } else {
+        if origin != "" {
+            if kind == "function" {
+                return make_fact_target("function", function_identity(origin, name), "checked");
+            }
+            if kind == "variant" {
+                let enum_name = variant_enum_name(ref variants, origin, name);
+                if enum_name != "" {
+                    return make_fact_target("variant", variant_identity(origin, enum_name, name), "checked");
+                }
+            }
+        }
+    }
+    return make_fact_target("unknown", "", "unresolved");
+}
+
+fn checked_expr_call_target(variants: ref list<variant_fact>, entry: checked_expr) -> fact_target {
+    let mut kind = "";
+    match entry.target_kind {
+        checked_target_builtin_function => { kind = "builtin"; },
+        checked_target_function => { kind = "function"; },
+        checked_target_builtin_constructor => { kind = "builtin_variant"; },
+        checked_target_constructor => { kind = "variant"; },
+        _ => {},
+    }
+    return checked_call_target(ref variants, entry.name, entry.target_origin_module, kind);
+}
+
+fn checked_call_target_for_ref(variants: ref list<variant_fact>, expressions: ref list<checked_expr>, ranges: ref list<fact_expr_range>, entry: name_ref) -> fact_target {
+    let mut target = make_fact_target("unknown", "", "unresolved");
+    let mut found = false;
+    let mut range_index = 0;
+    while range_index < list_len(ref ranges) {
+        let range_entry = list_get(ref ranges, range_index);
+        match range_entry {
+            Some(range) => {
+                let mut index = range.start_index;
+                while index < range.end_index {
+                    let expression = list_get(ref expressions, index);
+                    match expression {
+                        Some(value) => {
+                            if value.module_name == entry.module and value.function_name == entry.function_name and value.name == entry.name and value.target_at == entry.at {
+                                match value.kind {
+                                    checked_expr_call => {
+                                        if found {
+                                            return make_fact_target("unknown", "", "unresolved");
+                                        }
+                                        found = true;
+                                        target = checked_expr_call_target(ref variants, value);
+                                    },
+                                    _ => {},
+                                }
+                            }
+                        },
+                        None => {},
+                    }
+                    index = index + 1;
+                }
+            },
+            None => {},
+        }
+        range_index = range_index + 1;
+    }
+    return target;
+}
+
+fn full_checked_call_target_for_ref(variants: ref list<variant_fact>, expressions: ref list<checked_expr>, entry: name_ref) -> fact_target {
+    let mut ranges: list<fact_expr_range> = list();
+    list_push(mutref ranges, fact_expr_range { module: entry.module, function_name: entry.function_name, start_index: 0, end_index: list_len(ref expressions) });
+    return checked_call_target_for_ref(ref variants, ref expressions, ref ranges, entry);
+}
+
+fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, expr_ranges: ref list<fact_expr_range>, entry: name_ref, start_index: i32, end_index: i32) -> fact_target {
+    match entry.kind {
+        ref_call => {
+            return checked_call_target_for_ref(ref variants, ref expressions, ref expr_ranges, entry);
+        },
+        _ => {},
+    }
     let binding_id = resolve_binding_identity_in_range(ref bindings, ref scopes, ref items, ref uses, entry, start_index, end_index);
     if binding_id != "" {
         return make_fact_target("binding", binding_id, "checked");
@@ -836,22 +969,6 @@ fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, sc
         return make_fact_target("const", const_identity(const_origin, entry.name), "checked");
     }
     match entry.kind {
-        ref_call => {
-            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
-            if origin == "__builtin__" {
-                return make_fact_target("builtin", str_concat("builtin:", entry.name), "builtin");
-            }
-            if origin != "" {
-                return make_fact_target("function", function_identity(origin, entry.name), "checked");
-            }
-            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
-            if variant_origin == "__builtin__" {
-                return make_fact_target("builtin_variant", str_concat("builtin-variant:", entry.name), "builtin");
-            }
-            if variant_origin != "" {
-                return make_fact_target("variant", variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name), "checked");
-            }
-        },
         ref_struct_type => {
             let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
             if type_origin == "__builtin__" {
@@ -877,21 +994,7 @@ fn name_target_for_ref(items: ref list<top_item>, uses: ref list<module_use>, sc
 }
 
 fn call_target(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, entry: call_fact) -> fact_target {
-    let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
-    if origin == "__builtin__" {
-        return make_fact_target("builtin", str_concat("builtin:", entry.name), "builtin");
-    }
-    if origin != "" {
-        return make_fact_target("function", function_identity(origin, entry.name), "checked");
-    }
-    let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
-    if variant_origin == "__builtin__" {
-        return make_fact_target("builtin_variant", str_concat("builtin-variant:", entry.name), "builtin");
-    }
-    if variant_origin != "" {
-        return make_fact_target("variant", variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name), "checked");
-    }
-    return make_fact_target("unknown", "", "unresolved");
+    return checked_call_target(ref variants, entry.name, entry.checked_origin, entry.checked_kind);
 }
 
 fn target_id_for_type_ref(items: ref list<top_item>, uses: ref list<module_use>, entry: type_ref) -> str {
@@ -922,7 +1025,14 @@ fn target_kind_for_type_ref(items: ref list<top_item>, uses: ref list<module_use
     return "type";
 }
 
-fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref) -> str {
+fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, entry: name_ref) -> str {
+    match entry.kind {
+        ref_call => {
+            let target = full_checked_call_target_for_ref(ref variants, ref expressions, entry);
+            return target.id;
+        },
+        _ => {},
+    }
     let binding_id = resolve_binding_identity(ref bindings, ref scopes, ref items, ref uses, entry);
     if binding_id != "" {
         return binding_id;
@@ -932,22 +1042,6 @@ fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>,
         return const_identity(const_origin, entry.name);
     }
     match entry.kind {
-        ref_call => {
-            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
-            if origin == "__builtin__" {
-                return str_concat("builtin:", entry.name);
-            }
-            if origin != "" {
-                return function_identity(origin, entry.name);
-            }
-            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
-            if variant_origin == "__builtin__" {
-                return str_concat("builtin-variant:", entry.name);
-            }
-            if variant_origin != "" {
-                return variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name);
-            }
-        },
         ref_struct_type => {
             let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
             if type_origin == "__builtin__" {
@@ -972,7 +1066,14 @@ fn target_id_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>,
     return "";
 }
 
-fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, entry: name_ref) -> str {
+fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, entry: name_ref) -> str {
+    match entry.kind {
+        ref_call => {
+            let target = full_checked_call_target_for_ref(ref variants, ref expressions, entry);
+            return target.kind;
+        },
+        _ => {},
+    }
     let binding_id = resolve_binding_identity(ref bindings, ref scopes, ref items, ref uses, entry);
     if binding_id != "" {
         return "binding";
@@ -982,22 +1083,6 @@ fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use
         return "const";
     }
     match entry.kind {
-        ref_call => {
-            let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
-            if origin == "__builtin__" {
-                return "builtin";
-            }
-            if origin != "" {
-                return "function";
-            }
-            let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
-            if variant_origin == "__builtin__" {
-                return "builtin_variant";
-            }
-            if variant_origin != "" {
-                return "variant";
-            }
-        },
         ref_struct_type => {
             let type_origin = visible_type_origin(ref items, ref uses, entry.module, entry.name);
             if type_origin == "__builtin__" {
@@ -1023,21 +1108,8 @@ fn target_kind_for_name_ref(items: ref list<top_item>, uses: ref list<module_use
 }
 
 fn call_target_id(items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, entry: call_fact) -> str {
-    let origin = visible_function_origin(ref items, ref uses, entry.module, entry.name);
-    if origin == "__builtin__" {
-        return str_concat("builtin:", entry.name);
-    }
-    if origin != "" {
-        return function_identity(origin, entry.name);
-    }
-    let variant_origin = visible_variant_origin(ref items, ref uses, entry.module, entry.name);
-    if variant_origin == "__builtin__" {
-        return str_concat("builtin-variant:", entry.name);
-    }
-    if variant_origin != "" {
-        return variant_identity(variant_origin, variant_enum_name(ref variants, variant_origin, entry.name), entry.name);
-    }
-    return "";
+    let target = call_target(ref items, ref uses, ref variants, entry);
+    return target.id;
 }
 
 fn binding_definition_count(items: ref list<top_item>, uses: ref list<module_use>, bindings: ref list<body_binding>) -> i32 {
@@ -1327,7 +1399,7 @@ fn append_type_reference(lines: mutref list<str>, items: ref list<top_item>, use
     return;
 }
 
-fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, entry: name_ref, trailing_comma: bool) -> unit {
+fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, variants: ref list<variant_fact>, expressions: ref list<checked_expr>, entry: name_ref, trailing_comma: bool) -> unit {
     let mut suffix = "";
     if trailing_comma {
         suffix = ",";
@@ -1337,8 +1409,8 @@ fn append_name_reference(lines: mutref list<str>, items: ref list<top_item>, use
     list_push(mutref lines, concat5("      \"kind\": ", json_quote(name_ref_kind_text(entry.kind)), ",", "", ""));
     list_push(mutref lines, concat5("      \"from\": ", json_quote(function_identity(entry.module, entry.function_name)), ",", "", ""));
     list_push(mutref lines, concat5("      \"name\": ", json_quote(entry.name), ",", "", ""));
-    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind_for_name_ref(ref items, ref uses, ref scopes, ref bindings, entry)), ",", "", ""));
-    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id_for_name_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind_for_name_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, ref expressions, entry)), ",", "", ""));
+    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id_for_name_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, ref expressions, entry)), ",", "", ""));
     append_span(mutref lines, "      ", entry.at, false);
     list_push(mutref lines, concat3("    }", suffix, ""));
     return;
@@ -1395,7 +1467,13 @@ fn append_checked_field_references(expressions: ref list<checked_expr>, struct_f
                 match value.kind {
                     checked_expr_field => {
                         if value.at >= 0 {
-                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", field_identity(value.field_owner_module, value.field_owner_type, value.field_name), value.at, "checked", ""));
+                            let mut target = field_identity(value.field_owner_module, value.field_owner_type, value.field_name);
+                            let mut evidence = "checked";
+                            if value.field_owner_module == "" and value.field_owner_type == "process_outcome" {
+                                target = concat3("builtin-field:process_outcome::", value.field_name, "");
+                                evidence = "builtin";
+                            }
+                            list_push(mutref resolved_out, make_fact_reference(field_ref_identity("field_access", value.module_name, value.function_name, value.at), "field_access", value.module_name, function_identity(value.module_name, value.function_name), value.field_name, "field", target, value.at, evidence, ""));
                         }
                     },
                     _ => {
@@ -1467,13 +1545,27 @@ fn append_checked_arg_label_references(bindings: ref list<body_binding>, express
                         Some(expr) => {
                             match expr.kind {
                                 checked_expr_call => {
-                                    let mut target_kind = "binding";
-                                    let mut target_id = lookup_param_binding_identity(ref bindings, expr.target_origin_module, expr.name, value.label_name);
-                                    let mut evidence = "checked";
-                                    if target_id == "" {
-                                        target_kind = "builtin_param";
-                                        target_id = builtin_param_identity(expr.name, value.label_name);
-                                        evidence = "builtin";
+                                    let mut target_kind = "unknown";
+                                    let mut target_id = "";
+                                    let mut evidence = "unresolved";
+                                    match expr.target_kind {
+                                        checked_target_builtin_function => {
+                                            if expr.target_origin_module == "__builtin__" {
+                                                target_kind = "builtin_param";
+                                                target_id = builtin_param_identity(expr.name, value.label_name);
+                                                evidence = "builtin";
+                                            }
+                                        },
+                                        checked_target_function => {
+                                            if expr.target_origin_module != "" and expr.target_origin_module != "__builtin__" {
+                                                target_id = lookup_param_binding_identity(ref bindings, expr.target_origin_module, expr.name, value.label_name);
+                                                if target_id != "" {
+                                                    target_kind = "binding";
+                                                    evidence = "checked";
+                                                }
+                                            }
+                                        },
+                                        _ => {},
                                     }
                                     list_push(mutref resolved_out, make_fact_reference(arg_label_ref_identity(expr.module_name, expr.function_name, value.label_at), "argument_label", expr.module_name, function_identity(expr.module_name, expr.function_name), value.label_name, target_kind, target_id, value.label_at, evidence, ""));
                                 },
@@ -1494,14 +1586,14 @@ fn append_checked_arg_label_references(bindings: ref list<body_binding>, express
     return;
 }
 
-fn append_propagation_references(functions: ref list<function_fact>, items: ref list<top_item>, uses: ref list<module_use>, locals: ref list<local_init_fact>, resolved_out: mutref list<fact_reference>) -> unit {
+fn append_propagation_references(expressions: ref list<checked_expr>, items: ref list<top_item>, uses: ref list<module_use>, locals: ref list<local_init_fact>, resolved_out: mutref list<fact_reference>) -> unit {
     let mut index = 0;
     while index < list_len(ref locals) {
         let entry = list_get(ref locals, index);
         match entry {
             Some(value) => {
                 if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
-                    let error_name = propagation_error_name(ref functions, ref items, ref uses, value);
+                    let error_name = propagation_error_name(ref expressions, value);
                     if error_name != "" {
                         let target = type_target_for_name(ref items, ref uses, value.module, error_name);
                         list_push(mutref resolved_out, make_fact_reference(propagation_ref_identity(value.module, value.function_name, value.at), "propagation_site", value.module, function_identity(value.module, value.function_name), error_name, target.kind, target.id, value.at, target.evidence, value.propagation_label));
@@ -1514,6 +1606,53 @@ fn append_propagation_references(functions: ref list<function_fact>, items: ref 
         index = index + 1;
     }
     return;
+}
+
+fn collect_checked_expr_ranges(expressions: ref list<checked_expr>, ranges: mutref list<fact_expr_range>) -> unit {
+    // Match-arm results may append another run for an earlier function.
+    let mut module = "";
+    let mut function_name = "";
+    let mut start_index = 0;
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(value) => {
+                if index == 0 or value.module_name != module or value.function_name != function_name {
+                    if index > 0 {
+                        list_push(mutref ranges, fact_expr_range { module: module, function_name: function_name, start_index: start_index, end_index: index });
+                    }
+                    module = value.module_name;
+                    function_name = value.function_name;
+                    start_index = index;
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    if index > 0 {
+        list_push(mutref ranges, fact_expr_range { module: module, function_name: function_name, start_index: start_index, end_index: index });
+    }
+    return;
+}
+
+fn checked_expr_ranges_for_function(ranges: ref list<fact_expr_range>, module: str, function_name: str) -> list<fact_expr_range> {
+    let mut matched: list<fact_expr_range> = list();
+    let mut index = 0;
+    while index < list_len(ref ranges) {
+        let entry = list_get(ref ranges, index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    list_push(mutref matched, value);
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return matched;
 }
 
 fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_use>, scopes: ref list<body_scope>, bindings: ref list<body_binding>, refs: ref list<name_ref>, type_refs: ref list<type_ref>, variants: ref list<variant_fact>, functions: ref list<function_fact>, locals: ref list<local_init_fact>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, statements: ref list<checked_stmt>, include_checked_handoff_refs: bool, resolved_out: mutref list<fact_reference>) -> unit {
@@ -1548,18 +1687,22 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
     let mut current_function = "";
     let mut bind_start = 0;
     let mut bind_end = -1;
+    let mut expr_ranges: list<fact_expr_range> = list();
+    collect_checked_expr_ranges(ref expressions, mutref expr_ranges);
+    let mut current_expr_ranges: list<fact_expr_range> = list();
     let mut ref_index = 0;
     while ref_index < list_len(ref refs) {
         let entry = list_get(ref refs, ref_index);
         match entry {
             Some(value) => {
-                if value.module != current_module or value.function_name != current_function {
+                if ref_index == 0 or value.module != current_module or value.function_name != current_function {
                     current_module = value.module;
                     current_function = value.function_name;
                     bind_start = first_binding_index_for_function(ref bindings, value.module, value.function_name);
                     bind_end = last_binding_index_for_function(ref bindings, value.module, value.function_name);
+                    current_expr_ranges = checked_expr_ranges_for_function(ref expr_ranges, value.module, value.function_name);
                 }
-                let target = name_target_for_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, value, bind_start, bind_end);
+                let target = name_target_for_ref(ref items, ref uses, ref scopes, ref bindings, ref variants, ref expressions, ref current_expr_ranges, value, bind_start, bind_end);
                 list_push(mutref resolved_out, make_fact_reference(name_ref_identity(value), name_ref_kind_text(value.kind), value.module, function_identity(value.module, value.function_name), value.name, target.kind, target.id, value.at, target.evidence, ""));
             },
             None => {
@@ -1570,7 +1713,7 @@ fn build_resolved_references(items: ref list<top_item>, uses: ref list<module_us
     if include_checked_handoff_refs {
         append_checked_field_references(ref expressions, ref struct_fields, ref statements, mutref resolved_out);
         append_checked_arg_label_references(ref bindings, ref expressions, ref expr_children, mutref resolved_out);
-        append_propagation_references(ref functions, ref items, ref uses, ref locals, mutref resolved_out);
+        append_propagation_references(ref expressions, ref items, ref uses, ref locals, mutref resolved_out);
     }
     return;
 }
@@ -1623,7 +1766,11 @@ fn build_resolved_call_edges(items: ref list<top_item>, uses: ref list<module_us
         match entry {
             Some(value) => {
                 let target = call_target(ref items, ref uses, ref variants, value);
-                list_push(mutref edges_out, make_fact_call_edge(function_identity(value.module, value.function_name), target.id, call_identity(value), target.evidence, io_kind_for_builtin(value.name)));
+                let mut io_kind = "";
+                if value.checked_kind == "builtin" and value.checked_origin == "__builtin__" {
+                    io_kind = io_kind_for_builtin(value.name);
+                }
+                list_push(mutref edges_out, make_fact_call_edge(function_identity(value.module, value.function_name), target.id, call_identity(value), target.evidence, io_kind));
             },
             None => {
             },

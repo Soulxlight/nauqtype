@@ -14,6 +14,7 @@ pub type review_function_fact {
     is_public: bool,
     has_audit: bool,
     intent: str,
+    owns_process: bool,
 }
 
 pub type review_direct_mutation {
@@ -86,6 +87,8 @@ fn review_mutation_add(bindings: ref list<checked_binding>, binding_id: i32, wri
 }
 
 fn review_builtin_mutation_profile(name: str) -> i32 {
+    if name == "process_terminate" { return 0; }
+    if name == "process_start" or name == "process_wait" or name == "duration_from_ns" or name == "duration_as_ns" or name == "duration_between" or name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" { return -1; }
     if name == "list_push" { return 0; }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" { return -1; }
     if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" { return -1; }
@@ -174,6 +177,12 @@ fn review_builtin_field_type(field: checked_expr, owner: checked_type_shape) -> 
             if field.field_owner_type != "process_result" { return ""; }
             if field.field_name == "exit_code" { return "i32"; }
             if field.field_name == "stdout" or field.field_name == "stderr" { return "str"; }
+        },
+        checked_type_process_outcome => {
+            if field.field_owner_type != "process_outcome" { return ""; }
+            if field.field_name == "exit_code" { return "i32"; }
+            if field.field_name == "stdout" or field.field_name == "stderr" { return "str"; }
+            if field.field_name == "timed_out" or field.field_name == "cancelled" { return "bool"; }
         },
         checked_type_path_metadata => {
             if field.field_owner_type != "path_metadata" { return ""; }
@@ -332,7 +341,8 @@ fn review_validate_call_children(shapes: ref list<checked_type_shape>, types: re
                                 None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; },
                             }
                         } else {
-                            if target == -1 and review_builtin_mutation_profile(expr.name) == 0 and count != 2 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                            if target == -1 and expr.name == "list_push" and count != 2 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                            if target == -1 and expr.name == "process_terminate" and count != 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
                         }
                     },
                     None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; },
@@ -714,6 +724,7 @@ audit {
         is_public: is_public,
         has_audit: has_audit,
         intent: intent,
+        owns_process: false,
     };
 }
 
@@ -924,6 +935,7 @@ fn module_exports_function(functions: ref list<review_function_fact>, module: st
 }
 
 fn is_builtin_function(name: str) -> bool {
+    if name == "duration_from_ns" or name == "duration_as_ns" or name == "duration_between" or name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return true; }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" {
         return true;
     }
@@ -1585,6 +1597,7 @@ fn inferred_mutates(function_params: ref list<function_param_fact>, assignments:
 }
 
 fn builtin_propagation_error(name: str) -> str {
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "io_err"; }
     if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
         return "io_err";
     }
@@ -1615,16 +1628,16 @@ fn lookup_function_result_error(function_facts: ref list<function_fact>, module:
     return "";
 }
 
-fn propagation_error_name(function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, uses: ref list<module_use>, local: local_init_fact) -> str {
-    let builtin = builtin_propagation_error(local.expr_name);
-    if builtin != "" {
-        return builtin;
+fn propagation_error_name(calls: ref list<call_fact>, local: local_init_fact) -> str {
+    let mut error_name = "";
+    let mut width = -1;
+    for call in calls {
+        if call.module == local.module and call.function_name == local.function_name and call.name == local.expr_name and call.checked_start >= local.expr_start and call.checked_end <= local.expr_end {
+            let span_width = call.checked_end - call.checked_start;
+            if span_width > width { width = span_width; error_name = call.checked_error_name; }
+        }
     }
-    let origin = visible_function_origin(ref functions, ref uses, local.module, local.expr_name);
-    if origin != "" and origin != "__builtin__" {
-        return lookup_function_result_error(ref function_facts, origin, local.expr_name);
-    }
-    return "";
+    return error_name;
 }
 
 fn propagation_site_count(locals: ref list<local_init_fact>) -> i32 {
@@ -1647,6 +1660,7 @@ fn propagation_site_count(locals: ref list<local_init_fact>) -> i32 {
 }
 
 fn propagation_type_origin(items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
+    if name == "duration" or name == "instant" or name == "process" or name == "process_outcome" { return "__builtin__"; }
     if name == "bool" or name == "i32" or name == "i64" or name == "str" or name == "unit" or name == "io_err"
         or name == "bytes" or name == "process_result" or name == "path_metadata" {
         return "__builtin__";
@@ -1717,7 +1731,7 @@ fn propagation_target_evidence(items: ref list<top_item>, uses: ref list<module_
     return "checked";
 }
 
-fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, module: str, function_name: str) -> list<str> {
+fn inferred_propagates(calls: ref list<call_fact>, locals: ref list<local_init_fact>, module: str, function_name: str) -> list<str> {
     let mut inferred: list<str> = list();
     let mut index = 0;
     while index < list_len(ref locals) {
@@ -1725,7 +1739,7 @@ fn inferred_propagates(function_facts: ref list<function_fact>, functions: ref l
         match entry {
             Some(value) => {
                 if value.module == module and value.function_name == function_name and value.expr_member_name == "propagate" {
-                    let error_name = propagation_error_name(ref function_facts, ref functions, ref uses, value);
+                    let error_name = propagation_error_name(ref calls, value);
                     if error_name != "" {
                         push_if_missing(mutref inferred, error_name);
                     }
@@ -1758,7 +1772,14 @@ fn propagation_contexts(locals: ref list<local_init_fact>, module: str, function
     return contexts;
 }
 
+fn io_kind_for_call(call: call_fact) -> str {
+    if call.checked_kind != "builtin" or call.checked_origin != "__builtin__" { return ""; }
+    return io_kind_for_builtin(call.name);
+}
+
 fn io_kind_for_builtin(name: str) -> str {
+    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" { return "read"; }
+    if name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "process"; }
     if name == "read_file" {
         return "read";
     }
@@ -1853,7 +1874,7 @@ fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_n
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name and (value.name == "print_line" or value.name == "eprint_line") {
+                if value.module == module and value.function_name == function_name and value.checked_kind == "builtin" and value.checked_origin == "__builtin__" and (value.name == "print_line" or value.name == "eprint_line") {
                     return true;
                 }
             },
@@ -1871,7 +1892,7 @@ fn function_has_direct_io(calls: ref list<call_fact>, module: str, function_name
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                if value.module == module and value.function_name == function_name and io_kind_for_builtin(value.name) != "" {
+                if value.module == module and value.function_name == function_name and io_kind_for_call(value) != "" {
                     return true;
                 }
             },
@@ -1917,11 +1938,11 @@ fn build_print_effects(functions: ref list<review_function_fact>, calls: ref lis
                             match current {
                                 Some(call_entry) => {
                                     if call_entry.module == value.module and call_entry.function_name == value.name {
-                                        if call_entry.name == "print_line" or call_entry.name == "eprint_line" {
+                                        if call_entry.checked_kind == "builtin" and call_entry.checked_origin == "__builtin__" and (call_entry.name == "print_line" or call_entry.name == "eprint_line") {
                                             found_print = true;
                                         } else {
-                                            let origin = visible_function_origin(ref functions, ref uses, value.module, call_entry.name);
-                                            if origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
+                                            let origin = call_entry.checked_origin;
+                                            if call_entry.checked_kind == "function" and origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
                                                 found_print = true;
                                             }
                                         }
@@ -1954,7 +1975,7 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                if function_has_direct_io(ref calls, value.module, value.name) {
+                if value.owns_process or function_has_direct_io(ref calls, value.module, value.name) {
                     push_if_missing(mutref inferred, function_internal_name(value.module, value.name));
                 }
             },
@@ -1981,11 +2002,11 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
                             match current {
                                 Some(call_entry) => {
                                     if call_entry.module == value.module and call_entry.function_name == value.name {
-                                        if io_kind_for_builtin(call_entry.name) != "" {
+                                        if io_kind_for_call(call_entry) != "" {
                                             found_io = true;
                                         } else {
-                                            let origin = visible_function_origin(ref functions, ref uses, value.module, call_entry.name);
-                                            if origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
+                                            let origin = call_entry.checked_origin;
+                                            if call_entry.checked_kind == "function" and origin != "" and origin != "__builtin__" and list_contains(ref inferred, function_internal_name(origin, call_entry.name)) {
                                                 found_io = true;
                                             }
                                         }
@@ -2013,6 +2034,18 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
 
 fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<review_io_kind_fact> {
     let mut inferred: list<review_io_kind_fact> = list();
+    let mut owner_index = 0;
+    while owner_index < list_len(ref functions) {
+        match list_get(ref functions, owner_index) {
+            Some(value) => {
+                if value.owns_process {
+                    let ignored = push_review_io_kind_if_missing(mutref inferred, function_internal_name(value.module, value.name), "process");
+                }
+            },
+            None => {},
+        }
+        owner_index = owner_index + 1;
+    }
     let mut changed = true;
     while changed {
         changed = false;
@@ -2028,14 +2061,14 @@ fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref l
                         match call_entry {
                             Some(call_value) => {
                                 if call_value.module == function_value.module and call_value.function_name == function_value.name {
-                                    let direct_kind = io_kind_for_builtin(call_value.name);
+                                    let direct_kind = io_kind_for_call(call_value);
                                     if direct_kind != "" {
                                         if push_review_io_kind_if_missing(mutref inferred, function_id, direct_kind) {
                                             changed = true;
                                         }
                                     } else {
-                                        let origin = visible_function_origin(ref functions, ref uses, function_value.module, call_value.name);
-                                        if origin != "" and origin != "__builtin__" {
+                                        let origin = call_value.checked_origin;
+                                        if call_value.checked_kind == "function" and origin != "" and origin != "__builtin__" {
                                             let callee_id = function_internal_name(origin, call_value.name);
                                             let mut kind_index = 0;
                                             while kind_index < list_len(ref inferred) {
@@ -2095,7 +2128,7 @@ fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list
         let entry = list_get(ref functions, index);
         match entry {
             Some(value) => {
-                let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
+                let inferred_propagate_names = inferred_propagates(ref calls, ref locals, value.module, value.name);
                 let inferred_print = list_contains(ref print_effects, function_internal_name(value.module, value.name));
                 let inferred_io = list_contains(ref io_effects, function_internal_name(value.module, value.name));
                 if value.is_public and not value.has_audit {
@@ -2304,52 +2337,34 @@ fn function_call_count(calls: ref list<call_fact>, module: str, function_name: s
     return count;
 }
 
-fn call_target_kind(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
-    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
-    if function_origin == "__builtin__" {
-        return "builtin";
-    }
-    if function_origin != "" {
-        return "function";
-    }
-    let variant_origin = visible_variant_origin(ref items, ref uses, module, name);
-    if variant_origin == "__builtin__" {
-        return "builtin_variant";
-    }
-    if variant_origin != "" {
-        return "variant";
-    }
-    return "unknown";
+fn call_target_kind(call: call_fact) -> str {
+    if call.checked_kind == "" { return "unknown"; }
+    return call.checked_kind;
 }
 
-fn call_target_id(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, module: str, name: str) -> str {
-    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
-    if function_origin == "__builtin__" {
-        return builtin_identity(name);
+fn call_target_id(variants: ref list<variant_fact>, call: call_fact) -> str {
+    if call.checked_kind == "builtin" and call.checked_origin == "__builtin__" {
+        return builtin_identity(call.name);
     }
-    if function_origin != "" {
-        return function_identity(function_origin, name);
+    if call.checked_kind == "function" and call.checked_origin != "" and call.checked_origin != "__builtin__" {
+        return function_identity(call.checked_origin, call.name);
     }
-    let variant_origin = visible_variant_origin(ref items, ref uses, module, name);
-    if variant_origin == "__builtin__" {
-        return str_concat("builtin-variant:", name);
+    if call.checked_kind == "builtin_variant" and call.checked_origin == "__builtin__" {
+        return str_concat("builtin-variant:", call.name);
     }
-    if variant_origin != "" {
-        return concat6("variant:", variant_origin, "::", variant_enum_name(ref variants, variant_origin, name), "::", name);
+    if call.checked_kind == "variant" and call.checked_origin != "" and call.checked_origin != "__builtin__" {
+        return concat6("variant:", call.checked_origin, "::", variant_enum_name(ref variants, call.checked_origin, call.name), "::", call.name);
     }
     return "";
 }
 
-fn call_target_module(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
-    let function_origin = visible_function_origin(ref functions, ref uses, module, name);
-    if function_origin != "" {
-        return function_origin;
-    }
-    return visible_variant_origin(ref items, ref uses, module, name);
+fn call_target_module(call: call_fact) -> str {
+    return call.checked_origin;
 }
 
-fn call_target_evidence(functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, module: str, name: str) -> str {
-    let origin = call_target_module(ref functions, ref items, ref uses, module, name);
+fn call_target_evidence(call: call_fact) -> str {
+    if call.checked_kind != "builtin" and call.checked_kind != "builtin_variant" and call.checked_kind != "function" and call.checked_kind != "variant" { return "unresolved"; }
+    let origin = call.checked_origin;
     if origin == "__builtin__" {
         return "builtin";
     }
@@ -2451,11 +2466,11 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
         match entry {
             Some(value) => {
                 if value.module == module and value.function_name == function_name {
-                    let origin = call_target_module(ref functions, ref items, ref uses, value.module, value.name);
-                    let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
-                    let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
-                    let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
-                    let io_kind = io_kind_for_builtin(value.name);
+                    let origin = call_target_module(value);
+                    let target_kind = call_target_kind(value);
+                    let target_id = call_target_id(ref variants, value);
+                    let evidence = call_target_evidence(value);
+                    let io_kind = io_kind_for_call(value);
                     list_push(mutref lines, concat3(indent, "  {", ""));
                     list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
                     list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
@@ -2507,7 +2522,7 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 } else {
                     inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
                 }
-                let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, value.module, value.name);
+                let inferred_propagate_names = inferred_propagates(ref calls, ref locals, value.module, value.name);
                 let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, value.module, value.name);
                 let mut inferred_effect_names: list<str> = list();
                 if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
@@ -2603,10 +2618,10 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let target_kind = call_target_kind(ref functions, ref items, ref uses, value.module, value.name);
-                let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
-                let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
-                let io_kind = io_kind_for_builtin(value.name);
+                let target_kind = call_target_kind(value);
+                let target_id = call_target_id(ref variants, value);
+                let evidence = call_target_evidence(value);
+                let io_kind = io_kind_for_call(value);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 list_push(mutref lines, "      \"kind\": \"call\",");
@@ -2652,9 +2667,9 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let target_id = call_target_id(ref functions, ref items, ref uses, ref variants, value.module, value.name);
-                let evidence = call_target_evidence(ref functions, ref items, ref uses, value.module, value.name);
-                let io_kind = io_kind_for_builtin(value.name);
+                let target_id = call_target_id(ref variants, value);
+                let evidence = call_target_evidence(value);
+                let io_kind = io_kind_for_call(value);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
                 list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
@@ -2680,7 +2695,7 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
     return;
 }
 
-fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, locals: ref list<local_init_fact>) -> unit {
+fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> unit {
     let total_sites = propagation_site_count(ref locals);
     if total_sites == 0 {
         list_push(mutref lines, "  \"propagation_sites\": []");
@@ -2694,7 +2709,7 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
         match entry {
             Some(value) => {
                 if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
-                    let error_name = propagation_error_name(ref function_facts, ref functions, ref uses, value);
+                    let error_name = propagation_error_name(ref calls, value);
                     let target_kind = propagation_target_kind(ref items, ref uses, value.module, error_name);
                     let target_id = propagation_target_id(ref items, ref uses, value.module, error_name);
                     let evidence = propagation_target_evidence(ref items, ref uses, value.module, error_name);
@@ -2736,7 +2751,7 @@ fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: 
     append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, format_version);
     append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses);
     append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true);
-    append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref locals);
+    append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref calls, ref locals);
     list_push(mutref lines, "}");
     return;
 }
@@ -2758,7 +2773,212 @@ fn collect_review_fact_lists(sources: ref list<source_file>, functions_out: mutr
     return;
 }
 
-pub fn build_source_contracts(sources: ref list<source_file>, uses: ref list<module_use>, items: ref list<top_item>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, functions_out: mutref list<review_function_fact>, decls_out: mutref list<review_decl_entry>, diags: mutref list<diag>) -> review_summary
+fn review_process_types(shapes: ref list<checked_type_shape>, fields: ref list<checked_field_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>) -> list<i32> {
+    let mut owned: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref shapes) {
+        match list_get(ref shapes, index) {
+            Some(shape) => { match shape.kind { checked_type_process => { list_push(mutref owned, shape.id); }, _ => {}, } },
+            None => {},
+        }
+        index = index + 1;
+    }
+    if list_len(ref owned) == 0 { return list(); }
+    // A monotone type-ID closure handles nested containers without depending on
+    // spelling, declaration order, or recursion through borrowed pointees.
+    let mut changed = true;
+    while changed {
+        changed = false;
+        index = 0;
+        while index < list_len(ref shapes) {
+            match list_get(ref shapes, index) {
+                Some(shape) => {
+                    if not list_contains_i32(ref owned, shape.id) {
+                        let mut contains = false;
+                        match shape.kind {
+                            checked_type_list => { contains = list_contains_i32(ref owned, shape.arg1_id); },
+                            checked_type_option => { contains = list_contains_i32(ref owned, shape.arg1_id); },
+                            checked_type_result => { contains = list_contains_i32(ref owned, shape.arg1_id) or list_contains_i32(ref owned, shape.arg2_id); },
+                            checked_type_named => {
+                                let mut field_index = 0;
+                                while field_index < list_len(ref fields) {
+                                    match list_get(ref fields, field_index) {
+                                        Some(field) => {
+                                            if field.module_name == shape.origin_module and field.type_name == shape.name and list_contains_i32(ref owned, field.field_type_id) { contains = true; }
+                                        },
+                                        None => {},
+                                    }
+                                    field_index = field_index + 1;
+                                }
+                                let mut variant_index = 0;
+                                while variant_index < list_len(ref variants) {
+                                    match list_get(ref variants, variant_index) {
+                                        Some(variant) => {
+                                            if variant.module_name == shape.origin_module and variant.enum_name == shape.name {
+                                                let mut payload_index = 0;
+                                                while payload_index < list_len(ref payloads) {
+                                                    match list_get(ref payloads, payload_index) {
+                                                        Some(payload) => { if payload.variant_id == variant.id and list_contains_i32(ref owned, payload.type_id) { contains = true; } },
+                                                        None => {},
+                                                    }
+                                                    payload_index = payload_index + 1;
+                                                }
+                                            }
+                                        },
+                                        None => {},
+                                    }
+                                    variant_index = variant_index + 1;
+                                }
+                            },
+                            _ => {},
+                        }
+                        if contains { list_push(mutref owned, shape.id); changed = true; }
+                    }
+                },
+                None => {},
+            }
+            index = index + 1;
+        }
+    }
+    return owned;
+}
+
+fn review_process_owners(functions: ref list<checked_function>, bindings: ref list<checked_binding>, expressions: ref list<checked_expr>, owned_types: ref list<i32>) -> list<i32> {
+    let mut owners: list<i32> = list();
+    if list_len(ref owned_types) == 0 { return list(); }
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        match list_get(ref functions, index) {
+            Some(value) => { if not value.return_is_borrow and list_contains_i32(ref owned_types, value.return_type_id) { list_push(mutref owners, value.id); } },
+            None => {},
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < list_len(ref bindings) {
+        match list_get(ref bindings, index) {
+            Some(value) => {
+                if not value.is_borrow and list_contains_i32(ref owned_types, value.type_id) and not list_contains_i32(ref owners, value.function_id) { list_push(mutref owners, value.function_id); }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < list_len(ref expressions) {
+        match list_get(ref expressions, index) {
+            Some(value) => {
+                // Names and fields are views of existing bindings, not newly
+                // owned temporaries. Borrow nodes never add cleanup authority.
+                let mut temporary = true;
+                match value.kind {
+                    checked_expr_name => { temporary = false; },
+                    checked_expr_field => { temporary = false; },
+                    checked_expr_ref => { temporary = false; },
+                    checked_expr_mutref => { temporary = false; },
+                    _ => {},
+                }
+                if temporary and not value.is_borrow and list_contains_i32(ref owned_types, value.type_id) and not list_contains_i32(ref owners, value.function_id) { list_push(mutref owners, value.function_id); }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return owners;
+}
+
+type review_call_range { module: str, function_name: str, start: i32, end: i32, }
+
+fn checked_call_kind(expr: checked_expr) -> str {
+    match expr.target_kind {
+        checked_target_function => { if expr.target_origin_module != "" and expr.target_origin_module != "__builtin__" { return "function"; } },
+        checked_target_builtin_function => { if expr.target_origin_module == "__builtin__" { return "builtin"; } },
+        checked_target_constructor => { if expr.target_origin_module != "" and expr.target_origin_module != "__builtin__" { return "variant"; } },
+        checked_target_builtin_constructor => { if expr.target_origin_module == "__builtin__" { return "builtin_variant"; } },
+        _ => {},
+    }
+    return "";
+}
+
+pub fn checked_evidence_calls(calls: ref list<call_fact>, expressions: ref list<checked_expr>, diags: mutref list<diag>) -> list<call_fact>
+audit {
+    intent("Join source call sites to checked targets once, without guessing origin from spelling");
+    mutates(diags);
+    effects();
+}
+{
+    let mut out: list<call_fact> = list();
+    if not diagnostics_have_errors(ref diags) {
+        let mut sites: list<call_fact> = list();
+        let mut ranges: list<review_call_range> = list();
+        let mut current_module = "";
+        let mut current_function = "";
+        let mut start = 0;
+        // Preserve all function runs: match-arm expressions can be appended later.
+        for expr in expressions {
+            match expr.kind {
+                checked_expr_call => {
+                    if expr.module_name != current_module or expr.function_name != current_function {
+                        if current_module != "" { list_push(mutref ranges, review_call_range { module: current_module, function_name: current_function, start: start, end: list_len(ref sites) }); }
+                        current_module = expr.module_name;
+                        current_function = expr.function_name;
+                        start = list_len(ref sites);
+                    }
+                    let mut error_name = "";
+                    if expr.type_name == "result" { error_name = expr.type_arg2_name; }
+                    list_push(mutref sites, call_fact { module: expr.module_name, function_name: expr.function_name, name: expr.name, at: expr.target_at, arg_count: -1, checked_origin: expr.target_origin_module, checked_kind: checked_call_kind(expr), checked_start: expr.start, checked_end: expr.end, checked_error_name: error_name });
+                },
+                _ => {},
+            }
+        }
+        if current_module != "" { list_push(mutref ranges, review_call_range { module: current_module, function_name: current_function, start: start, end: list_len(ref sites) }); }
+        current_module = "";
+        current_function = "";
+        let mut selected_ranges: list<review_call_range> = list();
+        for call in calls {
+            if call.module != current_module or call.function_name != current_function {
+                current_module = call.module;
+                current_function = call.function_name;
+                selected_ranges = list();
+                for range in ranges {
+                    if range.module == current_module and range.function_name == current_function { list_push(mutref selected_ranges, range); }
+                }
+            }
+            let mut origin = "";
+            let mut kind = "";
+            let mut expr_start = -1;
+            let mut expr_end = -1;
+            let mut error_name = "";
+            let mut matched = 0;
+            for range in selected_ranges {
+                let mut index = range.start;
+                while index < range.end {
+                    match list_get(ref sites, index) {
+                        Some(site) => {
+                            if site.at == call.at and site.name == call.name {
+                                matched = matched + 1;
+                                origin = site.checked_origin;
+                                kind = site.checked_kind;
+                                expr_start = site.checked_start;
+                                expr_end = site.checked_end;
+                                error_name = site.checked_error_name;
+                            }
+                        },
+                        None => {},
+                    }
+                    index = index + 1;
+                }
+            }
+            if matched != 1 or kind == "" {
+                list_push(mutref diags, make_diagnostic("NQ-INTERNAL-012", diag_internal, diag_error, call.module, call.at, call.at + str_len(call.name), "stage1 internal error: call evidence lacks a unique checked target", "", ""));
+            }
+            list_push(mutref out, call_fact { module: call.module, function_name: call.function_name, name: call.name, at: call.at, arg_count: call.arg_count, checked_origin: origin, checked_kind: kind, checked_start: expr_start, checked_end: expr_end, checked_error_name: error_name });
+        }
+    }
+    return out;
+}
+
+pub fn build_source_contracts(sources: ref list<source_file>, uses: ref list<module_use>, items: ref list<top_item>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, checked_functions: ref list<checked_function>, checked_bindings: ref list<checked_binding>, checked_expressions: ref list<checked_expr>, shapes: ref list<checked_type_shape>, fields: ref list<checked_field_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>, functions_out: mutref list<review_function_fact>, decls_out: mutref list<review_decl_entry>, diags: mutref list<diag>) -> review_summary
 audit {
     intent("Extract, resolve, and validate source contracts once for compilation and evidence commands");
     mutates(functions_out, decls_out, diags);
@@ -2769,7 +2989,29 @@ audit {
         return make_review_summary(0, 0, 0, 1);
     }
     let mut declarations: list<review_decl_entry> = list();
-    collect_review_fact_lists(ref sources, mutref functions_out, mutref declarations, mutref diags);
+    let mut source_functions: list<review_function_fact> = list();
+    collect_review_fact_lists(ref sources, mutref source_functions, mutref declarations, mutref diags);
+    let owned_types = review_process_types(ref shapes, ref fields, ref variants, ref payloads);
+    let owners = review_process_owners(ref checked_functions, ref checked_bindings, ref checked_expressions, ref owned_types);
+    let mut owner_index = 0;
+    while owner_index < list_len(ref source_functions) {
+        match list_get(ref source_functions, owner_index) {
+            Some(value) => {
+                let mut owns = false;
+                let mut function_index = 0;
+                while function_index < list_len(ref checked_functions) and list_len(ref owners) > 0 {
+                    match list_get(ref checked_functions, function_index) {
+                        Some(function) => { if function.module_name == value.module and function.name == value.name and list_contains_i32(ref owners, function.id) { owns = true; } },
+                        None => {},
+                    }
+                    function_index = function_index + 1;
+                }
+                list_push(mutref functions_out, review_function_fact { module: value.module, name: value.name, at: value.at, is_public: value.is_public, has_audit: value.has_audit, intent: value.intent, owns_process: owns });
+            },
+            None => {},
+        }
+        owner_index = owner_index + 1;
+    }
     if diagnostics_have_errors(ref diags) {
         return make_review_summary(list_len(ref functions_out), list_len(ref declarations), 0, 1);
     }
@@ -2893,7 +3135,7 @@ fn function_identity_exists(functions: ref list<review_function_fact>, id: str) 
 
 fn call_edge_key(functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, uses: ref list<module_use>, call: call_fact) -> str {
     let caller = function_identity(call.module, call.function_name);
-    let mut target = call_target_id(ref functions, ref items, ref uses, ref variants, call.module, call.name);
+    let mut target = call_target_id(ref variants, call);
     if target == "" {
         target = concat5("unknown:", call.module, "::", call.name, "");
     }
@@ -2965,7 +3207,7 @@ fn review_function_signature(entry: review_function_fact, functions: ref list<re
     let declared_effects = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_effects);
     let declared_propagates = decl_entries_for_function(ref decls, entry.module, entry.name, review_decl_propagates);
     let inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, entry.module, entry.name);
-    let inferred_propagate_names = inferred_propagates(ref function_facts, ref functions, ref locals, ref uses, entry.module, entry.name);
+    let inferred_propagate_names = inferred_propagates(ref calls, ref locals, entry.module, entry.name);
     let propagation_context_names = propagation_contexts(ref locals, entry.module, entry.name);
     let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, entry.module, entry.name);
     let mut inferred_effect_names: list<str> = list();

@@ -57,9 +57,9 @@ and milestone close ordering truthful and cheap. M54.6 then cut the measured
 full-tree semantic check from 349.76 seconds to repeat runs of 194.66 and
 194.51 seconds by batching private scope, borrow-child, and visible-item
 lookups. M54.7-M54.10 now put audit-driven correctness, contract/evidence,
-numeric safety, and provenance repairs ahead of new features. M55 remains the
-next feature milestone for structured process, time, timeout, and cancellation
-after those prerequisites. [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
+numeric safety, and provenance repairs ahead of new features. M55 adds the
+structured process/time foundation described below; its current acceptance
+status is tracked in [ROADMAP.md](ROADMAP.md). [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
 active implementation rather than the archived Python design.
 
 M54.8 shares checked contract validity across compilation and evidence commands.
@@ -87,6 +87,17 @@ secure dependency-change claims. Proof-summary v3 records invocation-produced
 SHA-256 artifacts or explicit null. See [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md)
 and [M54_10_CONTRACTS.md](M54_10_CONTRACTS.md) for migration and acceptance
 evidence. This corrective work adds no source syntax or runtime APIs.
+
+M55 provides owned `process` handles, consuming `process_wait`, explicit
+termination, environment overrides, stdin/capture choices and output limits.
+`duration` and `instant` are nominal nanosecond types; wall time, monotonic
+deadlines, elapsed durations and sleep have explicit checked interfaces.
+Cleanup authority appears in review's existing `io/process` evidence, including
+owned nested aggregates; borrowing alone does not imply cleanup authority.
+The new launcher requires an absolute executable path and never implicitly
+invokes a shell. Legacy `run_process` remains compatible. See
+[M55_CONTRACTS.md](M55_CONTRACTS.md) for exact failures and Linux limits, and
+[process_deadline.nq](examples/process_deadline.nq) for a runnable example.
 
 ## Quick Start
 
@@ -346,8 +357,9 @@ Near-term focus:
 
 - keep the completed M54 Linux authority contracts and locked library fixture
   stable while NQType Libraries builds ordinary Nauqtype modules and compiler
-  work advances to M55 structured process, time, and cancellation support on
-  top of M54.5's truthful reuse and M54.6's measured semantic speedup
+  work validates M55 structured process, time, and cancellation support before
+  the generic-reuse milestone; retain M54.5's truthful reuse and M54.6's measured
+  semantic speedup
 - preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints

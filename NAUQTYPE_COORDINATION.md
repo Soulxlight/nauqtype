@@ -1,6 +1,6 @@
 # NauqType Work Coordination
 
-Last live review: 2026-09-05.
+Last live review: 2026-09-06.
 
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
@@ -23,7 +23,7 @@ unless the user explicitly assigns them.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M54.8 complete after independent audits and a 1,908-second seven-phase frozen gate; M54.9/M54.10 corrective work continues in isolated preparation trees | Call summaries/validation, versioned evidence failures, bounded schema enforcement, and F15 are evidenced. Integer/allocation and dependency/seed/cache/gate provenance remain open. No other repository edits or M55 feature work. |
+| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 complete after independent Sol max/GPT-5.5 xhigh Gate B PASS and the 2,504-second frozen gate | Owned process/time/cancellation contracts, checked cleanup/call authority, copied-release fixtures, and exact seed provenance are evidenced. M56 is next, not implemented. No external repository edits. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -31,6 +31,7 @@ unless the user explicitly assigns them.
 | Request | Provider | Consumer | State | Current evidence and next action |
 | --- | --- | --- | --- | --- |
 | [NQTYPE_LIBRARIES_NEEDS.md](NQTYPE_LIBRARIES_NEEDS.md) | NauqType | NQType Libraries | Frozen upstream foundation | [NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md](NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md) records the M54 contracts. M54 is implemented at `93a43f9` with the locked `tests/fixtures/m54_library_dependency/` copied-release proof. |
+| [M55_CONTRACTS.md](M55_CONTRACTS.md) | NauqType | Future general process/time modules and applications | Frozen compiler contract in this checkpoint | Exact source SHA-256 `be878c88dca696269c4c565c5b7f22f5d883d41ab1299b929c22a3d863b4a217`; seed C `2ec30ab03c77d5b113eb414e18e5b4ba52c6217d9cf3283f938eea8b150c5084`. Owned start/wait/terminate, bounded capture, nominal time/deadlines, checked cleanup authority, and `tests/fixtures/m55_process/runtime.nq` pass the copied-release gate. Consumers must explicitly pin this compiler and migrate old workspace locks; no external consumer adoption is claimed. |
 | First six general-library modules | NQType Libraries | NauqType and NQType AI/ML | Frozen initial alpha revision | `src/text.nq`, `src/utf8.nq`, `src/num.nq`, `src/path.nq`, `src/stdio.nq`, and `src/env.nq` pass `scripts/check.sh` with both the source-checkout and copied-release M54 compilers. Public revision [`bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d`](https://github.com/Soulxlight/NQType-Libraries/commit/bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d) carries locked source hash `638bf061fde6a14b51ae2aa031a86308b38745293f4713ff67519a7481b8764d`. Consumers may pin that exact revision; APIs remain experimental across future revisions. |
 | [AIMachineLearning_NEEDS.md](AIMachineLearning_NEEDS.md) | NauqType | NQType AI/ML | Responded; A1 unblocked, numeric contracts scheduled/provisional | [AIMachineLearning_UPSTREAM_RESPONSE.md](AIMachineLearning_UPSTREAM_RESPONSE.md) accepts the product pressure, authorizes provisional A1 shape/error work now, and splits remaining work into AI-U1 scalar numerics, AI-U2 storage/bytes, AI-U3 math/codec/RNG, and AI-U4 integration proof. Public milestone numbers and numerical contracts are not frozen yet. |
 | AIML A1 shape/error groundwork | NQType AI/ML | Future AIML tensor work | Evidenced locally, not frozen | `NQType-AI-ML/src/shape.nq` now provides provisional checked dimensions, canonical row-major strides, layout, offsets, reshape, and closed errors; the locked source hash is `e0afabc92ca93d29948a06b269371d3850d10c4cf5eb92a8e5e10899f4f15e41`. `NQType-AI-ML/scripts/check.sh` passes library/formatter checks, a locked copied-workspace facts v3/review v2 build/run, and the generated program separately passed the address/leak sanitizer. The repository remains unborn, so review plus an exact revision are still required before freezing or consumption. No float or tensor-storage promise is implied. |
@@ -47,6 +48,10 @@ unless the user explicitly assigns them.
   checked filesystem operations, stable structured `io_err` accessors, fixed IO
   evidence subkinds, explicit locked local dependencies, facts v3 provenance,
   library-only `check`, and a copied-release general-library fixture.
+- M55 adds Linux owned process handles, consuming wait, cancellation, bounded
+  capture, explicit environment/stdin, nominal duration/instant values, and
+  checked cleanup authority. The contract does not promise hard-real-time
+  deadlines, background pumping, or control of escaped descendants.
 - NQType Libraries has published byte-oriented text, explicit UTF-8, checked
   integer parse/render, lexical Linux path, standard-stream, and
   argument/environment/cwd modules at exact revision `bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d`.
@@ -73,17 +78,20 @@ unless the user explicitly assigns them.
   Sol xhigh/GPT-5.5 xhigh audits passed and the unchanged candidate passed all
   seven gate phases plus real attestation in 2,716 seconds. Exact source,
   seed, cache, proof, and release identities are in `M54_10_CONTRACTS.md`.
-  No external repository was modified. M55 must first repair interrupted
-  process read/wait handling (F14); no process feature expansion landed here.
+  No external repository was modified. That checkpoint deferred interrupted
+  process read/wait handling (F14), now closed by M55 below.
 
 - M54.7 closes expression precedence, ordered matches, and C-name collisions,
   including the sanitizer-discovered expression-arm binding leak. The seed
   fixed point, 42-case corpus, Linux release, and nine ownership sanitizer
   cases passed the one frozen-candidate gate after independent audit PASS.
-- The immediate work is M54.8-M54.10 corrective closure of the independent
-  Astra audit. See [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for findings,
-  acceptance evidence, and boundaries. M55 structured process, time, timeout,
-  and cancellation remains the next feature milestone after those repairs.
+- M55 is complete: focused native fault/sanitizer and Nauqtype integration
+  checks, independent Sol max/GPT-5.5 xhigh audits, actual seed fixed point,
+  and the unchanged seven-phase milestone gate plus attestation all passed.
+  See [M55_CONTRACTS.md](M55_CONTRACTS.md) for exact signatures and lifecycle
+  limits; `AUDIT_REMEDIATION.md` records the 2,504-second gate and identities.
+  The next compiler milestone is M56, not started. M54.8-M54.10 are closed;
+  the following intermediate notes are historical, not open corrective work.
 - M54.8a now shares strict source-contract validity across compilation and
   evidence commands, with contract diagnostics emitted once per analyzed input
   and checked-plan readiness.

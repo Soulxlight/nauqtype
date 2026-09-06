@@ -1,0 +1,57 @@
+fn launch(input: str) -> result<process, io_err>
+audit { intent("Start an explicitly captured child with bounded output"); mutates(); effects(io); }
+{
+    let args: list<str> = [];
+    let env: list<str> = [];
+    return process_start(program: "/bin/cat", args: ref args, cwd: ".", env: ref env, input: Some(input), capture: true, max_output_bytes: 128);
+}
+
+fn sleeping() -> result<process, io_err>
+audit { intent("Start a child to exercise deadline and cancellation cleanup"); mutates(); effects(io); }
+{
+    let args = ["10"];
+    let env: list<str> = [];
+    return process_start("/bin/sleep", ref args, ".", ref env, Some(""), true, 32);
+}
+
+fn main() -> i32 {
+    let Some(zero) = duration_from_ns(0) else { return 1; };
+    if duration_as_ns(zero) != 0 { return 2; }
+    match duration_from_ns(-1) { Some(_) => { return 3; }, None => {}, }
+    let Ok(start) = monotonic_now() else { return 4; };
+    let Ok(slept) = sleep_for(zero) else { return 5; };
+    let Ok(end) = monotonic_now() else { return 6; };
+    let Some(elapsed) = duration_between(start, end) else { return 7; };
+    if duration_as_ns(elapsed) < 0 { return 8; }
+    let Ok(wall) = wall_time_ns() else { return 9; };
+    if wall <= 0 { return 10; }
+
+    let Ok(child) = launch("process input\n") else { return 11; };
+    let Ok(outcome) = process_wait(child, None) else { return 12; };
+    if outcome.exit_code != 0 or outcome.stdout != "process input\n" or outcome.stderr != "" or outcome.timed_out or outcome.cancelled { return 13; }
+
+    let Ok(timed_child) = sleeping() else { return 14; };
+    let Ok(deadline) = deadline_after(zero) else { return 15; };
+    let Ok(timed) = process_wait(timed_child, Some(deadline)) else { return 16; };
+    if not timed.timed_out or timed.cancelled or timed.exit_code != 137 { return 17; }
+
+    let Ok(cancel_child) = sleeping() else { return 18; };
+    let mut owned = cancel_child;
+    let Ok(terminated) = process_terminate(mutref owned) else { return 19; };
+    let Ok(terminated_again) = process_terminate(mutref owned) else { return 20; };
+    let Ok(cancelled) = process_wait(owned, None) else { return 21; };
+    if not cancelled.cancelled or cancelled.timed_out or cancelled.exit_code != 137 { return 22; }
+
+    let empty: list<str> = [];
+    match process_start("cat", ref empty, ".", ref empty, None, true, 16) {
+        Ok(_) => { return 23; },
+        Err(error) => { if io_err_kind(ref error) != "invalid_input" { return 24; } },
+    }
+    let Ok(limited) = process_start("/bin/cat", ref empty, ".", ref empty, Some("overflow"), true, 0) else { return 25; };
+    match process_wait(limited, None) {
+        Ok(_) => { return 26; },
+        Err(error) => { if io_err_kind(ref error) != "invalid_data" { return 27; } },
+    }
+    print_line("process and time ok");
+    return 0;
+}

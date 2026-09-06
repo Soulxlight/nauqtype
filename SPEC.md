@@ -141,6 +141,13 @@ operation and omit path fields. See [M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
 - `process_result`
 - `path_metadata`
 
+M55 additionally provides opaque `duration`, `instant`, and owned `process`,
+plus the copy product `process_outcome`. Exact signatures, failure rules, and
+Linux lifecycle guarantees are locked in [M55_CONTRACTS.md](M55_CONTRACTS.md).
+`duration`/`instant` are nominal nanosecond values with no source constructor,
+field access, operator arithmetic, comparison, or implicit integer conversion.
+`process` is move-only and cleanup-requiring; `process_wait` consumes it.
+
 Built-in constructors:
 
 - `Some(value)`
@@ -566,12 +573,14 @@ Copy types in v0.1:
 - `unit`
 - `io_err`
 - `process_result`
+- `duration`, `instant`, and `process_outcome` (M55)
 - any user-defined `type` or `enum` whose fields/payloads are all copy
 
 Move types in v0.1:
 
 - `list<T>`
 - `bytes`
+- `process` (M55)
 - `option<T>` when `T` is non-copy
 - `result<T, E>` when either side is non-copy
 
@@ -672,6 +681,20 @@ fn bytes_get(value: ref bytes, index: i64) -> option<i32>;
 The active compiler driver also uses a deliberately narrow tooling runtime
 surface for arguments, directory creation, and captured process execution.
 Those builtins are toolchain-enabling authority, not a general OS API.
+
+M55 adds explicit process environment overrides, stdin, capture limits,
+monotonic deadlines, consuming wait, cancellation, and automatic owned-child
+cleanup, plus checked wall/monotonic time and sleep. It does not add background
+pumping, threads, async tasks, implicit shell execution, or PATH search to the
+new launch API. Legacy `run_process` retains its existing PATH behavior.
+
+Owned process-containing parameters, locals, temporary values, and return
+types conservatively contribute `effects(io)` and checked `process` evidence.
+This rule is recursive through checked product/enum/container type identities;
+merely borrowing such values does not contribute cleanup authority. Review
+reports this may-authority without inventing source call sites in facts.
+Clock/deadline reads use IO kind `read`; sleep uses current-process `process`
+authority. See the exact boundary in [M55_CONTRACTS.md](M55_CONTRACTS.md).
 
 ### Out Of Scope For The Current Surface
 

@@ -1,3 +1,6 @@
+#if defined(__linux__) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "runtime.h"
 
 #include <stdio.h>
@@ -16,6 +19,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <poll.h>
+#include <sys/ioctl.h>
+#include <time.h>
 #endif
 
 static int nq_process_argc = 0;
@@ -424,7 +433,7 @@ static NQIoErr nq_invalid_data_io_err(const char* operation, const NQStr* path, 
     return nq_make_io_err_details(0, "invalid_data", operation, path, NULL, detail);
 }
 
-#ifdef _WIN32
+#if !defined(__linux__)
 static NQIoErr nq_unsupported_io_err(const char* operation, const NQStr* path) {
     return nq_make_io_err_details(0, "unsupported", operation, path, NULL, "operation is unsupported on this platform");
 }
@@ -2073,6 +2082,117 @@ static char* nq_make_windows_temp_file(const char* prefix, NQAllocStatus* status
 }
 #endif
 
+#ifndef _WIN32
+/* Owned setup descriptors must survive remapping even if stdio was closed. */
+static int nq_process_setup_fd(int fd) {
+    int result;
+    if (fd < 0) return -1;
+    if (fd <= STDERR_FILENO) {
+        do { result = fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1); }
+        while (result < 0 && errno == EINTR);
+        int saved = errno;
+        close(fd);
+        errno = saved;
+        return result;
+    }
+    do { result = fcntl(fd, F_SETFD, FD_CLOEXEC); }
+    while (result < 0 && errno == EINTR);
+    if (result < 0) { int saved = errno; close(fd); errno = saved; return -1; }
+    return fd;
+}
+
+static void nq_process_child_error(int fd, int error) {
+    size_t sent = 0;
+    while (sent < sizeof(error)) {
+        ssize_t count = write(fd, (const char*)&error + sent, sizeof(error) - sent);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) break;
+        sent += (size_t)count;
+    }
+    _exit(127);
+}
+
+/* EOF without bytes is exec success; a partial error is protocol failure. */
+static int nq_process_exec_error(int fd) {
+    int error = 0;
+    size_t received = 0;
+    while (received < sizeof(error)) {
+        ssize_t count = read(fd, (char*)&error + received, sizeof(error) - received);
+        if (count < 0 && errno == EINTR) continue;
+        if (count < 0) return errno;
+        if (count == 0) return received == 0 ? 0 : EIO;
+        received += (size_t)count;
+    }
+    return error > 0 ? error : EIO;
+}
+
+static int nq_process_waitpid(pid_t pid, int* status) {
+    pid_t waited;
+    do { waited = waitpid(pid, status, 0); } while (waited < 0 && errno == EINTR);
+    return waited == pid ? 0 : (waited < 0 ? errno : EIO);
+}
+#endif
+
+#ifdef __linux__
+static _Noreturn void nq_process_cleanup_fail(void);
+
+static int nq_process_probe_pid(pid_t* pid, bool* exited, bool block) {
+    siginfo_t info = {0};
+    int result;
+    if (*pid <= 0) return ECHILD;
+    do { result = waitid(P_PID, (id_t)*pid, &info, WEXITED | WNOWAIT | (block ? 0 : WNOHANG)); }
+    while (result < 0 && errno == EINTR);
+    if (result < 0) {
+        int error = errno;
+        if (error == ECHILD) *pid = 0;
+        return error;
+    }
+    *exited = info.si_pid == *pid;
+    return block && !*exited ? EIO : 0;
+}
+
+static int nq_process_reap_pid(pid_t* pid, int* status) {
+    if (*pid <= 0) return ECHILD;
+    int error = nq_process_waitpid(*pid, status);
+    if (error == 0 || error == ECHILD) *pid = 0;
+    return error;
+}
+
+static int nq_process_kill(pid_t pid) {
+    int result;
+    do { result = kill(pid, SIGKILL); } while (result < 0 && errno == EINTR);
+    return result < 0 && errno != ESRCH ? errno : 0;
+}
+
+/* Legacy launches do not own a process group. Retain just the exact child
+ * anchor, returning it live only so the caller can unlink captures and fail. */
+static int nq_process_legacy_wait(pid_t* pid, int* status, bool abort_child) {
+    int first_error = 0;
+    if (!abort_child) {
+        first_error = nq_process_reap_pid(pid, status);
+        if (*pid == 0) return first_error;
+    }
+    for (int attempt = 0; attempt < 2 && *pid > 0; attempt++) {
+        bool exited = false;
+        int error = nq_process_probe_pid(pid, &exited, false);
+        if (error == 0 && !exited) error = nq_process_kill(*pid);
+        if (error == 0) error = nq_process_reap_pid(pid, status);
+        if (first_error == 0) first_error = error;
+    }
+    if (*pid > 0) {
+        bool exited = false;
+        int error = nq_process_probe_pid(pid, &exited, false);
+        if (error != 0 && *pid > 0) error = nq_process_probe_pid(pid, &exited, false);
+        if (error == 0 && exited) {
+            error = nq_process_reap_pid(pid, status);
+            if (error != 0 && *pid > 0) (void)nq_process_reap_pid(pid, status);
+        }
+        if (*pid > 0) (void)nq_process_probe_pid(pid, &exited, false);
+    }
+    return first_error != 0 ? first_error : (*pid > 0 ? EIO : 0);
+}
+#endif
+
 NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__str* args, NQStr cwd) {
     char* program_cstr = NULL;
     char* cwd_cstr = NULL;
@@ -2240,12 +2360,13 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     char stdout_template[] = "/tmp/nq-stdout-XXXXXX";
     char stderr_template[] = "/tmp/nq-stderr-XXXXXX";
     int stdout_fd = mkstemp(stdout_template);
+    int setup_error = stdout_fd < 0 ? errno : 0;
     int stderr_fd = mkstemp(stderr_template);
+    if (stderr_fd < 0 && setup_error == 0) setup_error = errno;
     int error_pipe[2] = {-1, -1};
     char** argv = NULL;
     pid_t pid;
     int status = 0;
-    ssize_t error_read = 0;
     int child_errno = 0;
     int32_t arg_count = args->len;
     int32_t index = 0;
@@ -2261,7 +2382,7 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         }
         free(program_cstr);
         free(cwd_cstr);
-        return nq_process_io_err(errno, "failed to allocate temporary output files");
+        return nq_process_io_err(setup_error, "failed to allocate temporary output files");
     }
 
     argv = (char**)nq_try_realloc(NULL, argv_size, &allocation_status);
@@ -2292,25 +2413,38 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     }
     argv[(size_t)arg_count + 1] = NULL;
 
-    if (pipe(error_pipe) != 0) {
+    stdout_fd = nq_process_setup_fd(stdout_fd);
+    if (stdout_fd < 0) setup_error = errno;
+    stderr_fd = nq_process_setup_fd(stderr_fd);
+    if (stderr_fd < 0 && setup_error == 0) setup_error = errno;
+    if (setup_error == 0 && pipe(error_pipe) != 0) setup_error = errno;
+    if (setup_error == 0) {
+        error_pipe[0] = nq_process_setup_fd(error_pipe[0]);
+        if (error_pipe[0] < 0) setup_error = errno;
+        error_pipe[1] = nq_process_setup_fd(error_pipe[1]);
+        if (error_pipe[1] < 0 && setup_error == 0) setup_error = errno;
+    }
+    if (setup_error != 0) {
+        if (error_pipe[0] >= 0) close(error_pipe[0]);
+        if (error_pipe[1] >= 0) close(error_pipe[1]);
         index = 0;
         while (index < arg_count) {
             free(argv[index + 1]);
             index += 1;
         }
         free(argv);
-        close(stdout_fd);
-        close(stderr_fd);
+        if (stdout_fd >= 0) close(stdout_fd);
+        if (stderr_fd >= 0) close(stderr_fd);
         unlink(stdout_template);
         unlink(stderr_template);
         free(program_cstr);
         free(cwd_cstr);
-        return nq_process_io_err(errno, "failed to create process error pipe");
+        return nq_process_io_err(setup_error, "failed to prepare process descriptors");
     }
-    fcntl(error_pipe[1], F_SETFD, FD_CLOEXEC);
 
     pid = fork();
     if (pid < 0) {
+        int saved = errno;
         close(error_pipe[0]);
         close(error_pipe[1]);
         index = 0;
@@ -2325,40 +2459,39 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
         unlink(stderr_template);
         free(program_cstr);
         free(cwd_cstr);
-        return nq_process_io_err(errno, "failed to fork process");
+        return nq_process_io_err(saved, "failed to fork process");
     }
 
     if (pid == 0) {
         close(error_pipe[0]);
         if (cwd_cstr[0] != '\0' && chdir(cwd_cstr) != 0) {
-            int err = errno;
-            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
-            (void)ignored;
-            _exit(127);
+            nq_process_child_error(error_pipe[1], errno);
         }
         if (dup2(stdout_fd, STDOUT_FILENO) < 0 || dup2(stderr_fd, STDERR_FILENO) < 0) {
-            int err = errno;
-            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
-            (void)ignored;
-            _exit(127);
+            nq_process_child_error(error_pipe[1], errno);
         }
         close(stdout_fd);
         close(stderr_fd);
         execvp(program_cstr, argv);
-        {
-            int err = errno;
-            ssize_t ignored = write(error_pipe[1], &err, sizeof(err));
-            (void)ignored;
-        }
-        _exit(127);
+        nq_process_child_error(error_pipe[1], errno);
     }
 
     close(error_pipe[1]);
     close(stdout_fd);
     close(stderr_fd);
-    error_read = read(error_pipe[0], &child_errno, sizeof(child_errno));
+    child_errno = nq_process_exec_error(error_pipe[0]);
     close(error_pipe[0]);
-    waitpid(pid, &status, 0);
+#ifdef __linux__
+    int wait_error = nq_process_legacy_wait(&pid, &status, child_errno != 0);
+#else
+    /* A failed handshake cannot leave a possibly running child behind. */
+    if (child_errno != 0) kill(pid, SIGKILL);
+    int wait_error = nq_process_waitpid(pid, &status);
+    if (wait_error != 0 && wait_error != ECHILD) {
+        kill(pid, SIGKILL);
+        (void)nq_process_waitpid(pid, &status);
+    }
+#endif
 
     index = 0;
     while (index < arg_count) {
@@ -2367,12 +2500,15 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     }
     free(argv);
 
-    if (error_read > 0) {
+    if (child_errno != 0 || wait_error != 0) {
         unlink(stdout_template);
         unlink(stderr_template);
         free(program_cstr);
         free(cwd_cstr);
-        return nq_process_io_err(child_errno, "failed to start process");
+#ifdef __linux__
+        if (pid > 0) nq_process_cleanup_fail();
+#endif
+        return nq_process_io_err(child_errno != 0 ? child_errno : wait_error, "failed to start or wait for process");
     }
 
     if (!nq_try_read_text_file(stdout_template, &stdout_text, &io_err)) {
@@ -2409,6 +2545,701 @@ NQ_Result__process_result__io_err nq_run_process(NQStr program, const NQ_List__s
     }
     return nq_process_ok(1, stdout_text, stderr_text);
 #endif
+}
+
+NQ_Option__duration nq_duration_from_ns(int64_t value) {
+    if (value < 0) return (NQ_Option__duration){ .tag = NQ_Option__duration_Tag_None };
+    return (NQ_Option__duration){ .tag = NQ_Option__duration_Tag_Some, .data.Some._0 = {value} };
+}
+
+int64_t nq_duration_as_ns(NQ_duration value) { return value._ns; }
+
+NQ_Option__duration nq_duration_between(NQ_instant start, NQ_instant end) {
+    if (end._ns < start._ns || (start._ns < 0 && end._ns > INT64_MAX + start._ns))
+        return (NQ_Option__duration){ .tag = NQ_Option__duration_Tag_None };
+    return nq_duration_from_ns(end._ns - start._ns);
+}
+
+#ifdef __linux__
+static bool nq_clock_ns(clockid_t clock, const char* operation, int64_t* value, NQIoErr* error) {
+    struct timespec ts;
+    int result;
+    do { result = clock_gettime(clock, &ts); } while (result < 0 && errno == EINTR);
+    if (result < 0) { *error = nq_errno_io_err(operation, NULL, NULL, errno); return false; }
+    if (!nq_timestamp_to_i64_ns(ts.tv_sec, ts.tv_nsec, value) ||
+        (clock == CLOCK_MONOTONIC && *value < 0)) {
+        *error = nq_invalid_data_io_err(operation, NULL, "clock nanoseconds are not representable");
+        return false;
+    }
+    return true;
+}
+
+static bool nq_deadline_ns(NQ_duration delay, const char* operation, int64_t* value, NQIoErr* error) {
+    if (delay._ns < 0) {
+        *error = nq_invalid_input_io_err(operation, NULL, NULL, "negative duration");
+        return false;
+    }
+    if (!nq_clock_ns(CLOCK_MONOTONIC, operation, value, error)) return false;
+    if (delay._ns > INT64_MAX - *value) {
+        *error = nq_invalid_data_io_err(operation, NULL, "deadline nanoseconds are not representable");
+        return false;
+    }
+    *value += delay._ns;
+    return true;
+}
+#endif
+
+NQ_Result__i64__io_err nq_wall_time_ns(void) {
+    NQIoErr error;
+#ifdef __linux__
+    int64_t value;
+    if (nq_clock_ns(CLOCK_REALTIME, "wall_time_ns", &value, &error))
+        return (NQ_Result__i64__io_err){ .tag = NQ_Result__i64__io_err_Tag_Ok, .data.Ok._0 = value };
+#else
+    error = nq_unsupported_io_err("wall_time_ns", NULL);
+#endif
+    return (NQ_Result__i64__io_err){ .tag = NQ_Result__i64__io_err_Tag_Err, .data.Err._0 = error };
+}
+
+NQ_Result__instant__io_err nq_monotonic_now(void) {
+    NQIoErr error;
+#ifdef __linux__
+    int64_t value;
+    if (nq_clock_ns(CLOCK_MONOTONIC, "monotonic_now", &value, &error))
+        return (NQ_Result__instant__io_err){ .tag = NQ_Result__instant__io_err_Tag_Ok, .data.Ok._0 = {value} };
+#else
+    error = nq_unsupported_io_err("monotonic_now", NULL);
+#endif
+    return (NQ_Result__instant__io_err){ .tag = NQ_Result__instant__io_err_Tag_Err, .data.Err._0 = error };
+}
+
+NQ_Result__instant__io_err nq_deadline_after(NQ_duration delay) {
+    NQIoErr error;
+#ifdef __linux__
+    int64_t value;
+    if (nq_deadline_ns(delay, "deadline_after", &value, &error))
+        return (NQ_Result__instant__io_err){ .tag = NQ_Result__instant__io_err_Tag_Ok, .data.Ok._0 = {value} };
+#else
+    (void)delay;
+    error = nq_unsupported_io_err("deadline_after", NULL);
+#endif
+    return (NQ_Result__instant__io_err){ .tag = NQ_Result__instant__io_err_Tag_Err, .data.Err._0 = error };
+}
+
+NQ_Result__unit__io_err nq_sleep_for(NQ_duration delay) {
+#ifdef __linux__
+    int64_t deadline;
+    NQIoErr error;
+    if (delay._ns == 0) return nq_unit_ok();
+    if (!nq_deadline_ns(delay, "sleep_for", &deadline, &error)) return nq_unit_err(error);
+    struct timespec ts = { .tv_sec = (time_t)(deadline / INT64_C(1000000000)),
+                          .tv_nsec = (long)(deadline % INT64_C(1000000000)) };
+    if ((int64_t)ts.tv_sec != deadline / INT64_C(1000000000))
+        return nq_unit_err(nq_invalid_data_io_err("sleep_for", NULL, "sleep deadline is not representable"));
+    int result;
+    do { result = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL); } while (result == EINTR);
+    return result == 0 ? nq_unit_ok() : nq_unit_err(nq_errno_io_err("sleep_for", NULL, NULL, result));
+#else
+    (void)delay;
+    return nq_unit_err(nq_unsupported_io_err("sleep_for", NULL));
+#endif
+}
+
+NQ_process_outcome nq_process_outcome_clone(NQ_process_outcome value) {
+    value.stdout = nq_str_clone(value.stdout);
+    value.stderr = nq_str_clone(value.stderr);
+    return value;
+}
+
+void nq_process_outcome_drop(NQ_process_outcome* value) {
+    if (value == NULL) return;
+    nq_str_drop(&value->stdout);
+    nq_str_drop(&value->stderr);
+    memset(value, 0, sizeof(*value));
+}
+
+NQ_Option__duration nq_option__duration_clone(NQ_Option__duration value) { return value; }
+void nq_option__duration_drop(NQ_Option__duration* value) {
+    if (value != NULL) *value = (NQ_Option__duration){ .tag = NQ_Option__duration_Tag_None };
+}
+NQ_Option__instant nq_option__instant_clone(NQ_Option__instant value) { return value; }
+void nq_option__instant_drop(NQ_Option__instant* value) {
+    if (value != NULL) *value = (NQ_Option__instant){ .tag = NQ_Option__instant_Tag_None };
+}
+
+NQ_Result__i64__io_err nq_result__i64__io_err_clone(NQ_Result__i64__io_err value) {
+    if (value.tag == NQ_Result__i64__io_err_Tag_Err) value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    return value;
+}
+void nq_result__i64__io_err_drop(NQ_Result__i64__io_err* value) {
+    if (value == NULL) return;
+    if (value->tag == NQ_Result__i64__io_err_Tag_Err) nq_io_err_drop(&value->data.Err._0);
+    memset(value, 0, sizeof(*value));
+}
+NQ_Result__instant__io_err nq_result__instant__io_err_clone(NQ_Result__instant__io_err value) {
+    if (value.tag == NQ_Result__instant__io_err_Tag_Err) value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    return value;
+}
+void nq_result__instant__io_err_drop(NQ_Result__instant__io_err* value) {
+    if (value == NULL) return;
+    if (value->tag == NQ_Result__instant__io_err_Tag_Err) nq_io_err_drop(&value->data.Err._0);
+    memset(value, 0, sizeof(*value));
+}
+void nq_result__process__io_err_drop(NQ_Result__process__io_err* value) {
+    if (value == NULL) return;
+    if (value->tag == NQ_Result__process__io_err_Tag_Ok) nq_process_drop(&value->data.Ok._0);
+    else nq_io_err_drop(&value->data.Err._0);
+    memset(value, 0, sizeof(*value));
+}
+NQ_Result__process_outcome__io_err nq_result__process_outcome__io_err_clone(NQ_Result__process_outcome__io_err value) {
+    if (value.tag == NQ_Result__process_outcome__io_err_Tag_Ok)
+        value.data.Ok._0 = nq_process_outcome_clone(value.data.Ok._0);
+    else value.data.Err._0 = nq_io_err_clone(value.data.Err._0);
+    return value;
+}
+void nq_result__process_outcome__io_err_drop(NQ_Result__process_outcome__io_err* value) {
+    if (value == NULL) return;
+    if (value->tag == NQ_Result__process_outcome__io_err_Tag_Ok) nq_process_outcome_drop(&value->data.Ok._0);
+    else nq_io_err_drop(&value->data.Err._0);
+    memset(value, 0, sizeof(*value));
+}
+
+#ifdef __linux__
+struct NQProcessState {
+    pid_t pid;
+    bool group;
+    bool ready;
+    bool signalled;
+    bool terminal_signalled;
+    int input_fd;
+    int output_fd;
+    int error_fd;
+    NQStr input;
+    size_t sent;
+    size_t limit;
+    NQByteBuffer output;
+    NQByteBuffer error;
+    NQ_process_outcome outcome;
+};
+
+static void nq_process_close_fd(int* fd) {
+    /* Linux close releases the descriptor even on EINTR; never retry it. */
+    if (*fd >= 0) { close(*fd); *fd = -1; }
+}
+
+static int nq_process_pipe(int pair[2]) {
+    int result;
+    do { result = pipe(pair); } while (result < 0 && errno == EINTR);
+    if (result < 0) return errno;
+    pair[0] = nq_process_setup_fd(pair[0]);
+    if (pair[0] < 0) return errno;
+    pair[1] = nq_process_setup_fd(pair[1]);
+    return pair[1] < 0 ? errno : 0;
+}
+
+static int nq_process_nonblocking(int fd) {
+    int flags, result;
+    do { flags = fcntl(fd, F_GETFL, 0); } while (flags < 0 && errno == EINTR);
+    if (flags < 0) return errno;
+    do { result = fcntl(fd, F_SETFL, flags | O_NONBLOCK); } while (result < 0 && errno == EINTR);
+    return result < 0 ? errno : 0;
+}
+
+static int nq_process_probe(NQProcessState* state, bool* exited) {
+    return nq_process_probe_pid(&state->pid, exited, false);
+}
+
+static int nq_process_signal_owned(NQProcessState* state, bool* observed_exit) {
+    bool exited;
+    int error = nq_process_probe(state, &exited);
+    if (error != 0) return error;
+    if (observed_exit != NULL) *observed_exit = exited;
+    /* If parent-side grouping failed during setup, stop the direct child
+     * first. Its group can then no longer appear after our group signal. */
+    if (!state->group && !exited) {
+        error = nq_process_kill(state->pid);
+        if (error != 0) return error;
+    }
+    error = nq_process_kill(-state->pid);
+    if (error != 0) return error;
+    if (exited) state->terminal_signalled = true;
+    if (state->group && !exited) error = nq_process_kill(state->pid);
+    if (error == 0) state->signalled = true;
+    return error;
+}
+
+static int nq_process_signal_terminal(NQProcessState* state) {
+    if (state->terminal_signalled) return 0;
+    bool exited = false;
+    int error = nq_process_probe_pid(&state->pid, &exited, true);
+    if (error == 0) error = nq_process_kill(-state->pid);
+    if (error == 0) state->terminal_signalled = true;
+    return error;
+}
+
+static ssize_t nq_process_write_input(int fd, const void* data, size_t count);
+
+static _Noreturn void nq_process_cleanup_fail(void) {
+    static const char message[] = "nauqtype runtime: process cleanup failed\n";
+    size_t sent = 0;
+    int interruptions = 0;
+    while (sent < sizeof(message) - 1) {
+        ssize_t count = nq_process_write_input(STDERR_FILENO, message + sent, sizeof(message) - 1 - sent);
+        if (count < 0 && errno == EINTR && interruptions++ < 3) continue;
+        if (count <= 0) break;
+        sent += (size_t)count;
+    }
+    _exit(1);
+}
+
+static int nq_process_cleanup_reap(NQProcessState* state) {
+    int status;
+    return nq_process_reap_pid(&state->pid, &status);
+}
+
+static int nq_process_cleanup_attempt(NQProcessState* state) {
+    int error = 0;
+    if (!state->terminal_signalled) {
+        error = nq_process_signal_owned(state, NULL);
+        if (error == 0) error = nq_process_signal_terminal(state);
+    }
+    if (error == 0) error = nq_process_cleanup_reap(state);
+    return error;
+}
+
+static void nq_process_cleanup(NQProcessState* state) {
+    if (state->pid > 0) {
+        /* Probe before every emergency signal, retaining WNOWAIT ownership.
+         * One retry recovers a transient non-EINTR syscall failure. ECHILD
+         * permanently clears the anchor and forbids numeric PID signalling. */
+        int error = nq_process_cleanup_attempt(state);
+        if (error != 0 && state->pid > 0) error = nq_process_cleanup_attempt(state);
+        if (state->pid > 0) {
+            bool exited = false;
+            error = nq_process_probe(state, &exited);
+            if (error != 0 && state->pid > 0) error = nq_process_probe(state, &exited);
+            /* A raced exit still requires the final group signal. Never
+             * surrender the anchor while its descendants may remain live. */
+            if (error == 0 && exited) {
+                error = nq_process_signal_terminal(state);
+                if (error == 0) error = nq_process_cleanup_reap(state);
+            }
+            if (state->pid > 0) (void)nq_process_probe(state, &exited);
+            if (state->pid > 0) nq_process_cleanup_fail();
+        }
+    }
+    nq_process_close_fd(&state->input_fd);
+    nq_process_close_fd(&state->output_fd);
+    nq_process_close_fd(&state->error_fd);
+    nq_str_drop(&state->input);
+    free(state->output.data);
+    free(state->error.data);
+    nq_process_outcome_drop(&state->outcome);
+}
+
+/* Block only this thread's SIGPIPE during a write. Preserve an older pending
+ * SIGPIPE and the original mask; consume only the signal made by our EPIPE. */
+static ssize_t nq_process_write_input(int fd, const void* data, size_t count) {
+    sigset_t block, previous, pending;
+    sigemptyset(&block);
+    sigaddset(&block, SIGPIPE);
+    if (sigprocmask(SIG_BLOCK, &block, &previous) < 0) return -1;
+    if (sigpending(&pending) < 0) {
+        int error = errno;
+        (void)sigprocmask(SIG_SETMASK, &previous, NULL);
+        errno = error;
+        return -1;
+    }
+    bool already_pending = sigismember(&pending, SIGPIPE) == 1;
+    ssize_t result = write(fd, data, count);
+    int error = result < 0 ? errno : 0;
+    if (result < 0 && error == EPIPE && !already_pending) {
+        struct timespec zero = {0};
+        int signal;
+        do { signal = sigtimedwait(&block, NULL, &zero); } while (signal < 0 && errno == EINTR);
+    }
+    if (sigprocmask(SIG_SETMASK, &previous, NULL) < 0) return -1;
+    errno = error;
+    return result;
+}
+
+static bool nq_process_read_output(NQProcessState* state, int* fd, NQByteBuffer* buffer,
+                                    size_t* remaining, const char* operation, NQIoErr* error) {
+    unsigned char bytes[8192];
+    size_t amount = sizeof(bytes);
+    if (remaining != NULL && *remaining < amount) amount = *remaining;
+    if (amount == 0) { nq_process_close_fd(fd); return true; }
+    ssize_t count = read(*fd, bytes, amount);
+    if (count < 0) {
+        if (errno == EINTR || (remaining == NULL && (errno == EAGAIN || errno == EWOULDBLOCK))) return true;
+        *error = nq_errno_io_err(operation, NULL, NULL, errno);
+        return false;
+    }
+    if (count == 0) {
+        if (remaining != NULL && *remaining != 0) {
+            *error = nq_invalid_data_io_err(operation, NULL, "queued process output disappeared");
+            return false;
+        }
+        nq_process_close_fd(fd); return true;
+    }
+    size_t used = state->output.len + state->error.len;
+    if ((size_t)count > state->limit - used) {
+        *error = nq_invalid_data_io_err(operation, NULL, "combined process output exceeds capture limit");
+        return false;
+    }
+    size_t limit = state->limit < nq_str_limit() ? state->limit : nq_str_limit();
+    NQAllocStatus status = nq_buffer_reserve(buffer, (size_t)count + 1, limit + 1);
+    if (status != NQ_ALLOC_OK) { *error = nq_allocation_io_err(operation, status); return false; }
+    memcpy(buffer->data + buffer->len, bytes, (size_t)count);
+    buffer->len += (size_t)count;
+    buffer->data[buffer->len] = 0;
+    if (remaining != NULL) {
+        *remaining -= (size_t)count;
+        if (*remaining == 0) nq_process_close_fd(fd);
+    }
+    return true;
+}
+
+static int nq_process_queued(int fd, size_t* remaining) {
+    int count = 0, result;
+    if (fd < 0) { *remaining = 0; return 0; }
+    do { result = ioctl(fd, FIONREAD, &count); } while (result < 0 && errno == EINTR);
+    if (result < 0) return errno;
+    if (count < 0) return EIO;
+    *remaining = (size_t)count;
+    return 0;
+}
+
+static bool nq_process_finish(NQProcessState* state, const char* operation, NQIoErr* error) {
+    int status;
+    int wait_error = nq_process_waitpid(state->pid, &status);
+    if (wait_error != 0) {
+        if (wait_error == ECHILD) state->pid = 0;
+        *error = nq_errno_io_err(operation, NULL, NULL, wait_error);
+        return false;
+    }
+    state->pid = 0;
+    state->outcome.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+    NQAllocStatus allocation = NQ_ALLOC_OK;
+    if (state->output.data != NULL) {
+        allocation = nq_try_str_take((char*)state->output.data, state->output.len, &state->outcome.stdout);
+        state->output.data = NULL;
+    }
+    if (allocation == NQ_ALLOC_OK && state->error.data != NULL) {
+        allocation = nq_try_str_take((char*)state->error.data, state->error.len, &state->outcome.stderr);
+        state->error.data = NULL;
+    }
+    if (allocation != NQ_ALLOC_OK) { *error = nq_allocation_io_err(operation, allocation); return false; }
+    nq_process_close_fd(&state->input_fd);
+    nq_str_drop(&state->input);
+    state->ready = true;
+    return true;
+}
+
+static bool nq_process_pump(NQProcessState* state, NQ_Option__instant deadline, bool cancel,
+                            const char* operation, NQIoErr* error) {
+    bool draining = false;
+    size_t output_remaining = 0, error_remaining = 0;
+    while (true) {
+        bool exited = false;
+        int system_error = nq_process_probe(state, &exited);
+        if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }
+        int timeout = 10;
+        bool expired = false;
+        if (!exited && !state->signalled && !cancel && deadline.tag == NQ_Option__instant_Tag_Some) {
+            int64_t now;
+            if (!nq_clock_ns(CLOCK_MONOTONIC, operation, &now, error)) return false;
+            expired = deadline.data.Some._0._ns <= now;
+            if (!expired) {
+                int64_t remaining = deadline.data.Some._0._ns - now;
+                if (remaining < INT64_C(10000000)) timeout = (int)((remaining + 999999) / 1000000);
+            }
+        }
+        if (!state->signalled && (exited || expired || cancel)) {
+            /* A fresh observation wins over a deadline/cancellation action. */
+            system_error = nq_process_signal_owned(state, &exited);
+            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }
+            state->outcome.timed_out = !exited && expired;
+            state->outcome.cancelled = !exited && cancel;
+            nq_process_close_fd(&state->input_fd);
+        }
+        if (exited && !draining) {
+            system_error = nq_process_signal_terminal(state);
+            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }
+            /* The direct child's writes are now complete. Snapshot queued
+             * bytes instead of waiting for EOF from an escaped descendant. */
+            system_error = nq_process_queued(state->output_fd, &output_remaining);
+            if (system_error == 0) system_error = nq_process_queued(state->error_fd, &error_remaining);
+            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }
+            size_t used = state->output.len + state->error.len;
+            if (output_remaining > state->limit - used || error_remaining > state->limit - used - output_remaining) {
+                *error = nq_invalid_data_io_err(operation, NULL, "combined process output exceeds capture limit");
+                return false;
+            }
+            draining = true;
+            if (output_remaining == 0) nq_process_close_fd(&state->output_fd);
+            if (error_remaining == 0) nq_process_close_fd(&state->error_fd);
+        }
+        if (exited && state->output_fd < 0 && state->error_fd < 0)
+            return nq_process_finish(state, operation, error);
+        if (state->input_fd >= 0 && state->sent == (size_t)state->input.len)
+            nq_process_close_fd(&state->input_fd);
+        struct pollfd fds[3] = {
+            { .fd = state->input_fd, .events = POLLOUT },
+            { .fd = state->output_fd, .events = POLLIN },
+            { .fd = state->error_fd, .events = POLLIN },
+        };
+        int polled = poll(fds, 3, timeout);
+        if (polled < 0) {
+            if (errno == EINTR) continue;
+            *error = nq_errno_io_err(operation, NULL, NULL, errno);
+            return false;
+        }
+        for (int index = 0; index < 3; index++) {
+            if (fds[index].revents & POLLNVAL) {
+                *error = nq_errno_io_err(operation, NULL, NULL, EBADF);
+                return false;
+            }
+        }
+        if (fds[1].revents && !nq_process_read_output(state, &state->output_fd, &state->output,
+            draining ? &output_remaining : NULL, operation, error)) return false;
+        if (fds[2].revents && !nq_process_read_output(state, &state->error_fd, &state->error,
+            draining ? &error_remaining : NULL, operation, error)) return false;
+        if (fds[0].revents) {
+            size_t remaining = (size_t)state->input.len - state->sent;
+            size_t amount = remaining < 8192 ? remaining : 8192;
+            ssize_t count = nq_process_write_input(state->input_fd, state->input.data + state->sent, amount);
+            if (count < 0) {
+                if (errno == EPIPE) nq_process_close_fd(&state->input_fd);
+                else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+                    *error = nq_errno_io_err(operation, NULL, NULL, errno);
+                    return false;
+                }
+            } else if (count > 0) state->sent += (size_t)count;
+            else {
+                *error = nq_errno_io_err(operation, NULL, NULL, EIO);
+                return false;
+            }
+        }
+    }
+}
+
+static bool nq_process_list_valid(const NQ_List__str* list) {
+    if (list == NULL || list->len < 0 || list->cap < list->len ||
+        (uintmax_t)list->len > nq_sequence_limit(INT32_MAX) || (list->len > 0 && list->data == NULL)) return false;
+    for (int32_t index = 0; index < list->len; index++)
+        if (!nq_str_storage_is_valid(list->data[index]) || nq_str_has_nul(list->data[index])) return false;
+    return true;
+}
+
+static size_t nq_process_env_key(NQStr entry) {
+    size_t index = 0;
+    while (index < (size_t)entry.len && entry.data[index] != '=') {
+        unsigned char ch = (unsigned char)entry.data[index];
+        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' ||
+              (index > 0 && ch >= '0' && ch <= '9'))) return 0;
+        index++;
+    }
+    return index < (size_t)entry.len ? index : 0;
+}
+
+static bool nq_process_env_replaced(const char* entry, const NQ_List__str* env) {
+    const char* equals = strchr(entry, '=');
+    if (equals == NULL) return false;
+    size_t len = (size_t)(equals - entry);
+    for (int32_t index = 0; index < env->len; index++) {
+        NQStr replacement = env->data[index];
+        if (nq_process_env_key(replacement) == len && memcmp(entry, replacement.data, len) == 0) return true;
+    }
+    return false;
+}
+
+static int nq_process_dup2(int oldfd, int newfd) {
+    int result;
+    do { result = dup2(oldfd, newfd); } while (result < 0 && errno == EINTR);
+    return result;
+}
+#endif
+
+void nq_process_drop(NQ_process* value) {
+    if (value == NULL || value->_state == NULL) return;
+#ifdef __linux__
+    nq_process_cleanup(value->_state);
+#endif
+    free(value->_state);
+    value->_state = NULL;
+}
+
+NQ_Result__process__io_err nq_process_start(NQStr program, const NQ_List__str* args,
+    NQStr cwd, const NQ_List__str* env, NQ_Option__str input, bool capture, int64_t max_output_bytes) {
+    NQIoErr error;
+#ifdef __linux__
+    if (!nq_str_storage_is_valid(program) || program.len == 0 || program.data[0] != '/' || nq_str_has_nul(program) ||
+        !nq_str_storage_is_valid(cwd) || cwd.len == 0 || nq_str_has_nul(cwd) || !nq_process_list_valid(args) || !nq_process_list_valid(env) ||
+        (input.tag != NQ_Option__str_Tag_None && input.tag != NQ_Option__str_Tag_Some) ||
+        (input.tag == NQ_Option__str_Tag_Some && !nq_str_storage_is_valid(input.data.Some._0)) ||
+        max_output_bytes < 0 || max_output_bytes > INT32_MAX || (!capture && max_output_bytes != 0)) {
+        error = nq_invalid_input_io_err("process_start", NULL, NULL, "invalid process arguments, absolute executable, or capture limit");
+        goto failure;
+    }
+    for (int32_t index = 0; index < env->len; index++) {
+        size_t key = nq_process_env_key(env->data[index]);
+        if (key == 0) {
+            error = nq_invalid_input_io_err("process_start", NULL, NULL, "invalid environment key");
+            goto failure;
+        }
+        bool duplicate = false;
+        for (int32_t previous = 0; previous < index; previous++)
+            if (nq_process_env_key(env->data[previous]) == key &&
+                memcmp(env->data[index].data, env->data[previous].data, key) == 0) duplicate = true;
+        if (duplicate) {
+            error = nq_invalid_input_io_err("process_start", NULL, NULL, "invalid or duplicate environment key");
+            goto failure;
+        }
+    }
+    char* executable = NULL;
+    char* directory = NULL;
+    char** argv = NULL;
+    char** envp = NULL;
+    size_t inherited = 0, env_used = 0, env_borrowed = 0, count, size;
+    int pipes[4][2] = {{-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}};
+    NQ_process child = {0};
+    NQAllocStatus allocation = NQ_ALLOC_OK;
+    int system_error = 0;
+    extern char** environ;
+    while (environ != NULL && environ[inherited] != NULL) {
+        if (inherited == nq_sequence_limit(INT32_MAX)) { allocation = NQ_ALLOC_SIZE; goto release; }
+        inherited++;
+    }
+    if (!nq_size_add((size_t)args->len, 2, nq_allocation_limit(), &count) || !nq_size_mul(count, sizeof(char*), &size)) {
+        allocation = NQ_ALLOC_SIZE; goto release;
+    }
+    argv = (char**)nq_try_realloc(NULL, size, &allocation);
+    if (allocation != NQ_ALLOC_OK) goto release;
+    memset(argv, 0, size);
+    if (!nq_size_add(inherited, (size_t)env->len, nq_allocation_limit(), &count) ||
+        !nq_size_add(count, 1, nq_allocation_limit(), &count) || !nq_size_mul(count, sizeof(char*), &size)) {
+        allocation = NQ_ALLOC_SIZE; goto release;
+    }
+    envp = (char**)nq_try_realloc(NULL, size, &allocation);
+    if (allocation != NQ_ALLOC_OK) goto release;
+    memset(envp, 0, size);
+    allocation = nq_try_cstr_copy(program.data, (size_t)program.len, &executable);
+    if (allocation != NQ_ALLOC_OK) goto release;
+    allocation = nq_try_cstr_copy(cwd.data, (size_t)cwd.len, &directory);
+    if (allocation != NQ_ALLOC_OK) goto release;
+    argv[0] = executable;
+    for (int32_t index = 0; index < args->len; index++) {
+        allocation = nq_try_cstr_copy(args->data[index].data, (size_t)args->data[index].len, &argv[(size_t)index + 1]);
+        if (allocation != NQ_ALLOC_OK) goto release;
+    }
+    for (size_t index = 0; index < inherited; index++)
+        if (!nq_process_env_replaced(environ[index], env)) envp[env_used++] = environ[index];
+    env_borrowed = env_used;
+    for (int32_t index = 0; index < env->len; index++) {
+        allocation = nq_try_cstr_copy(env->data[index].data, (size_t)env->data[index].len, &envp[env_used]);
+        if (allocation != NQ_ALLOC_OK) goto release;
+        env_used++;
+    }
+    child._state = (NQProcessState*)nq_try_realloc(NULL, sizeof(NQProcessState), &allocation);
+    if (allocation != NQ_ALLOC_OK) goto release;
+    *child._state = (NQProcessState){ .input_fd = -1, .output_fd = -1, .error_fd = -1,
+        .input = nq_empty_str(), .limit = (size_t)max_output_bytes,
+        .outcome = { .stdout = nq_empty_str(), .stderr = nq_empty_str() } };
+    if (input.tag == NQ_Option__str_Tag_Some && input.data.Some._0.len > 0) {
+        allocation = nq_try_str_copy(input.data.Some._0.data, (size_t)input.data.Some._0.len, &child._state->input);
+        if (allocation != NQ_ALLOC_OK) goto release;
+    }
+    for (int index = 0; index < 4; index++) {
+        if ((index == 0 && input.tag == NQ_Option__str_Tag_None) || ((index == 1 || index == 2) && !capture)) continue;
+        system_error = nq_process_pipe(pipes[index]);
+        if (system_error != 0) goto release;
+        if (index < 3) {
+            system_error = nq_process_nonblocking(pipes[index][index == 0 ? 1 : 0]);
+            if (system_error != 0) goto release;
+        }
+    }
+    pid_t pid;
+    do { pid = fork(); } while (pid < 0 && errno == EINTR);
+    if (pid < 0) { system_error = errno; goto release; }
+    if (pid == 0) {
+        int result;
+        do { result = setpgid(0, 0); } while (result < 0 && errno == EINTR);
+        if (result < 0) nq_process_child_error(pipes[3][1], errno);
+        do { result = chdir(directory); } while (result < 0 && errno == EINTR);
+        if (result < 0) nq_process_child_error(pipes[3][1], errno);
+        for (int index = 0; index < 3; index++) {
+            int fd = pipes[index][index == 0 ? 0 : 1];
+            if (fd >= 0 && nq_process_dup2(fd, index) < 0) nq_process_child_error(pipes[3][1], errno);
+        }
+        for (int index = 0; index < 4; index++)
+            for (int end = 0; end < 2; end++)
+                if (pipes[index][end] >= 0 && !(index == 3 && end == 1)) close(pipes[index][end]);
+        do { execve(executable, argv, envp); } while (errno == EINTR);
+        nq_process_child_error(pipes[3][1], errno);
+    }
+    child._state->pid = pid;
+    int grouped;
+    do { grouped = setpgid(pid, pid); } while (grouped < 0 && errno == EINTR);
+    if (grouped < 0 && errno != EACCES && errno != ESRCH) { system_error = errno; goto release; }
+    child._state->group = true;
+    for (int index = 0; index < 4; index++) nq_process_close_fd(&pipes[index][index == 0 ? 0 : 1]);
+    system_error = nq_process_exec_error(pipes[3][0]);
+    if (system_error != 0) goto release;
+    child._state->input_fd = pipes[0][1]; pipes[0][1] = -1;
+    child._state->output_fd = pipes[1][0]; pipes[1][0] = -1;
+    child._state->error_fd = pipes[2][0]; pipes[2][0] = -1;
+release:
+    for (int index = 0; index < 4; index++)
+        for (int end = 0; end < 2; end++) nq_process_close_fd(&pipes[index][end]);
+    if (argv != NULL) for (int32_t index = 0; index < args->len; index++) free(argv[(size_t)index + 1]);
+    for (size_t index = env_borrowed; index < env_used; index++) free(envp[index]);
+    free(argv); free(envp); free(executable); free(directory);
+    if (allocation == NQ_ALLOC_OK && system_error == 0)
+        return (NQ_Result__process__io_err){ .tag = NQ_Result__process__io_err_Tag_Ok, .data.Ok._0 = child };
+    nq_process_drop(&child);
+    error = allocation != NQ_ALLOC_OK ? nq_allocation_io_err("process_start", allocation) :
+        nq_errno_io_err("process_start", &program, NULL, system_error);
+failure:
+#else
+    (void)program; (void)args; (void)cwd; (void)env; (void)input; (void)capture; (void)max_output_bytes;
+    error = nq_unsupported_io_err("process_start", NULL);
+#endif
+    return (NQ_Result__process__io_err){ .tag = NQ_Result__process__io_err_Tag_Err, .data.Err._0 = error };
+}
+
+NQ_Result__process_outcome__io_err nq_process_wait(NQ_process child, NQ_Option__instant deadline) {
+    NQIoErr error;
+#ifdef __linux__
+    if (child._state == NULL) error = nq_invalid_input_io_err("process_wait", NULL, NULL, "inert process handle");
+    else if (deadline.tag != NQ_Option__instant_Tag_None && deadline.tag != NQ_Option__instant_Tag_Some)
+        error = nq_invalid_input_io_err("process_wait", NULL, NULL, "invalid deadline option");
+    else if (child._state->ready || nq_process_pump(child._state, deadline, false, "process_wait", &error)) {
+        NQ_process_outcome outcome = child._state->outcome;
+        child._state->outcome = (NQ_process_outcome){0};
+        nq_process_drop(&child);
+        return (NQ_Result__process_outcome__io_err){ .tag = NQ_Result__process_outcome__io_err_Tag_Ok, .data.Ok._0 = outcome };
+    }
+#else
+    (void)deadline;
+    error = nq_unsupported_io_err("process_wait", NULL);
+#endif
+    nq_process_drop(&child);
+    return (NQ_Result__process_outcome__io_err){ .tag = NQ_Result__process_outcome__io_err_Tag_Err, .data.Err._0 = error };
+}
+
+NQ_Result__unit__io_err nq_process_terminate(NQ_process* child) {
+    NQIoErr error;
+#ifdef __linux__
+    if (child == NULL || child->_state == NULL)
+        return nq_unit_err(nq_invalid_input_io_err("process_terminate", NULL, NULL, "inert process handle"));
+    if (child->_state->ready || nq_process_pump(child->_state,
+        (NQ_Option__instant){ .tag = NQ_Option__instant_Tag_None }, true, "process_terminate", &error)) return nq_unit_ok();
+#else
+    error = nq_unsupported_io_err("process_terminate", NULL);
+#endif
+    nq_process_drop(child);
+    return nq_unit_err(error);
 }
 
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index) {

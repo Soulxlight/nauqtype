@@ -1,0 +1,28 @@
+pub fn process_wait(value: duration, bonus: i64) -> i64
+audit { intent("Keep a qualified user function distinct from the wait builtin"); mutates(); effects(); }
+{
+    return duration_as_ns(value) + bonus;
+}
+
+pub fn forward(child: process) -> process
+audit { intent("Transfer owned cleanup authority across an import"); mutates(); effects(io); }
+{ return child; }
+
+pub fn echo_time(value: option<instant>) -> result<option<instant>, io_err>
+audit { intent("Preserve nested nominal time through an imported function"); mutates(); effects(); }
+{
+    return Ok(value);
+}
+
+pub fn outcome_text(value: process_outcome) -> str
+audit { intent("Read copied outcome text without process authority"); mutates(); effects(); }
+{ return value.stdout; }
+
+pub enum Failure { Rejected, }
+
+pub fn read_file(succeed: bool) -> result<i32, Failure>
+audit { intent("Return a custom result without file IO despite a builtin name"); mutates(); effects(); }
+{
+    if succeed { return Ok(23); }
+    return Err(Rejected);
+}
