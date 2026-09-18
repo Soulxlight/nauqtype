@@ -1,0 +1,194 @@
+[
+  {
+    "id": "s01",
+    "path": "M55_CONTRACTS.md",
+    "start_line": 1,
+    "end_line": 18,
+    "text": "# M55: Process And Time Contracts\n\nStatus: implementation contract, not completion evidence. Baseline `e2f6801`.\nCompiler/runtime lane only; Libraries and AI/ML repositories are not modified.\n\n## Gate A Decisions\n\nIndependent read-only `gpt-5.6-sol` xhigh and `gpt-5.5` xhigh reviews required\ncorrections before implementation. This contract incorporates them: consuming\nwait, terminal error cleanup, recursive checked cleanup authority, absolute\nexecutables, bounded capture, safe stdin writes, and direct-child-only reaping.\nF14 interrupted legacy read/wait handling is the first implementation/test slice.\n\n## Public Surface\n\nNo source syntax, effect atom, JSON schema enum, executor, thread, user\ndestructor, lifetime, or generic feature is added. Legacy `run_process` and\n`process_result` retain their signatures, PATH lookup, and output behavior.",
+    "sha256": "7faed59526481317e86f24ffba3f72dbe49d0f8d5e258d35dfc787af6ecc7148"
+  },
+  {
+    "id": "s02",
+    "path": "M55_CONTRACTS.md",
+    "start_line": 28,
+    "end_line": 54,
+    "text": "process_start(program: str, args: ref list<str>, cwd: str,\n              env: ref list<str>, input: option<str>, capture: bool,\n              max_output_bytes: i64) -> result<process, io_err>\nprocess_wait(child: process, deadline: option<instant>) -> result<process_outcome, io_err>\nprocess_terminate(child: mutref process) -> result<unit, io_err>\n```\n\n`duration` and `instant` are opaque copy types over signed 64-bit nanoseconds;\nneither exposes fields, source constructors, arithmetic, or implicit conversion.\nDurations are nonnegative. Wall time is Unix epoch nanoseconds. Instants come\nfrom CLOCK_MONOTONIC and are meaningful only within the current boot clock\ndomain. `duration_between` succeeds only for ordered, representable subtraction.\nClock conversions and deadline addition are checked; negative duration inputs\nreturn None, operational/representability failures return structured io_err.\nZero sleep returns immediately; interrupted sleep resumes against its deadline.\nClocks are not randomness or entropy sources.\n\n`process` is an opaque move-only, drop-requiring owned handle. Its outcome is a\ncopy product with `exit_code: i32`, `stdout: str`, `stderr: str`,\n`timed_out: bool`, and `cancelled: bool`. Normal exits use their status; signal\nexits use 128 + signal. Outcome flags distinguish timeout/cancellation actions.\n\n## Launch And Output\n\nNew launches require an absolute, NUL-free executable path and `execve`: no\nPATH lookup, shell interpretation, or ENOEXEC shell fallback. Explicit nonempty\ncwd may be relative to the parent's cwd; empty cwd is rejected before spawn.",
+    "sha256": "c92b178bc874ead938d7036d6b3f623a537babebd7d826797fdf5fa40fbfbf50"
+  },
+  {
+    "id": "s03",
+    "path": "M55_CONTRACTS.md",
+    "start_line": 71,
+    "end_line": 107,
+    "text": "## Ownership, Cancellation, And Cleanup\n\nStates are active, outcome_ready, and inert/moved-from. Kernel exit alone does\nnot end ownership. Wait consumes the handle and returns the natural outcome,\ncached cancellation outcome, timeout outcome, or a terminal error.\n\nTerminate probes the waitable direct child with WNOWAIT|WNOHANG. If already\nexited, preserve its natural outcome. Otherwise successful process-group kill\nmarks cancelled: this classifies the cancellation action, not proof of its\ncausal effect on a racing natural exit. Terminate synchronously reaps/drains\nand caches the outcome; repeat terminate on outcome_ready is Ok. Wait then\nconsumes that cached result. Deadline applies to waiting, uses CLOCK_MONOTONIC,\nand on expiry kills/cleans up with timed_out=true. An already-observed natural\ncompletion or cached outcome takes precedence over a deadline.\n\nOperational errors end ownership: emergency kill/reap/close, inert handle,\nterminal io_err. Later operations on inert handles are invalid_input. Drop\nperforms the same resource cleanup without delivering an outcome. Descriptors\nare CLOEXEC and normalized above stdio before child remapping. Partial/EINTR\nexec-error messages, poll/read/write/wait interruptions, SIGPIPE, and setup\nerrors must not produce false success or leave the owned child unreaped.\n\nException: if retry-safe recovery and a final terminal re-probe still leave a\nvalid direct-child anchor that the runtime cannot kill/reap, returning an\napparently recoverable result would abandon ownership. Emit exactly\n`nauqtype runtime: process cleanup failed\\n` to stderr best-effort and terminate\nimmediately with status 1, without unwinding. This is a runtime failure, not a\nnew source panic API. ECHILD clears the anchor and forbids further numeric\nPID/PGID signals instead. Never retry Linux close after an error. Both Gate A\nauditors approved this narrow unrecoverable-cleanup exception independently.\n\nThe runtime signals remaining members of the dedicated child process group\nbefore reaping its direct child, including natural completion. It reaps only\nthe direct child, not grandchildren. Descendants escaping the group/session,\nexternally reaped children, process-global hostile signal handlers, and\nuninterruptible kernel waits are outside the no-leak/timing guarantee. It never\nsignals a numeric PID/group after losing the waitable-child ownership anchor.",
+    "sha256": "69fb4f4572a7aedf6c043a0c149361e0cc079be28e4b41984240f62489f7a239"
+  },
+  {
+    "id": "s04",
+    "path": "M55_CONTRACTS.md",
+    "start_line": 110,
+    "end_line": 136,
+    "text": "## Checked Evidence\n\nClock reads/deadline calculation use effects(io), checked IO kind `read`.\nSleep means current-process suspension and uses `process`; lifecycle operations\nalso use `process`. Pure duration conversions have no IO effect. Terminate\nmutates parameter 0; consuming wait has no mutref parameter.\n\nOwned process-bearing params, locals, temporaries, and returns conservatively\ncarry IO/process cleanup authority under D055. Traverse canonical checked type\nIDs through product fields, enum payloads, option/result/list, not spelling or\nflat facts. Merely borrowing such a value does not add cleanup authority.\nSeed this authority into the existing transitive IO fixed point before contract\nvalidation. Existing review shapes expose inferred effects/kinds; facts keeps\nsource call edges only, with no invented implicit-drop call site. This is a\nsyntactic may-authority contract, not path-sensitive proof that a child is live.\n\nCall references, graph targets, direct effects, and transitive IO kinds use the\nchecked call target kind/origin, never builtin-first name lookup. A private\ncallee-token offset joins source call sites to checked calls in per-function\nranges; missing or ambiguous matches fail closed. Qualified user functions\nthat share a builtin name remain user calls, including their checked result\nerror type in propagation evidence. No locked output shape changes.\n\nNew outcome field references use `builtin-field:process_outcome::<field>` with\n`target_kind=field` and `evidence=builtin`, not an empty-module user-field ID.\nBuiltin targets are not source-editable rename targets. Older builtin-product\nIDs and locked format shapes remain unchanged in this milestone.",
+    "sha256": "8ff486977c0768c0adb1415f67be3286bf10315a2aa85ef94e4149296437c4c0"
+  },
+  {
+    "id": "s05",
+    "path": "M55_CONTRACTS.md",
+    "start_line": 138,
+    "end_line": 150,
+    "text": "## Acceptance And Scope\n\nFocused native fault/signal probes first, then Nauqtype-owned process/time,\nownership/evidence, copied-release, and corpus fixtures. Preserve legacy\nfixtures. Independent mixed-model trailing audits precede one frozen\n`scripts/check_milestone.sh` run. Refresh seed from two matching actual compiler\nemissions with the existing strict provenance contract. Do not modify the\nmilestone-close v1 completion-doc allowlist; freeze this file before that gate.\nRecord exact final outcomes in ROADMAP/TODO/AUDIT_REMEDIATION/coordination.\n\nNo M56 work, general OS library growth, async scheduling, task API, FFI, or new\nownership/lifetime analysis belongs here. Linux is the supported new runtime\ntarget; other platforms return explicit unsupported operational errors.",
+    "sha256": "208e7508f682244e055891404da73a9f56c6fb3c3f0aacb8114f1417b188ee08"
+  },
+  {
+    "id": "s06",
+    "path": "VERIFICATION.md",
+    "start_line": 14,
+    "end_line": 29,
+    "text": "This is the active local confidence tier. Corpus and copied-selfhost proof\nclaims run once through `nauqc prove` in the composed milestone gate. The\narchived Python unit suite is not part of milestone or release verification.\n\n`check_fast.sh` reuses `selfhost/build/nauqc` only when\n`scripts/stage1_cache.sh` proves that the complete selfhost/seed/current-runtime input\nfingerprint and both generated artifacts still match. A missing or stale cache\nrebuilds automatically; explicit `--reuse-stage1` gates fail closed instead of\nsilently accepting an executable that merely exists.\n\nM54.10 cache v2 additionally validates the strict seed inventory, derivation\nreceipt, physical compiler identity/target, and exact flags. Only the builder\npublishes a cache, after compiling captured inputs and verifying originals\nhave not persistently changed. The old standalone `record` operation is gone.\nFast feedback also runs focused provenance and attestation unit/stub checks;\nthose are not substitutes for a real seed or copied-release proof.",
+    "sha256": "c3c9810f0f76a063b1459f9a2b3a33cdbd8dae522186595e1b74c07eee012c60"
+  },
+  {
+    "id": "s07",
+    "path": "VERIFICATION.md",
+    "start_line": 46,
+    "end_line": 61,
+    "text": "Build stage1 from the frozen seed once, reuse that artifact for the fixed-point\ncomparison, run the selfhost/corpus/tooling proof once, build and smoke one\nLinux release, replay the stress leg against that same release, then run the\nfast fixture/tooling tier and ownership sanitizers:\n\n```bash\nscripts/check_milestone.sh\n```\n\nThe command writes a timing and failure-localization artifact to\n`build/verification/milestone-summary.json`. Reuse happens only inside this\nsingle invocation, after the stage1 driver and proof have freshly succeeded.\n\nThe same invocation enforces the checked-in Linux wall-time and peak-RSS\nceilings without rerunning a phase. It writes those measurements separately to\n`build/verification/performance-summary.json`; proof-summary v3 is separate.",
+    "sha256": "b8213018b94cb5fb549b86e5ede016e7579a3c98ac5674ebe30e5bdd0aa18050"
+  },
+  {
+    "id": "s08",
+    "path": "VERIFICATION.md",
+    "start_line": 65,
+    "end_line": 86,
+    "text": "The locked corpus performs one stage1 `emit-c`, one host-C compile, and one\nnative run for every case. Exactly `hello`, `multi_file_main`, and\n`m53_ownership_values` additionally exercise the public `build` and `run`\nroutes and compare their normalized C with the canonical `emit-c` output. The\nproof-summary v3 keeps the artifact roles: `build_c` records the\nC that was compiled and `run_c` records the C behind the executed program;\n`corpus.structural_c_compare` includes the three command-routing comparisons.\n\nArtifact hashes are explicit SHA-256 objects, never `nqsum` attestations.\nSkipped/unreached artifacts and unperformed comparisons are null, even when\nstale files exist. Earlier summary schemas remain available for historical\nevidence; active proof emits v3.\n\nThe gate captures the indexed candidate before running and verifies source,\ntoolchain, cache, proof, and copied-release identities afterward. Its strict\n`build/verification/milestone-attestation-v1.json` can be checked with\n`scripts/milestone_attestation.sh verify`. Run from a fully indexed frozen\ncandidate. For the five explicitly allowlisted nonpackaged completion docs,\n`scripts/milestone_attestation.sh close <full-commit-id>` and `verify-close`\nbind a disclosed documentation delta; no source, schema, script, README, or\nrelease artifact change is permitted after the gate. These records detect\nstaleness/transplants, not a malicious owner rewriting every trust root.",
+    "sha256": "68a40963939a10f8a73fb57dab95bc27c04d4a1d86a87eb0fbd23d17f54d8119"
+  },
+  {
+    "id": "s09",
+    "path": "VERIFICATION.md",
+    "start_line": 88,
+    "end_line": 99,
+    "text": "## Milestone Close Order\n\nUse the expensive gate only after the candidate is ready:\n\n1. Iterate with focused checks.\n2. Freeze the diff and run the required trailing audit or audits.\n3. Repair findings and rerun only affected focused checks.\n4. Run `scripts/check_milestone.sh` once on that exact candidate.\n\nAny source change after the full run invalidates that evidence. This ordering\nremoves the former audit/fix/full-gate repetition without weakening what the\nfinal green run proves.",
+    "sha256": "9cf2775909d897a2fbaa7dcfc5ce24963e4bfda975785657c40fb91f1a19297c"
+  },
+  {
+    "id": "s10",
+    "path": "SELFHOST_HANDOFF.md",
+    "start_line": 21,
+    "end_line": 44,
+    "text": "The first stage1 structured checked handoff is now implemented, hardened for backend consumers, exercised by the stage1 borrow checker, consumed by stage1 IR lowering, and used as the required upstream truth for stage1 C emission.\n\nIt is currently built from the trusted selfhost semantic outputs after parse, resolve, and typecheck, and it is exercised by the in-repo handoff probes plus full-tree selfhost runs.\n\nThe implemented handoff currently captures:\n\n- resolved module and function identities\n- stable binding identities for params, locals, and typed pattern payload bindings\n- top-level constant declarations for the narrow trusted const subset\n- typed params, locals, returns, and assignment targets\n- typed expression trees for the trusted subset\n- recursive checked type-shape truth with canonical backend-facing `type_id` values, including origin-module truth for named types and `ref` vs `mutref` shape truth\n- canonical `is_copy` / `needs_drop` properties for every backend-visible type identity\n- one deterministic checked read/copy/move/borrow use decision for every checked expression\n- explicit `ref` / `mutref` borrow nodes instead of borrow-sensitive name reconstruction\n- typed `if`, `while`, and `match` statement structure\n- recursive checked pattern trees for the trusted pattern subset\n- typed pattern bindings for the current enum / `option` / `result` subset\n- resolved function / constructor / field targets\n- resolved top-level constant targets\n- stable source spans for downstream diagnostics and comparison work\n- fail-closed export diagnostics for trusted-subset constructs that cannot be materialized into the checked handoff\n\nThis completes the boundary-definition and backend-readiness hardening step. Stage1 borrow checking, stage1 IR lowering, and stage1 C emission now run downstream of this representation rather than on raw flat facts. The first copied-selfhost stage1-to-stage2 self-build comparison proof is now complete on top of this boundary, so later work should not backslide into direct backend work on flat fact lists.",
+    "sha256": "45e60600d021d0e16c48e62783e2614bcaf2e22e837857fd789f00633e062082"
+  },
+  {
+    "id": "s11",
+    "path": "SELFHOST_HANDOFF.md",
+    "start_line": 144,
+    "end_line": 172,
+    "text": "## First Self-Build Proof Contract\n\nThe first self-build proof reused the current downstream boundary instead of inventing a separate proof path.\n\nLocked proof chain:\n\n1. run `selfhost/main.nq` under stage0 in a copied workspace\n2. capture the stage1-emitted `build/main.c`\n3. compile that emitted C into a stage2 executable\n4. run the stage2 executable on the same copied workspace\n5. capture the stage2-emitted `build/main.c`\n6. compare stage1 vs stage2 output by normalized structural C\n7. also require matching smoke behavior: success exit, expected stdout, no `stage1 limitation`, and no `stage1 c error`\n\nComparison notes:\n\n- the proof target is the in-repo copied selfhost workspace first\n- normalized structural C is the parity target, not raw byte-for-byte text identity\n- the proof harness should reuse the copied-workspace helper, emitted-C compile/run helper, and structural C normalization already present in the current tests\n- keep stage1 and stage2 on the same copied workspace and existing `build/` directory because `write_file` is overwrite-only and does not create directories\n- the shared structural C normalization now lives in the test support layer so proof and C-emission checks use the same normalization rules\n- Windows serial execution, longer copied-selfhost timeout, and temp-dir cleanup friction should be treated as explicit harness constraints when the proof milestone is implemented\n\nCurrent status:\n\n- done for the first copied-selfhost target\n- stage1-emitted and stage2-emitted `build/main.c` now match by normalized structural C on that target\n- stage1 and stage2 smoke behavior now match on that target\n- any broader proof hardening or wider proof targets remain future work",
+    "sha256": "a0f0cf35fb3c54fce8bbcd58a9cd10ff6309cec53d9c2adf856250374448fb9d"
+  },
+  {
+    "id": "s12",
+    "path": "selfhost/review.nq",
+    "start_line": 1971,
+    "end_line": 1985,
+    "text": "fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {\n    let mut inferred: list<str> = list();\n    let mut function_index = 0;\n    while function_index < list_len(ref functions) {\n        let entry = list_get(ref functions, function_index);\n        match entry {\n            Some(value) => {\n                if value.owns_process or function_has_direct_io(ref calls, value.module, value.name) {\n                    push_if_missing(mutref inferred, function_internal_name(value.module, value.name));\n                }\n            },\n            None => {\n            },\n        }\n        function_index = function_index + 1;",
+    "sha256": "33ccdd22366b79318ef2cf177d21bbe14e92ebfa04389342093e9de2b65f8003"
+  },
+  {
+    "id": "s13",
+    "path": "selfhost/review.nq",
+    "start_line": 2776,
+    "end_line": 2812,
+    "text": "fn review_process_types(shapes: ref list<checked_type_shape>, fields: ref list<checked_field_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>) -> list<i32> {\n    let mut owned: list<i32> = list();\n    let mut index = 0;\n    while index < list_len(ref shapes) {\n        match list_get(ref shapes, index) {\n            Some(shape) => { match shape.kind { checked_type_process => { list_push(mutref owned, shape.id); }, _ => {}, } },\n            None => {},\n        }\n        index = index + 1;\n    }\n    if list_len(ref owned) == 0 { return list(); }\n    // A monotone type-ID closure handles nested containers without depending on\n    // spelling, declaration order, or recursion through borrowed pointees.\n    let mut changed = true;\n    while changed {\n        changed = false;\n        index = 0;\n        while index < list_len(ref shapes) {\n            match list_get(ref shapes, index) {\n                Some(shape) => {\n                    if not list_contains_i32(ref owned, shape.id) {\n                        let mut contains = false;\n                        match shape.kind {\n                            checked_type_list => { contains = list_contains_i32(ref owned, shape.arg1_id); },\n                            checked_type_option => { contains = list_contains_i32(ref owned, shape.arg1_id); },\n                            checked_type_result => { contains = list_contains_i32(ref owned, shape.arg1_id) or list_contains_i32(ref owned, shape.arg2_id); },\n                            checked_type_named => {\n                                let mut field_index = 0;\n                                while field_index < list_len(ref fields) {\n                                    match list_get(ref fields, field_index) {\n                                        Some(field) => {\n                                            if field.module_name == shape.origin_module and field.type_name == shape.name and list_contains_i32(ref owned, field.field_type_id) { contains = true; }\n                                        },\n                                        None => {},\n                                    }\n                                    field_index = field_index + 1;\n                                }",
+    "sha256": "6b41ba64a7c91129d7a20447868bcc1159cfe41085ed6ada0c5216f10efaef24"
+  },
+  {
+    "id": "s14",
+    "path": "selfhost/review.nq",
+    "start_line": 2867,
+    "end_line": 2887,
+    "text": "    index = 0;\n    while index < list_len(ref expressions) {\n        match list_get(ref expressions, index) {\n            Some(value) => {\n                // Names and fields are views of existing bindings, not newly\n                // owned temporaries. Borrow nodes never add cleanup authority.\n                let mut temporary = true;\n                match value.kind {\n                    checked_expr_name => { temporary = false; },\n                    checked_expr_field => { temporary = false; },\n                    checked_expr_ref => { temporary = false; },\n                    checked_expr_mutref => { temporary = false; },\n                    _ => {},\n                }\n                if temporary and not value.is_borrow and list_contains_i32(ref owned_types, value.type_id) and not list_contains_i32(ref owners, value.function_id) { list_push(mutref owners, value.function_id); }\n            },\n            None => {},\n        }\n        index = index + 1;\n    }\n    return owners;",
+    "sha256": "d6802e0a3db5043268f3d6044a1b0c6f59068b7da788b614d54d703166afae7e"
+  },
+  {
+    "id": "s15",
+    "path": "selfhost/review.nq",
+    "start_line": 2892,
+    "end_line": 2907,
+    "text": "fn checked_call_kind(expr: checked_expr) -> str {\n    match expr.target_kind {\n        checked_target_function => { if expr.target_origin_module != \"\" and expr.target_origin_module != \"__builtin__\" { return \"function\"; } },\n        checked_target_builtin_function => { if expr.target_origin_module == \"__builtin__\" { return \"builtin\"; } },\n        checked_target_constructor => { if expr.target_origin_module != \"\" and expr.target_origin_module != \"__builtin__\" { return \"variant\"; } },\n        checked_target_builtin_constructor => { if expr.target_origin_module == \"__builtin__\" { return \"builtin_variant\"; } },\n        _ => {},\n    }\n    return \"\";\n}\n\npub fn checked_evidence_calls(calls: ref list<call_fact>, expressions: ref list<checked_expr>, diags: mutref list<diag>) -> list<call_fact>\naudit {\n    intent(\"Join source call sites to checked targets once, without guessing origin from spelling\");\n    mutates(diags);\n    effects();",
+    "sha256": "2deb5b72e5dbe283cc5e33276f3cd6c1c0319390363a5f4ee911ccf9124fe070"
+  },
+  {
+    "id": "s16",
+    "path": "selfhost/review.nq",
+    "start_line": 2937,
+    "end_line": 2975,
+    "text": "        let mut selected_ranges: list<review_call_range> = list();\n        for call in calls {\n            if call.module != current_module or call.function_name != current_function {\n                current_module = call.module;\n                current_function = call.function_name;\n                selected_ranges = list();\n                for range in ranges {\n                    if range.module == current_module and range.function_name == current_function { list_push(mutref selected_ranges, range); }\n                }\n            }\n            let mut origin = \"\";\n            let mut kind = \"\";\n            let mut expr_start = -1;\n            let mut expr_end = -1;\n            let mut error_name = \"\";\n            let mut matched = 0;\n            for range in selected_ranges {\n                let mut index = range.start;\n                while index < range.end {\n                    match list_get(ref sites, index) {\n                        Some(site) => {\n                            if site.at == call.at and site.name == call.name {\n                                matched = matched + 1;\n                                origin = site.checked_origin;\n                                kind = site.checked_kind;\n                                expr_start = site.checked_start;\n                                expr_end = site.checked_end;\n                                error_name = site.checked_error_name;\n                            }\n                        },\n                        None => {},\n                    }\n                    index = index + 1;\n                }\n            }\n            if matched != 1 or kind == \"\" {\n                list_push(mutref diags, make_diagnostic(\"NQ-INTERNAL-012\", diag_internal, diag_error, call.module, call.at, call.at + str_len(call.name), \"stage1 internal error: call evidence lacks a unique checked target\", \"\", \"\"));\n            }\n            list_push(mutref out, call_fact { module: call.module, function_name: call.function_name, name: call.name, at: call.at, arg_count: call.arg_count, checked_origin: origin, checked_kind: kind, checked_start: expr_start, checked_end: expr_end, checked_error_name: error_name });",
+    "sha256": "8ce8a0368326060e42f4d7ec6004ef784d8f7977595ec7a7787e4c8082836a90"
+  },
+  {
+    "id": "s17",
+    "path": "selfhost/borrow.nq",
+    "start_line": 1155,
+    "end_line": 1186,
+    "text": "fn builtin_function_param_is_borrow(name: str, index: i32) -> bool {\n    if name == \"process_start\" and (index == 1 or index == 3) {\n        return true;\n    }\n    if name == \"process_terminate\" and index == 0 {\n        return true;\n    }\n    if name == \"list_push\" and index == 0 {\n        return true;\n    }\n    if name == \"list_len\" and index == 0 {\n        return true;\n    }\n    if name == \"list_get\" and index == 0 {\n        return true;\n    }\n    if name == \"run_process\" and index == 1 {\n        return true;\n    }\n    if (name == \"bytes_len\" or name == \"bytes_get\") and index == 0 {\n        return true;\n    }\n    if (name == \"stdout_write_bytes\" or name == \"stderr_write_bytes\" or name == \"str_from_bytes\") and index == 0 {\n        return true;\n    }\n    if (name == \"write_file_bytes\" or name == \"atomic_write_file\") and index == 1 {\n        return true;\n    }\n    if (name == \"io_err_kind\" or name == \"io_err_operation\" or name == \"io_err_path\" or name == \"io_err_other_path\" or name == \"io_err_os_code\") and index == 0 {\n        return true;\n    }\n    return false;",
+    "sha256": "c386ee43d17c9483aeb54e3a26be6940d5746b8c68ee63fd7cbe49d4f6ebdee4"
+  },
+  {
+    "id": "s18",
+    "path": "stdlib/runtime.c",
+    "start_line": 2161,
+    "end_line": 2193,
+    "text": "static int nq_process_kill(pid_t pid) {\n    int result;\n    do { result = kill(pid, SIGKILL); } while (result < 0 && errno == EINTR);\n    return result < 0 && errno != ESRCH ? errno : 0;\n}\n\n/* Legacy launches do not own a process group. Retain just the exact child\n * anchor, returning it live only so the caller can unlink captures and fail. */\nstatic int nq_process_legacy_wait(pid_t* pid, int* status, bool abort_child) {\n    int first_error = 0;\n    if (!abort_child) {\n        first_error = nq_process_reap_pid(pid, status);\n        if (*pid == 0) return first_error;\n    }\n    for (int attempt = 0; attempt < 2 && *pid > 0; attempt++) {\n        bool exited = false;\n        int error = nq_process_probe_pid(pid, &exited, false);\n        if (error == 0 && !exited) error = nq_process_kill(*pid);\n        if (error == 0) error = nq_process_reap_pid(pid, status);\n        if (first_error == 0) first_error = error;\n    }\n    if (*pid > 0) {\n        bool exited = false;\n        int error = nq_process_probe_pid(pid, &exited, false);\n        if (error != 0 && *pid > 0) error = nq_process_probe_pid(pid, &exited, false);\n        if (error == 0 && exited) {\n            error = nq_process_reap_pid(pid, status);\n            if (error != 0 && *pid > 0) (void)nq_process_reap_pid(pid, status);\n        }\n        if (*pid > 0) (void)nq_process_probe_pid(pid, &exited, false);\n    }\n    return first_error != 0 ? first_error : (*pid > 0 ? EIO : 0);\n}",
+    "sha256": "503941a8ee3db0c1c7d5b9c00011f70717682c186f42feab57b224b226e7779d"
+  },
+  {
+    "id": "s19",
+    "path": "stdlib/runtime.c",
+    "start_line": 2939,
+    "end_line": 2973,
+    "text": "static bool nq_process_pump(NQProcessState* state, NQ_Option__instant deadline, bool cancel,\n                            const char* operation, NQIoErr* error) {\n    bool draining = false;\n    size_t output_remaining = 0, error_remaining = 0;\n    while (true) {\n        bool exited = false;\n        int system_error = nq_process_probe(state, &exited);\n        if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }\n        int timeout = 10;\n        bool expired = false;\n        if (!exited && !state->signalled && !cancel && deadline.tag == NQ_Option__instant_Tag_Some) {\n            int64_t now;\n            if (!nq_clock_ns(CLOCK_MONOTONIC, operation, &now, error)) return false;\n            expired = deadline.data.Some._0._ns <= now;\n            if (!expired) {\n                int64_t remaining = deadline.data.Some._0._ns - now;\n                if (remaining < INT64_C(10000000)) timeout = (int)((remaining + 999999) / 1000000);\n            }\n        }\n        if (!state->signalled && (exited || expired || cancel)) {\n            /* A fresh observation wins over a deadline/cancellation action. */\n            system_error = nq_process_signal_owned(state, &exited);\n            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }\n            state->outcome.timed_out = !exited && expired;\n            state->outcome.cancelled = !exited && cancel;\n            nq_process_close_fd(&state->input_fd);\n        }\n        if (exited && !draining) {\n            system_error = nq_process_signal_terminal(state);\n            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }\n            /* The direct child's writes are now complete. Snapshot queued\n             * bytes instead of waiting for EOF from an escaped descendant. */\n            system_error = nq_process_queued(state->output_fd, &output_remaining);\n            if (system_error == 0) system_error = nq_process_queued(state->error_fd, &error_remaining);\n            if (system_error != 0) { *error = nq_errno_io_err(operation, NULL, NULL, system_error); return false; }",
+    "sha256": "91733556c995ac4f23bdb257eec0e7756f8bc73a4ca115107f1ebd4044513527"
+  },
+  {
+    "id": "s20",
+    "path": "stdlib/runtime.c",
+    "start_line": 3211,
+    "end_line": 3242,
+    "text": "NQ_Result__process_outcome__io_err nq_process_wait(NQ_process child, NQ_Option__instant deadline) {\n    NQIoErr error;\n#ifdef __linux__\n    if (child._state == NULL) error = nq_invalid_input_io_err(\"process_wait\", NULL, NULL, \"inert process handle\");\n    else if (deadline.tag != NQ_Option__instant_Tag_None && deadline.tag != NQ_Option__instant_Tag_Some)\n        error = nq_invalid_input_io_err(\"process_wait\", NULL, NULL, \"invalid deadline option\");\n    else if (child._state->ready || nq_process_pump(child._state, deadline, false, \"process_wait\", &error)) {\n        NQ_process_outcome outcome = child._state->outcome;\n        child._state->outcome = (NQ_process_outcome){0};\n        nq_process_drop(&child);\n        return (NQ_Result__process_outcome__io_err){ .tag = NQ_Result__process_outcome__io_err_Tag_Ok, .data.Ok._0 = outcome };\n    }\n#else\n    (void)deadline;\n    error = nq_unsupported_io_err(\"process_wait\", NULL);\n#endif\n    nq_process_drop(&child);\n    return (NQ_Result__process_outcome__io_err){ .tag = NQ_Result__process_outcome__io_err_Tag_Err, .data.Err._0 = error };\n}\n\nNQ_Result__unit__io_err nq_process_terminate(NQ_process* child) {\n    NQIoErr error;\n#ifdef __linux__\n    if (child == NULL || child->_state == NULL)\n        return nq_unit_err(nq_invalid_input_io_err(\"process_terminate\", NULL, NULL, \"inert process handle\"));\n    if (child->_state->ready || nq_process_pump(child->_state,\n        (NQ_Option__instant){ .tag = NQ_Option__instant_Tag_None }, true, \"process_terminate\", &error)) return nq_unit_ok();\n#else\n    error = nq_unsupported_io_err(\"process_terminate\", NULL);\n#endif\n    nq_process_drop(child);\n    return nq_unit_err(error);",
+    "sha256": "c083b057b84ed033d83b5cb779e91eb41822dabf6989aadc542648b2bded2a66"
+  },
+  {
+    "id": "s21",
+    "path": "scripts/stage1_cache.sh",
+    "start_line": 9,
+    "end_line": 41,
+    "text": "cache_is_current() (\n    local scratch key value current\n    local -A cache=() receipt=() cc=()\n    scratch=$(mktemp -d) || exit 1\n    trap 'rm -rf -- \"$scratch\"' EXIT\n    seed_verify \"$repo_root\" || exit 1\n    prov_read_record \"$repo_root/build/seed/stage1-cache-v2.txt\" stage1-cache/v2 \"$scratch/cache\" \\\n        inputs_sha256:hash derivation_sha256:hash stage1_c_sha256:hash stage1_exe_sha256:hash || exit 1\n    prov_read_record \"$repo_root/build/seed/stage1-derivation-v1.txt\" stage1-derivation/v1 \"$scratch/receipt\" \\\n        inputs_sha256:hash seed_manifest_sha256:hash seed_exe_sha256:hash stage1_c_sha256:hash stage1_exe_sha256:hash \\\n        cc_path:path cc_sha256:hash cc_version_sha256:hash cc_target:atom flags_sha256:hash || exit 1\n    while IFS='=' read -r key value; do cache[$key]=$value; done < \"$scratch/cache\"\n    while IFS='=' read -r key value; do receipt[$key]=$value; done < \"$scratch/receipt\"\n    # Execute toolchain identity probes before reading current inputs/artifacts.\n    prov_cc_identity \"${CC:-cc}\" \"$scratch/cc\" || exit 1\n    while IFS='=' read -r key value; do cc[$key]=$value; done < \"$scratch/cc\"\n    for key in cc_path cc_sha256 cc_version_sha256 cc_target; do\n        [[ \"${cc[$key]}\" == \"${receipt[$key]}\" ]] || exit 1\n    done\n    current=$(prov_sha256 \"$scratch/receipt\") || exit 1\n    [[ \"$current\" == \"${cache[derivation_sha256]}\" ]] || exit 1\n    current=$(prov_inputs_sha256 \"$repo_root\") || exit 1\n    [[ \"$current\" == \"${cache[inputs_sha256]}\" && \"$current\" == \"${receipt[inputs_sha256]}\" ]] || exit 1\n    current=$(prov_sha256 \"$repo_root/bootstrap/seed/manifest.json\") || exit 1\n    [[ \"$current\" == \"${receipt[seed_manifest_sha256]}\" ]] || exit 1\n    current=$(prov_sha256 \"$repo_root/build/seed/nauqc-seed\") || exit 1\n    [[ \"$current\" == \"${receipt[seed_exe_sha256]}\" && -x \"$repo_root/build/seed/nauqc-seed\" ]] || exit 1\n    current=$(prov_sha256 \"$repo_root/build/seed/stage1.c\") || exit 1\n    [[ \"$current\" == \"${cache[stage1_c_sha256]}\" && \"$current\" == \"${receipt[stage1_c_sha256]}\" ]] || exit 1\n    current=$(prov_sha256 \"$repo_root/selfhost/build/nauqc\") || exit 1\n    [[ \"$current\" == \"${cache[stage1_exe_sha256]}\" && \"$current\" == \"${receipt[stage1_exe_sha256]}\" && -x \"$repo_root/selfhost/build/nauqc\" ]] || exit 1\n    current=$(prov_bootstrap_flags_sha256) || exit 1\n    [[ \"$current\" == \"${receipt[flags_sha256]}\" ]] || exit 1",
+    "sha256": "dce7efc8968175c183342098ac2290f1ac4aaa82570df663cc83fbfbe7487a85"
+  },
+  {
+    "id": "s22",
+    "path": "scripts/stage1_cache.sh",
+    "start_line": 44,
+    "end_line": 53,
+    "text": "usage() { printf 'Usage: scripts/stage1_cache.sh <fingerprint|check|require>\\n'; }\n(( $# == 1 )) || { usage >&2; exit 2; }\ncase \"$1\" in\n    fingerprint) prov_inputs_sha256 \"$repo_root\";;\n    check) cache_is_current >/dev/null 2>&1;;\n    require)\n        if ! cache_is_current; then\n            printf 'stage1 artifacts are missing, stale, or modified; run scripts/build_stage1_from_seed.sh\\n' >&2\n            exit 1\n        fi;;",
+    "sha256": "35483fd2b8e00ec3f813e4499d4b03b99aa23e822758a21cb6374cffe1178a33"
+  },
+  {
+    "id": "s23",
+    "path": "scripts/milestone_attestation.sh",
+    "start_line": 194,
+    "end_line": 211,
+    "text": "attest_render() (\n    local root=$1 before=$2 after=$3 output=$4 scratch key value\n    scratch=$(mktemp -d) || exit 1\n    trap 'rm -rf -- \"$scratch\"' EXIT\n    cmp -s \"$before\" \"$after\" || { prov_error 'candidate or toolchain changed during gate'; exit 1; }\n    {\n        printf 'version=milestone-attestation/v1\\ncommand=check-milestone\\nstatus=ok\\n'\n        while IFS='=' read -r key value; do\n            case \"$key\" in\n                index_tree|candidate_sha256) printf '%s_before=%s\\n%s_after=%s\\n' \"$key\" \"$value\" \"$key\" \"$value\";;\n                *) printf '%s=%s\\n' \"$key\" \"$value\";;\n            esac\n        done < \"$before\"\n        printf 'worktree_matches_index=true\\n'\n        attest_artifacts \"$root\" || exit 1\n    } > \"$scratch/values\"\n    attest_fields > \"$scratch/fields\"\n    attest_json_write \"$scratch/fields\" \"$scratch/values\" > \"$output\"",
+    "sha256": "c11943abb1b47a173209f71ad05a82b73ca362b64ca88332f19ead70ddfdcb78"
+  },
+  {
+    "id": "s24",
+    "path": "scripts/milestone_attestation.sh",
+    "start_line": 237,
+    "end_line": 244,
+    "text": "attest_verify() (\n    local root=$1 file=${2:-$1/build/verification/milestone-attestation-v1.json} scratch\n    scratch=$(mktemp -d) || exit 1\n    trap 'rm -rf -- \"$scratch\"' EXIT\n    attest_candidate_state \"$root\" \"$scratch/state\" || exit 1\n    attest_render \"$root\" \"$scratch/state\" \"$scratch/state\" \"$scratch/expected\" || exit 1\n    prov_regular \"$file\" && cmp -s \"$file\" \"$scratch/expected\" || { prov_error 'milestone attestation does not match current candidate/artifacts'; exit 1; }\n    printf 'milestone attestation ok\\n'",
+    "sha256": "d143028c3db715a032e850eaddb901468f7e81a2f7ad04532b2754ecce5c1c50"
+  }
+]

@@ -23,6 +23,16 @@ or pushing.
    Python is frozen historical bootstrap/reference code unless a narrowly
    proven bootstrap blocker requires a repair.
 
+## TypeSafe Advisory Skill
+
+Read `.agents/skills/typesafe-ai/SKILL.md` when assessing AI-assisted workflows
+in this project, alongside the required Nauqtype coordination skill. Follow
+`TYPESAFE_JEV.md` for the current integration boundary: Jev may help prioritize
+supplemental reviewer context, but never produces compiler-checked evidence,
+replaces required audits/tests, or authorizes changes. Installation is not
+permission to upload repository data or incur API charges; live use is opt-in.
+Ordinary compiler development does not require a TypeSafe API call.
+
 ## Lead-Agent Ownership
 
 The lead agent owns the critical path, architectural decisions, shared-model

@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "head": "40cf99ba29c43bf497f4fd0bda9aaad519046baa",
+  "sources": [
+    {
+      "id": "s01",
+      "path": "M55_CONTRACTS.md",
+      "start_line": 1,
+      "end_line": 18
+    },
+    {
+      "id": "s02",
+      "path": "M55_CONTRACTS.md",
+      "start_line": 28,
+      "end_line": 54
+    },
+    {
+      "id": "s03",
+      "path": "M55_CONTRACTS.md",
+      "start_line": 71,
+      "end_line": 107
+    },
+    {
+      "id": "s04",
+      "path": "M55_CONTRACTS.md",
+      "start_line": 110,
+      "end_line": 136
+    },
+    {
+      "id": "s05",
+      "path": "M55_CONTRACTS.md",
+      "start_line": 138,
+      "end_line": 150
+    },
+    {
+      "id": "s06",
+      "path": "VERIFICATION.md",
+      "start_line": 14,
+      "end_line": 29
+    },
+    {
+      "id": "s07",
+      "path": "VERIFICATION.md",
+      "start_line": 46,
+      "end_line": 61
+    },
+    {
+      "id": "s08",
+      "path": "VERIFICATION.md",
+      "start_line": 65,
+      "end_line": 86
+    },
+    {
+      "id": "s09",
+      "path": "VERIFICATION.md",
+      "start_line": 88,
+      "end_line": 99
+    },
+    {
+      "id": "s10",
+      "path": "SELFHOST_HANDOFF.md",
+      "start_line": 21,
+      "end_line": 44
+    },
+    {
+      "id": "s11",
+      "path": "SELFHOST_HANDOFF.md",
+      "start_line": 144,
+      "end_line": 172
+    },
+    {
+      "id": "s12",
+      "path": "selfhost/review.nq",
+      "start_line": 1971,
+      "end_line": 1985
+    },
+    {
+      "id": "s13",
+      "path": "selfhost/review.nq",
+      "start_line": 2776,
+      "end_line": 2812
+    },
+    {
+      "id": "s14",
+      "path": "selfhost/review.nq",
+      "start_line": 2867,
+      "end_line": 2887
+    },
+    {
+      "id": "s15",
+      "path": "selfhost/review.nq",
+      "start_line": 2892,
+      "end_line": 2907
+    },
+    {
+      "id": "s16",
+      "path": "selfhost/review.nq",
+      "start_line": 2937,
+      "end_line": 2975
+    },
+    {
+      "id": "s17",
+      "path": "selfhost/borrow.nq",
+      "start_line": 1155,
+      "end_line": 1186
+    },
+    {
+      "id": "s18",
+      "path": "stdlib/runtime.c",
+      "start_line": 2161,
+      "end_line": 2193
+    },
+    {
+      "id": "s19",
+      "path": "stdlib/runtime.c",
+      "start_line": 2939,
+      "end_line": 2973
+    },
+    {
+      "id": "s20",
+      "path": "stdlib/runtime.c",
+      "start_line": 3211,
+      "end_line": 3242
+    },
+    {
+      "id": "s21",
+      "path": "scripts/stage1_cache.sh",
+      "start_line": 9,
+      "end_line": 41
+    },
+    {
+      "id": "s22",
+      "path": "scripts/stage1_cache.sh",
+      "start_line": 44,
+      "end_line": 53
+    },
+    {
+      "id": "s23",
+      "path": "scripts/milestone_attestation.sh",
+      "start_line": 194,
+      "end_line": 211
+    },
+    {
+      "id": "s24",
+      "path": "scripts/milestone_attestation.sh",
+      "start_line": 237,
+      "end_line": 244
+    }
+  ],
+  "cases": [
+    {
+      "id": "q01",
+      "question": "A reviewer proposes implementing the new process launch as a thin wrapper over the legacy launch because both run child programs. Which executable-resolution and cleanup-ownership boundaries make that equivalence false?",
+      "required_ids": [
+        "s01",
+        "s02",
+        "s03",
+        "s18"
+      ],
+      "relevant_ids": [
+        "s01",
+        "s02",
+        "s03",
+        "s18"
+      ],
+      "answerable": true,
+      "rationale": "Legacy behavior retains PATH lookup and exact-child cleanup without process-group ownership; the new contract requires an absolute execve target and owns cleanup of a dedicated child process group while reaping only the direct child."
+    },
+    {
+      "id": "q02",
+      "question": "After termination succeeds on an active child, may the caller terminate again and then wait, which operation finally consumes ownership, and how do the checker and runtime encode that distinction?",
+      "required_ids": [
+        "s03",
+        "s17",
+        "s20"
+      ],
+      "relevant_ids": [
+        "s02",
+        "s03",
+        "s17",
+        "s20"
+      ],
+      "answerable": true,
+      "rationale": "Terminate borrows mutably, caches a ready outcome, and is idempotent there; wait is not a borrowed builtin parameter, consumes the value, and drops its local handle on either success or error."
+    },
+    {
+      "id": "q03",
+      "question": "If natural child exit races a cancellation request or deadline expiry, when are cancelled and timed_out set, and which observation takes precedence?",
+      "required_ids": [
+        "s03",
+        "s19"
+      ],
+      "relevant_ids": [
+        "s03",
+        "s19"
+      ],
+      "answerable": true,
+      "rationale": "A freshly observed exit wins; cancelled or timed_out is set only when the child was not already observed exited and the corresponding action was taken, so the flags classify actions rather than prove causation."
+    },
+    {
+      "id": "q04",
+      "question": "A function makes no explicit process call but owns a process nested through containers or product fields. When must it acquire cleanup-related IO authority, which expression forms must not create that authority, and where is the authority seeded into inference?",
+      "required_ids": [
+        "s04",
+        "s12",
+        "s13",
+        "s14"
+      ],
+      "relevant_ids": [
+        "s04",
+        "s10",
+        "s12",
+        "s13",
+        "s14"
+      ],
+      "answerable": true,
+      "rationale": "Canonical type-ID closure propagates process ownership through list, option, result, and named fields; borrowed/name/field views do not create owned temporaries, and owns_process seeds the transitive IO fixed point even without a direct IO call."
+    },
+    {
+      "id": "q05",
+      "question": "A qualified user function is named process_wait and returns a result. Why must evidence not classify it as the builtin by spelling, and what happens if the source call cannot be joined to exactly one checked target?",
+      "required_ids": [
+        "s04",
+        "s15",
+        "s16"
+      ],
+      "relevant_ids": [
+        "s04",
+        "s15",
+        "s16"
+      ],
+      "answerable": true,
+      "rationale": "Classification uses checked target kind and origin, preserving a qualified user function and its checked error type; a missing, ambiguous, or invalid join emits the internal fail-closed diagnostic rather than guessing from the name."
+    },
+    {
+      "id": "q06",
+      "question": "An executable selfhost/build/nauqc still exists and has its execute bit after an input or compiler-toolchain change. Is reuse authorized, and which linked identities must agree before the cache is current?",
+      "required_ids": [
+        "s06",
+        "s21"
+      ],
+      "relevant_ids": [
+        "s06",
+        "s21",
+        "s22"
+      ],
+      "answerable": true,
+      "rationale": "Existence and executability are insufficient: seed validity, cache and derivation records, compiler path/hash/version/target, flags, complete inputs, seed manifest/executable, generated C, and stage1 executable hashes must agree or reuse fails closed."
+    },
+    {
+      "id": "q07",
+      "question": "Stale proof files and an old emitted build/main.c remain after a comparison was skipped. What may active proof evidence report for the skipped artifacts, and what full chain is needed to support copied-selfhost parity?",
+      "required_ids": [
+        "s08",
+        "s11"
+      ],
+      "relevant_ids": [
+        "s08",
+        "s10",
+        "s11"
+      ],
+      "answerable": true,
+      "rationale": "Skipped or unreached artifacts and comparisons remain null despite stale files; parity requires stage0-to-stage1 emission, stage2 compilation and emission on the same copy, normalized structural-C comparison, and matching smoke behavior."
+    },
+    {
+      "id": "q08",
+      "question": "Why is milestone-attestation verify a current-state equivalence check rather than a stored-file existence check, and which stated threat remains outside that evidence boundary?",
+      "required_ids": [
+        "s08",
+        "s23",
+        "s24"
+      ],
+      "relevant_ids": [
+        "s08",
+        "s09",
+        "s23",
+        "s24"
+      ],
+      "answerable": true,
+      "rationale": "Verification recomputes candidate/toolchain state, rerenders the expected artifact identities, and requires byte equality with the regular attestation file; it detects staleness or transplant but not a malicious owner rewriting every trust root."
+    },
+    {
+      "id": "q09",
+      "question": "What exact trailing-audit verdicts and finding list were produced for the final M55 candidate at this HEAD?",
+      "required_ids": [],
+      "relevant_ids": [
+        "s01",
+        "s05",
+        "s09"
+      ],
+      "answerable": false,
+      "rationale": "The packet states that the contract is not completion evidence and specifies required audit ordering, but it contains no final trailing-audit outputs or finding list."
+    },
+    {
+      "id": "q10",
+      "question": "What exact wall time, peak RSS, and phase-by-phase pass transcript did scripts/check_milestone.sh record for this HEAD?",
+      "required_ids": [],
+      "relevant_ids": [
+        "s07",
+        "s08",
+        "s23"
+      ],
+      "answerable": false,
+      "rationale": "The packet names summary artifacts and defines attestation rendering, but supplies no generated timing values, memory values, or gate transcript for this revision."
+    }
+  ]
+}
