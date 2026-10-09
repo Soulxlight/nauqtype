@@ -2,7 +2,7 @@
 
 Last live review: 2026-09-06.
 
-Compiler/tooling planning update: 2026-10-04. Gate efficiency is the first
+Compiler/tooling planning update: 2026-10-09. Gate efficiency is the first
 priority before M56. WSL Ubuntu base tools and the reviewed native compiler
 P0 baseline are verified: seven-phase cold gate 2520.62s, repeated checks
 304.23s/308.99s. `PERFORMANCE_BASELINE.md` records identities and scope;
@@ -10,8 +10,18 @@ overall speedup acceptance remains open. E1 and the bounded P2 normalizer
 mapping slice are evidenced below, not full P1-P4 closure. The user assigned
 the guide-only authoring lane to the compiler lead with a Sol High Professor
 worker; its draft is staged separately and not yet integrated or evidenced.
-This update does not refresh the dated downstream evidence or
-recover the missing workspaces/documents listed below.
+The nonpackaged [documentation refactor](docs/REFACTOR_PLAN.md) adds a
+[task/authority index](docs/README.md) and [compiler map](docs/COMPILER_MAP.md)
+while preserving executable inputs and the existing performance sequence.
+Its source slices remain pending. The exact reviewed P0/E1/P2 baseline is
+locally committed as `0564a32`, with verified P2 closing evidence. A separate
+R1 packaged README passed mixed trailing audits and its own fresh Linux
+milestone gate on the exact candidate recorded below. That documentation
+acceptance does not extend the earlier P2 attestation or complete the source
+refactor, performance campaign, stable release, or publication.
+This update does not refresh dated downstream evidence or recover the missing
+workspaces/documents listed below. The required read-only status snapshot on
+2026-10-09 found local Libraries changes; they remain outside this write set.
 
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
@@ -73,6 +83,18 @@ repository owner's sources and compiler/dependency pins explicit.
 
 ## Contract Ledger
 
+R1 documentation checkpoint (2026-10-09): the packaged README and documentation
+routing passed independent gpt-5.6-sol xhigh and gpt-6-astra xhigh audits
+(explicit unavailable-GPT-5.5 fallback), followed by one fresh seven-phase
+Linux gate on indexed candidate
+`16b8e84271c5c3e4db20384c17977a102710395b`: 2507.89s, 437144 KiB peak RSS,
+44 corpus cases, verified attestation, and byte-identical copied README with
+valid packaged links. Only allowlisted completion documents change afterward.
+The baseline remains separately checkpointed in `0564a32`; no executable
+source, runtime, schema, or seed changed in R0/R1. The next proposed R2 slice
+is a bounded visible-item lookup index based on separate sampled attribution,
+not a claimed speedup. No downstream workspace or consumer pin is changed.
+
 PRE-M56 P2 mapping (2026-10-04): compiler-owned private append-only sorted
 runs preserve the old structural normalizer result and early-exit boundary.
 The 36-pair oracle, actual owned invariants, sanitizers, complete-compiler
@@ -85,8 +107,9 @@ matching attestation passed on candidate
 44 corpus cases. Total is 2.90% less than E1 and 1.40% less than P0; proof
 and compiler construction still dominate, and the campaign goals remain open.
 Comparison memory rises to 43948-44768 KiB versus 25940-26496 KiB reference.
-See `PERFORMANCE_MAPPING.md` and `ROADMAP.md`; this is uncommitted compiler
-evidence, not publication, an external consumer pin, or full generics.
+See `PERFORMANCE_MAPPING.md` and `ROADMAP.md`; this candidate evidence was
+checkpointed locally in `0564a32` on 2026-10-09. It is not publication,
+an external consumer pin, or full generics.
 Next compiler action is bounded compiler-scan attribution; no other repo
 is changed or unblocked by an inferred adoption claim.
 
@@ -100,8 +123,8 @@ P1-P4 goals remain separate. Both independent final audits and the one cold
 seven-phase gate/attestation passed on indexed candidate
 `7a5a1a894537989c64ca59ce7803fd8d8c398781` (2559.57s, 436000 KiB peak RSS,
 44 corpus cases). The cold gate is not faster than P0. The implementation is
-content-locked/evidenced, but uncommitted: no consumer pin migration,
-publication, or adoption is claimed. Next compiler-owned action is bounded
+content-locked/evidenced and now locally checkpointed in `0564a32`: no
+consumer pin migration, publication, or adoption is claimed. Next compiler-owned action is bounded
 P2 scan/mapping attribution and optimization, not full generics.
 
 | Request | Provider | Consumer | State | Current evidence and next action |

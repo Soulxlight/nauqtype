@@ -1,467 +1,225 @@
 # Nauqtype
 
-Nauqtype is a small compiled language designed for AI-authored software under human supervision.
+Nauqtype is a small compiled language for AI-authored software under human
+supervision. Its aim is explicit behavior, visible authority, deterministic
+compiler evidence, and changes that people can review.
 
-Current bootstrap status:
+## Current Status
 
-- `stage0`: archived Python bootstrap/reference compiler; it is not on the active build, test, proof, release, or CI path
-- Linux organizational-alpha development is supported through the repo-local `bin/nauqc` stage1 launcher and the copied release layout; see [LINUX.md](LINUX.md)
-- manifest-governed nested workspace modules and locked local dependencies, with legacy flat-root compatibility
-- explicit types at function boundaries
-- top-level `const` for small compile-time configuration values
-- nominal `type` and `enum`
-- `option<T>` and `result<T, E>`
-- exact `i32` / `i64` integers with no implicit numeric conversion
-- builtin `io_err`, move-only `bytes`, and `list<T>` with narrow list literals
-- explicit `match`
-- match expressions for value-producing exhaustive branches
-- narrow `let-else` guard binding for `Some(name)` / `Ok(name)` success paths
-- statement-boundary `?` propagation for unchanged `result<T, E>` errors, with optional `?[context_label]` evidence and checked by `propagates(E)`
-- explicit annotated-local `try { expression }` boundaries that capture expression-position propagation without silently returning from the function
-- fixed `effects(io)` contracts with checked operation-specific evidence for arguments, environment, cwd, streams, files, metadata, traversal, creation, temporary paths, removal, rename, atomic replacement, and process execution
-- named function arguments, direct module-qualified function/data names, and explicit module aliases
-- list-only `for` and nearest-loop `break` / `continue` for `while` and `for`
-- copy-only record update with explicit `Type { from base, field: value }` provenance
-- direct field assignment for owned `let mut` product locals
-- integer literal and nested constructor patterns with an explicit fallback arm
-- bootstrap file input and string helpers
-- minimal move / borrow checking backed by canonical checked value-use facts
-- structural copy for all-copy user `type` / `enum`
-- deterministic clone/move/drop lowering for owned heap-backed values
-- compile-to-C backend with a tiny runtime
-- `selfhost/`: Nauqtype-written stage1 pipeline that can load workspace and legacy flat-root modules, lex, parse, resolve, type-check, borrow-check, lower to IR, emit deterministic C for the in-repo selfhost tree with no `stage1 limitation` diagnostics, and act as the active executable driver for `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `test`, `prove`, `prove-seed`, `prove-selfhost`, and `prove-corpus`
+Nauqtype is an organizational Linux alpha, not a stable, feature-complete
+language or a distro package. M55 is complete in recorded Linux evidence.
+PRE-M56 iteration and gate efficiency work is the current priority; M56 generic
+reuse and later stable-release milestones are not complete.
 
-v0.3 organizational alpha checkpoint: `nauqtype-0.3.0-alpha.1` proved a locked two-workspace internal tool from the C seed through stage1 proof, facts/policy/change evidence, and a copied Linux release outside the source checkout. This is not a general semantic-completeness or stable-release claim. The subsequent Astra audit found correctness, evidence, numeric, and provenance gaps; [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) records their closure order.
+The active compiler, tests, and proof runner are written in Nauqtype. A
+checked-in C seed and narrow C runtime remain part of the intentional
+bootstrap/runtime boundary. Python is archived reference code, not the active workflow. The
+current alpha does not claim general semantic completeness or broad adoption.
 
-The active compiler, tests, proof, and release path are Nauqtype-owned and the
-Python bootstrap is archived. [BOOTSTRAP_RETIREMENT.md](BOOTSTRAP_RETIREMENT.md)
-records that completed cutover, and [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md)
-records the discipline future features must satisfy.
+## Linux Quick Start
 
-The post-v0.3 program now targets a stable Linux release for terminal tools and
-practical native applications. [STABLE_RELEASE.md](STABLE_RELEASE.md) defines
-that scope and the M52-M61 sequence; [AGENTS.md](AGENTS.md) is the required
-multi-agent operating contract for work in this repository.
+The supported development workflow is Linux with Bash, a C11 compiler (GCC is
+the documented toolchain), and the host tools used by the repository scripts,
+including standard shell utilities. Start from a Nauqtype source checkout.
+Building the stage1 compiler from its checked-in C seed requires these tools;
+the copied alpha layout also uses the host C compiler for program builds.
 
-The active driver also exposes stable `help` / `version` behavior, producer-owned
-diagnostic identities and spans, and checked milestone resource budgets. These
-are release contracts rather than best-effort presentation details.
-
-M54 is complete: the M53 value model now supports checked Linux stdin/output,
-environment and cwd access, text/binary files, metadata, traversal, creation,
-secure temporary entries, removal/rename, atomic replacement, and structured
-`io_err` provenance. The locked `nauqtype.std` fixture proves an ordinary
-vendored dependency without a hidden prelude, and `check` accepts library
-modules without requiring a fake `main`. M54.5 also made warm artifact reuse
-and milestone close ordering truthful and cheap. M54.6 then cut the measured
-full-tree semantic check from 349.76 seconds to repeat runs of 194.66 and
-194.51 seconds by batching private scope, borrow-child, and visible-item
-lookups. M54.7-M54.10 now put audit-driven correctness, contract/evidence,
-numeric safety, and provenance repairs ahead of new features. M55 adds the
-structured process/time foundation described below; its current acceptance
-status is tracked in [ROADMAP.md](ROADMAP.md). [ARCHITECTURE.md](ARCHITECTURE.md) maps the actual
-active implementation rather than the archived Python design.
-
-M54.8 shares checked contract validity across compilation and evidence commands.
-Opt-in `review --format v4` reports direct, builtin, and resolved-call parameter
-may-writes, including recursive calls; complete coverage is not a purity claim.
-`change-report --format v3` distinguishes absent, checked, and failed policy.
-Diff/change source failures use a separate versioned error envelope carrying
-the requested format. Legacy successful formats stay available and unchanged.
-[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) records the corrective gates, and
-[EVIDENCE_SCHEMA_PROFILE.md](EVIDENCE_SCHEMA_PROFILE.md) defines the bounded
-Nauqtype-owned schema checks used by `test` and `prove`.
-
-M54.9 defines width-preserving integer wraparound and deterministic invalid
-division failures, including compile-time constant diagnostics. Runtime and
-generated container allocation paths check capacity arithmetic before use;
-fallible IO allocation failures remain structured errors. The corrective
-scope, fault-injection tests, and completion evidence are recorded in
-[M54_9_CONTRACTS.md](M54_9_CONTRACTS.md).
-
-M54.10 adds captured dependency sources and explicit `workspace-lock/v2`
-provenance, opt-in `facts --format v4` and `change-report --format v4`, seed
-snapshot verification, builder-only cache derivation, and milestone
-attestations. Legacy facts/change formats retain compatibility meanings, not
-secure dependency-change claims. Proof-summary v3 records invocation-produced
-SHA-256 artifacts or explicit null. See [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md)
-and [M54_10_CONTRACTS.md](M54_10_CONTRACTS.md) for migration and acceptance
-evidence. This corrective work adds no source syntax or runtime APIs.
-
-M55 provides owned `process` handles, consuming `process_wait`, explicit
-termination, environment overrides, stdin/capture choices and output limits.
-`duration` and `instant` are nominal nanosecond types; wall time, monotonic
-deadlines, elapsed durations and sleep have explicit checked interfaces.
-Cleanup authority appears in review's existing `io/process` evidence, including
-owned nested aggregates; borrowing alone does not imply cleanup authority.
-The new launcher requires an absolute executable path and never implicitly
-invokes a shell. Legacy `run_process` remains compatible. See
-[M55_CONTRACTS.md](M55_CONTRACTS.md) for exact failures and Linux limits, and
-[process_deadline.nq](examples/process_deadline.nq) for a runnable example.
-
-M55's recorded Linux acceptance is complete. A bounded
-[performance checkpoint](PERFORMANCE_CHECKPOINT.md) now comes before M56
-explicit generic reuse. Its first priority is faster iteration and milestone
-close: goals are <=10-second focused feedback, <=60-second warm fixtures,
-and at least a 50% reduction in a new same-host cold gate, with 10 minutes
-as the working target. The recorded M55 gate took about 42 minutes; these
-goals are not new measurements. The campaign measures capture/hash work,
-compiler scans, structural comparisons, and clone/drop churn, then removes
-demonstrated waste. [VERIFICATION.md](VERIFICATION.md) separates the focused
-iteration path from full milestone and independent release acceptance. The
-planned [model authoring kit](AUTHORING_KIT.md) adds a separate
-evaluation track for compiler-checked guidance and optional constrained
-generation. It is not shipped tooling, a replacement for audits, or model
-behavior inside the compiler. Adoption depends on measured behavioral and
-cost benefits, with a possible maintained integration at M59.
-
-The first narrow enablement slice is
-[`str_join(parts: ref list<str>) -> str`](PERFORMANCE_ENABLEMENT.md): pure,
-ordered byte assembly with unchanged inputs and independently owned output.
-It supports compiler text assembly without new syntax or a richer borrow
-model. General M56 generics and the complete gate-speed goals remain separate.
-The measured assembly fixture is 18.3x faster; E1 alone did not conclusively
-improve real C comparisons or the cold gate. The next bounded
-[normalizer mapping slice](PERFORMANCE_MAPPING.md) replaces a measured
-private linear scan with incremental sorted runs. Focused production
-comparisons improve from 85-89 seconds to about 3.4 seconds, with peak
-comparison memory rising from about 26 MiB to 44 MiB. Exact seed reproduction
-is evidenced in the report; [ROADMAP.md](ROADMAP.md) will record audited
-closure only after the required complete gate succeeds. The comparison gain
-is not a claim that the overall gate-speed goal is met.
-
-## Quick Start
-
-Choose any checkout location; no particular username, home directory, or
-adjacent project layout is required. Run the commands below from the repository
-root (`git rev-parse --show-toplevel`). Build and release verification currently
-target Linux; editing this checkout on another host does not establish runtime
-support there. See [LINUX.md](LINUX.md) for the supported workflow and
-[coordination](NAUQTYPE_COORDINATION.md#portable-locations) for workspace rules.
-For shared local Codex/Kimi verification from Windows, see
-[WSL_DEVELOPMENT.md](WSL_DEVELOPMENT.md); WSL installation alone is not a
-completed Linux toolchain or integration check.
-
-Build the stage1 driver from the checked-in C seed:
+From the checkout root, bootstrap stage1 and then use the repository launcher:
 
 ```bash
 scripts/build_stage1_from_seed.sh
-```
-
-Run the active Nauqtype-owned fixture suite:
-
-```bash
-bin/nauqc test
-```
-
-Use the active Nauqtype-owned driver for `check`:
-
-```bash
 bin/nauqc check examples/hello.nq
-```
-
-Use the active Nauqtype-owned driver for `emit-c`:
-
-```bash
-bin/nauqc emit-c examples/hello.nq -o build/hello.c
-```
-
-Export deterministic semantic facts for agent-pair supervision:
-
-```bash
-bin/nauqc facts examples/hello.nq
-bin/nauqc facts examples/hello.nq --format v2
-```
-
-Use the active Nauqtype-owned driver for `review`:
-
-```bash
-bin/nauqc review examples/review_contracts.nq
-bin/nauqc review examples/review_contracts.nq --format v2
-bin/nauqc review examples/review_contracts.nq --format v3
-```
-
-For new review consumers, v3 distinguishes an absent audit from a declared
-one and labels mutation inference as a partial direct-write lower bound.
-It resolves those writes by checked binding identity, including shadowing.
-An empty mutation list is not a purity guarantee: builtin and user-call writes
-are not yet summarized. v1/v2 remain compatibility outputs; source-contract
-acceptance is unchanged. See [AI_CONTRACTS.md](AI_CONTRACTS.md).
-
-Compare two checked review surfaces with stable semantic identities:
-
-```bash
-bin/nauqc review-diff before/main.nq after/main.nq
-bin/nauqc review-diff before/main.nq after/main.nq --format v2
-```
-
-Produce a supervised semantic change report, optionally linked to policy metadata:
-
-```bash
-bin/nauqc change-report before/main.nq after/main.nq --format v1
-bin/nauqc change-report before/main.nq after/main.nq --policy nauqtype.policy.json --format v1
-```
-
-Canonical supervised workflow for an agent/human review loop:
-
-```bash
-bin/nauqc check tests/fixtures/supervised_workflow/after/main.nq
-bin/nauqc facts tests/fixtures/supervised_workflow/after/main.nq --format v2
-bin/nauqc review tests/fixtures/supervised_workflow/after/main.nq --format v2
-bin/nauqc review-diff tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --format v2
-bin/nauqc change-report tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --policy tests/fixtures/supervised_workflow/policy.json --format v1
-bin/nauqc policy-check tests/fixtures/supervised_workflow/after/main.nq tests/fixtures/supervised_workflow/policy.json
-bin/nauqc refactor-rename tests/fixtures/supervised_workflow/after/main.nq binding:fn:main::apply:1:bonus@25 extra
-```
-
-Plan a semantic rename without mutating files:
-
-```bash
-bin/nauqc refactor-rename examples/hello.nq fn:hello::main renamed_main
-```
-
-Validate sidecar ownership/review metadata against checked facts:
-
-```bash
-bin/nauqc policy-check selfhost/main.nq nauqtype.policy.json
-```
-
-Format trusted-subset Nauqtype source without mutating files:
-
-```bash
-bin/nauqc fmt examples/hello.nq
-bin/nauqc fmt --check examples/hello.nq
-```
-
-Formatter-lite is output-only / `--check` for now. Its canonical teaching-corpus rules are documented in [FORMATTER.md](FORMATTER.md); write mode remains deferred until comment preservation is safe.
-
-Use the active Nauqtype-owned driver for `build`:
-
-```bash
-bin/nauqc build examples/hello.nq
-```
-
-Use the active Nauqtype-owned driver for `run`:
-
-```bash
 bin/nauqc run examples/hello.nq
 ```
 
-The compiler/runtime contract used by the separate NQType Libraries workspace
-is recorded in [NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md](NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md).
-Its upstream integration fixture can be exercised directly:
+These are **source-checkout commands**. `bin/nauqc` uses the stage1 driver and
+runtime from the checkout. The launcher normalizes source and output paths
+from the caller's working directory, so relative paths continue to mean paths
+relative to the directory from which you invoked it.
+
+`CC` selects the C compiler used by the seed bootstrap script. It does not
+select the compiler for generated programs: `build` and `run` invoke `cc`.
+See [LINUX.md](LINUX.md) for the checkout workflow, optional symlink installer,
+and copied-layout commands.
+
+The optional installer creates a symlink to the checkout's `bin/nauqc`
+launcher (by default under `$HOME/.local/bin`). It is not a standalone
+installation: the checkout, runtime, and stage1 driver must remain available.
+
+## Copied Linux Layout
+
+To assemble and verify a copied alpha layout, run these **source-checkout
+commands** from the repository root:
 
 ```bash
-bin/nauqc check tests/fixtures/m54_library_dependency/vendor/std/src/status.nq
-bin/nauqc facts tests/fixtures/m54_library_dependency/src/app/main.nq --format v3
-bin/nauqc run tests/fixtures/m54_library_dependency/src/app/main.nq
+scripts/make_linux_release.sh
+scripts/verify_linux_release.sh build/linux-release/nauqtype
 ```
 
-Run the Linux alpha gate:
+The copied public launcher is
+`build/linux-release/nauqtype/bin/nauqc`; its internal stage1 driver and
+runtime live under `lib/nauqtype/`. Its examples and schemas are under
+`share/nauqtype/`. The packaged documentation directory contains exactly
+`README.md`, `LINUX.md`, `LINUX_RELEASE_MANIFEST.md`, and `M55_CONTRACTS.md`.
+See the [copied-layout manifest](LINUX_RELEASE_MANIFEST.md) for its file
+inventory and [M55 contracts](M55_CONTRACTS.md) for process/time boundaries.
+The copied guide should be usable without checkout-only documentation.
+
+From the copied layout's root, the launcher can check its packaged example:
 
 ```bash
-scripts/check_linux_alpha.sh
+bin/nauqc version
+bin/nauqc check share/nauqtype/examples/hello.nq
 ```
 
-The gate now verifies the Alpha RC1 copied layout, release identity, and an outside-repo smoke run for the copied `bin/nauqc` launcher.
+For your own project, invoke that launcher's full path from the project
+directory; source and output paths remain relative to your calling directory.
 
-Run the organizational-alpha gate for the locked multi-workspace tool:
+The assembler creates a development layout, not a distro package. System-wide
+install ownership, package-manager metadata, shell completion, and a bundled C
+compiler are outside the current packaging boundary. The verifier checks the
+copied files and locked public help/version behavior; it does not by itself
+validate every README link or prove a stable release.
+
+## Language At A Glance
+
+Source files use `.nq`. A file is a module. Projects may use a manifest-backed
+workspace or legacy flat-root layout. The supported surface includes:
+
+- `bool`, `i32`, `i64`, `str`, and `unit`; unsuffixed integer literals default
+  to `i32` unless an expected `i64` type selects `i64`. Numeric widths do not
+  convert implicitly.
+- Nominal `type` and `enum`, top-level `const`, functions with explicit
+  parameter and return types, named function arguments, and explicit module
+  imports, aliases, and qualified function/data names.
+- `option<T>`, `result<T, E>`, `list<T>`, and move-only `bytes`, with the
+  documented narrow constructors, list literals, and ownership rules.
+- `if`, `while`, list-only `for`, nearest-loop `break`/`continue`, statement
+  and value `match`, narrow `let-else`, and supported integer/constructor
+  patterns. Copy-only record update names its base explicitly; direct field
+  assignment is limited to owned mutable product locals.
+- Explicit `ref`, `mutref`, and owned `let mut` mutation; checked moves,
+  borrows, and deterministic clone/move/drop behavior for owned values.
+- Statement-boundary `?` for unchanged `result` errors, optional context
+  labels, and the narrow annotated-local `try { expression }` boundary.
+- Fixed `audit` clauses (`intent`, `mutates`, `effects`, optional
+  `propagates`) and fixed `print`/`io` effect atoms.
+- A compile-to-C backend, narrow runtime, explicit Linux I/O, and M55 process
+  and time facilities with bounded, documented contracts.
+
+This is a summary, not the language specification. Generics, floats, methods,
+implicit conversions, user-defined effect taxonomies, and numerous other
+features remain deferred. Exact syntax and restrictions are specified in the
+source checkout's `SPEC.md` and `GRAMMAR.md`; those files are not packaged.
+
+## Workspaces And Dependencies
+
+Manifest mode uses `nauqtype.workspace.json` to declare a workspace identity,
+source root, entrypoints, and explicit module paths. A local dependency is
+routed through declared manifest metadata and a lock that captures its source
+identity. The compiler does not fetch dependencies: there is no registry,
+version solver, package-script execution, ambient dependency search, or hidden
+prelude. Projects without a manifest retain legacy flat-root module loading.
+
+The lock/provenance formats and migration details are defined by checkout-only
+`WORKSPACE_CONTRACT.md` and `WORKSPACE_LOCK.md`. A manifest or lock is not a
+claim that an external dependency is published or stable.
+
+## Compiler Evidence
+
+The `nauqc` commands expose distinct, versioned evidence surfaces. Formats are
+per-command; there is no single global "latest" format. Unless specified,
+`facts` and `review` default to v1. `review-diff` defaults to v1 and accepts
+v1/v2. `change-report` requires an explicit `--format` and accepts v1-v4.
 
 ```bash
-scripts/check_organizational_alpha.sh
-```
-
-This records a deterministic workspace facts snapshot and change-report evidence under `build/organizational-alpha/`, then checks, policy-validates, and runs the same tool from the copied release outside the repository root. See [M46_ORGANIZATIONAL_ALPHA.md](M46_ORGANIZATIONAL_ALPHA.md).
-
-For normal milestone work, use the layered verification commands in
-[VERIFICATION.md](VERIFICATION.md). `scripts/check_fast.sh` provides quick
-focused feedback with content-verified stage1 reuse. Freeze and audit the
-candidate before running `scripts/check_milestone.sh` once; it runs the
-selfhost proof, release smoke, and stress leg once each. The standalone commands
-below remain the deliberately redundant final release gates.
-
-Run the dense milestone stress leg when checking cross-feature interactions:
-
-```bash
-scripts/run_stress_leg.sh
-```
-
-Run the active Nauqtype-owned transition gate:
-
-```bash
-bin/nauqc prove
-```
-
-Run the individual proof gates when you need to isolate a failure:
-
-```bash
-bin/nauqc prove-selfhost
-bin/nauqc prove-corpus
-```
-
-The proof commands keep their quiet success stdout and also write deterministic proof evidence to `build/proof/summary.json`, locked by `schemas/proof-summary-v3.schema.json`. The summary retains phase IDs such as `selfhost.stage1_emit_c`, `corpus.run`, and `tooling.schema_golden`, records corpus IDs, and binds invocation-produced artifact paths to SHA-256 hashes. Unproduced artifacts and unperformed comparisons are explicitly null; v1/v2 schemas remain historical contracts. Every runnable canonical example is emitted once, compiled, and run; `hello`, `multi_file_main`, and `m53_ownership_values` additionally lock public `build`/`run` routing parity. Every example source file, including helper-only teaching modules, participates in the `prove` formatter checks.
-
-Current Linux cutover note: use `bin/nauqc` for day-to-day commands. It runs the active stage1 driver from the repo root because `build` / `run` still resolve the pinned Zig toolchain and `stdlib/runtime.c` from the workspace-local bootstrap layout.
-The repo-local stage1 driver is built as `selfhost/build/nauqc`; copied Linux alpha layouts use `lib/nauqtype/nauqc-stage1` behind the public `bin/nauqc` launcher.
-
-Archived bootstrap/reference workflows are retained for historical comparison only and are not active gates:
-
-```bash
+# Source-checkout examples; run after building stage1.
 bin/nauqc check examples/hello.nq --diagnostics json
-python3 -m compiler.main run examples/hello.nq
-python3 scripts/run_ai_audit.py
+bin/nauqc facts examples/hello.nq
+bin/nauqc facts examples/hello.nq --format v4
+bin/nauqc review examples/review_contracts.nq --format v4
+bin/nauqc review-diff tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --format v2
+bin/nauqc change-report tests/fixtures/supervised_workflow/before/main.nq tests/fixtures/supervised_workflow/after/main.nq --policy tests/fixtures/supervised_workflow/policy.json --format v3
 ```
 
-Example programs worth checking first:
+`facts` exports checked definitions, references, and calls; newer versions add
+semantic and captured workspace/dependency provenance. v1 is the legacy
+default, v2 adds source-level evidence, v3 adds workspace evidence, and v4
+uses captured provenance. `review` reports
+declared contracts and compiler-inferred mutation, effect, and propagation
+facts. Review v3 is a compatibility format whose direct-write mutation
+coverage is explicitly partial and a lower bound. Review v4 adds checked,
+call-aware parameter may-write evidence; that is not a reachability, purity, or
+general safety guarantee. An unmodeled builtin can make coverage partial.
 
-- `examples/hello.nq`: minimal print path
-- `examples/while_counter.nq`: bootstrap-track `while` loop semantics
-- `examples/fibonacci.nq`: functions plus mutable locals and `while`
-- `examples/for_list.nq`: list-only `for` iteration with immutable bindings and nearest-loop control
-- `examples/top_level_const.nq`: stage1-owned top-level constants
-- `examples/named_arguments.nq`: Batch B named function arguments
-- `examples/nested_break_continue.nq`: nested `break` / `continue` inside `if` within `while`
-- `examples/nested_patterns.nq`: nested constructor and integer literal matching with an explicit fallback
-- `examples/qualified_call_chain.nq`: multi-module qualified call chain
-- `examples/qualified_calls.nq`: direct module-qualified function calls
-- `examples/qualified_data_names.nq`: direct module-qualified struct and enum constructor names
-- `examples/import_aliases.nq`: an explicit source-local alias used for functions, struct literals, and enum variants
-- `examples/record_update.nq`: copy-only record update with explicit base provenance
-- `examples/record_update_nontrivial.nq`: record update over a computed owned base value
-- `examples/string_join.nq`: ordered text assembly with explicit borrowed parts
-- `examples/propagation_question.nq`: statement-boundary `?` with optional context-label and `propagates(...)` evidence
-- `examples/try_expression.nq`: expression-position `?` captured by a visible local `try` boundary
-- `examples/break_continue.nq`: minimal loop control
-- `examples/review_contracts.nq`: AI Contracts and `review` workflow
+`review-diff` compares checked semantic identities. `change-report` combines
+change evidence and can include a policy sidecar; v3 makes advisory policy
+state explicit, and v4 carries captured workspace/dependency provenance.
+Policy status is advisory:
+it does not approve, enforce, repair, or mutate code. `policy-check` validates
+the named sidecar against checked facts. `refactor-rename` emits an edit plan
+only; it does not apply edits. Formatting is output-only (`fmt --check` can
+check canonical formatting); it does not rewrite source files.
 
-Current selfhost semantic coverage:
+Evidence commands still require source-contract validation. A successful
+report is evidence only for its documented input, version, and analysis
+scope; it does not replace tests, proofs, independent review, or release
+gates. Older formats remain for compatibility and may carry weaker or
+historical meanings. See checkout-only `AI_CONTRACTS.md`, versioned schemas,
+and `VERIFICATION.md` for exact fields and boundaries.
 
-- top-level item collection
-- flat-root import collection and top-level visibility checks
-- flat-root selfhost module loading by `<module>.nq`, plus missing-module and import-cycle diagnostics
-- flat type-reference collection for returns, params, local annotations, fields, and enum payloads
-- visible vs hidden-imported vs unknown type diagnostics
-- function-scope collection
-- parameter and local binding collection
-- first body-level unknown-name / duplicate-local diagnostics
-- first expression-aware name resolution for call targets, plain values, and struct-literal type heads
-- callable-vs-value diagnostics for local call targets and bare function names
-- first pattern-aware constructor resolution inside `match`
-- body-level imported visibility diagnostics for hidden names, constructors, and struct-literal type heads
-- first selfhost type-checker slice for entry `main` shape plus function/constructor/pattern arity
-- recursive span-based selfhost value typing for the current subset: literals, names, calls, constructors, `base.field`, struct literals, list literals, parentheses, unary `not` / unary minus, arithmetic, comparisons, and `and` / `or`
-- nested field-chain typing over the current supported base-expression subset
-- contextual builtin typing for `Some`, `None`, `Ok`, `Err`, `list()`, and `[]` in annotated locals, assignments, returns, call-argument contexts, constructor-payload contexts, and match-arm bodies
-- explicit selfhost limitation diagnostics for expression shapes outside that supported recursive subset
-- simple unannotated-local inference for inferable supported expressions
-- assignment compatibility checks when the target type and rhs type are both inferable
-- field-access-aware local/return inference including imported type facts in the loaded graph
-- match scrutinee typing plus pattern-bound payload typing for the current enum / `option` / `result` subset
-- full-graph body resolution and current value-flow checking across the loaded selfhost module set
-- top-level `const` parsing, resolution, type checking, semantic facts/refactor/policy visibility, IR lowering, and deterministic C emission for the deliberately narrow `i32` / `i64` / `bool` / `str` initializer subset
-- named function arguments for direct function calls, including modeled builtins and imported functions; arguments are exported to the backend in callee parameter order
-- direct `module::function(...)` calls for public functions from directly imported modules
-- direct module-qualified data names for public struct literals and enum variants from directly imported modules, preserving origin visibility for facts, handoff, IR, and C emission
-- explicit `use module_path as alias;` aliases for direct function/data qualification; facts retain the source alias while policy and backend targets retain the checked canonical module identity
-- copy-only record update for product types using explicit `Type { from base, field: value }` syntax; inherited non-copy fields keep the existing field-move safety boundary
-- minimal `break;` and `continue;` statements for the nearest enclosing `while`
-- differential stage0-vs-stage1 subset coverage for trusted semantic comparison, including the retained explicit non-name-callee limitation boundary
-- the in-repo selfhost tree runs with no `stage1 limitation` diagnostics
+## Verification Ladder
 
-Current semantic near-parity milestone:
+Use the smallest check that answers the current question. These are choices,
+not commands to run in sequence, and require the **source checkout**:
 
-- `selfhost/` can load, parse, resolve, and type-check the full in-repo selfhost tree
-- the trusted subset is differential-tested against stage0 by accept/reject family
-- stage1 now also enforces the current stage0-parity borrow rules on the structured checked handoff
-- stage1 now also lowers the trusted subset from the checked handoff into a deterministic internal IR
-- stage1 now also emits deterministic C from that IR and writes `build/main.c` through the minimal builtin `write_file(path: str, text: str) -> result<unit, io_err>`
-- the first copied-selfhost stage1-to-stage2 comparison proof is now complete
-- the stage1 executable now owns the active `check`, `emit-c`, `facts`, `review`, `review-diff`, `change-report`, `refactor-rename`, `policy-check`, `fmt`, `build`, `run`, `prove`, `prove-selfhost`, and `prove-corpus` workflow while preserving the no-arg copied-selfhost proof path
+| Question | Command |
+| --- | --- |
+| Does one program check? | `bin/nauqc check examples/hello.nq` or the affected fixture |
+| Does the complete owned fixture/tooling tier pass? | `scripts/check_fast.sh` |
+| Does a reviewed milestone candidate close? | `scripts/check_milestone.sh` |
+| Is the independent Linux alpha release gate green? | `scripts/check_linux_alpha.sh` |
 
-Architecture checkpoint:
+`check` validates a program through the checked compiler path; it does not
+compile or run generated host C. `test` runs the complete owned fixtures with
+no suite selector; `check_fast.sh` also checks cache/provenance machinery.
+`prove` runs the owned proof path. The composed milestone gate includes these
+obligations without repeating the same build/proof for each phase. The
+independent Linux alpha gate rebuilds from the seed,
+exercises the launcher, assembles the copied layout, and smoke-tests it outside
+the checkout. Select the relevant gate from context; these commands have
+different scope and are not interchangeable.
+Do not pre-run all expensive gates before the milestone gate. Release and
+stable-surface checkpoints still require the independent gates specified in
+the verification contract.
 
-- the current flat selfhost parser/resolve/typecheck pipeline is accepted as the semantic front-end path
-- that flat pipeline is not the direct substrate for stage1 borrow checking, IR lowering, or C emission
-- stage1 now materializes a deterministic structured checked handoff from the trusted semantic outputs
-- the checked handoff now carries stable binding identities, explicit `ref` / `mutref` borrow nodes, recursive type-shape truth with origin-aware named types, canonical `is_copy` / `needs_drop` properties, checked value-use plans, checked pattern trees, and fail-closed export diagnostics for the trusted subset
-- genuine parity work now continues from that checked handoff boundary rather than the flat fact lists
-- see `SELFHOST_HANDOFF.md` for the required downstream contract
+For a compiler/runtime/release milestone, follow checkout-only
+`VERIFICATION.md` and `AGENTS.md`: focused checks first, independent review of
+the frozen candidate when required, then the prescribed full native Linux
+gate. A Windows source edit or static check does not establish Linux
+execution, release readiness, stability, or performance.
 
-Current remaining gaps:
+## Current Work And Limits
 
-- richer selfhost value inference beyond the current supported recursive subset
-- non-name callee syntax and member-call syntax still intentionally stop at the explicit stage1 limitation boundary
-- broader proof hardening beyond the current copied-selfhost and locked-corpus checkpoints
-- Python proof/corpus tests remain only as frozen bootstrap/reference regression coverage; active proof/corpus orchestration is stage1-owned through `prove`
-- the live-in-the-language surface now covers top-level `const`, list literals, list-only `for`, match expressions, narrow `let-else`, formatter-lite, named arguments, direct module-qualified calls and data names, nearest-loop `break` / `continue`, field assignment on owned mutable products, and copy-only record update; future semantic work stays attached to concrete examples and stage1-owned evidence
+The PRE-M56 campaign prioritizes faster focused iteration and a cheaper
+complete milestone gate without weakening seed, proof, or release evidence.
+Its targets are at most 10 seconds for focused feedback, at most 60 seconds
+for a warm complete fixture tier, and at least a 50% reduction in cold-gate
+time against the same-host baseline (10 minutes is the working target). These
+are goals, not achieved results. E1/P2 candidate measurements and their
+limitations are recorded in checkout-only performance documents; inner-loop
+speedups do not prove whole-gate improvement. The broader P1-P4 campaign
+remains open.
 
-Near-term focus:
+The next language sequence begins with M56 generic reuse after PRE-M56
+acceptance; later milestones address data facilities, FFI, bounded tasks, and
+stable Linux packaging. These are roadmap items, not current capabilities.
+The optional authoring-kit work is staged and unvalidated, not integrated
+tooling or canonical teaching content. No paid model service is required for
+ordinary compiler development.
 
-- preserve the completed M54/M55 Linux authority and process contracts while
-  making the pre-M56 gate-efficiency campaign the first priority; WSL Ubuntu
-  tools and the reviewed native P0 baseline now pass; the cold gate took
-  2520.62s and repeat checks took 304.23s/308.99s. Optimization acceptance
-  remains open; see [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md). Retain
-  M54.5's truthful reuse and M54.6's measured semantic improvements
-- evaluate the optional authoring-kit lane without importing its prototype
-  defects, promising unmeasured savings, or making model services mandatory
-- preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
-- keep Linux alpha release-layout checks green before more language sugar
-- run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
-- keep formatter-lite and the canonical teaching corpus locked as syntax grows
-- keep semantic evidence/refactor surfaces aligned with the syntax already shipped
-- add only surgical pure-Nauqtype helper-library improvements that are exercised by active tooling or examples
-- keep statement-boundary `?` propagation evidence visible through facts v2, review v2, and change-report v1
-- revisit structured error sets only after a real workspace demonstrates that one named error type per public boundary is too coarse
-
-Current AI-first compiler output:
-
-- `review` JSON for function-level contract summaries
-- `facts` JSON for stable definitions, references, and call graph edges, locked by `schemas/facts-v1.schema.json`
-- `facts --format v2` JSON with explicit `declared` / `checked` / `builtin` / `unresolved` evidence fields, locked by `schemas/facts-v2.schema.json`
-- checked facts for copy-only record-update overrides and inherited field provenance
-- `review --format v2` JSON with stable function/call identities, reference entries, call graph edges, and checked-vs-declared evidence fields
-- `review --format v4` adds truthful audit provenance and checked call-aware mutation coverage; v3 retains its explicit direct-only partial lower bound
-- `change-report --format v3` adds truthful advisory policy state to workspace change evidence; policy does not become enforcement or approval
-- `review-diff` JSON for deterministic semantic changes over stable function identities and call graph edges
-- `review-diff --format v2` JSON with checked-input and semantic-comparison evidence metadata
-- `change-report --format v1` JSON that combines semantic diff evidence, optional policy status, and diagnostics for supervised change review
-- `refactor-rename` JSON edit plans for supported semantic renames, including variant constructors, top-level constants, checked field definitions/uses, and named-argument labels for parameter renames; it never mutates files
-- `policy-check` JSON validation for `nauqtype.policy.json` ownership/review sidecars
-- `check --diagnostics json` for deterministic compiler diagnostics
-
-Compatibility stance for the alpha checkpoint:
-
-- `facts` v1 remains the default and stays stable
-- v2/evidence formats are additive surfaces, not silent replacements for v1
-- schema versions and `$id` values are part of the machine-readable contract
-- the stage1-owned `prove` gate now includes the canonical supervised workflow so agent-pair review evidence cannot quietly drift
-
-## Key Docs
-
-- [RESEARCH_MEMO.md](RESEARCH_MEMO.md)
-- [SPEC.md](SPEC.md)
-- [GRAMMAR.md](GRAMMAR.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [ROADMAP.md](ROADMAP.md)
-- [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md)
-- [AGENT_ROUTING.md](AGENT_ROUTING.md)
-- [DECISIONS.md](DECISIONS.md)
-- [RISKS.md](RISKS.md)
-- [DEFERRED.md](DEFERRED.md)
-- [AI_AUDIT.md](AI_AUDIT.md)
-- [AI_CONTRACTS.md](AI_CONTRACTS.md)
-- [PROPAGATION.md](PROPAGATION.md)
-- [TEACHING_CORPUS.md](TEACHING_CORPUS.md)
-- [AUTHORING_KIT.md](AUTHORING_KIT.md)
-- [FORMATTER.md](FORMATTER.md)
-- [LINUX.md](LINUX.md)
-- [STRESS_LEG.md](STRESS_LEG.md)
-- [BOOTSTRAP_STAGE1.md](BOOTSTRAP_STAGE1.md)
-- [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md)
-
-## Repository Notes
-
-- Nauqtype is now the active implementation language for the project.
-- The Python compiler remains in-repo only as a frozen bootstrap/reference path.
-- The language surface is still intentionally small, but bootstrap-critical stage1 features are now active: imports, top-level `const`, named arguments, direct module-qualified function and data names, copy-only record update, minimal `break` / `continue`, file input, bootstrap string helpers, builtin `list<T>` with list literals, minimal file output through `write_file(path: str, text: str) -> result<unit, io_err>`, and the narrow toolchain runtime surface for args, directory creation, and subprocess execution.
+For contributors, start with checkout-only `AGENTS.md` and
+`NAUQTYPE_COORDINATION.md`. The source-only `docs/README.md` is an index for
+the repository checkout; it is not installed with this guide. Historical
+milestone records are maintained in their owning checkout documents rather
+than duplicated here.

@@ -1,5 +1,34 @@
 # Nauqtype TODO
 
+## Current Refactor Checkpoint
+
+Use [docs/README.md](docs/README.md) for authoritative-document routing and
+[docs/REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md) for staged maintenance scope.
+The checklists below retain milestone history, not a second current roadmap.
+
+- [x] R0: inventory active/archive/generated boundaries, add the documentation index and compiler map, and repair stale architecture/status guidance without changing executable inputs
+- [x] R1: P0/E1/P2 baseline checkpointed separately in `0564a32` with verified P2 closing evidence; packaged README passed independent mixed audits and one fresh seven-phase Linux milestone gate
+- [ ] R2: dominant visible-item lookup attributed with a separate instrumented profile; implement and measure a bounded scan improvement under the existing PRE-M56 acceptance contract
+- [ ] R3: consolidate one identical builtin-fact family with exact diagnostic/evidence/runtime compatibility
+- [ ] R4: separate driver/checked-project assembly only after identity, borrow, cleanup, and aggregate-cost checks
+- [ ] R5: review neutral backend vocabulary without nominal-origin drift or flat-fact fallback
+- [ ] R6: share justified proof-host publication/cleanup machinery without changing proof policy or required coverage
+
+R0/R1 change documentation only, not compiler behavior. R1's fresh Linux
+gate on 2026-10-09 passed all seven phases and 44 corpus cases in 2507.89s,
+with 437144 KiB peak RSS, on indexed candidate
+`16b8e84271c5c3e4db20384c17977a102710395b`. Its verified attestation SHA-256 is
+`9a422fed99c88c01d4605e2eaff76b5c033d2f0a63905b3992bd0c0504c5a210`.
+Receipts are retained locally under
+`build/verification/refactor-r1-20261009/full-gate/`; this is not publication
+or a stable release. Source/copied README bytes and links also passed.
+
+R2 attribution identifies `typecheck::visible_item_origin` at 19.72% of
+sampled CPU time. That separate `-pg` run is not a production timing or
+speedup result; no index implementation has landed. Broader P1-P4 efficiency
+targets and M56-M61 remain open. The authoring-kit draft remains staged and
+unvalidated; no external consumer adoption is inferred.
+
 ## Documentation
 
 - [x] Write `RESEARCH_MEMO.md`

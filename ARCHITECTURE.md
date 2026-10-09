@@ -1,8 +1,14 @@
 # Nauqtype Compiler Architecture
 
-This is the active Linux implementation map, not the archived Python design.
-The compiler and its command/proof runners are written in Nauqtype. The narrow
-native runtime and generated bootstrap seed are C.
+This is the architectural authority for the active compiler, not the archived
+Python design. The compiler and its command/proof runners are written in
+Nauqtype. The narrow native runtime and generated bootstrap seed are C.
+
+For task routing and the documentation inventory, start at
+[docs/README.md](docs/README.md). [COMPILER_MAP.md](docs/COMPILER_MAP.md) locates
+the actual entrypoints; it does not replace this contract. Inspection was
+refreshed on 2026-10-09 without changing executable sources or claiming a new
+Linux acceptance run.
 
 ## Pipeline And Ownership
 
@@ -11,8 +17,8 @@ manifest / source files
   -> tokens and source spans
   -> flat parser facts
   -> resolved and typed semantic facts
-  -> structured checked handoff
-  -> canonical value-use plan and borrow validation
+  -> structured checked handoff and checked source contracts
+  -> canonical type properties / value-use plan and borrow validation
   -> structured typed IR
   -> C text
   -> host C compiler plus runtime
@@ -28,9 +34,9 @@ manifest / source files
 | Values and borrowing | `value_plan.nq`, `borrow.nq` | Canonical copy/drop classification, copy/move/borrow use plans, move-state validation over checked identities. |
 | IR | `ir.nq` | Deterministic program, signature, declaration, local, expression, pattern, and control-flow records. No raw fact/token fallback for downstream consumers. |
 | C backend | `c_emit.nq` | IR-only C declarations, expressions, control flow, runtime calls, type-directed clone/move/drop, and private C identifier encoding. |
-| Evidence | `facts.nq`, `review.nq`, `diag.nq` | Versioned semantic facts, review/diff/change evidence, policy validation, plan-only refactoring, and producer diagnostics. |
+| Evidence | `facts.nq`, `review.nq`, `diag.nq`, `checked_coverage.nq` | Shared checked source-contract validity, versioned facts/review/change evidence, coverage checks, advisory policy, plan-only refactoring, and producer diagnostics. |
 | Formatting/helpers | `fmt.nq`, `text.nq` | Output-only formatter-lite and exercised internal text/list helpers. No AST formatter or write mode. |
-| Owned verification | `proof.nq` | `test`, seed/selfhost/corpus proof, tooling fixtures, deterministic comparison, and proof summaries. |
+| Owned verification | `proof.nq`, `proof_artifacts.nq`, `schema_profile.nq`, focused `*_tests.nq` modules | `test`, seed/selfhost/corpus proof, invocation-produced artifacts, bounded schema checks, deterministic comparison, and proof summaries. |
 | Native runtime | `stdlib/runtime.h`, `stdlib/runtime.c` | Representations, value storage/reclamation, and explicitly modeled Linux authority. General-purpose library policy belongs outside the runtime. |
 
 Paths without a directory in the table are relative to `selfhost/`.
@@ -46,22 +52,34 @@ build. [SELFHOST_HANDOFF.md](SELFHOST_HANDOFF.md) records the detailed contract.
 
 The current exporter still reconstructs some expressions from spans. The
 duplicated operator scans in typecheck/handoff must agree with
-[GRAMMAR.md](GRAMMAR.md). M54.7 repairs their grouping; it does not claim to
-replace them with a parser-owned expression arena. Any later migration should
-be incremental, identity-preserving, and measured against the M54.6 baseline.
+[GRAMMAR.md](GRAMMAR.md). M54.7 repaired grouping without replacing them with
+a parser-owned expression arena. A later migration must be separately
+reviewed, incremental, identity-aware, and measured on the current baseline.
 
-Evidence commands currently have separate collection/validation paths. They
-must not be described as equivalent whole-program contract gates: Astra F03,
-F05, F08, and F11 identify acceptance/coverage gaps. Canonical contract
-validation and truthful evidence completeness are scheduled in M54.8. See
-[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for the explicit closure criteria.
+IR-only data flow does not mean a dependency-clean source graph: `ir.nq`
+records still use checked binding/value-use/type-shape enums, and `c_emit.nq`
+imports their defining modules. This is shared vocabulary, not permission to
+consume flat facts or re-derive types. Neutral type ownership is a proposed
+refactor, not implemented architecture.
+
+Compilation and evidence commands share checked source-contract validation
+after handoff. Driver collection paths still repeat phase assembly, but the
+M54.8 corrective gate is complete, not scheduled. Review v4 exposes checked
+call-aware parameter may-writes; legacy v3 deliberately remains a partial
+direct-write lower bound. Evidence commands do not all run IR/C emission or
+prove whole-program semantic completeness. Policy remains advisory. See
+[M54_8_CONTRACTS.md](M54_8_CONTRACTS.md) for coverage/failure contracts and
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) for recorded closure.
 
 ## Values And Generated Code
 
 - `i32` and `i64` are distinct types with exact matching, contextual integer
-  literals, and no implicit conversion. Ordinary overflow/division edge
-  behavior remains an open corrective item; C behavior is not a language
-  specification.
+  literals, and no implicit conversion. Addition, subtraction, multiplication
+  and negation wrap at their width. Division truncates toward zero and fails
+  deterministically for zero and minimum-value divided by `-1`; evaluated
+  invalid constant division produces source diagnostics. Typed IR/native
+  helpers implement the rules in [M54_9_CONTRACTS.md](M54_9_CONTRACTS.md),
+  rather than relying on C signed overflow.
 - Heap-backed `str` retains copy semantics through reference-counted runtime
   storage. `list<T>` and `bytes` are move-only. Nominal products/enums derive
   copy and drop behavior from their fields/payloads.
@@ -73,16 +91,22 @@ validation and truthful evidence completeness are scheduled in M54.8. See
 - Ordered match conditions preserve first-match source priority and evaluate
   the scrutinee once. Private C spelling must be injective for module/type,
   function, field, variant, and generic-carrier identities; runtime-native
-  names remain ABI-owned. These are M54.7 repair obligations, not new syntax.
+  names remain ABI-owned. M54.7 closed those recorded repair obligations;
+  refactoring must preserve them.
 
-The runtime remains a trust boundary. Allocation-size arithmetic and
-interrupted process wait/capture require the separate fixes recorded in the
-audit ledger. New Linux APIs must not outrun those foundations.
+The runtime remains a trust boundary. M54.9 checks allocation-size arithmetic;
+M55 closes the recorded interrupted wait/capture defect and adds owned process
+handles and nominal time/deadlines. Cleanup authority is checked for owned
+recursive aggregates, not inferred from a borrow alone. Failures and platform
+exclusions remain explicit in [M55_CONTRACTS.md](M55_CONTRACTS.md). Their
+closure is evidence for the recorded cases, not a guarantee against all future
+resource or concurrency defects.
 
 ## Bootstrap And Verification
 
 `bootstrap/seed/nauqc-seed.c` is a versioned, checked-in bootstrap artifact,
-with its matching runtime, manifest, and checksums. The active path is:
+with its matching runtime, source snapshot, inventory, manifest, generator
+lineage, and checksums. The active path is:
 
 ```text
 host cc -> checked C seed -> Nauqtype stage1 -> emitted stage2 C -> stage2
@@ -110,10 +134,14 @@ semantic completeness by itself.
 
 ## Direction
 
-Close the confirmed wrong-code, evidence, numeric, and provenance issues
-before resuming M55 process/time/cancellation work. The product target is
-trustworthy Linux terminal and native application development, not feature
-parity with another language. Compiler/runtime changes stay here; general
-libraries and AI/ML algorithms have separate owners under
+M54.7-M54.10 corrections and M55 process/time are complete in the recorded
+Linux evidence. PRE-M56 gate efficiency remains the immediate priority;
+candidate-specific E1/P2 gains do not close the overall campaign goals. The
+[refactor program](docs/REFACTOR_PLAN.md) stages maintenance work around that
+priority, without claiming its proposed source changes have shipped.
+
+The product target is trustworthy Linux terminal and native application
+development, not feature parity with another language. Compiler/runtime
+changes stay here; general libraries and AI/ML algorithms have separate owners under
 [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md). Apply
 [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) before any language widening.

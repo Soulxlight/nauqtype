@@ -1,6 +1,8 @@
 # Nauqtype Syntax Identity And Evolution SOP
 
-Status: policy baseline for all future language changes. M41 validates this policy against workspace syntax before nested modules are implemented.
+Status: policy baseline for future language changes. M41 established the SOP;
+M42-M45 subsequently shipped the narrow workspace/module/evidence model.
+The historical design sketch below is not a current teaching example.
 
 ## Identity
 
@@ -64,7 +66,13 @@ Acceptance gate:
 
 ## Workspace Syntax Direction
 
-M41 locks [WORKSPACE_CONTRACT.md](WORKSPACE_CONTRACT.md) as the implementation-facing contract for M42 and M43. The following is planned syntax, not current Nauqtype syntax:
+M41 established [WORKSPACE_CONTRACT.md](WORKSPACE_CONTRACT.md); M42-M45
+implemented its narrow module/alias/dependency model. The following M41 sketch
+is retained as design history, not executable current syntax. In particular,
+the selective `use ...::Summary` item-import intent did not ship: `use` imports
+modules, and type annotations remain unqualified. Use the checked
+[workspace alias fixture](tests/fixtures/workspace_alias/src/app/main.nq) or
+[canonical alias example](examples/import_aliases.nq) for current authoring.
 
 ```nauq
 use org::reporting::render as report;

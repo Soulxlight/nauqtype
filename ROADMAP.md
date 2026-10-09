@@ -8,14 +8,22 @@ reuse. Ubuntu 24.04 on WSL2 now runs with GCC and a native ext4 home; the
 reviewed compiler P0 baseline is complete for its exact indexed candidate. The
 project remains an organizational alpha, not a v1.0 stable or feature-complete
 terminal/application language. M56-M61 below remain the release sequence; the
-earlier sections retain milestone history.
+earlier sections retain milestone history. Use the
+[documentation guide](docs/README.md) for task routing and authoritative
+contracts rather than treating historical steps as current instructions.
 
 The campaign goals are focused feedback within 10 seconds, the warm complete
 fixture tier within 60 seconds, and a cold milestone gate at least 50% faster
 than the new same-host baseline, with 10 minutes as the working target.
-These are planning goals, not achieved reductions. The new P0 cold gate passed
-in 2520.62s; repeated checks passed in 304.23s/308.99s. No completed optimization
-is claimed. See [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md).
+These are planning goals, not achieved reductions. P0's cold gate passed in
+2520.62s; repeated checks passed in 304.23s/308.99s. E1 and P2 mapping now
+have candidate-specific evidence: P2's one cold gate took 2485.30s, 1.40% less
+than P0, while measured comparisons improve about 25-26x with higher memory.
+The overall goals and broader P1-P4 remain open; see
+[PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) and
+[PERFORMANCE_MAPPING.md](PERFORMANCE_MAPPING.md). The reviewed P0/E1/P2
+baseline is locally checkpointed in `0564a32`, with its P2 closing receipt
+verified. This is not a new published or stable release.
 The recorded M55 gate was 2,504 seconds, with about 91% in driver, seed
 bootstrap, and proof. The native P0 now establishes 92.4% in those phases;
 use the same-host costs before choosing an implementation.
@@ -32,6 +40,34 @@ optional constrained generation, and a controlled behavioral/cost comparison.
 The prototype is not adopted code. This optional lane can be evaluated before
 M59 after its corrections and separate authorization; it does not delay M56,
 weaken audits, add model decisions to the compiler, or change locked schemas.
+
+### Documentation And Refactor Checkpoint
+
+The 2026-10-09 [refactor program](docs/REFACTOR_PLAN.md) starts with a
+nonpackaged documentation foundation: a complete document index, descriptive
+compiler map, and corrections to stale current-status guidance. It preserves
+the incoming source/runtime/seed/schema/script/fixture/skill content and does
+not extend an earlier executable attestation.
+
+Source refactors remain proposed: optimize an attributed scan first, consolidate
+one builtin-fact family, separate driver/checked-project assembly without
+identity or ownership drift, then review backend type coupling and justified
+proof-host duplication. PRE-M56 efficiency stays first. The packaged README
+rewrite received its own reviewed executable close after the `0564a32`
+baseline checkpoint: both independent trailing audits passed, then all seven
+Linux milestone phases and 44 corpus cases passed on indexed candidate
+`16b8e84271c5c3e4db20384c17977a102710395b`. The one cold run took 2507.89s
+with 437144 KiB peak RSS; matching attestation and copied README checks
+passed. This is documentation acceptance, not a performance improvement,
+source cleanup, new feature milestone, stable release, or publication. The
+retained P2 attestation still applies only to its earlier candidate.
+
+A separate instrumented profile now attributes 19.72% of sampled CPU time
+to `typecheck::visible_item_origin`. R2 should evaluate a private immutable
+module-run range index, preserving resolution order, visibility, and stable
+identities. Instrumented attribution is not ordinary timing or savings;
+implementation, comparable measurements, audits, and executable acceptance
+remain pending under the existing PRE-M56 contract.
 
 ## MVP Definition
 

@@ -34,6 +34,15 @@ refresh use available `gpt-6-luna` medium; the lead owns integration and
 Luna/Terra assignments above are historical, not a claim that those model IDs
 remain offered by the current host. Recheck tool metadata before later work.
 
+R1 packaged-documentation work on 2026-10-09 uses available `gpt-6-luna`
+medium for the README-only worker. The lead owns baseline identity, native
+candidate integration, and verification. Independent reviews use
+`gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh; the required historical
+`gpt-5.5` model is unavailable in current spawn metadata. The exact prior P2
+tree is checkpointed separately; its retained gate does not attest the new
+README candidate. No compiler/runtime behavior or optional model service is
+part of this documentation slice.
+
 ## Dispatch Rules
 
 PRE-M56 P2 mapping uses `gpt-5.6-sol` high for the bounded private normalizer

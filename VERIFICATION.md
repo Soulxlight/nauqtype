@@ -59,14 +59,14 @@ M54's focused upstream checks are also available when changing Linux
 input/filesystem or library-resolution contracts:
 
 ```bash
-python3 -m unittest tests.test_m54_runtime tests.test_m54_library_dependency -v
 bin/nauqc check tests/fixtures/m54_runtime.nq
 bin/nauqc check tests/fixtures/m54_library_dependency/vendor/std/src/status.nq
 ```
 
-The Python modules are bounded host harnesses around the Nauqtype-owned stage1
-compiler and native executables; they do not implement active compiler
-behavior.
+The corresponding Python modules are frozen historical host harnesses, not
+active focused, milestone, or release gates. Use the Nauqtype-owned fixtures
+and current shell/native integration checks. This clarification does not
+change the gate selection, budgets, or acceptance boundaries above.
 
 ## Milestone Gate
 
