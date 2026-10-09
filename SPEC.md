@@ -665,6 +665,7 @@ fn write_file(path: str, text: str) -> result<unit, io_err>;
 fn io_err_text(err: io_err) -> str;
 fn str_len(text: str) -> i32;
 fn str_concat(left: str, right: str) -> str;
+fn str_join(parts: ref list<str>) -> str;
 fn str_get(text: str, index: i32) -> option<i32>;
 fn str_slice(text: str, start: i32, end: i32) -> option<str>;
 fn list() -> list<T>;            // requires expected context
@@ -677,6 +678,16 @@ fn bytes_get(value: ref bytes, index: i64) -> option<i32>;
 ```
 
 `[]` is the literal equivalent of an empty `list<T>` and follows the same expected-context rule as `list()`.
+
+`str_join` concatenates borrowed text parts in list order, with no separator
+or conversion, into independently owned text. Empty input returns empty text;
+embedded NUL is preserved. No input mutation/consumption or effect atom occurs.
+Owned lists require an explicit `ref` argument; existing `ref list<str>`
+parameters can be forwarded directly, positionally or with `parts:`, under
+the existing checked borrow rules.
+Size/OOM failures use the existing fatal string allocation contract. Empty and
+singleton calls also allocate a fresh payload and owner. See
+`PERFORMANCE_ENABLEMENT.md` for PRE-M56 E1 acceptance.
 
 The active compiler driver also uses a deliberately narrow tooling runtime
 surface for arguments, directory creation, and captured process execution.

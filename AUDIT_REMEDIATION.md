@@ -4,8 +4,8 @@ Status: M54.7-M54.10 and M55 complete, 2026-09-06 UTC. M55 closes F14's
 process-correctness prerequisite and the separate process/time contract.
 
 The 2026-09-04 Astra audit reviewed `d2c7592ae5e4dc11fba7ffe715334a881d715b62`.
-Its report and executable evidence are retained locally in
-`/home/soulxlight/Documents/Astra Audit NauqType/`:
+Its report and executable evidence were recorded in the external archive
+named `Astra Audit NauqType` (not bundled here; availability must be verified):
 
 - `NauqType Audit Report.md`, SHA-256
   `e28e646077cf5bba781241b4a18b23138f13a2094059b7813840fc0cfd7f09aa`;
@@ -169,8 +169,8 @@ used. Frozen identities:
 | Proof summary | `c374f5f6b0377a7ba91e1a0883b9f8ce38c62e6e01836c3ad652799c76fcc238` |
 | Copied release tree | `3c869702dd7771abc54d33b42a6192f70fe90f6936ca9be8943a74c81556bdd5` |
 
-Evidence remains in the isolated Linux preparation checkout
-`/tmp/nauqtype-m55-yzh3R7/build/verification/`; focused/audit packets are in
+Evidence was recorded under `build/verification/` in the isolated Linux
+snapshot `nauqtype-m55-yzh3R7`; focused/audit packets were in
 its `build/m55_process/`. Only the existing completion-doc allowlist changed
 after the gate. A milestone-close attestation binds that text-only delta to
 the final commit. No M56, external repository, syntax, schema, or general
@@ -232,7 +232,7 @@ NQType AI/ML. Their provisional requests are coordinated in
   `gpt-5.6-sol` xhigh and `gpt-5.5` xhigh auditors. Neither auditor edited the
   candidate or ran duplicate builds.
 - One `scripts/check_milestone.sh` passed on the reviewed, clean indexed
-  snapshot `/tmp/nauqtype-m54.7-candidate-vpz0Fj`, starting without generated
+  snapshot `nauqtype-m54.7-candidate-vpz0Fj`, starting without generated
   artifacts. All seven phases passed in 1,390 seconds (23 minutes 10 seconds)
   with unchanged wall/RSS budgets: stage1 driver 293s, seed bootstrap 302s,
   proof 784s, Linux alpha 3s, stress leg 2s, owned tests 3s, and ownership

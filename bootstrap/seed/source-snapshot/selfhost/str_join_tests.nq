@@ -1,0 +1,353 @@
+use text;
+use diag;
+use handoff;
+use ir;
+use value_plan;
+
+fn str_join_planned_borrow(uses: ref list<checked_value_use>, id: i32) -> bool {
+    match lookup_checked_value_use(ref uses, id) {
+        Some(value) => {
+            match value.kind {
+                checked_value_borrow => { return true; },
+                _ => { return false; },
+            }
+        },
+        None => { return false; },
+    }
+}
+
+fn str_join_lowered_borrow(expressions: ref list<ir_expr>, id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        match list_get(ref expressions, index) {
+            Some(value) => {
+                if value.id == id and value.name == "parts" and value.local_id == 1 {
+                    match value.kind {
+                        ir_expr_name => {
+                            match value.use_kind {
+                                checked_value_borrow => { return true; },
+                                _ => { return false; },
+                            }
+                        },
+                        _ => { return false; },
+                    }
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn str_join_value_plan_borrow() -> bool {
+    let mut functions: list<checked_function> = list();
+    let mut bindings: list<checked_binding> = list();
+    let mut params: list<checked_param> = list();
+    let mut shapes: list<checked_type_shape> = list();
+    let mut properties: list<checked_type_property> = list();
+    let mut blocks: list<checked_block> = list();
+    let mut statements: list<checked_stmt> = list();
+    let mut expressions: list<checked_expr> = list();
+    let mut children: list<checked_expr_child> = list();
+    let mut uses: list<checked_value_use> = list();
+    let mut diags: list<diag> = list();
+
+    list_push(mutref shapes, checked_type_shape { id: 1, kind: checked_type_str, name: "", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false });
+    list_push(mutref shapes, checked_type_shape { id: 2, kind: checked_type_list, name: "", origin_module: "", arg1_id: 1, arg2_id: -1, mutable: false });
+    list_push(mutref shapes, checked_type_shape { id: 3, kind: checked_type_ref, name: "", origin_module: "", arg1_id: 2, arg2_id: -1, mutable: false });
+    list_push(mutref functions, checked_function { id: 1, module_id: 1, module_name: "probe", name: "forward", at: 0, root_scope_id: 1, return_name: "str", return_arg1_name: "", return_arg2_name: "", return_is_borrow: false, return_borrow_mutable: false, return_type_id: 1 });
+    list_push(mutref blocks, checked_block { id: 1, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, parent_block_id: -1, depth: 0 });
+    list_push(mutref bindings, checked_binding { id: 1, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, name: "parts", at: 0, kind: checked_binding_param, type_name: "list", type_arg1_name: "str", type_arg2_name: "", is_borrow: true, borrow_mutable: false, type_id: 3, origin_stmt_id: -1, origin_arm_id: -1, param_index: 0 });
+    list_push(mutref params, checked_param { function_id: 1, binding_id: 1, module_name: "probe", function_name: "forward", index: 0, name: "parts", at: 0, type_name: "list", type_arg1_name: "str", type_arg2_name: "", is_borrow: true, borrow_mutable: false, type_id: 3 });
+
+    list_push(mutref expressions, checked_expr { id: 1, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, at: 0, start: 0, end: 0, kind: checked_expr_call, type_name: "str", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 1, binding_id: -1, name: "str_join", target_kind: checked_target_builtin_function, target_origin_module: "__builtin__", target_at: 0, field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, checked_expr { id: 2, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, at: 0, start: 0, end: 0, kind: checked_expr_name, type_name: "list", type_arg1_name: "str", type_arg2_name: "", is_borrow: true, borrow_mutable: false, type_id: 2, binding_id: 1, name: "parts", target_kind: checked_target_none, target_origin_module: "", target_at: 0, field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, checked_expr { id: 3, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, at: 0, start: 0, end: 0, kind: checked_expr_call, type_name: "str", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 1, binding_id: -1, name: "str_join", target_kind: checked_target_builtin_function, target_origin_module: "__builtin__", target_at: 0, field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, checked_expr { id: 4, function_id: 1, module_name: "probe", function_name: "forward", scope_id: 1, at: 0, start: 0, end: 0, kind: checked_expr_name, type_name: "list", type_arg1_name: "str", type_arg2_name: "", is_borrow: true, borrow_mutable: false, type_id: 2, binding_id: 1, name: "parts", target_kind: checked_target_none, target_origin_module: "", target_at: 0, field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref children, checked_expr_child { parent_expr_id: 1, index: 0, child_expr_id: 2, label_name: "", label_at: -1 });
+    list_push(mutref children, checked_expr_child { parent_expr_id: 3, index: 0, child_expr_id: 4, label_name: "parts", label_at: 0 });
+    list_push(mutref statements, checked_stmt { id: 1, function_id: 1, module_name: "probe", function_name: "forward", block_id: 1, scope_id: 1, at: 0, kind: checked_stmt_expr, name: "", field_owner_module: "", field_owner_type: "", field_name: "", type_name: "str", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 1, target_binding_id: -1, expr_id: 1, child_block_id: -1, alt_block_id: -1 });
+    list_push(mutref statements, checked_stmt { id: 2, function_id: 1, module_name: "probe", function_name: "forward", block_id: 1, scope_id: 1, at: 0, kind: checked_stmt_expr, name: "", field_owner_module: "", field_owner_type: "", field_name: "", type_name: "str", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 1, target_binding_id: -1, expr_id: 3, child_block_id: -1, alt_block_id: -1 });
+
+    let empty_consts: list<checked_const_decl> = list();
+    let empty_types: list<checked_type_decl> = list();
+    let empty_fields: list<checked_field_decl> = list();
+    let empty_enums: list<checked_enum_decl> = list();
+    let empty_variants: list<checked_variant_decl> = list();
+    let empty_payloads: list<checked_variant_payload_decl> = list();
+    let empty_arms: list<checked_match_arm> = list();
+    let empty_patterns: list<checked_pattern> = list();
+    let empty_pattern_children: list<checked_pattern_child> = list();
+    let empty_pattern_bindings: list<checked_pattern_binding> = list();
+    let empty_struct_fields: list<checked_struct_field_init> = list();
+
+    let property_summary = build_checked_type_properties(ref shapes, ref empty_types, ref empty_fields, ref empty_enums, ref empty_variants, ref empty_payloads, mutref properties, mutref diags);
+    if property_summary.diag_count != 0 or property_summary.type_property_count != 3 { return false; }
+    let Some(str_property) = lookup_checked_type_property(ref properties, 1) else { return false; };
+    let Some(list_property) = lookup_checked_type_property(ref properties, 2) else { return false; };
+    let Some(ref_property) = lookup_checked_type_property(ref properties, 3) else { return false; };
+    if not str_property.is_copy or not str_property.needs_drop or list_property.is_copy or not list_property.needs_drop or not ref_property.is_copy or ref_property.needs_drop { return false; }
+
+    let plan = plan_checked_value_uses(ref functions, ref params, ref properties, ref statements, ref empty_arms, ref expressions, ref children, ref empty_struct_fields, mutref uses, mutref diags);
+    if plan.diag_count != 0 or plan.value_use_count != 4 or not str_join_planned_borrow(ref uses, 2) or not str_join_planned_borrow(ref uses, 4) { return false; }
+
+    let mut ir_programs: list<ir_program> = list();
+    let mut ir_sigs: list<ir_function_sig> = list();
+    let mut ir_functions: list<ir_function> = list();
+    let mut ir_locals: list<ir_local> = list();
+    let mut ir_consts: list<ir_const_decl> = list();
+    let mut ir_blocks: list<ir_block> = list();
+    let mut ir_statements: list<ir_stmt> = list();
+    let mut ir_arms: list<ir_match_arm> = list();
+    let mut ir_patterns: list<ir_pattern> = list();
+    let mut ir_pattern_children: list<ir_pattern_child> = list();
+    let mut ir_expressions: list<ir_expr> = list();
+    let mut ir_children: list<ir_expr_child> = list();
+    let mut ir_fields: list<ir_field_value> = list();
+    let mut ir_shapes: list<ir_type_shape> = list();
+    let mut ir_structs: list<ir_struct_decl> = list();
+    let mut ir_struct_fields: list<ir_field_decl> = list();
+    let mut ir_enums: list<ir_enum_decl> = list();
+    let mut ir_variants: list<ir_variant_decl> = list();
+    let mut ir_payloads: list<ir_variant_payload_decl> = list();
+
+    let lowered = build_ir_program_for_entry_with_value_plan(ref functions, ref bindings, ref params, ref empty_consts, ref shapes, ref properties, ref uses, ref empty_types, ref empty_fields, ref empty_enums, ref empty_variants, ref empty_payloads, ref blocks, ref statements, ref empty_arms, ref empty_patterns, ref empty_pattern_children, ref empty_pattern_bindings, ref expressions, ref children, ref empty_struct_fields, "probe", false, mutref ir_programs, mutref ir_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_children, mutref ir_fields, mutref ir_shapes, mutref ir_structs, mutref ir_struct_fields, mutref ir_enums, mutref ir_variants, mutref ir_payloads, mutref diags);
+    if lowered.diag_count != 0 or lowered.expression_count != 4 or list_len(ref diags) != 0 { return false; }
+    if not ir_has_ref_local(ref ir_locals, 1, "parts", false) or not ir_has_call_target(ref ir_expressions, 1, "str_join", "__builtin__") { return false; }
+    if not ir_has_borrowed_name_expr(ref ir_expressions, 1, "parts") or not str_join_lowered_borrow(ref ir_expressions, 2) or not str_join_lowered_borrow(ref ir_expressions, 4) { return false; }
+    return true;
+}
+
+fn str_join_path(name: str) -> str {
+    return str_concat("tests/fixtures/str_join/", name);
+}
+
+fn str_join_output(name: str) -> str {
+    return str_concat("build/str_join/", name);
+}
+
+fn str_join_contains(source: str, needle: str) -> bool {
+    let mut index = 0;
+    while index + str_len(needle) <= str_len(source) {
+        if starts_with_at(source, index, needle) { return true; }
+        index = index + 1;
+    }
+    return false;
+}
+
+fn str_join_count(source: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index + str_len(needle) <= str_len(source) {
+        if starts_with_at(source, index, needle) {
+            count = count + 1;
+            index = index + str_len(needle);
+        } else {
+            index = index + 1;
+        }
+    }
+    return count;
+}
+
+fn str_join_find(source: str, needle: str, start: i32) -> i32 {
+    let mut index = start;
+    while index + str_len(needle) <= str_len(source) {
+        if starts_with_at(source, index, needle) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn str_join_expect(label: str, result: result<process_result, io_err>, code: i32, stdout: str, stderr: str) -> bool {
+    match result {
+        Ok(status) => {
+            if status.exit_code == code and status.stdout == stdout and status.stderr == stderr { return true; }
+            eprint_line(str_concat("str_join failed: ", label));
+            eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+            eprint_line(str_concat("stdout: ", status.stdout));
+            eprint_line(str_concat("stderr: ", status.stderr));
+        },
+        Err(err) => { eprint_line(str_concat(label, io_err_text(err))); },
+    }
+    return false;
+}
+
+fn str_join_compile(source: str, output: str, generated: bool, fail_after: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    if not generated {
+        list_push(mutref args, "-pedantic-errors");
+        list_push(mutref args, "-Wall");
+        list_push(mutref args, "-Wextra");
+        list_push(mutref args, "-Werror");
+    }
+    list_push(mutref args, "-O2");
+    list_push(mutref args, "-fsanitize=address,undefined");
+    list_push(mutref args, "-fno-sanitize-recover=all");
+    list_push(mutref args, "-DNQ_TEST_MAX_SEQUENCE_LENGTH=128");
+    if not generated { list_push(mutref args, "-DNQ_TEST_MAX_ALLOCATION_BYTES=128"); }
+    if generated { list_push(mutref args, "-DNQ_TEST_MAX_ALLOCATION_BYTES=1048576"); }
+    if not generated { list_push(mutref args, str_concat("-DNQ_TEST_ALLOC_FAIL_AFTER=", fail_after)); }
+    list_push(mutref args, source);
+    if generated { list_push(mutref args, "stdlib/runtime.c"); }
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    return str_join_expect(str_concat("compile ", output), run_process("cc", ref args, "."), 0, "", "");
+}
+
+fn str_join_run_native(name: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
+    let mut args: list<str> = list();
+    if mode != "" { list_push(mutref args, mode); }
+    return str_join_expect(name, run_process(str_concat("./", name), ref args, "build/str_join"), code, stdout, stderr);
+}
+
+fn str_join_native() -> bool {
+    let size = "nauqtype runtime: size limit exceeded\n";
+    let oom = "nauqtype runtime: out of memory\n";
+    if not str_join_compile(str_join_path("probe.c"), str_join_output("runtime"), false, "1000000") { return false; }
+    if not str_join_run_native("runtime", "semantics", 0, "str_join runtime semantics passed\n", "") { return false; }
+    if not str_join_run_native("runtime", "sequence", 0, "str_join sequence boundary passed\n", "") { return false; }
+    if not str_join_run_native("runtime", "sequence-limit", 1, "", size) { return false; }
+    if not str_join_run_native("runtime", "payload-limit", 1, "", size) { return false; }
+    if not str_join_compile(str_join_path("probe.c"), str_join_output("oom-buffer"), false, "0") { return false; }
+    if not str_join_run_native("oom-buffer", "oom", 1, "", oom) { return false; }
+    if not str_join_compile(str_join_path("probe.c"), str_join_output("oom-owner"), false, "1") { return false; }
+    if not str_join_run_native("oom-owner", "oom", 1, "", oom) { return false; }
+    return true;
+}
+
+fn str_join_generated(driver: str) -> bool {
+    let source = str_join_output("semantics.c");
+    let mut args: list<str> = list();
+    list_push(mutref args, "emit-c");
+    list_push(mutref args, str_join_path("semantics.nq"));
+    list_push(mutref args, "-o");
+    list_push(mutref args, source);
+    if not str_join_expect("emit semantic fixture", run_process(driver, ref args, "."), 0, "", "") { return false; }
+    match read_file(source) {
+        Ok(generated) => {
+            if str_join_count(generated, "nq_str_join(nqv_") != 2 or
+                str_join_contains(generated, "nq_str_join(&nqv_") or
+                str_join_contains(generated, "nq_str_join((*nqv_") {
+                eprint_line("str_join positional/named forwarding did not emit two direct pointer calls");
+                return false;
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    if not str_join_compile(source, str_join_output("semantics"), true, "") { return false; }
+    args = list();
+    return str_join_expect("run semantic fixture", run_process("./semantics", ref args, "build/str_join"), 0, "alpha-beta\n", "");
+}
+
+fn str_join_negative(driver: str, fixture: str, expected_message: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "check");
+    list_push(mutref args, str_join_path(fixture));
+    list_push(mutref args, "--diagnostics");
+    list_push(mutref args, "json");
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stderr == "" and
+                str_join_contains(status.stdout, "\"code\": \"NQ-TYPE-042\"") and
+                str_join_contains(status.stdout, str_concat("\"message\": ", json_quote(expected_message))) { return true; }
+            eprint_line(str_concat("str_join negative diagnostic mismatch: ", fixture));
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+fn str_join_pure_helper_review(driver: str) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "review");
+    list_push(mutref args, str_join_path("pure.nq"));
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v4");
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code != 0 or status.stderr != "" { return false; }
+            let functions_start = str_join_find(status.stdout, "\"functions\": [", 0);
+            let mut functions_end = -1;
+            if functions_start >= 0 {
+                functions_end = str_join_find(status.stdout, "  ],\n  \"references\": [", functions_start);
+            }
+            if functions_start < 0 or functions_end < 0 { return false; }
+            let function_records = slice_text(status.stdout, functions_start, functions_end);
+            if str_join_count(function_records, "\"name\": \"joined\"") == 1 and
+                str_join_count(function_records, "\"public\": true") == 1 and
+                str_join_count(function_records, "\"mutates\": []") == 2 and
+                str_join_count(function_records, "\"effects\": []") == 2 and
+                str_join_count(function_records, "\"inferred\": \"checked\"") == 1 and
+                str_join_count(function_records, "\"target_id\": \"builtin:str_join\"") == 1 and
+                str_join_count(function_records, "\"evidence\": \"builtin\"") >= 1 { return true; }
+            eprint_line("str_join pure helper review record mismatch");
+            eprint_line(status.stdout);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+pub fn run_str_join_gate(driver_path: str) -> bool
+audit {
+    intent("Verify str_join runtime allocation, ownership, compiler diagnostics, and evidence facts");
+    mutates();
+    effects(print, io);
+}
+{
+    match create_dir_all("build/str_join") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    if not str_join_value_plan_borrow() {
+        eprint_line("str_join checked value/IR borrow identity mismatch");
+        return false;
+    }
+    if not str_join_native() { return false; }
+    if not str_join_generated(driver_path) { return false; }
+    if not str_join_negative(driver_path, "missing_ref.nq", "borrow parameter requires explicit `ref` or an existing borrowed binding") { return false; }
+    if not str_join_negative(driver_path, "wrong_list.nq", "call argument type does not match parameter type") { return false; }
+    if not str_join_negative(driver_path, "arity.nq", "call argument count does not match target signature") { return false; }
+    if not str_join_negative(driver_path, "unknown_label.nq", "unknown named argument") { return false; }
+    if not str_join_pure_helper_review(driver_path) { return false; }
+
+    let mut args: list<str> = list();
+    list_push(mutref args, "facts");
+    list_push(mutref args, "examples/string_join.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v2");
+    match run_process(driver_path, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code != 0 or status.stderr != "" or
+                not str_join_contains(status.stdout, "\"kind\": \"call\",\n      \"from\": \"fn:string_join::main\",\n      \"name\": \"str_join\",\n      \"target_kind\": \"builtin\",\n      \"target_id\": \"builtin:str_join\",\n      \"evidence\": \"builtin\"") or
+                not str_join_contains(status.stdout, "\"kind\": \"argument_label\",\n      \"from\": \"fn:string_join::main\",\n      \"name\": \"parts\",\n      \"target_kind\": \"builtin_param\",\n      \"target_id\": \"builtin-param:str_join::parts\",\n      \"evidence\": \"builtin\"") {
+                eprint_line("str_join builtin call/parameter stable-ID facts missing");
+                return false;
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    args = list();
+    list_push(mutref args, "review");
+    list_push(mutref args, "examples/string_join.nq");
+    list_push(mutref args, "--format");
+    list_push(mutref args, "v4");
+    match run_process(driver_path, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code != 0 or status.stderr != "" or
+                not str_join_contains(status.stdout, "\"target_id\": \"builtin:str_join\"") or
+                not str_join_contains(status.stdout, "\"evidence\": \"builtin\"") or
+                not str_join_contains(status.stdout, "\"inferred\": \"checked\"") or
+                not str_join_contains(status.stdout, "\"mutates\": []") {
+                eprint_line("str_join review missing checked builtin signature/no-mutation evidence");
+                return false;
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    return true;
+}

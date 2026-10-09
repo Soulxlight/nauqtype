@@ -2681,6 +2681,9 @@ fn builtin_call_name(name: str, origin_module: str) -> str {
     if name == "str_concat" {
         return "nq_str_concat";
     }
+    if name == "str_join" {
+        return "nq_str_join";
+    }
     if name == "str_get" {
         return "nq_str_get";
     }
@@ -3336,7 +3339,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
                     let mut args = "";
                     let mut arg_index = 0;
-                    let is_list_call = expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get";
+                    let is_list_call = expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or (expr.target_origin_module == "__builtin__" and expr.target_name == "str_join");
                     while arg_index < list_len(ref child_ids) {
                         let child_entry = list_get(ref child_ids, arg_index);
                         match child_entry {

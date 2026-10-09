@@ -18,6 +18,10 @@ These examples introduce the core structure, syntax, and flow control of Nauqtyp
 
 These examples cover specific semantic features of Nauqtype.
 
+- [string_join.nq](examples/string_join.nq): Pure ordered byte assembly with an
+  explicit borrowed `list<str>`, a named argument, and unchanged input ownership.
+  PRE-M56 E1 acceptance is tracked in `PERFORMANCE_ENABLEMENT.md`.
+
 - [list_literals.nq](examples/list_literals.nq): Using square brackets to construct homogeneous `list<T>` literals.
 - [for_list.nq](examples/for_list.nq): Iterating directly over `list<T>` with an immutable per-iteration binding and nearest-loop `break` / `continue`.
 - [composite_field_backend.nq](examples/composite_field_backend.nq): Storing `list<T>`, `option<T>`, and `result<T, E>` values in a product type and borrowing a list field directly for a helper call.
@@ -84,6 +88,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `qualified_data_names.nq`
 - `read_file_len.nq`
 - `record_update.nq`
+- `string_join.nq`
 - `record_update_nontrivial.nq`
 - `result_handling.nq`
 - `review_contracts.nq`

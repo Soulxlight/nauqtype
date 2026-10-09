@@ -280,7 +280,7 @@ refer to existing regular files and are never null.
 
 ## Focused Candidate Evidence
 
-The isolated candidate is `/tmp/nauqtype-m54-10-provenance-ZDhJCQ`.
+The isolated candidate snapshot is `nauqtype-m54-10-provenance-ZDhJCQ`.
 Its owned compiler emission passed in 465.29 seconds (100,784 KiB peak RSS)
 and current-runtime C11/O2 compilation passed in 31.85 seconds (428,152 KiB).
 The resulting `build/m54_10/candidate test` passed in 25.35 seconds
@@ -346,7 +346,7 @@ were stopped, partial logs retained, and that attempt does not count as
 acceptance. No tracked file changed. A detached launcher then reran the same
 `scripts/check_milestone.sh` with the same phase limits.
 
-The completed run in `/tmp/nauqtype-m54-10-provenance-ZDhJCQ` passed in
+The completed run in snapshot `nauqtype-m54-10-provenance-ZDhJCQ` passed in
 2,716 seconds, from `2026-09-06T00:10:19Z` to `2026-09-06T00:55:35Z`.
 Exit was 0, stderr empty, and all seven phases plus strict final attestation
 verification passed. The final gate is slower than M54.9; this is correctness

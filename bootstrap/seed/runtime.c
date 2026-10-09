@@ -977,6 +977,33 @@ NQStr nq_str_concat(NQStr left, NQStr right) {
     return result;
 }
 
+NQStr nq_str_join(const NQ_List__str* parts) {
+    size_t len = 0, size, offset = 0;
+    NQStr result;
+    NQAllocStatus status;
+    char* buffer;
+    if (parts == NULL || parts->len < 0 || parts->cap < parts->len ||
+        (uintmax_t)parts->cap > nq_sequence_limit(INT32_MAX) ||
+        (parts->len != 0 && parts->data == NULL)) nq_size_fail();
+    for (int32_t index = 0; index < parts->len; index += 1) {
+        NQStr part = parts->data[index];
+        if (!nq_str_size(part.len) || (part.len != 0 && part.data == NULL) ||
+            !nq_size_add(len, (size_t)part.len, nq_str_limit(), &len)) nq_size_fail();
+    }
+    if (!nq_size_add(len, 1, nq_allocation_limit(), &size) ||
+        sizeof(NQStrOwner) > nq_allocation_limit()) nq_size_fail();
+    buffer = (char*)nq_realloc(NULL, size);
+    for (int32_t index = 0; index < parts->len; index += 1) {
+        NQStr part = parts->data[index];
+        if (part.len != 0) memcpy(buffer + offset, part.data, (size_t)part.len);
+        offset += (size_t)part.len;
+    }
+    buffer[len] = '\0';
+    status = nq_try_str_take(buffer, len, &result);
+    if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
+    return result;
+}
+
 typedef struct {
     unsigned char* data;
     size_t len;

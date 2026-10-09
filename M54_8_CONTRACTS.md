@@ -121,7 +121,7 @@ stage1 driver 301s, seed bootstrap 332s, proof 874s, Linux alpha 4s, stress leg
 corpus cases, copied-selfhost structural comparison, and tooling evidence.
 The pinned M54.7 seed is unchanged.
 
-The clean indexed snapshot `/tmp/nauqtype-m54-8a-final-Oq8VAM` and canonical
+The clean indexed snapshot `nauqtype-m54-8a-final-Oq8VAM` and canonical
 checkout both had tree `b5c35a2c451b05c6b0a931661fc73fc70eb4b736` and framed
 tracked path/content/Git-mode SHA-256
 `e767d3884c25293c466696af0fc1c68e0da04ee62e517f584ee1d60b087b54fe`
@@ -280,7 +280,7 @@ that failed run; the failure is not acceptance evidence.
   driver 307s, seed bootstrap 346s, proof 908s, Linux alpha 4s, stress leg 1s,
   owned tests 5s, ownership sanitizers 3s. No stderr or budget violation.
 
-The indexed snapshot `/tmp/nauqtype-m54-8b1-final-JVHl4w` and canonical
+The indexed snapshot `nauqtype-m54-8b1-final-JVHl4w` and canonical
 checkout matched tree `1b9b3495b67a35267150d73c5b3529ace5500562` and the
 ordered tracked path/content SHA-256 digest
 `2a2abb1515461cccb795483ea51dee5f8409d920666633bb4fc8585734e8084f`
@@ -330,8 +330,8 @@ migrate to the newer truthful evidence surfaces explicitly.
   not the final full-tree acceptance gate.
 - The schema worker separately compiled and ran the latest repaired profile
   selftest and all-schema probes from
-  `/tmp/schema-profile-repair-selftest.ksg0Yc/` and
-  `/tmp/schema-profile-repair-gate.EkcQVL/`, both exit 0. That final repair
+  snapshots `schema-profile-repair-selftest.ksg0Yc` and
+  `schema-profile-repair-gate.EkcQVL`, both exit 0. That final repair
   rejects unsupported control escapes rather than relying on source escape
   behavior. The profile's explicit bounds are in `EVIDENCE_SCHEMA_PROFILE.md`.
 - Main-owned new fixtures and probes passed formatter-lite checks. No Python
@@ -377,7 +377,7 @@ Its `test` passed in 7.20s and all 42 corpus cases passed in 22.17s. Both
 commands had exact success stdout and no compiler stderr. The final one-line
 builtin-origin guard and negative case passed in a standalone Nauqtype
 contract-gate probe, avoiding an unrelated whole-driver development rebuild.
-Candidate5 built `/tmp/nauqtype-m548-origin-probe-Ctcj1A/probe.nq` in 88.16s;
+Candidate5 built `probe.nq` in snapshot `nauqtype-m548-origin-probe-Ctcj1A` in 88.16s;
 `build/m54_8_final/origin-repair-probe` passed in 1.69s with exact stdout
 `checked mutation repair ok` and no compiler stderr. Its review and contract
 test sources match the staged files by SHA-256. The probe exercises the final
@@ -425,7 +425,7 @@ route/cache checks; neither treated the failed run or stub probe as proof.
 
 `scripts/check_milestone.sh` passed on frozen index tree
 `79a954257ea43e976d2a5f0003561af060f1d874` in the native isolated checkout
-`/tmp/nauqtype-m54-8-runtime-link-7NDSy9`. The source tree stayed unchanged
+`nauqtype-m54-8-runtime-link-7NDSy9`. The source tree stayed unchanged
 during the gate and matched the canonical staged candidate before this
 completion-only documentation delta. No README, packaged artifact, source,
 schema, runtime, fixture, or script changed after verification.

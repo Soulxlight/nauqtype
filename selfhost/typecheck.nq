@@ -676,7 +676,7 @@ fn builtin_function_arity(name: str) -> i32 {
     if name == "write_file_bytes" or name == "path_metadata" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
         return 2;
     }
-    if name == "str_len" {
+    if name == "str_len" or name == "str_join" {
         return 1;
     }
     if name == "str_concat" {
@@ -929,7 +929,7 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "str_len" {
         return "i32";
     }
-    if name == "str_concat" {
+    if name == "str_concat" or name == "str_join" {
         return "str";
     }
     if name == "str_get" or name == "str_slice" {
@@ -2017,6 +2017,9 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
             return "str";
         }
     }
+    if function_name == "str_join" and index == 0 {
+        return "list";
+    }
     if function_name == "str_get" {
         if index == 0 {
             return "str";
@@ -2074,7 +2077,7 @@ fn builtin_function_param_is_borrow(function_name: str, index: i32) -> bool {
     if function_name == "process_terminate" and index == 0 {
         return true;
     }
-    if (function_name == "list_push" or function_name == "list_len" or function_name == "list_get") and index == 0 {
+    if (function_name == "list_push" or function_name == "list_len" or function_name == "list_get" or function_name == "str_join") and index == 0 {
         return true;
     }
     if function_name == "run_process" and index == 1 {
@@ -2105,6 +2108,9 @@ fn builtin_function_param_ctx(function_name: str, index: i32) -> expected_type_c
         return empty_expected_type_ctx();
     }
     if function_name == "run_process" and index == 1 {
+        return make_expected_type_ctx("list", "str", "");
+    }
+    if function_name == "str_join" and index == 0 {
         return make_expected_type_ctx("list", "str", "");
     }
     if function_name == "process_start" {
@@ -2303,6 +2309,9 @@ fn builtin_function_param_name(function_name: str, index: i32) -> str {
         if index == 1 {
             return "right";
         }
+    }
+    if function_name == "str_join" and index == 0 {
+        return "parts";
     }
     if function_name == "str_get" {
         if index == 0 {

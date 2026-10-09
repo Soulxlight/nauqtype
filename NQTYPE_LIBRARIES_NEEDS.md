@@ -5,9 +5,9 @@ compiler/runtime owner.
 
 ## Library Workspace
 
-The canonical library-owned workspace is:
-
-`/home/soulxlight/Documents/NQType-Libraries`
+The library-owned workspace is the separately configured `NQType-Libraries`
+checkout. Resolve its local location through `NAUQTYPE_COORDINATION.md` and
+the task's explicit workspace assignment, not a hard-coded home directory.
 
 The NauqType Codex may read that workspace for integration context, but should
 not implement or modify library-owned modules there. Upstream compiler/runtime

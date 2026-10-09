@@ -1,0 +1,43 @@
+fn benchmark_output_matches(output: str) -> bool {
+    if str_len(output) != 160000 { return false; }
+    let mut index = 0;
+    let mut expected_index = 0;
+    while index < 160000 {
+        let Some(actual) = str_get(output, index) else { return false; };
+        let Some(expected) = str_get("0123456789abcdef", expected_index) else { return false; };
+        if actual != expected { return false; }
+        index = index + 1;
+        expected_index = expected_index + 1;
+        if expected_index == 16 { expected_index = 0; }
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    if arg_count() != 2 { return 90; }
+    let Some(mode) = arg_get(1) else { return 91; };
+    if mode != "concat" and mode != "join" { return 92; }
+
+    if mode == "concat" {
+        let mut output = "";
+        let mut index = 0;
+        while index < 10000 {
+            output = str_concat(output, "0123456789abcdef");
+            index = index + 1;
+        }
+        if not benchmark_output_matches(output) { return 93; }
+        print_line("160000");
+        return 0;
+    }
+
+    let mut parts: list<str> = list();
+    let mut index = 0;
+    while index < 10000 {
+        list_push(mutref parts, "0123456789abcdef");
+        index = index + 1;
+    }
+    let output = str_join(parts: ref parts);
+    if not benchmark_output_matches(output) { return 94; }
+    print_line("160000");
+    return 0;
+}

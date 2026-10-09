@@ -202,6 +202,13 @@
 
 ## D026: Stage1 file/string/list support is builtin, not a broader stdlib family
 
+PRE-M56 E1 amendment (2026-10-01): admit only
+`str_join(parts: ref list<str>) -> str` for demonstrated compiler text-assembly
+pressure. Pure ordered byte assembly preserves existing fatal size/OOM bounds.
+Stable IDs, evidence, ownership, teaching, independent normalizer equivalence,
+seed promotion, and measurements are required by `PERFORMANCE_ENABLEMENT.md`.
+Full user generics and broader mutable-string/library growth remain deferred.
+
 - Decision: add only `read_file`, `write_file`, `io_err_text`, `str_len`, `str_concat`, `str_get`, `str_slice`, and builtin `list<T>` helpers.
 - Alternatives considered: broader filesystem APIs, list literals, maps/sets, methods.
 - Reason chosen: this is the minimum runtime surface needed to write a compiler front end in Nauqtype.

@@ -7,13 +7,14 @@ or pushing.
 ## Startup Check
 
 1. Load and follow the `$nauqtype-work` skill, then read
-   `/home/soulxlight/Documents/NauqType/NAUQTYPE_COORDINATION.md`. This is
+   `NAUQTYPE_COORDINATION.md` in this checkout's root. This is
    required even when the current task appears confined to this repository.
-2. Resolve the repository root from this `AGENTS.md` and work in a native Linux
-   checkout or agent worktree. The canonical checkout on this machine is
-   `/home/soulxlight/Documents/NauqType`; legitimate Linux clones/worktrees are
-   allowed. Never edit the mounted historical Windows-path workspace under
-   `/opt/codex-desktop/C:\Users\...`.
+2. Resolve the repository root from this `AGENTS.md` and verify it with
+   `git rev-parse --show-toplevel`. Work only in the checkout or agent worktree
+   assigned to this task, not a path remembered from another host. Keep host
+   locations in local configuration, not tracked instructions. Source editing
+   is not platform certification: executable Linux gates still require the
+   environment described in `LINUX.md` and `VERIFICATION.md`.
 3. Read the current task-relevant sections of `README.md`, `ROADMAP.md`,
    `TODO.md`, `DECISIONS.md`, `DEFERRED.md`, `SYNTAX_IDENTITY.md`, and
    `VERIFICATION.md` before changing a public contract.
@@ -22,6 +23,10 @@ or pushing.
 6. Keep active compiler, tooling, fixtures, and teaching work in Nauqtype.
    Python is frozen historical bootstrap/reference code unless a narrowly
    proven bootstrap blocker requires a repair.
+7. Read [AGENT_ROUTING.md](AGENT_ROUTING.md) before assigning work. Match
+   model and reasoning effort to task difficulty, use compact bounded packets,
+   and reserve stronger models for integration, difficult semantics, and the
+   formal audits below. Available agent slots are capacity, not a quota.
 
 ## TypeSafe Advisory Skill
 
@@ -49,6 +54,11 @@ throughput:
 
 Do not spawn an agent merely to repeat work already underway. Do not delegate
 the next blocking action when the lead can perform it directly.
+
+For the pre-M56 performance checkpoint, the lead directs scope, acceptance,
+and integration while workers implement disjoint slices according to
+`AGENT_ROUTING.md`. Cost control must not downgrade required independent
+audits or count unrun Linux checks as passing evidence.
 
 ## Delegation Contract
 

@@ -1,7 +1,7 @@
 # Jev Evaluation Report
 
 **Date:** 2026-09-17
-**Repository:** `/home/soulxlight/Documents/NauqType`
+**Repository:** NauqType (checkout root; evaluated revision pinned below)
 **Evaluated revision:** `40cf99ba29c43bf497f4fd0bda9aaad519046baa`
 **Model:** `jev-1.13.0`
 **Report author:** Luna analysis of saved Jev judgments, checked and corrected by the lead; not the independent formal audit gate

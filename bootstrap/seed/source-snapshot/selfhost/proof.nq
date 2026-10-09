@@ -7,6 +7,7 @@ use review;
 use schema_profile_tests;
 use integer_policy_tests;
 use allocation_policy_tests;
+use str_join_tests;
 use process_tests;
 use text;
 use proof_artifacts;
@@ -18,6 +19,13 @@ use workspace_evidence_tests;
 type norm_mapping {
     original: str,
     replacement: str,
+}
+
+type norm_run {
+    start: i32,
+    count: i32,
+    previous: i32,
+    total: i32,
 }
 
 type norm_token {
@@ -453,6 +461,15 @@ fn make_norm_mapping(original: str, replacement: str) -> norm_mapping {
     };
 }
 
+fn make_norm_run(start: i32, count: i32, previous: i32, total: i32) -> norm_run {
+    return norm_run {
+        start: start,
+        count: count,
+        previous: previous,
+        total: total,
+    };
+}
+
 fn make_corpus_case(name: str, source_path: str, expected_exit_code: i32, expected_stdout: str) -> corpus_case {
     return corpus_case {
         name: name,
@@ -514,33 +531,188 @@ fn trim_slice(text: str, start: i32, end: i32) -> str {
     return slice_text(text, left, right);
 }
 
-fn mapping_lookup(mappings: ref list<norm_mapping>, original: str) -> option<str> {
+fn norm_key_compare(left: str, right: str) -> i32 {
     let mut index = 0;
-    while index < list_len(ref mappings) {
-        let entry = list_get(ref mappings, index);
+    let mut shared = str_len(left);
+    if str_len(right) < shared {
+        shared = str_len(right);
+    }
+    while index < shared {
+        let left_byte = char_at(left, index);
+        let right_byte = char_at(right, index);
+        if left_byte < right_byte {
+            return -1;
+        }
+        if left_byte > right_byte {
+            return 1;
+        }
+        index = index + 1;
+    }
+    if str_len(left) < str_len(right) {
+        return -1;
+    }
+    if str_len(left) > str_len(right) {
+        return 1;
+    }
+    return 0;
+}
+
+fn mapping_lookup_range(data: ref list<norm_mapping>, start: i32, count: i32, original: str) -> option<str> {
+    let mut low = start;
+    let mut high = start + count;
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref data, middle);
         match entry {
             Some(value) => {
-                if value.original == original {
+                if norm_key_compare(value.original, original) < 0 {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => {
+                high = middle;
+            },
+        }
+    }
+    if low < start + count {
+        let entry = list_get(ref data, low);
+        match entry {
+            Some(value) => {
+                if norm_key_compare(value.original, original) == 0 {
                     return Some(value.replacement);
                 }
             },
             None => {
             },
         }
-        index = index + 1;
     }
     return None;
 }
 
-fn mapping_get_or_add(mappings: mutref list<norm_mapping>, original: str) -> str {
-    let found = mapping_lookup(ref mappings, original);
+fn mapping_lookup(data: ref list<norm_mapping>, runs: ref list<norm_run>, original: str) -> option<str> {
+    let mut run_index = list_len(ref runs) - 1;
+    while run_index >= 0 {
+        let entry = list_get(ref runs, run_index);
+        match entry {
+            Some(run) => {
+                let found = mapping_lookup_range(ref data, run.start, run.count, original);
+                match found {
+                    Some(value) => {
+                        return Some(value);
+                    },
+                    None => {
+                    },
+                }
+                run_index = run.previous;
+            },
+            None => {
+                run_index = -1;
+            },
+        }
+    }
+    return None;
+}
+
+fn append_merged_norm_range(data: mutref list<norm_mapping>, left_start: i32, left_count: i32, right_start: i32, right_count: i32) -> i32 {
+    let merged_start = list_len(ref data);
+    let mut left_index = left_start;
+    let left_end = left_start + left_count;
+    let mut right_index = right_start;
+    let right_end = right_start + right_count;
+    while left_index < left_end and right_index < right_end {
+        let left_entry = list_get(ref data, left_index);
+        match left_entry {
+            Some(left) => {
+                let right_entry = list_get(ref data, right_index);
+                match right_entry {
+                    Some(right) => {
+                        if norm_key_compare(left.original, right.original) <= 0 {
+                            list_push(mutref data, left);
+                            left_index = left_index + 1;
+                        } else {
+                            list_push(mutref data, right);
+                            right_index = right_index + 1;
+                        }
+                    },
+                    None => {
+                        right_index = right_end;
+                    },
+                }
+            },
+            None => {
+                left_index = left_end;
+            },
+        }
+    }
+    while left_index < left_end {
+        let entry = list_get(ref data, left_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref data, value);
+            },
+            None => {
+            },
+        }
+        left_index = left_index + 1;
+    }
+    while right_index < right_end {
+        let entry = list_get(ref data, right_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref data, value);
+            },
+            None => {
+            },
+        }
+        right_index = right_index + 1;
+    }
+    return merged_start;
+}
+
+fn mapping_get_or_add(data: mutref list<norm_mapping>, runs: mutref list<norm_run>, original: str) -> str {
+    let found = mapping_lookup(ref data, ref runs, original);
     match found {
         Some(value) => {
             return value;
         },
         None => {
-            let replacement = i32_to_str(list_len(ref mappings) + 1);
-            list_push(mutref mappings, make_norm_mapping(original, replacement));
+            let mut total = 1;
+            let mut previous = list_len(ref runs) - 1;
+            if previous >= 0 {
+                let old_root = list_get(ref runs, previous);
+                match old_root {
+                    Some(run) => {
+                        total = run.total + 1;
+                    },
+                    None => {
+                    },
+                }
+            }
+            let replacement = i32_to_str(total);
+            let mut current_start = list_len(ref data);
+            let mut current_count = 1;
+            list_push(mutref data, make_norm_mapping(original, replacement));
+            let mut merging = true;
+            while merging and previous >= 0 {
+                let previous_entry = list_get(ref runs, previous);
+                match previous_entry {
+                    Some(previous_run) => {
+                        if previous_run.count == current_count {
+                            current_start = append_merged_norm_range(mutref data, previous_run.start, previous_run.count, current_start, current_count);
+                            current_count = current_count * 2;
+                            previous = previous_run.previous;
+                        } else {
+                            merging = false;
+                        }
+                    },
+                    None => {
+                        merging = false;
+                    },
+                }
+            }
+            list_push(mutref runs, make_norm_run(current_start, current_count, previous, total));
             return replacement;
         },
     }
@@ -562,7 +734,7 @@ fn scan_ident(text: str, index: i32) -> i32 {
     return cursor;
 }
 
-fn normalize_binding_at(line: str, index: i32, mappings: mutref list<norm_mapping>) -> norm_token {
+fn normalize_binding_at(line: str, index: i32, data: mutref list<norm_mapping>, runs: mutref list<norm_run>) -> norm_token {
     if not starts_with_at(line, index, "nqv_") {
         return no_norm_token();
     }
@@ -580,12 +752,12 @@ fn normalize_binding_at(line: str, index: i32, mappings: mutref list<norm_mappin
         return no_norm_token();
     }
     let original = slice_text(line, digit_start, digit_end);
-    let replacement = mapping_get_or_add(mutref mappings, original);
+    let replacement = mapping_get_or_add(mutref data, mutref runs, original);
     let name = slice_text(line, name_start, name_end);
     return make_norm_token(concat4("nqv_", replacement, "_", name), name_end);
 }
 
-fn normalize_tmp_at(line: str, index: i32, mappings: mutref list<norm_mapping>) -> norm_token {
+fn normalize_tmp_at(line: str, index: i32, data: mutref list<norm_mapping>, runs: mutref list<norm_run>) -> norm_token {
     if not starts_with_at(line, index, "nq_tmp_") {
         return no_norm_token();
     }
@@ -595,40 +767,53 @@ fn normalize_tmp_at(line: str, index: i32, mappings: mutref list<norm_mapping>) 
         return no_norm_token();
     }
     let original = slice_text(line, digit_start, digit_end);
-    let replacement = mapping_get_or_add(mutref mappings, original);
+    let replacement = mapping_get_or_add(mutref data, mutref runs, original);
     return make_norm_token(str_concat("nq_tmp_", replacement), digit_end);
 }
 
-fn normalize_line(line: str, binding_mappings: mutref list<norm_mapping>, tmp_mappings: mutref list<norm_mapping>) -> str {
-    let mut out = "";
+fn normalize_line(line: str, binding_data: mutref list<norm_mapping>, binding_runs: mutref list<norm_run>, tmp_data: mutref list<norm_mapping>, tmp_runs: mutref list<norm_run>) -> str {
+    let mut parts: list<str> = list();
+    let mut raw_start = 0;
     let mut index = 0;
     while index < str_len(line) {
         let mut matched = false;
-        let binding = normalize_binding_at(line, index, mutref binding_mappings);
+        let binding = normalize_binding_at(line, index, mutref binding_data, mutref binding_runs);
         if binding.next_index >= 0 {
-            out = str_concat(out, binding.text);
+            if raw_start < index {
+                list_push(mutref parts, slice_text(line, raw_start, index));
+            }
+            list_push(mutref parts, binding.text);
             index = binding.next_index;
+            raw_start = index;
             matched = true;
         }
         if not matched {
-            let tmp = normalize_tmp_at(line, index, mutref tmp_mappings);
+            let tmp = normalize_tmp_at(line, index, mutref tmp_data, mutref tmp_runs);
             if tmp.next_index >= 0 {
-                out = str_concat(out, tmp.text);
+                if raw_start < index {
+                    list_push(mutref parts, slice_text(line, raw_start, index));
+                }
+                list_push(mutref parts, tmp.text);
                 index = tmp.next_index;
+                raw_start = index;
                 matched = true;
             }
         }
         if not matched {
-            out = str_concat(out, slice_text(line, index, index + 1));
             index = index + 1;
         }
     }
-    return out;
+    if raw_start < str_len(line) {
+        list_push(mutref parts, slice_text(line, raw_start, str_len(line)));
+    }
+    return str_join(ref parts);
 }
 
 fn normalize_structural_c(text: str) -> str {
-    let mut binding_mappings: list<norm_mapping> = list();
-    let mut tmp_mappings: list<norm_mapping> = list();
+    let mut binding_data: list<norm_mapping> = list();
+    let mut binding_runs: list<norm_run> = list();
+    let mut tmp_data: list<norm_mapping> = list();
+    let mut tmp_runs: list<norm_run> = list();
     let mut out = "";
     let mut start = 0;
     let mut index = 0;
@@ -636,7 +821,7 @@ fn normalize_structural_c(text: str) -> str {
         if char_at(text, index) == 10 {
             let line = trim_slice(text, start, index);
             if line != "" {
-                let normalized = normalize_line(line, mutref binding_mappings, mutref tmp_mappings);
+                let normalized = normalize_line(line, mutref binding_data, mutref binding_runs, mutref tmp_data, mutref tmp_runs);
                 if out == "" {
                     out = normalized;
                 } else {
@@ -650,7 +835,7 @@ fn normalize_structural_c(text: str) -> str {
     if start < str_len(text) {
         let line = trim_slice(text, start, str_len(text));
         if line != "" {
-            let normalized = normalize_line(line, mutref binding_mappings, mutref tmp_mappings);
+            let normalized = normalize_line(line, mutref binding_data, mutref binding_runs, mutref tmp_data, mutref tmp_runs);
             if out == "" {
                 out = normalized;
             } else {
@@ -661,7 +846,7 @@ fn normalize_structural_c(text: str) -> str {
     return out;
 }
 
-fn next_normalized_line(text: str, start: i32, binding_mappings: mutref list<norm_mapping>, tmp_mappings: mutref list<norm_mapping>) -> norm_line {
+fn next_normalized_line(text: str, start: i32, binding_data: mutref list<norm_mapping>, binding_runs: mutref list<norm_run>, tmp_data: mutref list<norm_mapping>, tmp_runs: mutref list<norm_run>) -> norm_line {
     let mut cursor = start;
     while cursor < str_len(text) {
         let mut line_end = cursor;
@@ -674,7 +859,7 @@ fn next_normalized_line(text: str, start: i32, binding_mappings: mutref list<nor
         }
         let line = trim_slice(text, cursor, line_end);
         if line != "" {
-            return make_norm_line(normalize_line(line, mutref binding_mappings, mutref tmp_mappings), next_index, false);
+            return make_norm_line(normalize_line(line, mutref binding_data, mutref binding_runs, mutref tmp_data, mutref tmp_runs), next_index, false);
         }
         cursor = next_index;
     }
@@ -682,15 +867,19 @@ fn next_normalized_line(text: str, start: i32, binding_mappings: mutref list<nor
 }
 
 fn structural_c_equal(left: str, right: str) -> bool {
-    let mut left_binding_mappings: list<norm_mapping> = list();
-    let mut left_tmp_mappings: list<norm_mapping> = list();
-    let mut right_binding_mappings: list<norm_mapping> = list();
-    let mut right_tmp_mappings: list<norm_mapping> = list();
+    let mut left_binding_data: list<norm_mapping> = list();
+    let mut left_binding_runs: list<norm_run> = list();
+    let mut left_tmp_data: list<norm_mapping> = list();
+    let mut left_tmp_runs: list<norm_run> = list();
+    let mut right_binding_data: list<norm_mapping> = list();
+    let mut right_binding_runs: list<norm_run> = list();
+    let mut right_tmp_data: list<norm_mapping> = list();
+    let mut right_tmp_runs: list<norm_run> = list();
     let mut left_index = 0;
     let mut right_index = 0;
     while true {
-        let left_line = next_normalized_line(left, left_index, mutref left_binding_mappings, mutref left_tmp_mappings);
-        let right_line = next_normalized_line(right, right_index, mutref right_binding_mappings, mutref right_tmp_mappings);
+        let left_line = next_normalized_line(left, left_index, mutref left_binding_data, mutref left_binding_runs, mutref left_tmp_data, mutref left_tmp_runs);
+        let right_line = next_normalized_line(right, right_index, mutref right_binding_data, mutref right_binding_runs, mutref right_tmp_data, mutref right_tmp_runs);
         if left_line.done and right_line.done {
             return true;
         }
@@ -704,6 +893,181 @@ fn structural_c_equal(left: str, right: str) -> bool {
         right_index = right_line.next_index;
     }
     return false;
+}
+
+fn norm_count_is_power_of_two(count: i32) -> bool {
+    if count <= 0 {
+        return false;
+    }
+    let mut value = count;
+    while value > 1 {
+        let half = value / 2;
+        if half * 2 != value {
+            return false;
+        }
+        value = half;
+    }
+    return true;
+}
+
+fn norm_index_invariants(data: ref list<norm_mapping>, runs: ref list<norm_run>) -> bool {
+    if list_len(ref runs) == 0 {
+        return list_len(ref data) == 0;
+    }
+    let root_index = list_len(ref runs) - 1;
+    let root_entry = list_get(ref runs, root_index);
+    let mut expected_total = -1;
+    match root_entry {
+        Some(root) => {
+            expected_total = root.total;
+        },
+        None => {
+            return false;
+        },
+    }
+    let mut active_total = 0;
+    let mut previous_count = 0;
+    let mut run_index = root_index;
+    while run_index >= 0 {
+        let entry = list_get(ref runs, run_index);
+        match entry {
+            Some(run) => {
+                if not norm_count_is_power_of_two(run.count) or run.start < 0 or run.start + run.count > list_len(ref data) {
+                    return false;
+                }
+                // Active runs are the set bits of total, from least to most significant.
+                if previous_count > 0 and run.count <= previous_count {
+                    return false;
+                }
+                if run.total != expected_total - active_total {
+                    return false;
+                }
+                let mut index = run.start + 1;
+                while index < run.start + run.count {
+                    let before = list_get(ref data, index - 1);
+                    let current = list_get(ref data, index);
+                    match before {
+                        Some(before_value) => {
+                            match current {
+                                Some(current_value) => {
+                                    if norm_key_compare(before_value.original, current_value.original) >= 0 {
+                                        return false;
+                                    }
+                                },
+                                None => {
+                                    return false;
+                                },
+                            }
+                        },
+                        None => {
+                            return false;
+                        },
+                    }
+                    index = index + 1;
+                }
+                active_total = active_total + run.count;
+                previous_count = run.count;
+                if run.previous < -1 or run.previous >= run_index {
+                    return false;
+                }
+                run_index = run.previous;
+            },
+            None => {
+                return false;
+            },
+        }
+    }
+    return expected_total > 0 and active_total == expected_total;
+}
+
+fn normalizer_index_failure(detail: str) -> bool {
+    eprint_line(str_concat("normalizer index case failed: ", detail));
+    return false;
+}
+
+fn normalizer_index_cases() -> bool {
+    let mut data: list<norm_mapping> = list();
+    let mut runs: list<norm_run> = list();
+    let long_key = "12345678901234567890123456789012345678901234567890";
+    if mapping_get_or_add(mutref data, mutref runs, "01") != "1" {
+        return normalizer_index_failure("leading-zero first ordinal");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, "1") != "2" {
+        return normalizer_index_failure("exact key distinction");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, long_key) != "3" {
+        return normalizer_index_failure("long key first ordinal");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, "01") != "1" {
+        return normalizer_index_failure("early key reuse");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, long_key) != "3" {
+        return normalizer_index_failure("early long-key reuse");
+    }
+    let mut index = 0;
+    while index < 96 {
+        let key = str_concat("7", i32_to_str(1000 + index));
+        if mapping_get_or_add(mutref data, mutref runs, key) != i32_to_str(index + 4) {
+            return normalizer_index_failure("96 distinct key ordinals");
+        }
+        if mapping_get_or_add(mutref data, mutref runs, "01") != "1" {
+            return normalizer_index_failure("old key reuse during merges");
+        }
+        index = index + 1;
+    }
+    if mapping_get_or_add(mutref data, mutref runs, "71000") != "4" {
+        return normalizer_index_failure("old key reuse after 96 inserts");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, long_key) != "3" {
+        return normalizer_index_failure("long-key reuse after 96 inserts");
+    }
+    if mapping_get_or_add(mutref data, mutref runs, "1") != "2" {
+        return normalizer_index_failure("short-prefix key reuse");
+    }
+    index = 0;
+    while index < 96 {
+        let key = str_concat("7", i32_to_str(1000 + index));
+        if mapping_get_or_add(mutref data, mutref runs, key) != i32_to_str(index + 4) {
+            return normalizer_index_failure("every retained key ordinal");
+        }
+        index = index + 1;
+    }
+    if list_len(ref runs) != 99 or not norm_index_invariants(ref data, ref runs) {
+        return normalizer_index_failure("run invariants");
+    }
+
+    let mut binding_data: list<norm_mapping> = list();
+    let mut binding_runs: list<norm_run> = list();
+    let mut tmp_data: list<norm_mapping> = list();
+    let mut tmp_runs: list<norm_run> = list();
+    let independent = normalize_line("nqv_9_x nq_tmp_8 nqv_8_y nq_tmp_9", mutref binding_data, mutref binding_runs, mutref tmp_data, mutref tmp_runs);
+    if independent != "nqv_1_x nq_tmp_1 nqv_2_y nq_tmp_2" {
+        return normalizer_index_failure("binding and tmp namespace independence");
+    }
+    if not norm_index_invariants(ref binding_data, ref binding_runs) or not norm_index_invariants(ref tmp_data, ref tmp_runs) {
+        return normalizer_index_failure("namespace run invariants");
+    }
+    let mut line_data: list<norm_mapping> = list();
+    let mut line_runs: list<norm_run> = list();
+    let mut line_tmp_data: list<norm_mapping> = list();
+    let mut line_tmp_runs: list<norm_run> = list();
+    let first_line = next_normalized_line("nqv_5_x\nnqv_6_y", 0, mutref line_data, mutref line_runs, mutref line_tmp_data, mutref line_tmp_runs);
+    if first_line.text != "nqv_1_x" or list_len(ref line_runs) != 1 {
+        return normalizer_index_failure("no later-line pre-scan");
+    }
+    if normalize_structural_c("  nqv_01_x nqv_1_y nqv_01_z  \n\n") != "nqv_1_x nqv_2_y nqv_1_z" {
+        return normalizer_index_failure("exact normalized text");
+    }
+    if not structural_c_equal("nqv_9_x nq_tmp_8 nqv_8_y nq_tmp_9", "nqv_1_x nq_tmp_1 nqv_2_y nq_tmp_2") {
+        return normalizer_index_failure("independent structural states");
+    }
+    if structural_c_equal("nqv_01_x nqv_1_y nqv_01_z", "nqv_7_x nqv_8_y nqv_8_z") {
+        return normalizer_index_failure("leading-zero reuse conflict");
+    }
+    if structural_c_equal(concat3("nqv_01_x nqv_", long_key, "_y nqv_01_z"), "nqv_7_x nqv_8_y nqv_8_z") {
+        return normalizer_index_failure("long-key reuse conflict");
+    }
+    return true;
 }
 
 fn normalize_newlines(text: str) -> str {
@@ -795,6 +1159,7 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "integer_policy_tests");
     list_push(mutref modules, "process_tests");
     list_push(mutref modules, "allocation_policy_tests");
+    list_push(mutref modules, "str_join_tests");
     list_push(mutref modules, "source");
     list_push(mutref modules, "text");
     list_push(mutref modules, "token");
@@ -1234,6 +1599,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("qualified_data_names", "examples/qualified_data_names.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("read_file_len", "examples/read_file_len.nq", 6, ""));
     list_push(mutref cases, make_corpus_case("record_update", "examples/record_update.nq", 42, ""));
+    list_push(mutref cases, make_corpus_case("string_join", "examples/string_join.nq", 0, "Nauqtype joins bytes\n"));
     list_push(mutref cases, make_corpus_case("record_update_nontrivial", "examples/record_update_nontrivial.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("result_handling", "examples/result_handling.nq", 0, ""));
     list_push(mutref cases, make_corpus_case("review_contracts", "examples/review_contracts.nq", 42, "Hello, contracts!\n"));
@@ -1287,6 +1653,7 @@ fn push_locked_formatter_examples(paths: mutref list<str>) -> unit {
     list_push(mutref paths, "examples/qualified_data_names.nq");
     list_push(mutref paths, "examples/read_file_len.nq");
     list_push(mutref paths, "examples/record_update.nq");
+    list_push(mutref paths, "examples/string_join.nq");
     list_push(mutref paths, "examples/record_update_nontrivial.nq");
     list_push(mutref paths, "examples/result_handling.nq");
     list_push(mutref paths, "examples/review_contracts.nq");
@@ -2843,11 +3210,15 @@ audit {
     effects(print, io);
 }
 {
+    if not normalizer_index_cases() {
+        return 1;
+    }
     if not run_proof_artifact_gate() { return 1; }
     if not run_workspace_capture_tests("tests/fixtures/m54_10_workspace") { return 1; }
     if not run_workspace_evidence_gate(driver_path) { return 1; }
     if not run_integer_policy_gate(driver_path) { return 1; }
     if not run_allocation_policy_gate(driver_path) { return 1; }
+    if not run_str_join_gate(driver_path) { return 1; }
     if not run_process_time_gate(driver_path) { return 1; }
     if not run_schema_profile_gate() { return 1; }
     if not run_m39_fixture_manifest_gate() {

@@ -89,8 +89,11 @@ result_dir="$(dirname -- "$result_path")"
 mkdir -p "$result_dir"
 metrics_path="$(mktemp "$result_dir/.budget-metrics.XXXXXX")"
 result_tmp="$(mktemp "$result_dir/.budget-result.XXXXXX")"
+timeout_log="$(mktemp "$result_dir/.budget-timeout.XXXXXX")"
+completion_path="$(mktemp "$result_dir/.budget-completion.XXXXXX")"
+completion_tmp="$(mktemp "$result_dir/.budget-completion-tmp.XXXXXX")"
 cleanup() {
-    rm -f -- "$metrics_path" "$result_tmp"
+    rm -f -- "$metrics_path" "$result_tmp" "$timeout_log" "$completion_path" "$completion_tmp"
 }
 trap cleanup EXIT
 
@@ -98,9 +101,46 @@ set +e
 LC_ALL=C /usr/bin/time \
     -f 'wall_seconds=%e\npeak_rss_kib=%M' \
     -o "$metrics_path" \
-    timeout --signal=TERM --kill-after=5s -- "${wall_limit}s" "$@"
+    timeout --verbose --signal=TERM --kill-after=5s -- "${wall_limit}s" \
+        /bin/sh -c '
+            receipt=$1; temporary=$2; shift 2
+            delimiter=false
+            if (exec -- /bin/true) >/dev/null 2>&1; then delimiter=true; fi
+            trap : TERM
+            if [ "$delimiter" = true ]; then
+                (exec -- "$@" 2>&3 3>&-)
+            else
+                (exec "$@" 2>&3 3>&-)
+            fi
+            code=$?
+            if printf "budget-child-exit/v1\nexit_code=%s\ncomplete\n" "$code" > "$temporary"; then
+                /bin/mv -fT -- "$temporary" "$receipt"
+            fi
+            exit "$code"
+        ' budget-command "$completion_path" "$completion_tmp" "$@" \
+        3>&2 2>"$timeout_log"
 command_exit_code=$?
 set -e
+
+# Monitor/shim diagnostics use this log; target stderr stays on its original FD.
+# A private, complete child receipt distinguishes GNU timeout's status override
+# from a command that itself exits 124. Ambiguous 124/137 stays command failure.
+timeout_fired=false
+child_exit_code=$(sed -n 's/^exit_code=//p' "$completion_path")
+child_receipt_valid=false
+if [[ "$child_exit_code" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( child_exit_code <= 255 )) && \
+    cmp -s "$completion_path" <(printf 'budget-child-exit/v1\nexit_code=%s\ncomplete\n' "$child_exit_code"); then
+    child_receipt_valid=true
+fi
+if (( command_exit_code == 124 )) && [[ "$child_receipt_valid" == true ]] && \
+    (( child_exit_code != 124 )); then
+    timeout_fired=true
+fi
+cat -- "$timeout_log" >&2
+if (( command_exit_code == 0 )) && [[ "$child_receipt_valid" != true ]]; then
+    printf 'run_budgeted: missing or malformed child completion evidence for %s\n' "$phase_id" >&2
+    exit 2
+fi
 
 wall_seconds="$(sed -n 's/^wall_seconds=//p' "$metrics_path")"
 peak_rss_kib="$(sed -n 's/^peak_rss_kib=//p' "$metrics_path")"
@@ -112,10 +152,10 @@ fi
 status="ok"
 failure="none"
 runner_exit_code=0
-if (( command_exit_code == 124 )); then
+if [[ "$timeout_fired" == true ]]; then
     status="failed"
     failure="wall_time"
-    runner_exit_code=124
+    runner_exit_code="$command_exit_code"
 elif (( command_exit_code != 0 )); then
     status="failed"
     failure="command"

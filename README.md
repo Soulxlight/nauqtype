@@ -99,7 +99,48 @@ invokes a shell. Legacy `run_process` remains compatible. See
 [M55_CONTRACTS.md](M55_CONTRACTS.md) for exact failures and Linux limits, and
 [process_deadline.nq](examples/process_deadline.nq) for a runnable example.
 
+M55's recorded Linux acceptance is complete. A bounded
+[performance checkpoint](PERFORMANCE_CHECKPOINT.md) now comes before M56
+explicit generic reuse. Its first priority is faster iteration and milestone
+close: goals are <=10-second focused feedback, <=60-second warm fixtures,
+and at least a 50% reduction in a new same-host cold gate, with 10 minutes
+as the working target. The recorded M55 gate took about 42 minutes; these
+goals are not new measurements. The campaign measures capture/hash work,
+compiler scans, structural comparisons, and clone/drop churn, then removes
+demonstrated waste. [VERIFICATION.md](VERIFICATION.md) separates the focused
+iteration path from full milestone and independent release acceptance. The
+planned [model authoring kit](AUTHORING_KIT.md) adds a separate
+evaluation track for compiler-checked guidance and optional constrained
+generation. It is not shipped tooling, a replacement for audits, or model
+behavior inside the compiler. Adoption depends on measured behavioral and
+cost benefits, with a possible maintained integration at M59.
+
+The first narrow enablement slice is
+[`str_join(parts: ref list<str>) -> str`](PERFORMANCE_ENABLEMENT.md): pure,
+ordered byte assembly with unchanged inputs and independently owned output.
+It supports compiler text assembly without new syntax or a richer borrow
+model. General M56 generics and the complete gate-speed goals remain separate.
+The measured assembly fixture is 18.3x faster; E1 alone did not conclusively
+improve real C comparisons or the cold gate. The next bounded
+[normalizer mapping slice](PERFORMANCE_MAPPING.md) replaces a measured
+private linear scan with incremental sorted runs. Focused production
+comparisons improve from 85-89 seconds to about 3.4 seconds, with peak
+comparison memory rising from about 26 MiB to 44 MiB. Exact seed reproduction
+is evidenced in the report; [ROADMAP.md](ROADMAP.md) will record audited
+closure only after the required complete gate succeeds. The comparison gain
+is not a claim that the overall gate-speed goal is met.
+
 ## Quick Start
+
+Choose any checkout location; no particular username, home directory, or
+adjacent project layout is required. Run the commands below from the repository
+root (`git rev-parse --show-toplevel`). Build and release verification currently
+target Linux; editing this checkout on another host does not establish runtime
+support there. See [LINUX.md](LINUX.md) for the supported workflow and
+[coordination](NAUQTYPE_COORDINATION.md#portable-locations) for workspace rules.
+For shared local Codex/Kimi verification from Windows, see
+[WSL_DEVELOPMENT.md](WSL_DEVELOPMENT.md); WSL installation alone is not a
+completed Linux toolchain or integration check.
 
 Build the stage1 driver from the checked-in C seed:
 
@@ -287,6 +328,7 @@ Example programs worth checking first:
 - `examples/import_aliases.nq`: an explicit source-local alias used for functions, struct literals, and enum variants
 - `examples/record_update.nq`: copy-only record update with explicit base provenance
 - `examples/record_update_nontrivial.nq`: record update over a computed owned base value
+- `examples/string_join.nq`: ordered text assembly with explicit borrowed parts
 - `examples/propagation_question.nq`: statement-boundary `?` with optional context-label and `propagates(...)` evidence
 - `examples/try_expression.nq`: expression-position `?` captured by a visible local `try` boundary
 - `examples/break_continue.nq`: minimal loop control
@@ -355,11 +397,14 @@ Current remaining gaps:
 
 Near-term focus:
 
-- keep the completed M54 Linux authority contracts and locked library fixture
-  stable while NQType Libraries builds ordinary Nauqtype modules and compiler
-  work validates M55 structured process, time, and cancellation support before
-  the generic-reuse milestone; retain M54.5's truthful reuse and M54.6's measured
-  semantic speedup
+- preserve the completed M54/M55 Linux authority and process contracts while
+  making the pre-M56 gate-efficiency campaign the first priority; WSL Ubuntu
+  tools and the reviewed native P0 baseline now pass; the cold gate took
+  2520.62s and repeat checks took 304.23s/308.99s. Optimization acceptance
+  remains open; see [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md). Retain
+  M54.5's truthful reuse and M54.6's measured semantic improvements
+- evaluate the optional authoring-kit lane without importing its prototype
+  defects, promising unmeasured savings, or making model services mandatory
 - preserve M50's visible local `try` boundary and exact propagation evidence while keeping broader hidden propagation out of scope
 - keep Linux alpha release-layout checks green before more language sugar
 - run `scripts/run_stress_leg.sh` periodically so dense multi-module programs catch feature-composition edges before stable/release checkpoints
@@ -399,6 +444,8 @@ Compatibility stance for the alpha checkpoint:
 - [GRAMMAR.md](GRAMMAR.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [ROADMAP.md](ROADMAP.md)
+- [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md)
+- [AGENT_ROUTING.md](AGENT_ROUTING.md)
 - [DECISIONS.md](DECISIONS.md)
 - [RISKS.md](RISKS.md)
 - [DEFERRED.md](DEFERRED.md)
@@ -406,6 +453,7 @@ Compatibility stance for the alpha checkpoint:
 - [AI_CONTRACTS.md](AI_CONTRACTS.md)
 - [PROPAGATION.md](PROPAGATION.md)
 - [TEACHING_CORPUS.md](TEACHING_CORPUS.md)
+- [AUTHORING_KIT.md](AUTHORING_KIT.md)
 - [FORMATTER.md](FORMATTER.md)
 - [LINUX.md](LINUX.md)
 - [STRESS_LEG.md](STRESS_LEG.md)

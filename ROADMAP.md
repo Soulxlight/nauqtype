@@ -1,5 +1,38 @@
 # Nauqtype Roadmap
 
+## Current Position And Resumption
+
+M55 is complete in the recorded Linux evidence. Gate efficiency is the first
+priority: complete the PRE-M56 Performance Checkpoint before M56 generic
+reuse. Ubuntu 24.04 on WSL2 now runs with GCC and a native ext4 home; the
+reviewed compiler P0 baseline is complete for its exact indexed candidate. The
+project remains an organizational alpha, not a v1.0 stable or feature-complete
+terminal/application language. M56-M61 below remain the release sequence; the
+earlier sections retain milestone history.
+
+The campaign goals are focused feedback within 10 seconds, the warm complete
+fixture tier within 60 seconds, and a cold milestone gate at least 50% faster
+than the new same-host baseline, with 10 minutes as the working target.
+These are planning goals, not achieved reductions. The new P0 cold gate passed
+in 2520.62s; repeated checks passed in 304.23s/308.99s. No completed optimization
+is claimed. See [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md).
+The recorded M55 gate was 2,504 seconds, with about 91% in driver, seed
+bootstrap, and proof. The native P0 now establishes 92.4% in those phases;
+use the same-host costs before choosing an implementation.
+Keep focused checks during edits, trailing audits before acceptance, and one
+complete final gate on each reviewed candidate. Preserve current proof and
+provenance obligations while reducing repeated captures, scans, comparisons,
+and unnecessary value transfers. See
+[VERIFICATION.md](VERIFICATION.md) and
+[PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md).
+
+The useful Kimi authoring-kit direction is accepted as a staged evaluation
+plan in [AUTHORING_KIT.md](AUTHORING_KIT.md): compiler-checked teaching,
+optional constrained generation, and a controlled behavioral/cost comparison.
+The prototype is not adopted code. This optional lane can be evaluated before
+M59 after its corrections and separate authorization; it does not delay M56,
+weaken audits, add model decisions to the compiler, or change locked schemas.
+
 ## MVP Definition
 
 Nauqtype "compiles and runs code" when all of the following are true:
@@ -940,6 +973,69 @@ Status: complete.
   increase. Exact identities and results are in `AUDIT_REMEDIATION.md`.
 - M56 generic reuse is next; no M56 implementation is included here.
 
+### PRE-M56 Performance Checkpoint
+
+- status: highest priority, before language growth. P0 is complete for the
+  reviewed native candidate: cold gate 2520.62s, repeat checks
+  304.23s/308.99s. [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) records
+  identities and workflow costs. P1-P4 and optimization acceptance remain open.
+- P0: freeze a native-filesystem candidate, verify compiler/cache identities,
+  record two full-tree checks, and capture one cold complete-gate baseline
+  on a reviewed, indexed candidate, including every phase's wall/RSS.
+- P1: shorten the iteration path and remove measured repeated snapshot/hash
+  work using content-verified inputs and isolated outputs. Add focused suite
+  selection if needed; retain the full fixture tier at close.
+- P2: optimize measured visibility/function-membership scans and, if phase
+  attribution supports it, remaining structural-comparison costs. Keep both
+  direct seed comparisons and the normalization contract.
+- P3: remove only proven redundant clone/drop transfers with behavior and
+  cleanup fixtures; string retains are not deep byte-copy measurements.
+- P4: propagate compiler improvements through the actual seed regeneration
+  procedure and run one reviewed complete acceptance gate. Compare total
+  wall/RSS, setup costs, and every phase against P0.
+- Acceptance goals and evidence are in
+  [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md). Existing regression
+  ceilings remain unchanged. Missed speed goals remain visible open work.
+- Keep M56-M61 numbering and scope; resume M56 after this checkpoint closes.
+
+- PRE-M56 E1 exception, authorized 2026-10-01: bring forward only the pure
+  borrowed `str_join` builtin to enable measured linear text assembly. It
+  must pass `PERFORMANCE_ENABLEMENT.md` transparency, equivalence, seed, and
+  performance gates; broader generics and collection features remain M56/M57.
+  Implementation, precise owned tests, 15 oracle pairs, and exact seed
+  promotion are evidenced in `PERFORMANCE_ENABLEMENT.md`. Assembly batches
+  improve 18.3x, but real ~80s comparisons show no conclusive speedup.
+  E1 is complete on reviewed candidate `7a5a1a894537989c64ca59ce7803fd8d8c398781`:
+  both independent final audits passed, followed by one cold seven-phase gate
+  and matching before/after attestation. Wall time 2559.57s, peak RSS 436000
+  KiB, 44 corpus cases. P0 was 2520.62s; this is not a cold-gate improvement.
+  Do not close P1-P4 or the cold/warm/focused goals from this microbenchmark.
+  The next work is attribution and bounded scan/mapping optimization, not
+  general M56 generics. No commit/publication or consumer adoption is implied.
+
+- P2 mapping slice (2026-10-04): local diagnostic attribution identifies the
+  normalizer mapping scan as dominant (79.65% sampled self time). Implement
+  only a private incremental sorted-run index under
+  [PERFORMANCE_MAPPING.md](PERFORMANCE_MAPPING.md), retaining exact keys,
+  first-appearance ordinals, independent namespaces, and early line mismatch.
+  Focused production comparisons improve from 85-89s to 3.36-3.47s with
+  increased peak comparison RSS (43948-44768 KiB). The exact generated seed
+  is `5221d8ab5c788140bea2a079b2a37bc2de6204c0939399bf328c6803d3f0bc08`.
+  Both independent final audits passed after status-wording repairs. The one
+  cold seven-phase gate and matching before/after attestation passed on
+  candidate `36e68e791d3ec2bb3b068fbabd69894a01913803`: 2485.30s wall,
+  436232 KiB peak RSS, 44 corpus cases. This is 74.27s (2.90%) less than E1
+  and 35.32s (1.40%) less than P0, not the >=50% campaign goal. Seed bootstrap
+  improved from E1's 581.83s to 447.94s; driver construction rose 36.19s,
+  owned tests rose 16.63s, and combined proof was effectively unchanged.
+  These are single cold-run differences, not controlled phase-causality proof.
+  Compiler construction/scans remain dominant. Phase receipts, exact identity,
+  focused evidence, and audit records are retained under ignored
+  `build/verification/p2-20261004/`. No budget/flag/proof-edge reduction,
+  commit, publication, or consumer adoption is implied. Broader P1-P4 and
+  the warm/cold goals remain open; next work is bounded compiler-scan
+  attribution, not a claim that mapping gains solved the complete workflow.
+
 ### M56: Generic Reuse Foundation
 
 - add explicit function and user-type generics with deterministic
@@ -964,6 +1060,10 @@ Status: complete.
 - add comment-preserving formatter write mode, editor semantic support,
   workspace test ergonomics, checked API documentation, and enforceable
   performance budgets
+- integrate the optional [model authoring kit](AUTHORING_KIT.md) only if its
+  corrected, version-pinned pilot demonstrates practical benefit; no live
+  model service becomes a compiler, CI, or release dependency, and a failed
+  pilot does not block the core milestone
 
 ### M60: Linux Packaging And Compatibility Freeze
 

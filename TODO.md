@@ -401,3 +401,27 @@
 - [ ] M59: add bounded tasks and complete daily formatter/editor/test/documentation workflows
 - [ ] M60: freeze secure Linux packaging, installation, relocation, compatibility, and sanitizer/fuzz gates
 - [ ] M61: pass and publish the v1.0 stable Linux gate
+
+## Resumption And Model Authoring
+
+- [x] Record the useful Kimi authoring-kit direction, prototype blockers, ownership boundary, and conditional M59 integration in `AUTHORING_KIT.md`; no prototype implementation or benchmark is claimed
+- [ ] Checkpoint the reviewed portable-documentation cleanup and establish supported-Linux verification with exact source, seed, and toolchain identities before feature work resumes
+- [x] PRE-M56 environment basics: verify Ubuntu 24.04 WSL2, a non-root user, native ext4 home, GCC 13.3.0, Git, and GNU time on 2026-09-30; compiler P0 gate now passed separately below, library integration remains pending
+- [x] PRE-M56 P0: verify native capture/cache and reviewed cold gate (2520.62s), two repeatable checks (304.23s/308.99s), phase work inventory, snapshot/hash costs, and identities; see `PERFORMANCE_BASELINE.md`; no optimization acceptance is claimed
+- [ ] PRE-M56 P1: provide relevant focused feedback and remove measured repeated captures/hashing without reusing stale artifacts; keep interruption/provenance coverage in the appropriate full gate
+- [ ] PRE-M56 P2: measure and optimize visibility/membership scans and any dominant normalization cost; preserve origins, ambiguity, ordering, and both direct seed comparisons
+- [x] PRE-M56 P2 mapping close: private sorted-run normalizer, 36 oracle pairs, owned invariants, sanitizers, 25-26x complete-compiler comparison gain, exact seed, and both final audits passed; one cold seven-phase gate/attestation passed in 2485.30s on candidate `36e68e791d3ec2bb3b068fbabd69894a01913803`; see `PERFORMANCE_MAPPING.md` and `ROADMAP.md`
+  Total cold-run improvement is 2.90% vs E1, 1.40% vs P0; broader scan,
+  warm-fixture, and >=50% gate-speed goals remain open. No reduced coverage.
+- [x] PRE-M56 E1: implement only explicit borrowed `str_join`, prove runtime/evidence/normalizer equivalence, measure concat/join and same-input comparisons, and promote only an exact self-generated seed before the audited final gate
+  Assembly fixture 18.3x faster; representative comparisons inconclusive.
+  Both audits passed; one cold seven-phase gate/attestation passed in
+  2559.57s on candidate `7a5a1a894537989c64ca59ce7803fd8d8c398781`.
+  No cold-gate gain or P1-P4 closure; see `PERFORMANCE_ENABLEMENT.md`.
+- [ ] PRE-M56 P3: eliminate only demonstrated redundant clone/drop transfers, with cleanup and behavioral evidence
+- [ ] PRE-M56 P4: regenerate the seed through the existing proof procedure, obtain required audits, and run one complete final gate on the reviewed candidate
+- [ ] PRE-M56 goals: focused feedback <=10s, warm full fixtures <=60s, cold full gate >=50% faster than the new same-host baseline with <=10min as the working target; record achieved times and remaining gaps without relaxing budgets
+- [ ] Assign an authoring-kit owner and correct the compiler-versioned guide and examples, including the minimum-i32 behavior test
+- [ ] Make grammar validation portable and fail closed, pin the decoder build/content, and retire conflicting drafts before any authoring pilot
+- [ ] Run a separately authorized isolated same-model authoring comparison with held-out behavior tests, equal repair budgets, and actual cost/time reporting
+- [ ] At M59, promote only authoring components supported by that evidence; keep paid model evaluation optional and outside mandatory compiler gates

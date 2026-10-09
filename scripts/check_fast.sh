@@ -35,3 +35,4 @@ fi
 bin/nauqc test
 scripts/check_m54_10_provenance.sh
 scripts/check_m54_10_attestation.sh
+scripts/check_run_budgeted.sh

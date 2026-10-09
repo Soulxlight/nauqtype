@@ -4,6 +4,46 @@ M53 turns compiler, proof, test, and release-gate resource use into checked
 release evidence. These ceilings are regression tripwires, not benchmark
 claims or optimization targets.
 
+## Pre-M56 Optimization Work
+
+[PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md) defines the next
+bounded performance pass: establish a reproducible Linux baseline, improve
+measurement-selected visibility/index scans, then investigate redundant
+clone/drop temporaries. It does not change the ceilings below or claim that
+external instrumented timings are current release measurements.
+
+The first implementation slice is an opt-in host measurement helper,
+`scripts/profile_selfhost.sh`, with focused contract checks in
+`scripts/check_profile_selfhost.sh`. It is not a new public compiler command,
+mandatory proof phase, or cache producer. Real measurements require the
+existing verified stage1 artifact and supported Linux tools; stub tests and
+Windows source checks are not performance evidence. Optional instrumentation
+is a later attribution step, separate from ordinary wall/RSS measurements.
+
+### Current Priority And Evidence Boundary
+
+Follow [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md) for optimization
+objectives and measurement gates. The latest detailed full-gate phase table is
+the historical M55 run recorded in
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m55-process-and-time-closure):
+2,504 seconds total; driver 488.33s, seed bootstrap 573.54s, proof 1,213.77s,
+Linux alpha 13.04s, stress 2.07s, owned tests 156.21s, and ownership
+sanitizers 8.23s. Driver, seed bootstrap, and proof account for 2,275.64s
+(about 91%) of that run. These are historical measurements, not a fresh WSL
+baseline. This checkout currently has no `build/verification` artifacts.
+
+WSL's verified base tools do not establish a current compiler/cache or project
+timing. Obtain a reproducible, non-instrumented WSL baseline only after the
+owner-controlled checkout and verified stage1 artifact are available; do not
+substitute the historical M55 figures. The checked-in wall/RSS ceilings below
+remain unchanged. They are release regression limits, not iteration targets;
+warm development feedback and cold exact-candidate release proof are distinct.
+In particular, the earlier roughly 1.3-second warm `check_fast.sh` figure is
+historical and predates the dirty provenance fixture's 30-second timeout, so it
+is not a current timing promise. Treat source-copy reduction as a hypothesis to
+measure, not proof of faster deep-copy behavior when string references may be
+retained; preserve the separate cold proof requirements.
+
 ## Contract
 
 `scripts/check_milestone.sh` runs each existing phase exactly once through
@@ -11,6 +51,15 @@ claims or optimization targets.
 seconds and peak resident memory, plus GNU `timeout` for the wall ceiling. A
 command that exceeds peak RSS after otherwise succeeding exits `97`; a timed
 out command retains GNU timeout's exit `124`.
+
+The runner distinguishes a command's own `124` from GNU timeout overriding a
+different observed child exit status, using a private, atomically published
+completion receipt. Child stderr cannot fabricate that receipt or the private
+timeout diagnostics. An ambiguous `124` (including a timed-out child that
+itself returns `124`) or a hard kill without a receipt remains `command`
+failure; `137` is preserved. Failure classification never turns those exits
+into successful evidence. This conservative boundary is exercised by
+`scripts/check_run_budgeted.sh`, also included in the complete fixture tier.
 
 The gate preserves `build/verification/milestone-summary.json` and writes the
 separate, deterministic-shape performance artifact at:

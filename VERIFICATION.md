@@ -3,6 +3,33 @@
 Nauqtype's verification is intentionally layered so ordinary milestone work does
 not repeat the same expensive selfhost and release proof several times.
 
+## Gate Selection Before Each Run
+
+The immediate priority is the
+[PRE-M56 efficiency campaign](PERFORMANCE_CHECKPOINT.md). Choose the smallest
+relevant feedback check before starting work, and record elapsed time including
+any compiler construction. The broader fixture tier and final close have
+separate jobs:
+
+| Change or purpose | Iteration feedback | Acceptance boundary |
+| --- | --- | --- |
+| Planning or nonpackaged documentation | Diff/relative-link/contract checks | Required documentation audit; no compiler performance claim |
+| One compiler behavior or runtime boundary | Relevant existing Nauqtype fixture or focused native/shell probe, using a verified current compiler where needed | Complete fixture tier and unchanged full milestone gate |
+| Cache, seed, timeout, or attestation machinery | Focused success, tamper, failure, and interruption probes | Required mixed audit and real complete provenance/seed gate |
+| Reviewed executable milestone candidate | Affected checks after any audit repair | One composed full milestone invocation |
+| Release candidate or stable freeze | Relevant fixes first | Independent final alpha/stable gates below |
+
+`nauqc test` currently accepts no suite selector. Do not invent a filter flag
+or describe the current complete suite as a focused run. P1 owns adding
+selection if existing individual probes cannot provide sufficient feedback.
+Until then, use the existing direct fixture commands where applicable.
+
+The campaign aims for <=10-second focused feedback, <=60-second warm full
+fixtures, and at least a 50% reduction in the new same-host cold gate, with
+10 minutes as the working target. These objectives do not change phase
+ceilings or required acceptance coverage. A stale compiler rebuild must be
+disclosed; exclude it only from an explicitly labeled warm measurement.
+
 ## Fast Feedback
 
 Run the Nauqtype-owned fixture and tooling tier:

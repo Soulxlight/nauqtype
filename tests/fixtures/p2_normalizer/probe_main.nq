@@ -1,0 +1,36 @@
+// Appended to the actual private normalizer helpers by the focused probe.
+fn main() -> i32 {
+    if not normalizer_index_cases() {
+        eprint_line("normalizer index invariants failed");
+        return 1;
+    }
+    if arg_count() != 4 {
+        return 2;
+    }
+    let mut left_path = "";
+    let mut right_path = "";
+    match arg_get(2) {
+        Some(value) => { left_path = value; },
+        None => { return 2; },
+    }
+    match arg_get(3) {
+        Some(value) => { right_path = value; },
+        None => { return 2; },
+    }
+    let mut left = "";
+    let mut right = "";
+    match read_file(left_path) {
+        Ok(value) => { left = value; },
+        Err(_) => { return 2; },
+    }
+    match read_file(right_path) {
+        Ok(value) => { right = value; },
+        Err(_) => { return 2; },
+    }
+    if structural_c_equal(left, right) {
+        print_line("seed structural proof ok");
+        return 0;
+    }
+    eprint_line("seed structural proof failed: normalized structural C changed between stage1 and stage2");
+    return 1;
+}

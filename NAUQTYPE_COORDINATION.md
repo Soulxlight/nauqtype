@@ -2,6 +2,17 @@
 
 Last live review: 2026-09-06.
 
+Compiler/tooling planning update: 2026-10-04. Gate efficiency is the first
+priority before M56. WSL Ubuntu base tools and the reviewed native compiler
+P0 baseline are verified: seven-phase cold gate 2520.62s, repeated checks
+304.23s/308.99s. `PERFORMANCE_BASELINE.md` records identities and scope;
+overall speedup acceptance remains open. E1 and the bounded P2 normalizer
+mapping slice are evidenced below, not full P1-P4 closure. The user assigned
+the guide-only authoring lane to the compiler lead with a Sol High Professor
+worker; its draft is staged separately and not yet integrated or evidenced.
+This update does not refresh the dated downstream evidence or
+recover the missing workspaces/documents listed below.
+
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
 on NauqType must load the `$nauqtype-work` skill and read this file before
@@ -9,24 +20,89 @@ planning, editing, testing, auditing, committing, pushing, or handing off.
 
 ## Active Workspaces
 
-| Workspace | Canonical root | Owns |
+| Workspace | Repository location | Owns |
 | --- | --- | --- |
-| NauqType | `/home/soulxlight/Documents/NauqType` | Language, compiler, runtime, builtins, evidence schemas, workspace resolution, ABI/FFI, release machinery |
-| NQType Libraries | `/home/soulxlight/Documents/NQType-Libraries` | General-purpose NauqType libraries, public APIs, examples, docs, and library tests |
-| NQType AI/ML | `/home/soulxlight/Documents/NQType-AI-ML` | AI/ML shapes, tensors, reference algorithms, codecs, metrics, backend adapters, examples, docs, and tests |
+| NauqType | This checkout's root | Language, compiler, runtime, builtins, evidence schemas, workspace resolution, ABI/FFI, release machinery |
+| NQType Libraries | Separately configured `NQType-Libraries` checkout | General-purpose NauqType libraries, public APIs, examples, docs, and library tests |
+| NQType AI/ML | Separately configured `NQType-AI-ML` checkout | AI/ML shapes, tensors, reference algorithms, codecs, metrics, backend adapters, examples, docs, and tests |
 
 `Gemmi Nauqtype`, `NauqType-compiler-audit`, `NauqTypeAudit`, the tutorial,
 mounted Windows paths, and other snapshots are not active implementation roots
 unless the user explicitly assigns them.
 
+### Portable Locations
+
+Resolve the active root with `git rev-parse --show-toplevel`; paths in this
+repository's instructions are relative to that root unless stated otherwise.
+Keep machine-specific checkout and credential locations in untracked local
+configuration. Do not assume related repositories are siblings or use a
+remembered home directory to locate them. Verify each separately assigned
+checkout before claiming current consumer status; the dated evidence below
+does not establish that a workspace still exists on the current host.
+
+Historical candidate names in milestone reports are snapshot identifiers, not
+paths to available directories. Their original host-specific parent locations
+have been omitted from prose; recorded revisions, digests, measurements, and
+raw audit artifacts remain unchanged. Sanitizing documentation neither
+recovers missing local artifacts nor reruns historical verification. Git
+history is not rewritten by this cleanup.
+
+Checkout inventory on 2026-09-19: `AIMachineLearning_NEEDS.md`,
+`AIMachineLearning_UPSTREAM_RESPONSE.md`, and `TOOLING_STUDY.md` are absent
+from the recovered tracked tree. References below are historical pointers,
+not available local documents or fresh evidence of another lane's status.
+Recover or obtain them from their owners before relying on those records.
+
+### Shared Linux Verification
+
+[WSL_DEVELOPMENT.md](WSL_DEVELOPMENT.md) defines the local Codex/Kimi Code
+integration workflow. Ubuntu 24.04 now runs under WSL2 with a non-root user,
+GCC 13.3.0, Git, GNU time, and native ext4 home storage. Kimi's earlier
+`wsl.exe` access check does not establish a fresh Linux integration pass.
+The specific reviewed compiler P0 capture/cache and baseline are now verified
+in `PERFORMANCE_BASELINE.md`; library integration remains pending. No remote relay access,
+shared credentials, or agent permission changes are implied. Keep each
+repository owner's sources and compiler/dependency pins explicit.
+
 ## Active Codex Roles
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (Astra lead) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 complete after independent Sol max/GPT-5.5 xhigh Gate B PASS and the 2,504-second frozen gate | Owned process/time/cancellation contracts, checked cleanup/call authority, copied-release fixtures, and exact seed provenance are evidenced. M56 is next, not implemented. No external repository edits. |
+| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 complete; candidate-specific P0, E1, and P2 mapping evidenced; pre-M56 gate efficiency remains the highest priority | Use `PERFORMANCE_BASELINE.md`, `PERFORMANCE_MAPPING.md`, and the closure below; broader P1-P4 must still shorten focused checks and measured snapshot/scan/comparison/clone costs before M56. Use `AGENT_ROUTING.md`; the modest single cold-run gain does not meet campaign goals, and no external repository change is claimed. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
+
+PRE-M56 P2 mapping (2026-10-04): compiler-owned private append-only sorted
+runs preserve the old structural normalizer result and early-exit boundary.
+The 36-pair oracle, actual owned invariants, sanitizers, complete-compiler
+measurements (25-26x comparison gain), and exact self-generated seed passed.
+Source SHA-256 is `6c161ecfcf254b602d4aa9199024f3e4890f2e7d26daba6f147b157af7bc379d`;
+seed C is `5221d8ab5c788140bea2a079b2a37bc2de6204c0939399bf328c6803d3f0bc08`.
+Both independent final audits passed, then the one cold seven-phase gate and
+matching attestation passed on candidate
+`36e68e791d3ec2bb3b068fbabd69894a01913803`: 2485.30s, 436232 KiB peak RSS,
+44 corpus cases. Total is 2.90% less than E1 and 1.40% less than P0; proof
+and compiler construction still dominate, and the campaign goals remain open.
+Comparison memory rises to 43948-44768 KiB versus 25940-26496 KiB reference.
+See `PERFORMANCE_MAPPING.md` and `ROADMAP.md`; this is uncommitted compiler
+evidence, not publication, an external consumer pin, or full generics.
+Next compiler action is bounded compiler-scan attribution; no other repo
+is changed or unblocked by an inferred adoption claim.
+
+PRE-M56 E1 (2026-10-01): compiler-owned `str_join(parts: ref list<str>) -> str`
+is implemented/focused-evidenced under `PERFORMANCE_ENABLEMENT.md`: assembly
+batches improve 18.3x, while representative ~80s comparisons show no
+conclusive gain. Exact self-generated seed C is `73ee8c354d3241dbcce9da003708a8ff6b3c5e0e903fe8c425c3aad7e0ec55de`;
+source lock is `317fcc1aa4d2415493700e406ba41368d328043adfebbbdca7c74bd4991b5e2f`.
+It is the sole admitted performance-enabling builtin; full M56 generics and
+P1-P4 goals remain separate. Both independent final audits and the one cold
+seven-phase gate/attestation passed on indexed candidate
+`7a5a1a894537989c64ca59ce7803fd8d8c398781` (2559.57s, 436000 KiB peak RSS,
+44 corpus cases). The cold gate is not faster than P0. The implementation is
+content-locked/evidenced, but uncommitted: no consumer pin migration,
+publication, or adoption is claimed. Next compiler-owned action is bounded
+P2 scan/mapping attribution and optimization, not full generics.
 
 | Request | Provider | Consumer | State | Current evidence and next action |
 | --- | --- | --- | --- | --- |
@@ -39,6 +115,8 @@ unless the user explicitly assigns them.
 | AIML contiguous storage and binary codecs | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | Current `list<T>` is contiguous but append/read-oriented and allocation failure aborts. Recoverable fixed-size construction, indexed replacement, copy/fill, byte mutation/slicing, overflow rules, and later native-borrow rules remain open. General endian/dtype codecs belong in NQType Libraries. |
 | AIML deterministic RNG and entropy | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | Seeded RNG needs versioned wrapping/bit operations or another frozen primitive. Seeded generation must remain pure. OS entropy is separate checked authority and must not be replaced by time-derived seeding. |
 | Locked `nauqtype.ai` integration fixture | NauqType | NQType AI/ML | Blocked | Add only after float, storage, codec, and deterministic RNG contracts are evidenced. It must prove library-only checking, facts/review provenance, source and copied-release build/run, deterministic numeric behavior, failures, and cleanup. |
+| [AUTHORING_KIT.md](AUTHORING_KIT.md) | Compiler lead owns guide-only integration; Sol High Professor worker stages the bounded draft | Human-supervised model authors | Guide-only work assigned 2026-10-04; not integrated/evidenced, grammar and pilot remain design | Compact repo-local onboarding skill and authoritative compiler/example references first, staged outside the frozen P2 candidate. Lead verifies before integration. No grammar/decoder/model call, savings claim, or pilot authorization; conditional M59 maintained-kit integration remains separate from M56. |
+| [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md) | NauqType | Compiler developers and future M56 work | Highest priority; candidate-specific P0 and P2 mapping evidenced, broader P1-P4 open | `PERFORMANCE_BASELINE.md`: P0 cold gate 2520.62s; repeat checks 304.23s/308.99s. P2 mapping cold gate 2485.30s; its single run improved modestly but did not meet the >=50% campaign goal. P1 focused checks/capture reuse; P2 compiler scans; P3 redundant transfers; P4 campaign-wide attested acceptance remain. Goals: <=10s focused, <=60s warm fixtures, >=50% faster cold gate with <=10min working target. No relaxed budget is claimed. |
 
 ## Completed Foundation
 
@@ -66,6 +144,14 @@ unless the user explicitly assigns them.
 
 ### NauqType Compiler/Runtime
 
+- Immediate work is the pre-M56 performance checkpoint. The director owns
+  acceptance and integration; scoped workers own bounded implementation and
+  documentation. The Ubuntu/GCC/ext4 runner has now passed the reviewed,
+  indexed P0 candidate's complete gate and repeatable checks. M55 remains
+  complete; broader P1-P4 remain open. P2 mapping closure is recorded above,
+  separately from P0's baseline and E1's assembly-only gain. Seed-phase
+  instrumentation passed repair audits, focused checks, and its candidate's
+  gate; later changes do not inherit an earlier candidate's attestation.
 - M54.10 migration notice: the completed compiler rejects old dependency locks and
   requires explicit `workspace-lock/v2` path/content framing. Published
   Libraries revision `bed7bf6` and provisional AIML source are not changed.
@@ -126,6 +212,21 @@ unless the user explicitly assigns them.
 - The AIML response now splits the numerical request into independently
   evidenced AI-U1 through AI-U4 slices. Public milestone numbers still need to
   be assigned before implementation begins.
+
+### Model Authoring (Planned)
+
+- `AUTHORING_KIT.md` records the accepted direction and the external Kimi
+  prototype's blockers. No kit code, model benchmark, or savings claim has
+  been adopted. Compiler source and checked evidence remain authoritative.
+- Assign an implementation owner and bounded write set before work begins.
+  Keep compiler/evidence contracts here and ordinary shared helpers in
+  NQType Libraries; do not revive Python orchestration in the active path.
+- A pilot needs separate data/spend authorization and isolated execution of
+  all generated programs, independent of their declared effects. No live
+  model call enters mandatory tests or replaces an audit.
+- M56 remains the next compiler milestone. M59 is the conditional integration
+  home for authoring components with measured benefit; a failed experiment
+  does not block the stable Linux program.
 
 ### NQType Libraries
 

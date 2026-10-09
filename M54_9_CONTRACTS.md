@@ -161,8 +161,8 @@ the exact staged diff SHA-256
 `3f597478f2b541c138d0b5c146acff0c2f7a8b92828b7314a145013e2e0bdc5c`.
 
 `scripts/check_milestone.sh` passed in 2,048 seconds on frozen tree
-`756577157e6018962e938872548dc962449a40dd` in
-`/tmp/nauqtype-m54-9-frozen-fKsyGN`. It exited 0 with empty stderr. The index
+`756577157e6018962e938872548dc962449a40dd` in snapshot
+`nauqtype-m54-9-frozen-fKsyGN`. It exited 0 with empty stderr. The index
 and raw worktree remained unchanged throughout the run. This completion-only
 documentation delta changes no source, schema, fixture, runtime, script,
 README, seed, or packaged artifact.
