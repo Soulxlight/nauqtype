@@ -1,4 +1,5 @@
 use ast;
+use builtin_evidence;
 use diag;
 use handoff;
 use lexer;
@@ -1597,17 +1598,7 @@ fn inferred_mutates(function_params: ref list<function_param_fact>, assignments:
 }
 
 fn builtin_propagation_error(name: str) -> str {
-    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "io_err"; }
-    if name == "read_file" or name == "write_file" or name == "create_dir_all" or name == "run_process" {
-        return "io_err";
-    }
-    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" {
-        return "io_err";
-    }
-    if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" or name == "create_temp_file" or name == "create_temp_dir" or name == "atomic_write_file" {
-        return "io_err";
-    }
-    return "";
+    return builtin_evidence_result_error(name);
 }
 
 fn lookup_function_result_error(function_facts: ref list<function_fact>, module: str, name: str) -> str {
@@ -1778,37 +1769,7 @@ fn io_kind_for_call(call: call_fact) -> str {
 }
 
 fn io_kind_for_builtin(name: str) -> str {
-    if name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" { return "read"; }
-    if name == "sleep_for" or name == "process_start" or name == "process_wait" or name == "process_terminate" { return "process"; }
-    if name == "read_file" {
-        return "read";
-    }
-    if name == "write_file" {
-        return "write";
-    }
-    if name == "create_dir_all" {
-        return "create_dir";
-    }
-    if name == "run_process" {
-        return "process";
-    }
-    if name == "arg_count" or name == "arg_get" { return "arguments"; }
-    if name == "env_get" { return "environment"; }
-    if name == "current_dir" { return "cwd"; }
-    if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" { return "stdin"; }
-    if name == "stdout_write" or name == "stdout_write_bytes" or name == "stdout_flush" { return "stdout"; }
-    if name == "stderr_write" or name == "stderr_write_bytes" or name == "stderr_flush" { return "stderr"; }
-    if name == "read_file_bytes" { return "read"; }
-    if name == "write_file_bytes" { return "write"; }
-    if name == "path_metadata" { return "metadata"; }
-    if name == "read_dir" { return "traversal"; }
-    if name == "create_dir" { return "create_dir"; }
-    if name == "create_file_new" { return "create_file"; }
-    if name == "create_temp_file" or name == "create_temp_dir" { return "temporary"; }
-    if name == "remove_file" or name == "remove_dir" { return "remove"; }
-    if name == "rename_path" { return "rename"; }
-    if name == "atomic_write_file" { return "atomic_replace"; }
-    return "";
+    return builtin_evidence_io_kind(name);
 }
 
 fn review_io_kind_exists(entries: ref list<review_io_kind_fact>, function_id: str, kind: str) -> bool {

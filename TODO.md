@@ -8,8 +8,8 @@ The checklists below retain milestone history, not a second current roadmap.
 
 - [x] R0: inventory active/archive/generated boundaries, add the documentation index and compiler map, and repair stale architecture/status guidance without changing executable inputs
 - [x] R1: P0/E1/P2 baseline checkpointed separately in `0564a32` with verified P2 closing evidence; packaged README passed independent mixed audits and one fresh seven-phase Linux milestone gate
-- [ ] R2: dominant visible-item lookup attributed with a separate instrumented profile; implement and measure a bounded scan improvement under the existing PRE-M56 acceptance contract
-- [ ] R3: consolidate one identical builtin-fact family with exact diagnostic/evidence/runtime compatibility
+- [x] R2: phase-owned visibility ranges implemented and measured; reviewed, seed-promoted candidate passed the complete seven-phase Linux gate
+- [x] R3: identical facts/review builtin tables consolidated with retained delegates; exact compatibility and seed/proof acceptance passed with R2
 - [ ] R4: separate driver/checked-project assembly only after identity, borrow, cleanup, and aggregate-cost checks
 - [ ] R5: review neutral backend vocabulary without nominal-origin drift or flat-fact fallback
 - [ ] R6: share justified proof-host publication/cleanup machinery without changing proof policy or required coverage
@@ -25,9 +25,22 @@ or a stable release. Source/copied README bytes and links also passed.
 
 R2 attribution identifies `typecheck::visible_item_origin` at 19.72% of
 sampled CPU time. That separate `-pg` run is not a production timing or
-speedup result; no index implementation has landed. Broader P1-P4 efficiency
-targets and M56-M61 remain open. The authoring-kit draft remains staged and
-unvalidated; no external consumer adoption is inferred.
+speedup result. The R2/R3 candidate now has ordinary measurements: identical
+baseline checks improve from 333.80s/331.23s to 269.12s/268.30s (19.19% less
+mean wall time); expanded current-tree checks take 289.82s/289.36s. All 37
+locked compatibility rows and six C outputs match. The exact self-generated
+74-file seed is promoted. Both independent final audits passed, then the one
+frozen seven-phase Linux gate passed on 2026-10-19 in 2290.24s with 437956 KiB
+peak RSS, 44 corpus cases, and all 12 proof phases. Indexed candidate:
+`e77dc750af7a97d759700f83da9d56779a66115a`; verified attestation SHA-256:
+`f9b53accd56b088179052f2d91013f1914def073a1f0e73406bfac460b938f27`.
+Receipts are retained under
+`build/verification/refactor-r2-r3-20261019/native-receipts/r23/final-gate/`.
+Only allowlisted completion documents change after that gate. See
+[R2/R3 results](docs/R2_R3_RESULTS.md). This is not a controlled cold-gate A/B
+result, stable release, or full campaign closure. R4-R6, broader P1-P4
+efficiency targets, and M56-M61 remain open. The authoring-kit draft remains
+staged and unvalidated; no external consumer adoption is inferred.
 
 ## Documentation
 

@@ -1,0 +1,43 @@
+use builtin_evidence;
+
+fn builtin_evidence_io_case(name: str, expected: str) -> bool {
+    return builtin_evidence_io_kind(name) == expected;
+}
+
+fn builtin_evidence_error_case(name: str, expected: str) -> bool {
+    return builtin_evidence_result_error(name) == expected;
+}
+
+pub fn builtin_evidence_cases() -> bool
+audit {
+    intent("Check frozen builtin IO and propagation evidence classifications");
+    mutates();
+    effects();
+}
+{
+    if not builtin_evidence_io_case("wall_time_ns", "read") or not builtin_evidence_io_case("monotonic_now", "read") or not builtin_evidence_io_case("deadline_after", "read") { return false; }
+    if not builtin_evidence_io_case("sleep_for", "process") or not builtin_evidence_io_case("process_start", "process") or not builtin_evidence_io_case("process_wait", "process") or not builtin_evidence_io_case("process_terminate", "process") { return false; }
+    if not builtin_evidence_io_case("read_file", "read") or not builtin_evidence_io_case("write_file", "write") or not builtin_evidence_io_case("create_dir_all", "create_dir") or not builtin_evidence_io_case("run_process", "process") { return false; }
+    if not builtin_evidence_io_case("arg_count", "arguments") or not builtin_evidence_io_case("arg_get", "arguments") or not builtin_evidence_io_case("env_get", "environment") or not builtin_evidence_io_case("current_dir", "cwd") { return false; }
+    if not builtin_evidence_io_case("stdin_read", "stdin") or not builtin_evidence_io_case("stdin_read_bytes", "stdin") or not builtin_evidence_io_case("stdin_read_line", "stdin") { return false; }
+    if not builtin_evidence_io_case("stdout_write", "stdout") or not builtin_evidence_io_case("stdout_write_bytes", "stdout") or not builtin_evidence_io_case("stdout_flush", "stdout") { return false; }
+    if not builtin_evidence_io_case("stderr_write", "stderr") or not builtin_evidence_io_case("stderr_write_bytes", "stderr") or not builtin_evidence_io_case("stderr_flush", "stderr") { return false; }
+    if not builtin_evidence_io_case("read_file_bytes", "read") or not builtin_evidence_io_case("write_file_bytes", "write") or not builtin_evidence_io_case("path_metadata", "metadata") or not builtin_evidence_io_case("read_dir", "traversal") { return false; }
+    if not builtin_evidence_io_case("create_dir", "create_dir") or not builtin_evidence_io_case("create_file_new", "create_file") or not builtin_evidence_io_case("create_temp_file", "temporary") or not builtin_evidence_io_case("create_temp_dir", "temporary") { return false; }
+    if not builtin_evidence_io_case("remove_file", "remove") or not builtin_evidence_io_case("remove_dir", "remove") or not builtin_evidence_io_case("rename_path", "rename") or not builtin_evidence_io_case("atomic_write_file", "atomic_replace") { return false; }
+    if not builtin_evidence_error_case("wall_time_ns", "io_err") or not builtin_evidence_error_case("monotonic_now", "io_err") or not builtin_evidence_error_case("deadline_after", "io_err") or not builtin_evidence_error_case("sleep_for", "io_err") { return false; }
+    if not builtin_evidence_error_case("process_start", "io_err") or not builtin_evidence_error_case("process_wait", "io_err") or not builtin_evidence_error_case("process_terminate", "io_err") { return false; }
+    if not builtin_evidence_error_case("read_file", "io_err") or not builtin_evidence_error_case("write_file", "io_err") or not builtin_evidence_error_case("create_dir_all", "io_err") or not builtin_evidence_error_case("run_process", "io_err") { return false; }
+    if not builtin_evidence_error_case("stdin_read", "io_err") or not builtin_evidence_error_case("stdin_read_bytes", "io_err") or not builtin_evidence_error_case("stdin_read_line", "io_err") or not builtin_evidence_error_case("stdout_write", "io_err") { return false; }
+    if not builtin_evidence_error_case("stdout_write_bytes", "io_err") or not builtin_evidence_error_case("stderr_write", "io_err") or not builtin_evidence_error_case("stderr_write_bytes", "io_err") or not builtin_evidence_error_case("stdout_flush", "io_err") or not builtin_evidence_error_case("stderr_flush", "io_err") { return false; }
+    if not builtin_evidence_error_case("env_get", "io_err") or not builtin_evidence_error_case("current_dir", "io_err") or not builtin_evidence_error_case("read_file_bytes", "io_err") or not builtin_evidence_error_case("write_file_bytes", "io_err") { return false; }
+    if not builtin_evidence_error_case("path_metadata", "io_err") or not builtin_evidence_error_case("read_dir", "io_err") or not builtin_evidence_error_case("create_dir", "io_err") or not builtin_evidence_error_case("create_file_new", "io_err") { return false; }
+    if not builtin_evidence_error_case("remove_file", "io_err") or not builtin_evidence_error_case("remove_dir", "io_err") or not builtin_evidence_error_case("rename_path", "io_err") or not builtin_evidence_error_case("create_temp_file", "io_err") or not builtin_evidence_error_case("create_temp_dir", "io_err") or not builtin_evidence_error_case("atomic_write_file", "io_err") { return false; }
+    if not builtin_evidence_io_case("", "") or not builtin_evidence_io_case("unknown_builtin", "") or not builtin_evidence_io_case("Read_file", "") or not builtin_evidence_io_case("read_files", "") { return false; }
+    if not builtin_evidence_io_case("str_join", "") or not builtin_evidence_io_case("print_line", "") or not builtin_evidence_io_case("str_concat", "") or not builtin_evidence_io_case("list_len", "") { return false; }
+    if not builtin_evidence_error_case("", "") or not builtin_evidence_error_case("unknown_builtin", "") or not builtin_evidence_error_case("Read_file", "") or not builtin_evidence_error_case("read_files", "") { return false; }
+    if not builtin_evidence_error_case("str_join", "") or not builtin_evidence_error_case("print_line", "") or not builtin_evidence_error_case("str_concat", "") or not builtin_evidence_error_case("list_len", "") { return false; }
+    if not builtin_evidence_io_case("eprint_line", "") or not builtin_evidence_io_case("duration_from_ns", "") or not builtin_evidence_io_case("duration_as_ns", "") or not builtin_evidence_io_case("duration_between", "") { return false; }
+    if not builtin_evidence_error_case("arg_count", "") or not builtin_evidence_error_case("arg_get", "") or not builtin_evidence_error_case("eprint_line", "") or not builtin_evidence_error_case("duration_from_ns", "") or not builtin_evidence_error_case("duration_as_ns", "") or not builtin_evidence_error_case("duration_between", "") { return false; }
+    return true;
+}

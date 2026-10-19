@@ -49,8 +49,10 @@ compiler map, and corrections to stale current-status guidance. It preserves
 the incoming source/runtime/seed/schema/script/fixture/skill content and does
 not extend an earlier executable attestation.
 
-Source refactors remain proposed: optimize an attributed scan first, consolidate
-one builtin-fact family, separate driver/checked-project assembly without
+R2/R3 now implement the attributed visibility scan and one identical
+builtin-fact family; both independent audits and the reviewed seven-phase
+Linux executable acceptance passed on 2026-10-19.
+Later source refactors remain proposed: separate driver/checked-project assembly without
 identity or ownership drift, then review backend type coupling and justified
 proof-host duplication. PRE-M56 efficiency stays first. The packaged README
 rewrite received its own reviewed executable close after the `0564a32`
@@ -63,11 +65,17 @@ source cleanup, new feature milestone, stable release, or publication. The
 retained P2 attestation still applies only to its earlier candidate.
 
 A separate instrumented profile now attributes 19.72% of sampled CPU time
-to `typecheck::visible_item_origin`. R2 should evaluate a private immutable
-module-run range index, preserving resolution order, visibility, and stable
-identities. Instrumented attribution is not ordinary timing or savings;
-implementation, comparable measurements, audits, and executable acceptance
-remain pending under the existing PRE-M56 contract.
+to `typecheck::visible_item_origin`. R2's phase-owned immutable module-run
+index preserves resolution order, visibility, and old entrypoint identities;
+R3 retains facts/review wrappers around shared pure classifiers. Separate
+ordinary identical-input measurements show 19.19% less mean wall time, with
+matching output for the locked 37-row matrix. See
+[R2/R3 results](docs/R2_R3_RESULTS.md). The one frozen executable gate passed
+in 2290.24s / 437956 KiB on indexed candidate
+`e77dc750af7a97d759700f83da9d56779a66115a`, with 44 corpus cases and verified
+attestation; exact receipt identity is in TODO. This is candidate-specific
+acceptance, not a controlled cold-gate speedup or stable release. R4-R6 and
+the broader PRE-M56 campaign goals remain open.
 
 ## MVP Definition
 

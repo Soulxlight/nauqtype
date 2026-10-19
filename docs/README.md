@@ -1,6 +1,6 @@
 # Nauqtype Documentation Guide
 
-Source-checkout index, reviewed 2026-10-09. Start by task rather than reading
+Source-checkout index, reviewed 2026-10-19. Start by task rather than reading
 the milestone history end to end. This guide is not a language specification
 or a copied-release manifest.
 
@@ -11,6 +11,7 @@ or a copied-release manifest.
 | Write a program | [SPEC](../SPEC.md), [Teaching Corpus](../TEACHING_CORPUS.md) | [Grammar](../GRAMMAR.md), [AI Contracts](../AI_CONTRACTS.md), [Formatter](../FORMATTER.md) |
 | Build/run on Linux | [Linux guide](../LINUX.md) | [Bootstrap](../BOOTSTRAP_STAGE1.md), [verification tiers](../VERIFICATION.md) |
 | Change the compiler | [AGENTS](../AGENTS.md), [coordination](../NAUQTYPE_COORDINATION.md) | [architecture](../ARCHITECTURE.md), [compiler map](COMPILER_MAP.md), [refactor plan](REFACTOR_PLAN.md) |
+| Work on R2/R3 | [Execution contract](R2_R3_CONTRACT.md), [measurements](R2_R3_RESULTS.md) | [Performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [verification tiers](../VERIFICATION.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |
@@ -33,7 +34,9 @@ E1 and P2 mapping have candidate-specific executable evidence. P2's measured
 comparisons improve about 25-26x, but its one cold complete gate was only
 1.40% faster than P0. The broader >=50% goal is open. See
 [Performance Mapping](../PERFORMANCE_MAPPING.md); this documentation refactor
-adds no new performance or executable acceptance result.
+alone added no performance result. R2/R3's subsequent scan/table implementation
+has a separate [execution contract](R2_R3_CONTRACT.md); current acceptance
+belongs in TODO, not in historical documentation evidence.
 
 The P0/E1/P2 baseline is locally committed as `0564a32`; it is not a new
 published release. A historical gated candidate, the current tree, and a

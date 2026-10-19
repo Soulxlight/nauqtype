@@ -45,6 +45,14 @@ part of this documentation slice.
 
 ## Dispatch Rules
 
+R2/R3 on 2026-10-19 uses `gpt-5.6-sol` high for the typecheck/handoff
+visibility index and `gpt-6-luna` medium for the identical builtin-evidence
+table extraction and direct cases. The lead owns proof registration,
+compatibility measurements, integration, exact seed generation, and push.
+Independent `gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh audit the actual
+bootstrap delta; GPT-5.5 remains unavailable, so this mixed fallback is
+explicit. The revised execution contract is `docs/R2_R3_CONTRACT.md`.
+
 PRE-M56 P2 mapping uses `gpt-5.6-sol` high for the bounded private normalizer
 implementation and available `gpt-6-luna` medium for disjoint oracle fixtures
 (the historical Luna model is unavailable). The lead owns profiling,

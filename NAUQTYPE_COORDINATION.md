@@ -2,7 +2,7 @@
 
 Last live review: 2026-09-06.
 
-Compiler/tooling planning update: 2026-10-09. Gate efficiency is the first
+Compiler/tooling planning update: 2026-10-19. Gate efficiency is the first
 priority before M56. WSL Ubuntu base tools and the reviewed native compiler
 P0 baseline are verified: seven-phase cold gate 2520.62s, repeated checks
 304.23s/308.99s. `PERFORMANCE_BASELINE.md` records identities and scope;
@@ -13,7 +13,9 @@ worker; its draft is staged separately and not yet integrated or evidenced.
 The nonpackaged [documentation refactor](docs/REFACTOR_PLAN.md) adds a
 [task/authority index](docs/README.md) and [compiler map](docs/COMPILER_MAP.md)
 while preserving executable inputs and the existing performance sequence.
-Its source slices remain pending. The exact reviewed P0/E1/P2 baseline is
+Its bounded R2/R3 source work is implemented, measured, independently audited,
+and accepted by one frozen executable gate; later source slices remain proposed.
+The exact reviewed P0/E1/P2 baseline is
 locally committed as `0564a32`, with verified P2 closing evidence. A separate
 R1 packaged README passed mixed trailing audits and its own fresh Linux
 milestone gate on the exact candidate recorded below. That documentation
@@ -21,7 +23,7 @@ acceptance does not extend the earlier P2 attestation or complete the source
 refactor, performance campaign, stable release, or publication.
 This update does not refresh dated downstream evidence or recover the missing
 workspaces/documents listed below. The required read-only status snapshot on
-2026-10-09 found local Libraries changes; they remain outside this write set.
+2026-10-19 found local Libraries changes; they remain outside this write set.
 
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
@@ -83,6 +85,20 @@ repository owner's sources and compiler/dependency pins explicit.
 
 ## Contract Ledger
 
+R2/R3 close (2026-10-19): phase-owned visibility ranges and two shared
+builtin-evidence tables preserve the existing public wrappers, runtime,
+schemas, and proof edges. The 37-row compatibility matrix and six C files
+match exactly; ordinary identical-input checks average 19.19% less wall time.
+The exact self-generated seed contains all 74 current source files. Both
+mixed audits passed, then one frozen seven-phase gate passed in 2290.24s /
+437956 KiB on indexed candidate `e77dc750af7a97d759700f83da9d56779a66115a`,
+including 44 corpus cases and all 12 proof phases. Verified attestation SHA-256:
+`f9b53accd56b088179052f2d91013f1914def073a1f0e73406bfac460b938f27`.
+Only allowlisted completion documents change afterward. This is not campaign
+closure, a controlled cold-gate speedup, a stable release, or a downstream
+pin migration. See
+[R2/R3 results](docs/R2_R3_RESULTS.md).
+
 R1 documentation checkpoint (2026-10-09): the packaged README and documentation
 routing passed independent gpt-5.6-sol xhigh and gpt-6-astra xhigh audits
 (explicit unavailable-GPT-5.5 fallback), followed by one fresh seven-phase
@@ -91,9 +107,9 @@ Linux gate on indexed candidate
 44 corpus cases, verified attestation, and byte-identical copied README with
 valid packaged links. Only allowlisted completion documents change afterward.
 The baseline remains separately checkpointed in `0564a32`; no executable
-source, runtime, schema, or seed changed in R0/R1. The next proposed R2 slice
-is a bounded visible-item lookup index based on separate sampled attribution,
-not a claimed speedup. No downstream workspace or consumer pin is changed.
+source, runtime, schema, or seed changed in R0/R1. R2/R3's later bounded source
+candidate has separate measurements above, not inherited acceptance from R1.
+No downstream workspace or consumer pin is changed.
 
 PRE-M56 P2 mapping (2026-10-04): compiler-owned private append-only sorted
 runs preserve the old structural normalizer result and early-exit boundary.

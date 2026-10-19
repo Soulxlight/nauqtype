@@ -8,6 +8,7 @@ use schema_profile_tests;
 use integer_policy_tests;
 use allocation_policy_tests;
 use str_join_tests;
+use builtin_evidence_tests;
 use process_tests;
 use text;
 use proof_artifacts;
@@ -15,6 +16,7 @@ use proof_artifact_tests;
 use workspace_json;
 use workspace_capture_tests;
 use workspace_evidence_tests;
+use typecheck;
 
 type norm_mapping {
     original: str,
@@ -1131,6 +1133,8 @@ fn copy_selfhost_module(proof_dir: str, module_name: str) -> result<unit, io_err
 fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "ast");
     list_push(mutref modules, "borrow");
+    list_push(mutref modules, "builtin_evidence");
+    list_push(mutref modules, "builtin_evidence_tests");
     list_push(mutref modules, "build_info");
     list_push(mutref modules, "c_emit");
     list_push(mutref modules, "checked_coverage");
@@ -3211,6 +3215,14 @@ audit {
 }
 {
     if not normalizer_index_cases() {
+        return 1;
+    }
+    if not visibility_index_cases() {
+        eprint_line("visibility index oracle failed");
+        return 1;
+    }
+    if not builtin_evidence_cases() {
+        eprint_line("builtin evidence table oracle failed");
         return 1;
     }
     if not run_proof_artifact_gate() { return 1; }

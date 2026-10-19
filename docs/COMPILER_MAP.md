@@ -1,6 +1,6 @@
 # Compiler Implementation Map
 
-> Inspection scope: 2026-10-09. This map adds no new executable evidence.
+> Inspection scope: 2026-10-19. This map adds no new executable evidence.
 > It describes the inspected working tree and does not claim that unrun checks
 > pass.
 
@@ -81,6 +81,9 @@ Backend work starts from the structured checked handoff, not raw parser facts.
   `typecheck_modules_for_entry`, `typecheck_const_facts`,
   `typecheck_value_facts_with_stmt_facts`, and
   `collect_resolved_binding_facts`.
+- R2's immutable `visibility_index` stores source-order module runs. Semantic
+  phase entries and handoff own an index; recursive indexed operations borrow
+  it, while historical public entrypoints remain compatibility wrappers.
 - [selfhost/type_text.nq](../selfhost/type_text.nq) provides shared type text
   rendering and parsing helpers.
 - Some expression families are reconstructed from token spans in typecheck and
@@ -112,6 +115,10 @@ Do not add name, source-offset, or raw-token guessing in borrow, IR, or C emit.
 
 ## Evidence, Formatting, And Proof
 
+- [selfhost/builtin_evidence.nq](../selfhost/builtin_evidence.nq) owns the
+  shared pure builtin IO-kind and propagation-error classifications. Facts
+  and review retain their consumer guards and identity-bearing delegates;
+  this is the bounded 2026-10-19 R3 extraction, not a universal builtin registry.
 - [selfhost/facts.nq](../selfhost/facts.nq) exposes `emit_facts_format`,
   `emit_workspace_facts`, `validate_policy_summary`, `emit_policy_check`, and
   the plan-only `emit_refactor_rename_plan`.

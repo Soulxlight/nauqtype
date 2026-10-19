@@ -1,7 +1,7 @@
 # Nauqtype Refactor Program
 
-Status: R0 documentation foundation implemented; R1 candidate prepared,
-pending acceptance; source refactors proposed. Current acceptance results
+Status: R0/R1 documentation checkpoints accepted; bounded R2/R3 source work
+implemented and undergoing acceptance. Current acceptance results
 are recorded in [TODO](../TODO.md#current-refactor-checkpoint).
 Inspection date: 2026-10-09. This is staged behavior-preserving work, not a
 compiler rewrite or a new feature milestone. It does not renumber M56-M61
@@ -75,14 +75,14 @@ Baseline checkpoint completed before code restructuring:
   completion-document changes from the earlier gated candidate. It does not
   attest R0/R1 or claim a fresh performance result or publication.
 
-The R1 candidate rewrites the packaged README around the current Linux quick
+The accepted R1 candidate rewrites the packaged README around the current Linux quick
 start, evidence versions, limitations, and authoritative links rather than
 milestone history. It removes stale stage0/Zig-first instructions and
 v3-as-newest review guidance. Source-only guides remain distinct from installed
 docs; adding packaged guides would require an explicit manifest/assembler
 change and is not part of R1.
 
-README is a release artifact. Its rewrite needs a separately reviewed
+README is a release artifact. Its rewrite received a separately reviewed
 candidate and the executable close in [Verification](../VERIFICATION.md).
 Do not fold it into P2's completion-doc allowlist. Commit/push ownership stays
 with the lead; this plan does not claim publication. Freeze README, this plan,
@@ -91,7 +91,13 @@ record the later acceptance result only in allowlisted completion documents.
 
 ### R2: Narrow Feedback And Compiler-Scan Attribution
 
-Next efficiency slice, still PRE-M56:
+Bounded implementation, still PRE-M56; acceptance remains candidate-specific:
+
+The combined R2/R3 run follows the revised [execution contract](R2_R3_CONTRACT.md):
+phase-owned immutable module-run ranges, retained public wrappers, direct
+oracle/table probes, exact fixture comparisons, real seed promotion, and one
+reviewed full gate. Current results remain in TODO; the contract is not closure.
+The ordinary timing/compatibility record is [R2/R3 Results](R2_R3_RESULTS.md).
 
 - measure fixture startup, cache validation, captures/hashes, and actual
   compiler work separately on one retained native-Linux candidate;
@@ -111,7 +117,9 @@ timings. Faster inner checks do not close the broader P1-P4 goals.
 
 ### R3: Shared Builtin Truth
 
-Proposed after baseline and attribution:
+The R2/R3 candidate extracts the identical IO-subkind and propagation-error
+tables in facts/review, retaining their wrappers and checked-builtin guards.
+The wider inventory below is not a mandate to consolidate every phase:
 
 - inventory repeated names, signatures, argument labels, borrowing, effects,
   and runtime mappings across resolve/typecheck/handoff/value-plan/borrow/
