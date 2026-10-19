@@ -14,7 +14,10 @@ The nonpackaged [documentation refactor](docs/REFACTOR_PLAN.md) adds a
 [task/authority index](docs/README.md) and [compiler map](docs/COMPILER_MAP.md)
 while preserving executable inputs and the existing performance sequence.
 Its bounded R2/R3 source work is implemented, measured, independently audited,
-and accepted by one frozen executable gate; later source slices remain proposed.
+and accepted by one frozen executable gate. R4-R6's separate bounded
+implementation/retention candidate is now accepted by both independent final
+audits and its own fresh seven-phase Linux gate. R0-R6 maintenance is complete;
+the broader PRE-M56 efficiency campaign remains open and first priority.
 The exact reviewed P0/E1/P2 baseline is
 locally committed as `0564a32`, with verified P2 closing evidence. A separate
 R1 packaged README passed mixed trailing audits and its own fresh Linux
@@ -84,6 +87,26 @@ repository owner's sources and compiler/dependency pins explicit.
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
+
+R4-R6 close (2026-10-19): borrowed driver assembly and separate dispatch
+preserve existing entrypoints, command/error boundaries, and caller-owned
+collections. Backend enum ownership is intentionally retained; C emission
+still consumes IR collections. Three proof wrappers share only identical
+argv/cwd construction, not publication or proof policy. All 82 focused
+compatibility cases and 11 C outputs match exactly; both independent source
+reviews passed. Two exact-input checks pass at 296.87s/297.02s, with an
+observed 2.54% wall increase and 0.40% higher maximum RSS over the older
+reference; this is maintenance, not a speedup claim. Exact self-generated
+74-source seed promotion and both final mixed audits passed. The one frozen
+seven-phase Linux gate passed in 2304.10s / 437820 KiB on indexed candidate
+`c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`, with 44 corpus cases and all 12
+proof phases. Verified attestation SHA-256:
+`f943b10e5069a105a35201dfd4894b5f1cf1344120088ded0f2f35cee36703ee`.
+Only TODO, roadmap, and coordination completion text changes afterward.
+This closes R0-R6 maintenance, not the performance campaign or M56-M61.
+See
+[execution contract](docs/R4_R6_CONTRACT.md) and
+[focused results](docs/R4_R6_RESULTS.md). No external checkout or pin changes.
 
 R2/R3 close (2026-10-19): phase-owned visibility ranges and two shared
 builtin-evidence tables preserve the existing public wrappers, runtime,

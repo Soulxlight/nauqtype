@@ -1,9 +1,11 @@
 # Nauqtype Refactor Program
 
-Status: R0/R1 documentation checkpoints accepted; bounded R2/R3 source work
-implemented and undergoing acceptance. Current acceptance results
-are recorded in [TODO](../TODO.md#current-refactor-checkpoint).
-Inspection date: 2026-10-09. This is staged behavior-preserving work, not a
+Status: R0-R6 sequence and inspected dispositions are recorded here; bounded
+R4-R6 work follows the [execution contract](R4_R6_CONTRACT.md). Current
+candidate-specific acceptance results are recorded in
+[TODO](../TODO.md#current-refactor-checkpoint), not inferred from this plan.
+Initial inspection: 2026-10-09; R4-R6 inspection: 2026-10-19.
+This is staged behavior-preserving work, not a
 compiler rewrite or a new feature milestone. It does not renumber M56-M61
 or displace the PRE-M56 efficiency campaign.
 
@@ -135,7 +137,11 @@ executable gate and actual seed procedure. No new builtin or effect atom.
 
 ### R4: Driver And Checked-Project Assembly
 
-Proposed, not a license to bundle every list into a context:
+The 2026-10-19 candidate shares the existing borrowed phase sequences and
+separates routing from argument decoding in `main.nq`. It does not introduce
+an owned project aggregate. Historical entrypoints, caller cleanup, error
+ordering, and original/validated review summaries stay explicit. Acceptance
+remains in TODO; implementation is not a license to bundle every list:
 
 - separate argument decoding, routing, phase readiness, and rendering while
   retaining identity-bearing entrypoints where possible;
@@ -153,7 +159,16 @@ no new reference/lifetime authority to make aggregation work.
 
 ### R5: Backend Type Ownership
 
-Proposed dependency cleanup:
+Reviewed disposition, 2026-10-19: retain existing canonical enum origins and
+the current checked-to-IR dataflow. `ir.nq` must consume checked records and
+value plans; `c_emit.nq` consumes only IR collections and imports shared kind
+vocabulary, not checked project records. A neutral enum or primitive tags
+would duplicate or weaken that truth; relocating definitions would change
+nominal/source identity. R5 is review-complete intentional retention, not a
+new backend layer. Static equality of the four backend source owners plus
+the integrated C/runtime cases supports this boundary; there is no new direct
+serialized-IR or malformed-child oracle. Final milestone acceptance remains
+in TODO. The original review questions are retained below:
 
 - distinguish valid IR-only data flow from shared checked-enum imports in
   IR/C emission;
@@ -162,14 +177,21 @@ Proposed dependency cleanup:
 - review nominal-origin, policy, and selfhost-evidence consequences of moving
   a definition instead of treating it as an invisible file move.
 
-Acceptance: static import checks, identical user-program IR/C and runtime
-behavior for arithmetic, ordered match, field borrows and cleanup, retained
-missing-identity/type/child failures, and normal executable acceptance.
-No richer AST or backend rewrite.
+Acceptance: static import/source-equality checks, observable IR lowering
+through identical user-program C and runtime behavior for arithmetic,
+ordered match, field borrows and cleanup, retained missing-identity/type/child
+guards, and normal executable acceptance. There is no direct serialized-IR
+comparison or new malformed-child injection test. No richer AST or backend
+rewrite.
 
 ### R6: Proof/Host Integration And Final Documentation
 
-Proposed only where focused evidence justifies it:
+The 2026-10-19 candidate shares only the identical two-argument host invocation
+used by three private proof-driver wrappers; all wrapper identities and other
+argument shapes remain. Proof/profile/attestation/builder publishers retain
+their distinct validation and interruption policies. No generic publisher is
+justified by the inspected code. Final acceptance remains in TODO; the scope
+continues to allow changes only where focused evidence justifies them:
 
 - share identical receipt publication/failure cleanup, not proof policy,
   independent captures, invocation provenance, or authority;

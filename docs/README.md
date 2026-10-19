@@ -12,6 +12,7 @@ or a copied-release manifest.
 | Build/run on Linux | [Linux guide](../LINUX.md) | [Bootstrap](../BOOTSTRAP_STAGE1.md), [verification tiers](../VERIFICATION.md) |
 | Change the compiler | [AGENTS](../AGENTS.md), [coordination](../NAUQTYPE_COORDINATION.md) | [architecture](../ARCHITECTURE.md), [compiler map](COMPILER_MAP.md), [refactor plan](REFACTOR_PLAN.md) |
 | Work on R2/R3 | [Execution contract](R2_R3_CONTRACT.md), [measurements](R2_R3_RESULTS.md) | [Performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [verification tiers](../VERIFICATION.md) |
+| Work on R4-R6 | [Execution contract](R4_R6_CONTRACT.md), [compatibility matrix](R4_R6_MATRIX.txt) | [Focused results](R4_R6_RESULTS.md), [refactor scope/retention decisions](REFACTOR_PLAN.md), [verification tiers](../VERIFICATION.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |

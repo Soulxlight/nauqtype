@@ -45,6 +45,17 @@ part of this documentation slice.
 
 ## Dispatch Rules
 
+R4-R6 on 2026-10-19 uses `gpt-5.6-sol` high for the bounded driver-only
+assembly/dispatch refactor and `gpt-6-luna` medium for the three private
+proof-driver invocation wrappers. Their write sets are `selfhost/main.nq`
+and the approved helper/wrappers in `selfhost/proof.nq`, respectively. The
+lead owns the R5 intentional-retention decision, identity checks, exact
+compatibility/memory evidence, integration, seed promotion, and Git operations.
+Independent `gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh reviews retain the
+explicit unavailable-GPT-5.5 fallback. Both pre-implementation reviews cleared
+the revised `docs/R4_R6_CONTRACT.md` and 82-row matrix before source edits.
+No publisher framework, neutral enum relocation, or paid service is included.
+
 R2/R3 on 2026-10-19 uses `gpt-5.6-sol` high for the typecheck/handoff
 visibility index and `gpt-6-luna` medium for the identical builtin-evidence
 table extraction and direct cases. The lead owns proof registration,

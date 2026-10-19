@@ -52,9 +52,12 @@ not extend an earlier executable attestation.
 R2/R3 now implement the attributed visibility scan and one identical
 builtin-fact family; both independent audits and the reviewed seven-phase
 Linux executable acceptance passed on 2026-10-19.
-Later source refactors remain proposed: separate driver/checked-project assembly without
-identity or ownership drift, then review backend type coupling and justified
-proof-host duplication. PRE-M56 efficiency stays first. The packaged README
+R4-R6 are accepted as bounded implementation/retention work under the
+[execution contract](docs/R4_R6_CONTRACT.md): borrowed driver assembly,
+separate dispatch, intentional canonical backend-type retention, and one
+shared proof invocation. Exact focused compatibility, both independent final
+audits, and one fresh seven-phase Linux acceptance passed on 2026-10-19.
+PRE-M56 efficiency stays first. The packaged README
 rewrite received its own reviewed executable close after the `0564a32`
 baseline checkpoint: both independent trailing audits passed, then all seven
 Linux milestone phases and 44 corpus cases passed on indexed candidate
@@ -74,8 +77,16 @@ matching output for the locked 37-row matrix. See
 in 2290.24s / 437956 KiB on indexed candidate
 `e77dc750af7a97d759700f83da9d56779a66115a`, with 44 corpus cases and verified
 attestation; exact receipt identity is in TODO. This is candidate-specific
-acceptance, not a controlled cold-gate speedup or stable release. R4-R6 and
-the broader PRE-M56 campaign goals remain open.
+acceptance, not a controlled cold-gate speedup or stable release. R4-R6's
+candidate has separate [focused results](docs/R4_R6_RESULTS.md). All 82
+compatibility rows and 11 C files match. Its frozen gate passed in 2304.10s /
+437820 KiB on indexed tree `c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`,
+including 44 corpus cases and all 12 proof phases; exact attestation is in
+TODO. Only the three selected completion documents change afterward.
+R0-R6 maintenance is complete, not the broader PRE-M56 campaign. The observed
+2.54% matched-check wall increase is disclosed, not presented as a speedup.
+Next work remains bounded efficiency work before M56, not a new language
+feature, stable-release claim, or inferred downstream adoption.
 
 ## MVP Definition
 

@@ -53,6 +53,11 @@ Backend work starts from the structured checked handoff, not raw parser facts.
 - [selfhost/main.nq](../selfhost/main.nq) owns CLI parsing, command dispatch,
   module-graph loading, phase assembly, and command-specific output behavior.
 - `parse_driver_request` maps arguments into a private `driver_request`.
+- `dispatch_driver_request` routes that decoded request; the historical
+  `main` entrypoint remains parse-then-dispatch.
+- `assemble_frontend` shares the borrowed semantic sequence across four
+  readiness paths. `assemble_source_contracts` preserves original and
+  validated summaries without taking ownership of project collections.
 - `run_pipeline` assembles the compile/check/emit path.
 - `run_facts`, `collect_facts_ready_project`, and
   `collect_review_ready_project` assemble evidence-oriented paths.
@@ -65,6 +70,9 @@ Backend work starts from the structured checked handoff, not raw parser facts.
 - [selfhost/build_info.nq](../selfhost/build_info.nq) owns version/build facts.
 - [selfhost/host_c.nq](../selfhost/host_c.nq) exposes
   `compile_host_c_program` for the explicit host-C boundary.
+- In `proof.nq`, the existing build/check/run entry wrappers share only their
+  identical two-argument invocation through `run_driver_entry_command`.
+  Output-specific wrappers and distinct receipt publishers remain separate.
 
 ## Lex, Parse, Resolve, And Typecheck
 

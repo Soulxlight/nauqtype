@@ -10,9 +10,9 @@ The checklists below retain milestone history, not a second current roadmap.
 - [x] R1: P0/E1/P2 baseline checkpointed separately in `0564a32` with verified P2 closing evidence; packaged README passed independent mixed audits and one fresh seven-phase Linux milestone gate
 - [x] R2: phase-owned visibility ranges implemented and measured; reviewed, seed-promoted candidate passed the complete seven-phase Linux gate
 - [x] R3: identical facts/review builtin tables consolidated with retained delegates; exact compatibility and seed/proof acceptance passed with R2
-- [ ] R4: separate driver/checked-project assembly only after identity, borrow, cleanup, and aggregate-cost checks
-- [ ] R5: review neutral backend vocabulary without nominal-origin drift or flat-fact fallback
-- [ ] R6: share justified proof-host publication/cleanup machinery without changing proof policy or required coverage
+- [x] R4: borrowed driver/checked-project assembly and separate dispatch accepted with exact compatibility, generated-code inspection, bounded cost, and the fresh Linux gate
+- [x] R5: canonical backend type ownership intentionally retained without nominal-origin drift; static equality, C/runtime comparisons, and integrated acceptance passed
+- [x] R6: three proof wrappers share only their identical host invocation; distinct publishers/proof policies, required coverage, and final documentation are preserved and accepted
 
 R0/R1 change documentation only, not compiler behavior. R1's fresh Linux
 gate on 2026-10-09 passed all seven phases and 44 corpus cases in 2507.89s,
@@ -38,9 +38,32 @@ Receipts are retained under
 `build/verification/refactor-r2-r3-20261019/native-receipts/r23/final-gate/`.
 Only allowlisted completion documents change after that gate. See
 [R2/R3 results](docs/R2_R3_RESULTS.md). This is not a controlled cold-gate A/B
-result, stable release, or full campaign closure. R4-R6, broader P1-P4
-efficiency targets, and M56-M61 remain open. The authoring-kit draft remains
+result, stable release, or full campaign closure. Broader P1-P4 efficiency
+targets and M56-M61 remain open. The authoring-kit draft remains
 staged and unvalidated; no external consumer adoption is inferred.
+
+R4-R6's bounded candidate follows the
+[execution contract](docs/R4_R6_CONTRACT.md). All 82 reference/candidate
+cases and 11 emitted C artifacts match exactly; old function signatures,
+protected driver declarations, and unchanged backend owners are checked.
+Both independent source reviews passed. The new native compiler is built
+and verified. Matched-input checks pass at 296.87s/297.02s, an observed
+2.54% wall increase over the older reference, with 0.40% higher maximum RSS;
+no speedup is claimed. Exact self-generated seed promotion and both final
+mixed audits passed, then the one frozen seven-phase Linux gate passed on
+2026-10-19 in 2304.10s / 437820 KiB, including 44 corpus cases and all 12
+proof phases. Indexed candidate:
+`c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`; verified attestation SHA-256:
+`f943b10e5069a105a35201dfd4894b5f1cf1344120088ded0f2f35cee36703ee`.
+Receipts are retained under
+`build/verification/refactor-r4-r6-20261019/native-receipts/r456/final-gate/`.
+Only TODO, roadmap, and coordination completion text changes after that gate.
+See [focused results](docs/R4_R6_RESULTS.md). No owned project aggregate,
+neutral-enum relocation, publisher framework, language feature, or downstream
+pin migration is part of this work.
+R0-R6 maintenance is complete; PRE-M56 efficiency remains first, before M56.
+This is not campaign closure, a controlled cold-gate A/B result, a stable
+release, or a claim of GitHub publication.
 
 ## Documentation
 
