@@ -96,16 +96,21 @@ attest_json_read() (
             value=$scalar
         else
             [[ "$scalar" == \"*\" ]] || exit 1
-            scalar=${scalar:1:${#scalar}-2}; value=''; index=0
-            while (( index < ${#scalar} )); do
-                ch=${scalar:index:1}
-                if [[ "$ch" == '\' ]]; then
-                    index=$((index + 1)); next=${scalar:index:1}
-                    [[ "$next" == '\' || "$next" == '"' ]] || exit 1
-                    ch=$next
-                elif [[ "$ch" == '"' ]]; then exit 1; fi
-                value+=$ch; index=$((index + 1))
-            done
+            scalar=${scalar:1:${#scalar}-2}
+            if [[ "$scalar" != *\\* && "$scalar" != *\"* ]]; then
+                value=$scalar
+            else
+                value=''; index=0
+                while (( index < ${#scalar} )); do
+                    ch=${scalar:index:1}
+                    if [[ "$ch" == '\' ]]; then
+                        index=$((index + 1)); next=${scalar:index:1}
+                        [[ "$next" == '\' || "$next" == '"' ]] || exit 1
+                        ch=$next
+                    elif [[ "$ch" == '"' ]]; then exit 1; fi
+                    value+=$ch; index=$((index + 1))
+                done
+            fi
         fi
         attest_value_valid "$key" "$value" || exit 1
         printf '%s=%s\n' "$key" "$value" >> "$scratch/values"
@@ -115,16 +120,14 @@ attest_json_read() (
     cp -- "$scratch/values" "$output"
 )
 
-attest_candidate_state() (
-    local root=$1 out=$2 scratch record metadata path mode blob stage actual prefix key value
-    local head_state=commit revision index_tree candidate_hash untracked_hash
-    scratch=$(mktemp -d) || exit 1
-    trap 'rm -rf -- "$scratch"' EXIT
-    prov_directory "$root" || exit 1
-    revision=$(git -C "$root" rev-parse --verify HEAD 2>/dev/null) || { head_state=unborn; revision=null; }
-    [[ "$revision" == null || "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
-    git -C "$root" ls-files --stage -z > "$scratch/index" || exit 1
-    : > "$scratch/tracked"
+attest_batch_root_supported() {
+    [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]]
+}
+
+# Exact legacy path for roots that cannot be represented as one path per line.
+attest_index_matches_worktree_scalar() (
+    local root=$1 index=$2 tracked=$3 record metadata path mode blob stage actual
+    : > "$tracked" || exit 1
     while IFS= read -r -d '' record; do
         metadata=${record%%$'\t'*}; path=${record#*$'\t'}
         read -r mode blob stage <<< "$metadata"
@@ -133,8 +136,83 @@ attest_candidate_state() (
         [[ "$mode" == "$actual" ]] || { prov_error "worktree mode differs from index: $path"; exit 1; }
         actual=$(git -C "$root" hash-object --no-filters -- "$path") || exit 1
         [[ "$blob" == "$actual" ]] || { prov_error "worktree bytes differ from index: $path"; exit 1; }
-        printf '%s\n' "$path" >> "$scratch/tracked"
-    done < "$scratch/index"
+        printf '%s\n' "$path" >> "$tracked" || exit 1
+    done < "$index"
+)
+
+attest_index_matches_worktree_batch() (
+    local root=$1 index=$2 tracked=$3 scratch record metadata path mode blob stage extra actual
+    local defect='' defect_path='' expected_count actual_count actual_bytes at validated_count=0
+    local -a expected_oids=() actual_oids=() paths=()
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    : > "$scratch/paths" || exit 1
+    : > "$scratch/absolute-paths" || exit 1
+    : > "$scratch/expected-oids" || exit 1
+    : > "$scratch/static-error" || exit 1
+    while IFS= read -r -d '' record; do
+        if [[ "$record" != *$'\t'* ]]; then defect=record; break; fi
+        metadata=${record%%$'\t'*}; path=${record#*$'\t'}
+        extra=''; read -r mode blob stage extra <<< "$metadata"
+        if ! prov_safe_relative "$path" || [[ "$stage" != 0 || -n "$extra" || ! "$blob" =~ ^[0-9a-f]{40}$ ]]; then
+            defect=record; break
+        fi
+        if ! actual=$(prov_mode "$root/$path" 2> "$scratch/static-error"); then
+            defect=metadata; defect_path=$path; break
+        fi
+        if [[ "$mode" != "$actual" ]]; then
+            defect=mode; defect_path=$path; break
+        fi
+        validated_count=$((validated_count + 1))
+        printf '%s\n' "$path" >> "$scratch/paths" || exit 1
+        printf '%s\n' "${root%/}/$path" >> "$scratch/absolute-paths" || exit 1
+        printf '%s\n' "$blob" >> "$scratch/expected-oids" || exit 1
+    done < "$index"
+
+    expected_count=$(wc -l < "$scratch/absolute-paths") || exit 1
+    [[ "$expected_count" =~ ^[0-9]+$ && "$expected_count" == "$validated_count" ]] || exit 1
+    : > "$scratch/actual-oids" || exit 1
+    if (( expected_count > 0 )); then
+        git -C "$root" hash-object --no-filters --stdin-paths \
+            < "$scratch/absolute-paths" > "$scratch/actual-oids" || exit 1
+    fi
+    actual_count=$(wc -l < "$scratch/actual-oids") || exit 1
+    actual_bytes=$(wc -c < "$scratch/actual-oids") || exit 1
+    [[ "$actual_count" == "$expected_count" && "$actual_bytes" == $((expected_count * 41)) ]] || exit 1
+    mapfile -t expected_oids < "$scratch/expected-oids" || exit 1
+    mapfile -t actual_oids < "$scratch/actual-oids" || exit 1
+    mapfile -t paths < "$scratch/paths" || exit 1
+    (( ${#expected_oids[@]} == expected_count && ${#actual_oids[@]} == expected_count && ${#paths[@]} == expected_count )) || exit 1
+    for ((at = 0; at < expected_count; at++)); do
+        [[ "${actual_oids[at]}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+        [[ "${expected_oids[at]}" == "${actual_oids[at]}" ]] || { prov_error "worktree bytes differ from index: ${paths[at]}"; exit 1; }
+    done
+    case "$defect" in
+        '') cp -- "$scratch/paths" "$tracked";;
+        metadata) cat -- "$scratch/static-error" >&2; exit 1;;
+        mode) prov_error "worktree mode differs from index: $defect_path"; exit 1;;
+        *) exit 1;;
+    esac
+)
+
+attest_index_matches_worktree() {
+    if attest_batch_root_supported "$1"; then
+        attest_index_matches_worktree_batch "$@"
+    else
+        attest_index_matches_worktree_scalar "$@"
+    fi
+}
+
+attest_candidate_state() (
+    local root=$1 out=$2 scratch path prefix key value
+    local head_state=commit revision index_tree candidate_hash untracked_hash
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    prov_directory "$root" || exit 1
+    revision=$(git -C "$root" rev-parse --verify HEAD 2>/dev/null) || { head_state=unborn; revision=null; }
+    [[ "$revision" == null || "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
+    git -C "$root" ls-files --stage -z > "$scratch/index" || exit 1
+    attest_index_matches_worktree "$root" "$scratch/index" "$scratch/tracked" || exit 1
     git -C "$root" ls-files --others --exclude-standard -z > "$scratch/others" || exit 1
     : > "$scratch/untracked"
     while IFS= read -r -d '' path; do

@@ -22,6 +22,8 @@ static int signals, group_signals, reaped;
 static int terminal_observed, terminal_groups, terminal_success, skip_initial_group;
 static int terminal_failures, terminal_error;
 static int lost_terminal, lost_reap, signals_at_loss;
+static int recheck_limit, recheck_count, recheck_clock;
+static int recheck_timeouts[9], recheck_masks[9];
 static pid_t owned_pid;
 static int inject(int slot) {
     calls[slot]++;
@@ -97,6 +99,16 @@ static ssize_t probe_write(int fd, const void* data, size_t len) {
     return write(fd, data, len);
 }
 static int probe_poll(struct pollfd* fds, nfds_t count, int timeout) {
+    if (recheck_limit) {
+        assert(count == 3 && recheck_count < recheck_limit);
+        assert(recheck_limit <= (int)(sizeof(recheck_timeouts) / sizeof(recheck_timeouts[0])));
+        assert(owned_pid > 0 && !terminal_observed);
+        recheck_timeouts[recheck_count] = timeout;
+        recheck_masks[recheck_count++] = (fds[0].fd >= 0 ? 1 : 0) |
+            (fds[1].fd >= 0 ? 2 : 0) | (fds[2].fd >= 0 ? 4 : 0);
+        /* End the bounded real-child sequence through normal error cleanup. */
+        if (recheck_count == recheck_limit) { remaining[POLL] = 1; failures[POLL] = EIO; }
+    }
     if (inject(POLL)) return -1;
     return poll(fds, count, timeout);
 }
@@ -164,6 +176,11 @@ static int probe_execve(const char* path, char* const argv[], char* const env[])
 }
 static int probe_clock(clockid_t clock, struct timespec* ts) {
     if (inject(CLOCK)) return -1;
+    if (recheck_clock && clock == CLOCK_MONOTONIC) {
+        /* Fixed-clock fault seam makes requested deadline bounds exact. */
+        *ts = (struct timespec){ .tv_sec = 1, .tv_nsec = 0 };
+        return 0;
+    }
     if (bad_clock) {
         *ts = (struct timespec){ .tv_sec = (time_t)(INT64_MAX / INT64_C(1000000000)) + 1, .tv_nsec = 0 };
         return 0;
@@ -192,6 +209,7 @@ static void reset(void) {
     terminal_observed = terminal_groups = terminal_success = skip_initial_group = 0;
     terminal_failures = terminal_error = 0;
     lost_terminal = lost_reap = 0; signals_at_loss = -1;
+    recheck_limit = recheck_count = recheck_clock = 0;
 }
 static void once(int slot, int error) { remaining[slot] = 1; failures[slot] = error; calls[slot] = 0; }
 static void no_child(void) {
@@ -230,6 +248,46 @@ static void success(NQ_Result__process__io_err launched) {
     assert(nq_str_eq(result.data.Ok._0.stdout, nq_str("payload")));
     nq_result__process_outcome__io_err_drop(&result);
     assert(group_signals > 0 && reaped == 1); no_child();
+}
+
+static void recheck_checks(void) {
+    static const struct { int capture, bound_ms, interruptions; } cases[] = {
+        {0, 0, 0}, {0, 0, 7}, {1, 0, 0},
+        {0, 3, 0}, {1, 3, 0}, {0, 1, 0}, {1, 1, 0},
+    };
+    int before = fd_count();
+    for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        reset();
+        NQStr mode = nq_str("blocked"); NQ_List__str args = {&mode, 1, 1}, env = {0};
+        NQ_Result__process__io_err launched = nq_process_start(nq_str("/proc/self/exe"), &args,
+            nq_str("."), &env, (NQ_Option__str){ .tag = NQ_Option__str_Tag_None },
+            cases[index].capture != 0, cases[index].capture ? 100 : 0);
+        assert(launched.tag == NQ_Result__process__io_err_Tag_Ok);
+        owned_pid = launched.data.Ok._0._state->pid;
+        recheck_limit = (int)(sizeof(recheck_timeouts) / sizeof(recheck_timeouts[0]));
+        remaining[POLL] = cases[index].interruptions; failures[POLL] = EINTR;
+        NQ_Option__instant until = { .tag = NQ_Option__instant_Tag_None };
+        if (cases[index].bound_ms) {
+            recheck_clock = 1;
+            until = (NQ_Option__instant){ .tag = NQ_Option__instant_Tag_Some,
+                .data.Some._0 = {INT64_C(1000000000) + cases[index].bound_ms * INT64_C(1000000)} };
+            once(CLOCK, EINTR);
+        }
+        NQ_Result__process_outcome__io_err result = nq_process_wait(launched.data.Ok._0, until);
+        recheck_limit = recheck_clock = 0;
+        assert(result.tag == NQ_Result__process_outcome__io_err_Tag_Err && result.data.Err._0.os_code == EIO);
+        assert(recheck_count == 9 && calls[POLL] == 9);
+        if (cases[index].bound_ms) assert(calls[CLOCK] == 10);
+        for (int attempt = 0; attempt < recheck_count; attempt++) {
+            int expected = cases[index].bound_ms ? cases[index].bound_ms : 10;
+            if (!cases[index].capture && attempt < 5) expected = 1;
+            assert(recheck_timeouts[attempt] == expected);
+            assert(recheck_masks[attempt] == (cases[index].capture ? 6 : 0));
+        }
+        nq_result__process_outcome__io_err_drop(&result);
+        assert(group_signals > 0 && reaped == 1); no_child(); assert(fd_count() == before);
+    }
+    reset();
 }
 
 static void fatal_checks(void) {
@@ -381,6 +439,7 @@ int main(int argc, char** argv) {
     }
     alarm(30);
     int before = fd_count();
+    recheck_checks();
     reset(); short_io = 1; success(start("echo", "/proc/self/exe"));
     reset();
     int interrupted[] = {READ, WRITE, POLL, WAITID, WAITPID, KILL, FCNTL, PIPE, FORK, GROUP, DUP, CHDIR, EXEC};

@@ -25,8 +25,26 @@ pub type visibility_module_run {
     end: i32,
 }
 
+pub enum function_run_domain {
+    function_run_facts,
+    function_run_params,
+    function_run_scopes,
+    function_run_statements,
+}
+
+pub type function_run {
+    domain: function_run_domain,
+    module: str,
+    function_name: str,
+    start: i32,
+    end: i32,
+}
+
 pub type visibility_index {
     runs: list<visibility_module_run>,
+    lookup_runs: list<visibility_module_run>,
+    function_runs: list<function_run>,
+    has_function_data: bool,
 }
 
 pub fn make_expected_type_ctx(head: str, arg1_name: str, arg2_name: str) -> expected_type_ctx
@@ -529,6 +547,372 @@ fn append_use_visibility_runs(uses: ref list<module_use>, runs: mutref list<visi
     return;
 }
 
+fn index_str_less(left: str, right: str) -> bool {
+    let mut index = 0;
+    let left_len = str_len(left);
+    let right_len = str_len(right);
+    while index < left_len and index < right_len {
+        let left_entry = str_get(left, index);
+        let right_entry = str_get(right, index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if left_value < right_value { return true; }
+                        if left_value > right_value { return false; }
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return left_len < right_len;
+}
+
+fn visibility_domain_key(domain: visibility_run_domain) -> i32 {
+    match domain {
+        visibility_run_items => { return 0; },
+        visibility_run_uses => { return 1; },
+    }
+}
+
+fn visibility_run_less(left: visibility_module_run, right: visibility_module_run) -> bool {
+    let left_domain = visibility_domain_key(left.domain);
+    let right_domain = visibility_domain_key(right.domain);
+    if left_domain != right_domain { return left_domain < right_domain; }
+    if left.module != right.module { return index_str_less(left.module, right.module); }
+    return left.start < right.start;
+}
+
+fn merge_visibility_runs(left: ref list<visibility_module_run>, right: ref list<visibility_module_run>) -> list<visibility_module_run> {
+    let mut result: list<visibility_module_run> = list();
+    let mut left_index = 0;
+    let mut right_index = 0;
+    while left_index < list_len(ref left) or right_index < list_len(ref right) {
+        let left_entry = list_get(ref left, left_index);
+        let right_entry = list_get(ref right, right_index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if visibility_run_less(right_value, left_value) {
+                            list_push(mutref result, right_value);
+                            right_index = right_index + 1;
+                        } else {
+                            list_push(mutref result, left_value);
+                            left_index = left_index + 1;
+                        }
+                    },
+                    None => {
+                        list_push(mutref result, left_value);
+                        left_index = left_index + 1;
+                    },
+                }
+            },
+            None => {
+                match right_entry {
+                    Some(right_value) => {
+                        list_push(mutref result, right_value);
+                        right_index = right_index + 1;
+                    },
+                    None => {
+                    },
+                }
+            },
+        }
+    }
+    return result;
+}
+
+fn sort_visibility_runs_range(source: ref list<visibility_module_run>, start: i32, end: i32) -> list<visibility_module_run> {
+    let mut result: list<visibility_module_run> = list();
+    if end - start <= 1 {
+        let entry = list_get(ref source, start);
+        match entry {
+            Some(value) => { list_push(mutref result, value); },
+            None => {
+            },
+        }
+        return result;
+    }
+    let middle = start + ((end - start) / 2);
+    let left = sort_visibility_runs_range(ref source, start, middle);
+    let right = sort_visibility_runs_range(ref source, middle, end);
+    return merge_visibility_runs(ref left, ref right);
+}
+
+fn sort_visibility_runs(source: ref list<visibility_module_run>) -> list<visibility_module_run> {
+    return sort_visibility_runs_range(ref source, 0, list_len(ref source));
+}
+
+fn function_domain_key(domain: function_run_domain) -> i32 {
+    match domain {
+        function_run_facts => { return 0; },
+        function_run_params => { return 1; },
+        function_run_scopes => { return 2; },
+        function_run_statements => { return 3; },
+    }
+}
+
+fn function_run_less(left: function_run, right: function_run) -> bool {
+    let left_domain = function_domain_key(left.domain);
+    let right_domain = function_domain_key(right.domain);
+    if left_domain != right_domain { return left_domain < right_domain; }
+    if left.module != right.module { return index_str_less(left.module, right.module); }
+    if left.function_name != right.function_name { return index_str_less(left.function_name, right.function_name); }
+    return left.start < right.start;
+}
+
+fn merge_function_runs(left: ref list<function_run>, right: ref list<function_run>) -> list<function_run> {
+    let mut result: list<function_run> = list();
+    let mut left_index = 0;
+    let mut right_index = 0;
+    while left_index < list_len(ref left) or right_index < list_len(ref right) {
+        let left_entry = list_get(ref left, left_index);
+        let right_entry = list_get(ref right, right_index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if function_run_less(right_value, left_value) {
+                            list_push(mutref result, right_value);
+                            right_index = right_index + 1;
+                        } else {
+                            list_push(mutref result, left_value);
+                            left_index = left_index + 1;
+                        }
+                    },
+                    None => {
+                        list_push(mutref result, left_value);
+                        left_index = left_index + 1;
+                    },
+                }
+            },
+            None => {
+                match right_entry {
+                    Some(right_value) => {
+                        list_push(mutref result, right_value);
+                        right_index = right_index + 1;
+                    },
+                    None => {
+                    },
+                }
+            },
+        }
+    }
+    return result;
+}
+
+fn sort_function_runs_range(source: ref list<function_run>, start: i32, end: i32) -> list<function_run> {
+    let mut result: list<function_run> = list();
+    if end - start <= 1 {
+        let entry = list_get(ref source, start);
+        match entry {
+            Some(value) => { list_push(mutref result, value); },
+            None => {
+            },
+        }
+        return result;
+    }
+    let middle = start + ((end - start) / 2);
+    let left = sort_function_runs_range(ref source, start, middle);
+    let right = sort_function_runs_range(ref source, middle, end);
+    return merge_function_runs(ref left, ref right);
+}
+
+fn sort_function_runs(source: ref list<function_run>) -> list<function_run> {
+    return sort_function_runs_range(ref source, 0, list_len(ref source));
+}
+
+fn push_function_run(runs: mutref list<function_run>, domain: function_run_domain, module: str, function_name: str, start: i32, end: i32) -> unit {
+    list_push(mutref runs, function_run { domain: domain, module: module, function_name: function_name, start: start, end: end });
+    return;
+}
+
+fn append_function_fact_runs(functions: ref list<function_fact>, runs: mutref list<function_run>) -> unit {
+    let mut has_run = false;
+    let mut run_module = "";
+    let mut run_function = "";
+    let mut run_start = 0;
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if not has_run {
+                    has_run = true;
+                    run_module = value.module;
+                    run_function = value.name;
+                    run_start = index;
+                } else {
+                    if value.module != run_module or value.name != run_function {
+                        push_function_run(mutref runs, function_run_facts, run_module, run_function, run_start, index);
+                        run_module = value.module;
+                        run_function = value.name;
+                        run_start = index;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if has_run { push_function_run(mutref runs, function_run_facts, run_module, run_function, run_start, list_len(ref functions)); }
+    return;
+}
+
+fn append_function_param_runs(function_params: ref list<function_param_fact>, runs: mutref list<function_run>) -> unit {
+    let mut has_run = false;
+    let mut run_module = "";
+    let mut run_function = "";
+    let mut run_start = 0;
+    let mut index = 0;
+    while index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, index);
+        match entry {
+            Some(value) => {
+                if not has_run {
+                    has_run = true;
+                    run_module = value.module;
+                    run_function = value.function_name;
+                    run_start = index;
+                } else {
+                    if value.module != run_module or value.function_name != run_function {
+                        push_function_run(mutref runs, function_run_params, run_module, run_function, run_start, index);
+                        run_module = value.module;
+                        run_function = value.function_name;
+                        run_start = index;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if has_run { push_function_run(mutref runs, function_run_params, run_module, run_function, run_start, list_len(ref function_params)); }
+    return;
+}
+
+fn clone_visibility_runs(source: ref list<visibility_module_run>) -> list<visibility_module_run> {
+    let mut result: list<visibility_module_run> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry { Some(value) => { list_push(mutref result, value); }, None => {}, }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn clone_function_runs(source: ref list<function_run>) -> list<function_run> {
+    let mut result: list<function_run> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        let entry = list_get(ref source, index);
+        match entry { Some(value) => { list_push(mutref result, value); }, None => {}, }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn append_scope_runs(scopes: ref list<body_scope>, runs: mutref list<function_run>) -> unit {
+    let mut has_run = false;
+    let mut run_module = "";
+    let mut run_function = "";
+    let mut run_start = 0;
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        let entry = list_get(ref scopes, index);
+        match entry {
+            Some(value) => {
+                if not has_run {
+                    has_run = true;
+                    run_module = value.module;
+                    run_function = value.function_name;
+                    run_start = index;
+                } else {
+                    if value.module != run_module or value.function_name != run_function {
+                        push_function_run(mutref runs, function_run_scopes, run_module, run_function, run_start, index);
+                        run_module = value.module;
+                        run_function = value.function_name;
+                        run_start = index;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if has_run { push_function_run(mutref runs, function_run_scopes, run_module, run_function, run_start, list_len(ref scopes)); }
+    return;
+}
+
+fn append_statement_runs(statements: ref list<stmt_fact>, runs: mutref list<function_run>) -> unit {
+    let mut has_run = false;
+    let mut run_module = "";
+    let mut run_function = "";
+    let mut run_start = 0;
+    let mut index = 0;
+    while index < list_len(ref statements) {
+        let entry = list_get(ref statements, index);
+        match entry {
+            Some(value) => {
+                if not has_run {
+                    has_run = true;
+                    run_module = value.module;
+                    run_function = value.function_name;
+                    run_start = index;
+                } else {
+                    if value.module != run_module or value.function_name != run_function {
+                        push_function_run(mutref runs, function_run_statements, run_module, run_function, run_start, index);
+                        run_module = value.module;
+                        run_function = value.function_name;
+                        run_start = index;
+                    }
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    if has_run { push_function_run(mutref runs, function_run_statements, run_module, run_function, run_start, list_len(ref statements)); }
+    return;
+}
+
+fn extend_visibility_index_with_members(base: ref visibility_index, scopes: ref list<body_scope>, statements: ref list<stmt_fact>) -> visibility_index {
+    let runs = clone_visibility_runs(ref base.runs);
+    let lookup_runs = clone_visibility_runs(ref base.lookup_runs);
+    let mut function_runs = clone_function_runs(ref base.function_runs);
+    append_scope_runs(ref scopes, mutref function_runs);
+    append_statement_runs(ref statements, mutref function_runs);
+    let sorted_function_runs = sort_function_runs(ref function_runs);
+    return visibility_index { runs: runs, lookup_runs: lookup_runs, function_runs: sorted_function_runs, has_function_data: base.has_function_data };
+}
+
+pub fn extend_visibility_index_with_functions(base: ref visibility_index, functions: ref list<function_fact>, function_params: ref list<function_param_fact>) -> visibility_index
+audit {
+    intent("Attach exact-source function and parameter runs to a visibility index");
+    mutates();
+    effects();
+}
+{
+    let runs = clone_visibility_runs(ref base.runs);
+    let lookup_runs = clone_visibility_runs(ref base.lookup_runs);
+    let mut function_runs: list<function_run> = list();
+    append_function_fact_runs(ref functions, mutref function_runs);
+    append_function_param_runs(ref function_params, mutref function_runs);
+    let sorted_function_runs = sort_function_runs(ref function_runs);
+    return visibility_index { runs: runs, lookup_runs: lookup_runs, function_runs: sorted_function_runs, has_function_data: true };
+}
+
 pub fn build_visibility_index(uses: ref list<module_use>, items: ref list<top_item>) -> visibility_index
 audit {
     intent("Build immutable item/use module runs for one semantic phase");
@@ -539,7 +923,9 @@ audit {
     let mut runs: list<visibility_module_run> = list();
     append_item_visibility_runs(ref items, mutref runs);
     append_use_visibility_runs(ref uses, mutref runs);
-    return visibility_index { runs: runs };
+    let lookup_runs = sort_visibility_runs(ref runs);
+    let function_runs: list<function_run> = list();
+    return visibility_index { runs: runs, lookup_runs: lookup_runs, function_runs: function_runs, has_function_data: false };
 }
 
 fn item_matches_visible_kind(item: top_item, kind: visible_item_kind) -> bool {
@@ -608,13 +994,41 @@ fn visibility_run_is_items(domain: visibility_run_domain) -> bool {
     }
 }
 
+fn visibility_run_before_key(run: visibility_module_run, domain: visibility_run_domain, module: str) -> bool {
+    let run_domain = visibility_domain_key(run.domain);
+    let wanted_domain = visibility_domain_key(domain);
+    if run_domain != wanted_domain { return run_domain < wanted_domain; }
+    return run.module != module and index_str_less(run.module, module);
+}
+
+fn visibility_run_matches_key(run: visibility_module_run, domain: visibility_run_domain, module: str) -> bool {
+    return visibility_domain_key(run.domain) == visibility_domain_key(domain) and run.module == module;
+}
+
+fn first_visibility_run(index: ref visibility_index, domain: visibility_run_domain, module: str) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index.lookup_runs);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index.lookup_runs, middle);
+        match entry {
+            Some(run) => {
+                if visibility_run_before_key(run, domain, module) { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
 fn indexed_module_has_item(index: ref visibility_index, items: ref list<top_item>, module: str, name: str, kind: visible_item_kind, require_public: bool) -> bool {
-    let mut run_index = 0;
-    while run_index < list_len(ref index.runs) {
-        let run_entry = list_get(ref index.runs, run_index);
+    let mut run_index = first_visibility_run(ref index, visibility_run_items, module);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.lookup_runs) {
+        let run_entry = list_get(ref index.lookup_runs, run_index);
         match run_entry {
             Some(run) => {
-                if visibility_run_is_items(run.domain) and run.module == module {
+                if visibility_run_matches_key(run, visibility_run_items, module) {
                     let mut item_index = run.start;
                     while item_index < run.end {
                         let item_entry = list_get(ref items, item_index);
@@ -629,10 +1043,11 @@ fn indexed_module_has_item(index: ref visibility_index, items: ref list<top_item
                         }
                         item_index = item_index + 1;
                     }
+                } else {
+                    keep_scanning = false;
                 }
             },
-            None => {
-            },
+            None => { keep_scanning = false; },
         }
         run_index = run_index + 1;
     }
@@ -644,12 +1059,13 @@ fn visible_item_origin_indexed(index: ref visibility_index, uses: ref list<modul
         return module;
     }
 
-    let mut run_index = 0;
-    while run_index < list_len(ref index.runs) {
-        let run_entry = list_get(ref index.runs, run_index);
+    let mut run_index = first_visibility_run(ref index, visibility_run_uses, module);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.lookup_runs) {
+        let run_entry = list_get(ref index.lookup_runs, run_index);
         match run_entry {
             Some(run) => {
-                if not visibility_run_is_items(run.domain) and run.module == module {
+                if visibility_run_matches_key(run, visibility_run_uses, module) {
                     let mut use_index = run.start;
                     while use_index < run.end {
                         let use_entry = list_get(ref uses, use_index);
@@ -664,10 +1080,11 @@ fn visible_item_origin_indexed(index: ref visibility_index, uses: ref list<modul
                         }
                         use_index = use_index + 1;
                     }
+                } else {
+                    keep_scanning = false;
                 }
             },
-            None => {
-            },
+            None => { keep_scanning = false; },
         }
         run_index = run_index + 1;
     }
@@ -1012,6 +1429,34 @@ fn builtin_variant_arity(name: str) -> i32 {
     return -1;
 }
 
+fn function_run_before_key(run: function_run, domain: function_run_domain, module: str, function_name: str) -> bool {
+    let run_domain = function_domain_key(run.domain);
+    let wanted_domain = function_domain_key(domain);
+    if run_domain != wanted_domain { return run_domain < wanted_domain; }
+    if run.module != module { return index_str_less(run.module, module); }
+    return run.function_name != function_name and index_str_less(run.function_name, function_name);
+}
+
+fn function_run_matches_key(run: function_run, domain: function_run_domain, module: str, function_name: str) -> bool {
+    return function_domain_key(run.domain) == function_domain_key(domain) and run.module == module and run.function_name == function_name;
+}
+
+fn first_function_run(index: ref visibility_index, domain: function_run_domain, module: str, function_name: str) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index.function_runs);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index.function_runs, middle);
+        match entry {
+            Some(run) => {
+                if function_run_before_key(run, domain, module, function_name) { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
 fn lookup_function_fact_arity(functions: ref list<function_fact>, module: str, name: str) -> i32 {
     let mut index = 0;
     while index < list_len(ref functions) {
@@ -1026,6 +1471,36 @@ fn lookup_function_fact_arity(functions: ref list<function_fact>, module: str, n
             },
         }
         index = index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_fact_arity_indexed(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> i32 {
+    if not index.has_function_data {
+        return lookup_function_fact_arity(ref functions, module, name);
+    }
+    let mut run_index = first_function_run(ref index, function_run_facts, module, name);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.function_runs) {
+        let run_entry = list_get(ref index.function_runs, run_index);
+        match run_entry {
+            Some(run) => {
+                if function_run_matches_key(run, function_run_facts, module, name) {
+                    let mut source_index = run.start;
+                    while source_index < run.end {
+                        let entry = list_get(ref functions, source_index);
+                        match entry {
+                            Some(value) => { if value.module == module and value.name == name { return value.param_count; } },
+                            None => {
+                            },
+                        }
+                        source_index = source_index + 1;
+                    }
+                } else { keep_scanning = false; }
+            },
+            None => { keep_scanning = false; },
+        }
+        run_index = run_index + 1;
     }
     return -1;
 }
@@ -1055,7 +1530,7 @@ fn visible_function_arity(index: ref visibility_index, functions: ref list<funct
     }
     let origin = visible_item_origin_indexed(ref index, ref uses, ref items, module, name, visible_item_function);
     if origin != "" {
-        return lookup_function_fact_arity(ref functions, origin, name);
+        return lookup_function_fact_arity_indexed(ref index, ref functions, origin, name);
     }
     return -1;
 }
@@ -1097,7 +1572,9 @@ audit {
     effects();
 }
 {
-    let index = build_visibility_index(ref uses, ref items);
+    let base_index = build_visibility_index(ref uses, ref items);
+    let empty_params: list<function_param_fact> = list();
+    let index = extend_visibility_index_with_functions(ref base_index, ref functions, ref empty_params);
     return typecheck_modules_for_entry_indexed(ref index, ref functions, ref variants, ref calls, ref patterns, ref uses, ref items, entry_module, require_entry, mutref diags);
 }
 
@@ -1371,6 +1848,70 @@ fn lookup_function_fact_return_name(functions: ref list<function_fact>, module: 
     return "";
 }
 
+fn lookup_function_fact_source_index_linear(functions: ref list<function_fact>, module: str, name: str) -> i32 {
+    let mut source_index = 0;
+    while source_index < list_len(ref functions) {
+        let entry = list_get(ref functions, source_index);
+        match entry {
+            Some(value) => { if value.module == module and value.name == name { return source_index; } },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_fact_source_index(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> i32 {
+    if not index.has_function_data {
+        return lookup_function_fact_source_index_linear(ref functions, module, name);
+    }
+    let mut run_index = first_function_run(ref index, function_run_facts, module, name);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.function_runs) {
+        let run_entry = list_get(ref index.function_runs, run_index);
+        match run_entry {
+            Some(run) => {
+                if function_run_matches_key(run, function_run_facts, module, name) {
+                    let mut source_index = run.start;
+                    while source_index < run.end {
+                        let entry = list_get(ref functions, source_index);
+                        match entry {
+                            Some(value) => { if value.module == module and value.name == name { return source_index; } },
+                            None => {
+                            },
+                        }
+                        source_index = source_index + 1;
+                    }
+                } else { keep_scanning = false; }
+            },
+            None => { keep_scanning = false; },
+        }
+        run_index = run_index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_fact_return_name_indexed(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> str {
+    let entry = list_get(ref functions, lookup_function_fact_source_index(ref index, ref functions, module, name));
+    match entry { Some(value) => { return value.return_name; }, None => { return ""; }, }
+}
+
+fn lookup_function_fact_return_arg1_name_indexed(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> str {
+    let entry = list_get(ref functions, lookup_function_fact_source_index(ref index, ref functions, module, name));
+    match entry { Some(value) => { return value.return_arg1_name; }, None => { return ""; }, }
+}
+
+fn lookup_function_fact_return_arg2_name_indexed(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> str {
+    let entry = list_get(ref functions, lookup_function_fact_source_index(ref index, ref functions, module, name));
+    match entry { Some(value) => { return value.return_arg2_name; }, None => { return ""; }, }
+}
+
+fn lookup_function_fact_return_is_borrow_indexed(index: ref visibility_index, functions: ref list<function_fact>, module: str, name: str) -> bool {
+    let entry = list_get(ref functions, lookup_function_fact_source_index(ref index, ref functions, module, name));
+    match entry { Some(value) => { return value.return_is_borrow; }, None => { return false; }, }
+}
+
 fn lookup_function_fact_return_arg1_name(functions: ref list<function_fact>, module: str, name: str) -> str {
     let mut index = 0;
     while index < list_len(ref functions) {
@@ -1514,7 +2055,7 @@ fn visible_function_return_name(index: ref visibility_index, functions: ref list
     }
     let origin = visible_item_origin_indexed(ref index, ref uses, ref items, module, name, visible_item_function);
     if origin != "" {
-        return lookup_function_fact_return_name(ref functions, origin, name);
+        return lookup_function_fact_return_name_indexed(ref index, ref functions, origin, name);
     }
     return "";
 }
@@ -1527,9 +2068,9 @@ fn visible_function_return_ctx(index: ref visibility_index, functions: ref list<
     let origin = visible_item_origin_indexed(ref index, ref uses, ref items, module, name, visible_item_function);
     if origin != "" {
         return make_expected_type_ctx(
-            lookup_function_fact_return_name(ref functions, origin, name),
-            lookup_function_fact_return_arg1_name(ref functions, origin, name),
-            lookup_function_fact_return_arg2_name(ref functions, origin, name)
+            lookup_function_fact_return_name_indexed(ref index, ref functions, origin, name),
+            lookup_function_fact_return_arg1_name_indexed(ref index, ref functions, origin, name),
+            lookup_function_fact_return_arg2_name_indexed(ref index, ref functions, origin, name)
         );
     }
     return empty_expected_type_ctx();
@@ -1542,7 +2083,7 @@ fn visible_function_return_is_borrow(index: ref visibility_index, functions: ref
     }
     let origin = visible_item_origin_indexed(ref index, ref uses, ref items, module, name, visible_item_function);
     if origin != "" {
-        return lookup_function_fact_return_is_borrow(ref functions, origin, name);
+        return lookup_function_fact_return_is_borrow_indexed(ref index, ref functions, origin, name);
     }
     return false;
 }
@@ -1961,21 +2502,34 @@ fn exact_typed_binding_ctx(typed_bindings: ref list<typed_binding_fact>, module:
     return empty_expected_type_ctx();
 }
 
-fn clone_scopes_for_function(source: ref list<body_scope>, module: str, function_name: str) -> list<body_scope> {
+fn clone_scopes_for_function(index: ref visibility_index, source: ref list<body_scope>, module: str, function_name: str) -> list<body_scope> {
     let mut copied: list<body_scope> = list();
-    let mut index = 0;
-    while index < list_len(ref source) {
-        let entry = list_get(ref source, index);
-        match entry {
-            Some(value) => {
-                if value.module == module and value.function_name == function_name {
-                    list_push(mutref copied, value);
+    let mut run_index = first_function_run(ref index, function_run_scopes, module, function_name);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.function_runs) {
+        let run_entry = list_get(ref index.function_runs, run_index);
+        match run_entry {
+            Some(run) => {
+                if function_run_matches_key(run, function_run_scopes, module, function_name) {
+                    let mut source_index = run.start;
+                    while source_index < run.end {
+                        let entry = list_get(ref source, source_index);
+                        match entry {
+                            Some(value) => {
+                                if value.module == module and value.function_name == function_name { list_push(mutref copied, value); }
+                            },
+                            None => {
+                            },
+                        }
+                        source_index = source_index + 1;
+                    }
+                } else {
+                    keep_scanning = false;
                 }
             },
-            None => {
-            },
+            None => { keep_scanning = false; },
         }
-        index = index + 1;
+        run_index = run_index + 1;
     }
     return copied;
 }
@@ -1999,21 +2553,34 @@ fn clone_typed_bindings_for_function(source: ref list<typed_binding_fact>, modul
     return copied;
 }
 
-fn clone_statements_for_function(source: ref list<stmt_fact>, module: str, function_name: str) -> list<stmt_fact> {
+fn clone_statements_for_function(index: ref visibility_index, source: ref list<stmt_fact>, module: str, function_name: str) -> list<stmt_fact> {
     let mut copied: list<stmt_fact> = list();
-    let mut index = 0;
-    while index < list_len(ref source) {
-        let entry = list_get(ref source, index);
-        match entry {
-            Some(value) => {
-                if value.module == module and value.function_name == function_name {
-                    list_push(mutref copied, value);
+    let mut run_index = first_function_run(ref index, function_run_statements, module, function_name);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref index.function_runs) {
+        let run_entry = list_get(ref index.function_runs, run_index);
+        match run_entry {
+            Some(run) => {
+                if function_run_matches_key(run, function_run_statements, module, function_name) {
+                    let mut source_index = run.start;
+                    while source_index < run.end {
+                        let entry = list_get(ref source, source_index);
+                        match entry {
+                            Some(value) => {
+                                if value.module == module and value.function_name == function_name { list_push(mutref copied, value); }
+                            },
+                            None => {
+                            },
+                        }
+                        source_index = source_index + 1;
+                    }
+                } else {
+                    keep_scanning = false;
                 }
             },
-            None => {
-            },
+            None => { keep_scanning = false; },
         }
-        index = index + 1;
+        run_index = run_index + 1;
     }
     return copied;
 }
@@ -2292,6 +2859,97 @@ fn lookup_function_param_borrow_mutable(function_params: ref list<function_param
     return false;
 }
 
+fn lookup_function_param_source_index_linear(function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> i32 {
+    let mut source_index = 0;
+    while source_index < list_len(ref function_params) {
+        let entry = list_get(ref function_params, source_index);
+        match entry {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name and value.index == index { return source_index; }
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_param_source_index(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> i32 {
+    if not visibility.has_function_data {
+        return lookup_function_param_source_index_linear(ref function_params, module, function_name, index);
+    }
+    let mut run_index = first_function_run(ref visibility, function_run_params, module, function_name);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref visibility.function_runs) {
+        let run_entry = list_get(ref visibility.function_runs, run_index);
+        match run_entry {
+            Some(run) => {
+                if function_run_matches_key(run, function_run_params, module, function_name) {
+                    let mut source_index = run.start;
+                    while source_index < run.end {
+                        let entry = list_get(ref function_params, source_index);
+                        match entry {
+                            Some(value) => {
+                                if value.module == module and value.function_name == function_name and value.index == index { return source_index; }
+                            },
+                            None => {
+                            },
+                        }
+                        source_index = source_index + 1;
+                    }
+                } else { keep_scanning = false; }
+            },
+            None => { keep_scanning = false; },
+        }
+        run_index = run_index + 1;
+    }
+    return -1;
+}
+
+fn lookup_function_param_type_name_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> str {
+    let entry = list_get(ref function_params, lookup_function_param_source_index(ref visibility, ref function_params, module, function_name, index));
+    match entry { Some(value) => { return value.type_name; }, None => { return ""; }, }
+}
+
+fn lookup_function_param_ctx_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> expected_type_ctx {
+    let entry = list_get(ref function_params, lookup_function_param_source_index(ref visibility, ref function_params, module, function_name, index));
+    match entry {
+        Some(value) => { return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name); },
+        None => { return empty_expected_type_ctx(); },
+    }
+}
+
+fn lookup_function_param_is_borrow_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> bool {
+    let entry = list_get(ref function_params, lookup_function_param_source_index(ref visibility, ref function_params, module, function_name, index));
+    match entry { Some(value) => { return value.is_borrow; }, None => { return false; }, }
+}
+
+fn lookup_function_param_borrow_mutable_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> bool {
+    let entry = list_get(ref function_params, lookup_function_param_source_index(ref visibility, ref function_params, module, function_name, index));
+    match entry { Some(value) => { return value.is_borrow and value.borrow_mutable; }, None => { return false; }, }
+}
+
+pub fn exact_function_param_count_indexed(visibility: ref visibility_index, functions: ref list<function_fact>, module: str, function_name: str) -> i32
+audit {
+    intent("Read an exact checked function parameter count through its phase-owned index");
+    mutates();
+    effects();
+}
+{
+    return lookup_function_fact_arity_indexed(ref visibility, ref functions, module, function_name);
+}
+
+pub fn exact_function_param_ctx_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> expected_type_ctx
+audit {
+    intent("Read exact checked parameter metadata through its phase-owned index");
+    mutates();
+    effects();
+}
+{
+    return lookup_function_param_ctx_indexed(ref visibility, ref function_params, module, function_name, index);
+}
+
 fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
     if function_name == "duration_from_ns" and index == 0 {
         return "i64";
@@ -2497,7 +3155,7 @@ fn visible_function_param_type_name(visibility: ref visibility_index, function_p
     }
     let origin = visible_item_origin_indexed(ref visibility, ref uses, ref items, module, function_name, visible_item_function);
     if origin != "" {
-        return lookup_function_param_type_name(ref function_params, origin, function_name, index);
+        return lookup_function_param_type_name_indexed(ref visibility, ref function_params, origin, function_name, index);
     }
     return "";
 }
@@ -2509,7 +3167,9 @@ audit {
     effects();
 }
 {
-    let visibility = build_visibility_index(ref uses, ref items);
+    let base_visibility = build_visibility_index(ref uses, ref items);
+    let empty_functions: list<function_fact> = list();
+    let visibility = extend_visibility_index_with_functions(ref base_visibility, ref empty_functions, ref function_params);
     return visible_function_param_ctx_indexed(ref visibility, ref function_params, ref uses, ref items, module, function_name, index);
 }
 
@@ -2526,7 +3186,7 @@ audit {
     }
     let origin = visible_item_origin_indexed(ref visibility, ref uses, ref items, module, function_name, visible_item_function);
     if origin != "" {
-        return lookup_function_param_ctx(ref function_params, origin, function_name, index);
+        return lookup_function_param_ctx_indexed(ref visibility, ref function_params, origin, function_name, index);
     }
     return empty_expected_type_ctx();
 }
@@ -2537,7 +3197,7 @@ fn visible_function_param_is_borrow(visibility: ref visibility_index, function_p
     }
     let origin = visible_item_origin_indexed(ref visibility, ref uses, ref items, module, function_name, visible_item_function);
     if origin != "" {
-        return lookup_function_param_is_borrow(ref function_params, origin, function_name, index);
+        return lookup_function_param_is_borrow_indexed(ref visibility, ref function_params, origin, function_name, index);
     }
     return false;
 }
@@ -2548,7 +3208,7 @@ fn visible_function_param_borrow_mutable(visibility: ref visibility_index, funct
     }
     let origin = visible_item_origin_indexed(ref visibility, ref uses, ref items, module, function_name, visible_item_function);
     if origin != "" {
-        return lookup_function_param_borrow_mutable(ref function_params, origin, function_name, index);
+        return lookup_function_param_borrow_mutable_indexed(ref visibility, ref function_params, origin, function_name, index);
     }
     return false;
 }
@@ -2770,6 +3430,21 @@ fn lookup_function_param_name(function_params: ref list<function_param_fact>, mo
     return "";
 }
 
+fn lookup_function_param_name_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> str {
+    let entry = list_get(ref function_params, lookup_function_param_source_index(ref visibility, ref function_params, module, function_name, index));
+    match entry { Some(value) => { return value.name; }, None => { return ""; }, }
+}
+
+pub fn exact_function_param_name_indexed(visibility: ref visibility_index, function_params: ref list<function_param_fact>, module: str, function_name: str, index: i32) -> str
+audit {
+    intent("Read an exact checked parameter label through its phase-owned index");
+    mutates();
+    effects();
+}
+{
+    return lookup_function_param_name_indexed(ref visibility, ref function_params, module, function_name, index);
+}
+
 fn visible_function_param_name(visibility: ref visibility_index, function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, index: i32) -> str {
     let builtin = builtin_function_param_name(function_name, index);
     if builtin != "" {
@@ -2777,7 +3452,7 @@ fn visible_function_param_name(visibility: ref visibility_index, function_params
     }
     let origin = visible_item_origin_indexed(ref visibility, ref uses, ref items, module, function_name, visible_item_function);
     if origin != "" {
-        return lookup_function_param_name(ref function_params, origin, function_name, index);
+        return lookup_function_param_name_indexed(ref visibility, ref function_params, origin, function_name, index);
     }
     return "";
 }
@@ -2803,12 +3478,13 @@ fn imported_module_for_qualifier(uses: ref list<module_use>, module: str, qualif
 }
 
 fn imported_module_for_qualifier_indexed(visibility: ref visibility_index, uses: ref list<module_use>, module: str, qualifier: str) -> str {
-    let mut run_index = 0;
-    while run_index < list_len(ref visibility.runs) {
-        let run_entry = list_get(ref visibility.runs, run_index);
+    let mut run_index = first_visibility_run(ref visibility, visibility_run_uses, module);
+    let mut keep_scanning = true;
+    while keep_scanning and run_index < list_len(ref visibility.lookup_runs) {
+        let run_entry = list_get(ref visibility.lookup_runs, run_index);
         match run_entry {
             Some(run) => {
-                if not visibility_run_is_items(run.domain) and run.module == module {
+                if visibility_run_matches_key(run, visibility_run_uses, module) {
                     let mut use_index = run.start;
                     while use_index < run.end {
                         let entry = list_get(ref uses, use_index);
@@ -2823,10 +3499,11 @@ fn imported_module_for_qualifier_indexed(visibility: ref visibility_index, uses:
                         }
                         use_index = use_index + 1;
                     }
+                } else {
+                    keep_scanning = false;
                 }
             },
-            None => {
-            },
+            None => { keep_scanning = false; },
         }
         run_index = run_index + 1;
     }
@@ -2837,9 +3514,9 @@ fn qualified_function_return_ctx(visibility: ref visibility_index, functions: re
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
         return make_expected_type_ctx(
-            lookup_function_fact_return_name(ref functions, imported, function_name),
-            lookup_function_fact_return_arg1_name(ref functions, imported, function_name),
-            lookup_function_fact_return_arg2_name(ref functions, imported, function_name)
+            lookup_function_fact_return_name_indexed(ref visibility, ref functions, imported, function_name),
+            lookup_function_fact_return_arg1_name_indexed(ref visibility, ref functions, imported, function_name),
+            lookup_function_fact_return_arg2_name_indexed(ref visibility, ref functions, imported, function_name)
         );
     }
     return empty_expected_type_ctx();
@@ -2848,7 +3525,7 @@ fn qualified_function_return_ctx(visibility: ref visibility_index, functions: re
 fn qualified_function_param_ctx(visibility: ref visibility_index, function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> expected_type_ctx {
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
-        return lookup_function_param_ctx(ref function_params, imported, function_name, index);
+        return lookup_function_param_ctx_indexed(ref visibility, ref function_params, imported, function_name, index);
     }
     return empty_expected_type_ctx();
 }
@@ -2856,7 +3533,7 @@ fn qualified_function_param_ctx(visibility: ref visibility_index, function_param
 fn qualified_function_param_is_borrow(visibility: ref visibility_index, function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
-        return lookup_function_param_is_borrow(ref function_params, imported, function_name, index);
+        return lookup_function_param_is_borrow_indexed(ref visibility, ref function_params, imported, function_name, index);
     }
     return false;
 }
@@ -2864,7 +3541,7 @@ fn qualified_function_param_is_borrow(visibility: ref visibility_index, function
 fn qualified_function_param_borrow_mutable(visibility: ref visibility_index, function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> bool {
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
-        return lookup_function_param_borrow_mutable(ref function_params, imported, function_name, index);
+        return lookup_function_param_borrow_mutable_indexed(ref visibility, ref function_params, imported, function_name, index);
     }
     return false;
 }
@@ -2872,7 +3549,7 @@ fn qualified_function_param_borrow_mutable(visibility: ref visibility_index, fun
 fn qualified_function_param_name(visibility: ref visibility_index, function_params: ref list<function_param_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str, index: i32) -> str {
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
-        return lookup_function_param_name(ref function_params, imported, function_name, index);
+        return lookup_function_param_name_indexed(ref visibility, ref function_params, imported, function_name, index);
     }
     return "";
 }
@@ -2880,7 +3557,7 @@ fn qualified_function_param_name(visibility: ref visibility_index, function_para
 fn qualified_function_arity(visibility: ref visibility_index, functions: ref list<function_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, qualifier: str, function_name: str) -> i32 {
     let imported = imported_module_for_qualifier_indexed(ref visibility, ref uses, module, qualifier);
     if imported != "" and indexed_module_has_item(ref visibility, ref items, imported, function_name, visible_item_function, true) {
-        return lookup_function_fact_arity(ref functions, imported, function_name);
+        return lookup_function_fact_arity_indexed(ref visibility, ref functions, imported, function_name);
     }
     return -1;
 }
@@ -5673,7 +6350,8 @@ audit {
     effects();
 }
 {
-    let visibility = build_visibility_index(ref uses, ref items);
+    let base_visibility = build_visibility_index(ref uses, ref items);
+    let visibility = extend_visibility_index_with_functions(ref base_visibility, ref functions, ref function_params);
     return infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, start, end, at, expected_ctx, mutref diags);
 }
 
@@ -6713,7 +7391,9 @@ audit {
     effects();
 }
 {
-    let visibility = build_visibility_index(ref uses, ref items);
+    let base_visibility = build_visibility_index(ref uses, ref items);
+    let function_visibility = extend_visibility_index_with_functions(ref base_visibility, ref functions, ref function_params);
+    let visibility = extend_visibility_index_with_members(ref function_visibility, ref scopes, ref statements);
     return typecheck_value_facts_with_stmt_facts_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref locals, ref returns, ref conditions, ref assignments, ref statements, ref uses, ref items, ref sources, mutref diags);
 }
 
@@ -6734,8 +7414,8 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                     match function_entry {
                         Some(current_function) => {
                             if current_function.module == current_source.name {
-                                let function_scopes = clone_scopes_for_function(ref scopes, current_function.module, current_function.name);
-                                let function_statements = clone_statements_for_function(ref statements, current_function.module, current_function.name);
+                                let function_scopes = clone_scopes_for_function(ref visibility, ref scopes, current_function.module, current_function.name);
+                                let function_statements = clone_statements_for_function(ref visibility, ref statements, current_function.module, current_function.name);
                                 let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
                                 let function_match_arms = clone_match_arms_for_function(ref match_arms, current_function.module, current_function.name);
                                 let function_locals = clone_local_inits_for_function(ref locals, current_function.module, current_function.name);
@@ -7000,6 +7680,237 @@ audit {
     return typecheck_value_facts_with_stmt_facts(ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref locals, ref returns, ref conditions, ref assignments, ref empty_statements, ref uses, ref items, ref sources, mutref diags);
 }
 
+fn p2_frontend_stmt_kind(kind: stmt_fact_kind) -> i32 {
+    match kind {
+        stmt_local => { return 1; }, stmt_expr => { return 2; }, stmt_assign => { return 3; },
+        stmt_field_assign => { return 4; }, stmt_return => { return 5; }, stmt_if => { return 6; },
+        stmt_while => { return 7; }, stmt_for => { return 8; }, stmt_match => { return 9; },
+        stmt_let_else => { return 10; }, stmt_propagate => { return 11; },
+        stmt_break => { return 12; }, stmt_continue => { return 13; },
+    }
+}
+
+fn p2_frontend_expr_kind(kind: expr_fact_kind) -> i32 {
+    match kind {
+        expr_unknown => { return 0; }, expr_unit => { return 1; }, expr_bool => { return 2; },
+        expr_i32 => { return 3; }, expr_str => { return 4; }, expr_name => { return 5; },
+        expr_field => { return 6; }, expr_call => { return 7; }, expr_struct => { return 8; },
+        expr_list => { return 9; }, expr_match => { return 10; }, expr_try => { return 11; },
+    }
+}
+
+fn p2_frontend_scopes_equal(left: ref list<body_scope>, right: ref list<body_scope>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => {
+                match list_get(ref right, index) {
+                    Some(b) => { if a.module != b.module or a.function_name != b.function_name or a.scope_id != b.scope_id or a.parent_scope_id != b.parent_scope_id or a.depth != b.depth { return false; } },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn p2_frontend_statements_equal(left: ref list<stmt_fact>, right: ref list<stmt_fact>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => {
+                match list_get(ref right, index) {
+                    Some(b) => { if a.module != b.module or a.function_name != b.function_name or a.scope_id != b.scope_id or a.at != b.at or p2_frontend_stmt_kind(a.kind) != p2_frontend_stmt_kind(b.kind) or a.name != b.name or a.field_name != b.field_name or a.is_mutable != b.is_mutable or a.expr_start != b.expr_start or a.expr_end != b.expr_end or p2_frontend_expr_kind(a.expr_kind) != p2_frontend_expr_kind(b.expr_kind) or a.expr_name != b.expr_name or a.expr_member_name != b.expr_member_name or a.child_scope_id != b.child_scope_id or a.alt_scope_id != b.alt_scope_id { return false; } },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn p2_frontend_members_case(base: ref visibility_index, scopes: ref list<body_scope>, statements: ref list<stmt_fact>, module_name: str, function_name: str) -> bool {
+    let mut expected_scopes: list<body_scope> = list();
+    let mut snapshot_scopes: list<body_scope> = list();
+    let mut expected_statements: list<stmt_fact> = list();
+    let mut snapshot_statements: list<stmt_fact> = list();
+    let mut index = 0;
+    while index < list_len(ref scopes) {
+        match list_get(ref scopes, index) {
+            Some(value) => {
+                list_push(mutref snapshot_scopes, value);
+                if value.module == module_name and value.function_name == function_name { list_push(mutref expected_scopes, value); }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < list_len(ref statements) {
+        match list_get(ref statements, index) {
+            Some(value) => {
+                list_push(mutref snapshot_statements, value);
+                if value.module == module_name and value.function_name == function_name { list_push(mutref expected_statements, value); }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let members = extend_visibility_index_with_members(ref base, ref scopes, ref statements);
+    let mut actual_scopes = clone_scopes_for_function(ref members, ref scopes, module_name, function_name);
+    let mut actual_statements = clone_statements_for_function(ref members, ref statements, module_name, function_name);
+    if not p2_frontend_scopes_equal(ref expected_scopes, ref actual_scopes) or not p2_frontend_statements_equal(ref expected_statements, ref actual_statements) { return false; }
+    match list_get(ref actual_scopes, 0) {
+        Some(value) => { let mut changed = value; changed.parent_scope_id = 987; list_push(mutref actual_scopes, changed); },
+        None => {},
+    }
+    match list_get(ref actual_statements, 0) {
+        Some(value) => { let mut changed = value; changed.child_scope_id = 987; changed.field_name = "changed"; list_push(mutref actual_statements, changed); },
+        None => {},
+    }
+    actual_scopes = list(); actual_statements = list();
+    let again_scopes = clone_scopes_for_function(ref members, ref scopes, module_name, function_name);
+    let again_statements = clone_statements_for_function(ref members, ref statements, module_name, function_name);
+    return p2_frontend_scopes_equal(ref expected_scopes, ref again_scopes) and p2_frontend_statements_equal(ref expected_statements, ref again_statements) and p2_frontend_scopes_equal(ref snapshot_scopes, ref scopes) and p2_frontend_statements_equal(ref snapshot_statements, ref statements);
+}
+
+fn p2_frontend_member_stmt(module_name: str, function_name: str, scope_id: i32, at: i32, kind: stmt_fact_kind, name: str, child: i32, alt: i32) -> stmt_fact {
+    let mut value = make_stmt_fact(module_name, function_name, scope_id, at, kind, name, at + 1, at + 3, expr_name, "subject", "member", child, alt);
+    value.field_name = "payload";
+    value.is_mutable = true;
+    return value;
+}
+
+fn p2_frontend_membership_cases(base: ref visibility_index) -> bool {
+    let mut scopes: list<body_scope> = list();
+    list_push(mutref scopes, make_body_scope("a", "same", 10, -1, 0));
+    list_push(mutref scopes, make_body_scope("b", "other", 90, -1, 0));
+    list_push(mutref scopes, make_body_scope("a", "same", 20, 10, 1));
+    list_push(mutref scopes, make_body_scope("b", "same", 10, -1, 0));
+    list_push(mutref scopes, make_body_scope("a", "same", 30, 20, 2));
+    let mut statements: list<stmt_fact> = list();
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 10, 40, stmt_local, "outer", -1, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("b", "other", 90, 5, stmt_for, "item", 91, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 10, 20, stmt_match, "match", 20, 30));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 20, 30, stmt_for, "item", 30, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("b", "same", 10, 25, stmt_return, "foreign", -1, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 30, 35, stmt_continue, "", -1, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 30, 50, stmt_local, "item", -1, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 10, 10, stmt_while, "while", 20, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 30, 60, stmt_break, "", -1, -1));
+    list_push(mutref statements, p2_frontend_member_stmt("a", "same", 20, 55, stmt_field_assign, "outer", -1, -1));
+    if not p2_frontend_members_case(ref base, ref scopes, ref statements, "a", "same") { return false; }
+    if not p2_frontend_members_case(ref base, ref scopes, ref statements, "b", "same") { return false; }
+    if not p2_frontend_members_case(ref base, ref scopes, ref statements, "b", "other") { return false; }
+    if not p2_frontend_members_case(ref base, ref scopes, ref statements, "missing", "same") { return false; }
+    let members = extend_visibility_index_with_members(ref base, ref scopes, ref statements);
+    let selected_scopes = clone_scopes_for_function(ref members, ref scopes, "a", "same");
+    let selected_statements = clone_statements_for_function(ref members, ref statements, "a", "same");
+    if parent_scope_id(ref selected_scopes, "a", "same", 30) != 20 { return false; }
+    if not scope_is_visible(ref selected_scopes, "a", "same", 30, 10) or scope_is_visible(ref selected_scopes, "a", "same", 10, 30) { return false; }
+    if not visible_assignment_target_is_for_binding(ref selected_statements, ref selected_scopes, "a", "same", 30, "item", 40) { return false; }
+    if visible_assignment_target_is_for_binding(ref selected_statements, ref selected_scopes, "a", "same", 30, "item", 70) { return false; }
+    if visible_assignment_target_is_for_binding(ref selected_statements, ref selected_scopes, "a", "same", 10, "item", 40) { return false; }
+
+    let mut compact_scopes: list<body_scope> = list();
+    let mut compact_statements: list<stmt_fact> = list();
+    match list_get(ref scopes, 2) { Some(value) => { list_push(mutref compact_scopes, value); }, None => { return false; }, }
+    match list_get(ref statements, 3) { Some(value) => { list_push(mutref compact_statements, value); }, None => { return false; }, }
+    match list_get(ref statements, 6) { Some(value) => { list_push(mutref compact_statements, value); }, None => { return false; }, }
+    if not p2_frontend_members_case(ref base, ref compact_scopes, ref compact_statements, "a", "same") { return false; }
+    if not p2_frontend_members_case(ref base, ref compact_scopes, ref compact_statements, "b", "other") { return false; }
+    compact_scopes = list(); compact_statements = list();
+    return p2_frontend_members_case(ref base, ref compact_scopes, ref compact_statements, "a", "same");
+}
+
+pub fn frontend_lookup_index_cases() -> bool
+audit {
+    intent("Compare exact linear and indexed frontend lookup behavior over adversarial ordering");
+    mutates();
+    effects();
+}
+{
+    let empty_uses: list<module_use> = list();
+    let empty_items: list<top_item> = list();
+    let base = build_visibility_index(ref empty_uses, ref empty_items);
+    let empty_functions: list<function_fact> = list();
+    let empty_params: list<function_param_fact> = list();
+    let empty_index = extend_visibility_index_with_functions(ref base, ref empty_functions, ref empty_params);
+    if exact_function_param_count_indexed(ref empty_index, ref empty_functions, "missing", "missing") != -1 { return false; }
+    if exact_function_param_ctx_indexed(ref empty_index, ref empty_params, "missing", "missing", 0).head != "" { return false; }
+
+    let mut functions: list<function_fact> = list();
+    list_push(mutref functions, make_function_fact("a", "same", 10, 2, "i32", "", "", false, false));
+    list_push(mutref functions, make_function_fact("b", "other", 20, 1, "bool", "", "", false, false));
+    list_push(mutref functions, make_function_fact("a", "same", 30, 9, "str", "", "", false, false));
+
+    let mut params: list<function_param_fact> = list();
+    list_push(mutref params, make_function_param_fact("a", "same", 0, "left", 11, "i32", "", "", true, false));
+    list_push(mutref params, make_function_param_fact("b", "other", 0, "value", 21, "bool", "", "", false, false));
+    list_push(mutref params, make_function_param_fact("a", "same", 1, "right", 12, "list", "str", "", true, true));
+    list_push(mutref params, make_function_param_fact("a", "same", 0, "shadowed", 31, "str", "", "", false, false));
+
+    let function_index = extend_visibility_index_with_functions(ref base, ref functions, ref params);
+    if exact_function_param_count_indexed(ref base, ref functions, "a", "same") != exact_function_param_count_indexed(ref function_index, ref functions, "a", "same") { return false; }
+    if exact_function_param_name_indexed(ref base, ref params, "a", "same", 0) != exact_function_param_name_indexed(ref function_index, ref params, "a", "same", 0) { return false; }
+    if exact_function_param_ctx_indexed(ref base, ref params, "a", "same", 1).head != exact_function_param_ctx_indexed(ref function_index, ref params, "a", "same", 1).head { return false; }
+    if lookup_function_fact_arity(ref functions, "a", "same") != exact_function_param_count_indexed(ref function_index, ref functions, "a", "same") { return false; }
+    if lookup_function_fact_return_name(ref functions, "a", "same") != lookup_function_fact_return_name_indexed(ref function_index, ref functions, "a", "same") { return false; }
+    if lookup_function_param_name(ref params, "a", "same", 0) != exact_function_param_name_indexed(ref function_index, ref params, "a", "same", 0) { return false; }
+    if lookup_function_param_type_name(ref params, "a", "same", 1) != lookup_function_param_type_name_indexed(ref function_index, ref params, "a", "same", 1) { return false; }
+    if lookup_function_param_is_borrow(ref params, "a", "same", 0) != lookup_function_param_is_borrow_indexed(ref function_index, ref params, "a", "same", 0) { return false; }
+    if lookup_function_param_borrow_mutable(ref params, "a", "same", 1) != lookup_function_param_borrow_mutable_indexed(ref function_index, ref params, "a", "same", 1) { return false; }
+    if exact_function_param_count_indexed(ref base, ref functions, "a", "missing") != -1 { return false; }
+    if exact_function_param_name_indexed(ref function_index, ref params, "a", "same", 99) != "" { return false; }
+
+    let mut public_items: list<top_item> = list();
+    list_push(mutref public_items, make_top_item("a", "same", item_fn, false, 10));
+    let public_base = build_visibility_index(ref empty_uses, ref public_items);
+    let public_enriched = extend_visibility_index_with_functions(ref public_base, ref functions, ref params);
+    let bare_ctx = visible_function_param_ctx_indexed(ref public_base, ref params, ref empty_uses, ref public_items, "a", "same", 1);
+    let enriched_ctx = visible_function_param_ctx_indexed(ref public_enriched, ref params, ref empty_uses, ref public_items, "a", "same", 1);
+    if bare_ctx.head != enriched_ctx.head or bare_ctx.arg1_name != enriched_ctx.arg1_name or bare_ctx.arg2_name != enriched_ctx.arg2_name { return false; }
+    if visible_function_param_ctx_indexed(ref public_base, ref params, ref empty_uses, ref public_items, "a", "same", 99).head != "" { return false; }
+
+    let mut foreign_functions: list<function_fact> = list();
+    list_push(mutref foreign_functions, make_function_fact("z", "foreign", 50, 4, "i64", "", "", false, false));
+    let mut foreign_params: list<function_param_fact> = list();
+    list_push(mutref foreign_params, make_function_param_fact("z", "foreign", 0, "foreign", 51, "i64", "", "", false, false));
+    if exact_function_param_count_indexed(ref function_index, ref foreign_functions, "z", "foreign") != -1 { return false; }
+    if exact_function_param_name_indexed(ref function_index, ref foreign_params, "z", "foreign", 0) != "" { return false; }
+    if exact_function_param_count_indexed(ref empty_index, ref foreign_functions, "z", "foreign") != -1 { return false; }
+    if exact_function_param_name_indexed(ref empty_index, ref foreign_params, "z", "foreign", 0) != "" { return false; }
+
+    let mut filtered_params: list<function_param_fact> = list();
+    list_push(mutref filtered_params, make_function_param_fact("b", "other", 0, "filtered", 40, "i64", "", "", false, false));
+    let filtered_index = extend_visibility_index_with_functions(ref base, ref empty_functions, ref filtered_params);
+    if exact_function_param_name_indexed(ref filtered_index, ref filtered_params, "b", "other", 0) != "filtered" { return false; }
+    if exact_function_param_name_indexed(ref filtered_index, ref filtered_params, "a", "same", 0) != "" { return false; }
+    if exact_function_param_count_indexed(ref filtered_index, ref foreign_functions, "z", "foreign") != -1 { return false; }
+
+    let mut scopes: list<body_scope> = list();
+    list_push(mutref scopes, make_body_scope("a", "same", 1, -1, 0));
+    list_push(mutref scopes, make_body_scope("b", "other", 9, -1, 0));
+    list_push(mutref scopes, make_body_scope("a", "same", 2, 1, 1));
+    let empty_statements: list<stmt_fact> = list();
+    let member_index = extend_visibility_index_with_members(ref function_index, ref scopes, ref empty_statements);
+    let mut copied = clone_scopes_for_function(ref member_index, ref scopes, "a", "same");
+    if list_len(ref copied) != 2 { return false; }
+    match list_get(ref copied, 0) { Some(value) => { if value.scope_id != 1 { return false; } }, None => { return false; }, }
+    match list_get(ref copied, 1) { Some(value) => { if value.scope_id != 2 { return false; } }, None => { return false; }, }
+    list_push(mutref copied, make_body_scope("a", "same", 3, 2, 2));
+    if list_len(ref scopes) != 3 { return false; }
+    let copied_again = clone_scopes_for_function(ref member_index, ref scopes, "a", "same");
+    if list_len(ref copied_again) != 2 { return false; }
+    return p2_frontend_membership_cases(ref function_index);
+}
+
 pub fn collect_resolved_binding_facts(functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, match_arms: ref list<match_arm_fact>, locals: ref list<local_init_fact>, statements: ref list<stmt_fact>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, resolved_bindings_out: mutref list<typed_binding_fact>, pattern_bindings_out: mutref list<pattern_binding_fact>, diags: mutref list<diag>) -> resolved_binding_summary
 audit {
     intent("Materialize resolved binding and typed pattern facts for the structured checked handoff");
@@ -7007,7 +7918,9 @@ audit {
     effects();
 }
 {
-    let visibility = build_visibility_index(ref uses, ref items);
+    let base_visibility = build_visibility_index(ref uses, ref items);
+    let function_visibility = extend_visibility_index_with_functions(ref base_visibility, ref functions, ref function_params);
+    let visibility = extend_visibility_index_with_members(ref function_visibility, ref scopes, ref statements);
     return collect_resolved_binding_facts_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref match_arms, ref locals, ref statements, ref uses, ref items, ref sources, mutref resolved_bindings_out, mutref pattern_bindings_out, mutref diags);
 }
 
@@ -7027,7 +7940,7 @@ fn collect_resolved_binding_facts_indexed(visibility: ref visibility_index, func
                     match function_entry {
                         Some(current_function) => {
                             if current_function.module == current_source.name {
-                                let function_scopes = clone_scopes_for_function(ref scopes, current_function.module, current_function.name);
+                                let function_scopes = clone_scopes_for_function(ref visibility, ref scopes, current_function.module, current_function.name);
                                 let mut resolved_bindings = clone_typed_bindings_for_function(ref typed_bindings, current_function.module, current_function.name);
                                 let function_match_arms = clone_match_arms_for_function(ref match_arms, current_function.module, current_function.name);
                                 let function_locals = clone_local_inits_for_function(ref locals, current_function.module, current_function.name);

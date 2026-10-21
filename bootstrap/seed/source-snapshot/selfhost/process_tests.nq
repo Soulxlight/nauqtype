@@ -1,5 +1,6 @@
 use text;
 use schema_profile;
+use fixture_c;
 
 fn process_test_find(value: str, needle: str, start: i32) -> i32 {
     let mut index = start;
@@ -295,14 +296,24 @@ fn process_test_native(name: str, expected: str) -> bool {
     list_push(mutref args, "-o");
     let output = str_concat("build/m55_process/", name);
     list_push(mutref args, output);
-    if not process_test_run("cc", ref args, 0, "", true) { return false; }
+    let compiled = fixture_c_compile(concat3("tests/fixtures/m55_process/", name, ".c"), output, ref args, "process-runtime-c", "build/m55_process/.fixture-c-gate-lock");
+    if not compiled.completed {
+        eprint_line(compiled.error_message);
+        return false;
+    }
+    if compiled.exit_code != 0 or compiled.stdout != "" or compiled.stderr != "" {
+        eprint_line(concat3("process/time fixture failed, exit ", i32_to_str(compiled.exit_code), ":"));
+        eprint_line(compiled.stdout);
+        eprint_line(compiled.stderr);
+        return false;
+    }
     args = list();
     list_push(mutref args, "40s");
     list_push(mutref args, output);
     return process_test_run("timeout", ref args, 0, expected, true);
 }
 
-pub fn run_process_time_gate(driver: str) -> bool
+fn process_time_gate_impl(driver: str) -> bool
 audit {
     intent("Lock explicit process/time behavior, cleanup authority, and interrupted legacy waits");
     mutates();
@@ -357,4 +368,18 @@ audit {
     args = ["change-report", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/m55_process/authority.nq", "--policy", "tests/fixtures/m55_process/policy.json", "--format", "v4"];
     if not process_test_run(driver, ref args, 0, "\"policy\": \"checked\"", false) { return false; }
     return true;
+}
+
+pub fn run_process_time_gate(driver: str) -> bool
+audit {
+    intent("Lock explicit process/time behavior, cleanup authority, and interrupted legacy waits");
+    mutates();
+    effects(print, io);
+}
+{
+    let lock = "build/m55_process/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m55_process", lock) { eprint_line("process/time: fixture gate lock refused"); return false; }
+    let ok = process_time_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("process/time: fixture gate lock release failed"); return false; }
+    return ok;
 }

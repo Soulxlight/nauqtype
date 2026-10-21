@@ -19,10 +19,19 @@ separate jobs:
 | Reviewed executable milestone candidate | Affected checks after any audit repair | One composed full milestone invocation |
 | Release candidate or stable freeze | Relevant fixes first | Independent final alpha/stable gates below |
 
-`nauqc test` currently accepts no suite selector. Do not invent a filter flag
-or describe the current complete suite as a focused run. P1 owns adding
-selection if existing individual probes cannot provide sufficient feedback.
-Until then, use the existing direct fixture commands where applicable.
+`nauqc test` retains the full default sequence. Its fixed `--suite <name>`
+selection is partial feedback, never the complete fixture or release gate.
+Compiler suites are `compiler-index`, `proof-artifacts`, `workspace-capture`,
+`workspace-evidence`, `integer-policy`, `allocation-policy`, `str-join`,
+`process-time`, `schema-profile`, `driver-fixtures`, and `formatter`. Empty,
+unknown, duplicate, mixed, or `all` selections reject.
+
+Use `scripts/check_fast.sh --suite compiler-index` for compiler feedback:
+the wrapper validates/rebuilds the checked stage1 cache before dispatch.
+`scripts/check_fast.sh --host-suite provenance|attestation|budget` runs only
+the selected synthetic host-unit group, explicitly without compiler/cache
+validation. Choose exactly one route; do not write the pipe-separated choices
+literally as a shell command. No-argument `check_fast.sh` keeps all coverage.
 
 The campaign aims for <=10-second focused feedback, <=60-second warm full
 fixtures, and at least a 50% reduction in the new same-host cold gate, with
@@ -54,6 +63,52 @@ publishes a cache, after compiling captured inputs and verifying originals
 have not persistently changed. The old standalone `record` operation is gone.
 Fast feedback also runs focused provenance and attestation unit/stub checks;
 those are not substitutes for a real seed or copied-release proof.
+
+Local `check_fast.sh` defaults to `NQ_TEST_REUSE_C=1`. The four owned runtime
+fixture groups may reuse only a compile artifact with matching current input,
+running producer image, environment, physical GCC identity, exact argv and
+executable hashes. It currently supports only the modeled Ubuntu24.04 GCC13
+configuration; other eligible fresh-compile routes remain available. Every
+probe executes even on a hit. Direct `nauqc test` defaults to fresh compilation;
+explicit zero disables reuse, unknown mode values reject, and `prove` remains
+fresh. The complete milestone invocation forces zero for owned tests.
+
+Each fixture group holds its own atomic directory lock through compile/run.
+A stale lock fails closed: confirm no writer is active before operator
+recovery, rather than automatically deleting it. Cache receipts are private
+compile evidence, not test-result caches or independent release acceptance.
+
+### Opt-In Concurrent Local Warm Tier
+
+`NQ_FAST_CONCURRENT=1 NQ_TEST_REUSE_C=1 scripts/check_fast.sh` selects the
+complete local warm tier with four independent process-isolated groups. This
+route currently requires Ubuntu24.04 systemd255.4-1ubuntu8.18 (both installed
+client and running user manager) and cgroupsv2;
+other provider builds, unsupported containment or environment inputs reject instead of silently
+falling back. Unset/zero keeps the ordinary serial default. Partial selections
+and fresh fixture compilation reject concurrency. There is no compiler/runtime
+scheduler, new public compiler command, or reusable test-result cache.
+
+Cache checks and any genuine rebuild remain serial before fan-out. All probes
+and assertions execute; fixed-order replay joins all groups, combines each
+group's stdout/stderr, and returns its first source-ordered failure after any
+infrastructure failure. This is deliberately not serial fail-fast behavior.
+The complete milestone explicitly forces both fixture reuse and concurrency
+to zero; proof and release routes stay serial.
+
+All full wrapper invocations hold a checkout tier lock. This cannot exclude
+nonparticipating direct tests, builders, proof commands or source writers;
+keep one owning verification workflow active in the checkout. Stale or
+uncertain locks require operator inspection, not automatic PID-based recovery.
+The serial wrapper releases its lock only after ordinary successful completion.
+An interrupted or failed cache check, rebuild, or serial body retains the lock
+because an uncontained child may still be running. Inspect completion before
+operator recovery; a returned wrapper status alone does not prove drain.
+Opt-in cancellation kills only the descriptor-bound owned cgroup, immediately,
+and does not promise graceful TERM delivery. Resource, environment, status,
+quiescence and drain requirements are in the
+[concurrent warm contract](docs/P1_CONCURRENT_WARM_CONTRACT.md). Implementation
+and performance acceptance remain pending until recorded in the completion ledger.
 
 M54's focused upstream checks are also available when changing Linux
 input/filesystem or library-resolution contracts:

@@ -1,0 +1,1249 @@
+use files;
+use text;
+
+pub type fixture_c_compile_result {
+    completed: bool,
+    compiler_ran: bool,
+    cache_hit: bool,
+    exit_code: i32,
+    stdout: str,
+    stderr: str,
+    error_message: str,
+}
+
+type fixture_c_pipe_result {
+    valid: bool,
+    stdout: str,
+}
+
+type fixture_c_file_capture {
+    valid: bool,
+    text: str,
+    digest: str,
+    size: i64,
+    modified_ns: i64,
+    mode: i32,
+}
+
+type fixture_c_identity {
+    valid: bool,
+    digest: str,
+}
+
+fn fixture_c_failed(message: str) -> fixture_c_compile_result {
+    return fixture_c_compile_result { completed: false, compiler_ran: false, cache_hit: false, exit_code: 1, stdout: "", stderr: "", error_message: message };
+}
+
+fn fixture_c_failed_after_compile(message: str) -> fixture_c_compile_result {
+    return fixture_c_compile_result { completed: false, compiler_ran: true, cache_hit: false, exit_code: 1, stdout: "", stderr: "", error_message: message };
+}
+
+fn fixture_c_status(ran: bool, hit: bool, code: i32, output: str, errors: str) -> fixture_c_compile_result {
+    return fixture_c_compile_result { completed: true, compiler_ran: ran, cache_hit: hit, exit_code: code, stdout: output, stderr: errors, error_message: "" };
+}
+
+fn fixture_c_contains(value: str, needle: str) -> bool {
+    let value_len = str_len(value);
+    let needle_len = str_len(needle);
+    if needle_len > value_len { return false; }
+    let first = char_at(needle, 0);
+    let mut at = 0;
+    while at + needle_len <= value_len {
+        if (needle_len == 0 or char_at(value, at) == first) and starts_with_at(value, at, needle) { return true; }
+        at = at + 1;
+    }
+    return false;
+}
+
+fn fixture_c_count(value: str, needle: str) -> i32 {
+    let value_len = str_len(value);
+    let needle_len = str_len(needle);
+    if needle_len > value_len { return 0; }
+    let first = char_at(needle, 0);
+    let mut count = 0;
+    let mut at = 0;
+    while at + needle_len <= value_len {
+        if (needle_len == 0 or char_at(value, at) == first) and starts_with_at(value, at, needle) { count = count + 1; }
+        at = at + 1;
+    }
+    return count;
+}
+
+fn fixture_c_sha256_valid(value: str) -> bool {
+    if str_len(value) != 64 { return false; }
+    let mut at = 0;
+    while at < 64 {
+        let ch = char_at(value, at);
+        if not ((ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102)) { return false; }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_pipe(program: str, args: ref list<str>, input: option<str>, cap: i64) -> fixture_c_pipe_result {
+    let empty: list<str> = list();
+    let Some(span) = duration_from_ns(10000000000) else { return fixture_c_pipe_result { valid: false, stdout: "" }; };
+    let Ok(deadline) = deadline_after(span) else { return fixture_c_pipe_result { valid: false, stdout: "" }; };
+    let Ok(child) = process_start(program, ref args, ".", ref empty, input, true, cap) else { return fixture_c_pipe_result { valid: false, stdout: "" }; };
+    let Ok(outcome) = process_wait(child, Some(deadline)) else { return fixture_c_pipe_result { valid: false, stdout: "" }; };
+    if outcome.exit_code != 0 or outcome.stdout == "" or outcome.stderr != "" or outcome.timed_out or outcome.cancelled {
+        return fixture_c_pipe_result { valid: false, stdout: "" };
+    }
+    return fixture_c_pipe_result { valid: true, stdout: outcome.stdout };
+}
+
+fn fixture_c_sha256(value: str) -> str {
+    let args: list<str> = list();
+    let result = fixture_c_pipe("/usr/bin/sha256sum", ref args, Some(value), 128);
+    if not result.valid or str_len(result.stdout) != 68 { return ""; }
+    let digest = slice_text(result.stdout, 0, 64);
+    if result.stdout != concat3(digest, "  -", "\n") or not fixture_c_sha256_valid(digest) { return ""; }
+    return digest;
+}
+
+fn fixture_c_realpath(path: str) -> str {
+    let args = ["-e", "--", path];
+    let result = fixture_c_pipe("/usr/bin/realpath", ref args, None, 4096);
+    if not result.valid or str_len(result.stdout) < 2 or char_at(result.stdout, str_len(result.stdout) - 1) != 10 { return ""; }
+    let value = slice_text(result.stdout, 0, str_len(result.stdout) - 1);
+    if value == "" or char_at(value, 0) != 47 or fixture_c_contains(value, "\n") { return ""; }
+    return value;
+}
+
+fn fixture_c_physical_root() -> str {
+    match current_dir() {
+        Ok(cwd) => { return fixture_c_realpath(cwd); },
+        Err(_) => { return ""; },
+    }
+}
+
+fn fixture_c_relative_path(path: str) -> bool {
+    if path == "" or char_at(path, 0) == 47 or char_at(path, str_len(path) - 1) == 47 { return false; }
+    let mut segment = 0;
+    let mut at = 0;
+    while at <= str_len(path) {
+        if at == str_len(path) or char_at(path, at) == 47 {
+            if at == segment { return false; }
+            let part = slice_text(path, segment, at);
+            if part == "." or part == ".." { return false; }
+            segment = at + 1;
+        } else {
+            let ch = char_at(path, at);
+            if ch < 33 or ch > 126 or ch == 58 or ch == 92 { return false; }
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_regular(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(info) => { return info.is_file and not info.is_symlink; },
+        Err(_) => { return false; },
+    }
+}
+
+fn fixture_c_directory(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(info) => { return info.is_directory and not info.is_symlink; },
+        Err(_) => { return false; },
+    }
+}
+
+fn fixture_c_missing(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(_) => { return false; },
+        Err(err) => { return io_err_kind(ref err) == "not_found"; },
+    }
+}
+
+fn fixture_c_parent_chain(root: str, path: str) -> bool {
+    if root == "" or not fixture_c_relative_path(path) or not fixture_c_directory(root) { return false; }
+    let mut at = 0;
+    while at < str_len(path) {
+        if char_at(path, at) == 47 {
+            let parent = join_path(root, slice_text(path, 0, at));
+            if not fixture_c_directory(parent) { return false; }
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_prepare_directory(root: str, path: str) -> bool {
+    if root == "" or not fixture_c_relative_path(path) or not fixture_c_directory(root) { return false; }
+    let mut at = 0;
+    while at <= str_len(path) {
+        if at == str_len(path) or char_at(path, at) == 47 {
+            let current = join_path(root, slice_text(path, 0, at));
+            if fixture_c_missing(current) {
+                match create_dir(current) { Ok(_) => {}, Err(_) => { return false; }, }
+            }
+            if not fixture_c_directory(current) { return false; }
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_mode() -> i32 {
+    match env_get("NQ_TEST_REUSE_C") {
+        Ok(value) => {
+            match value {
+                None => { return 0; },
+                Some(text) => {
+                    if text == "0" { return 0; }
+                    if text == "1" { return 1; }
+                    return -1;
+                },
+            }
+        },
+        Err(_) => { return -1; },
+    }
+}
+
+pub fn fixture_c_gate_begin(build_directory: str, lock_path: str) -> bool
+audit {
+    intent("Validate the physical fixture workspace and atomically acquire its per-gate directory lock");
+    mutates();
+    effects(io);
+}
+{
+    if fixture_c_mode() < 0 or not fixture_c_relative_path(lock_path) or path_dir(lock_path) != build_directory { return false; }
+    let root = fixture_c_physical_root();
+    if not fixture_c_prepare_directory(root, build_directory) or not fixture_c_parent_chain(root, lock_path) { return false; }
+    match create_dir(join_path(root, lock_path)) {
+        Ok(_) => { return fixture_c_directory(join_path(root, lock_path)); },
+        Err(_) => { return false; },
+    }
+}
+
+pub fn fixture_c_gate_end(lock_path: str) -> bool
+audit {
+    intent("Release only the checked empty directory lock held by the current fixture gate");
+    mutates();
+    effects(io);
+}
+{
+    let root = fixture_c_physical_root();
+    if root == "" or not fixture_c_parent_chain(root, lock_path) { return false; }
+    let absolute = join_path(root, lock_path);
+    if not fixture_c_directory(absolute) { return false; }
+    match read_dir(absolute) {
+        Ok(entries) => { if list_len(ref entries) != 0 { return false; } },
+        Err(_) => { return false; },
+    }
+    match remove_dir(absolute) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+}
+
+fn fixture_c_capture(root: str, path: str) -> fixture_c_file_capture {
+    let failed = fixture_c_file_capture { valid: false, text: "", digest: "", size: 0, modified_ns: 0, mode: 0 };
+    if not fixture_c_parent_chain(root, path) or not fixture_c_regular(join_path(root, path)) { return failed; }
+    let absolute = join_path(root, path);
+    let Ok(before) = path_metadata(absolute, false) else { return failed; };
+    let Ok(data) = read_file_bytes(absolute) else { return failed; };
+    let text = str_from_bytes(ref data);
+    let Ok(after) = path_metadata(absolute, false) else { return failed; };
+    if not after.is_file or after.is_symlink or before.size != after.size or before.modified_ns != after.modified_ns or before.mode != after.mode { return failed; }
+    let digest = fixture_c_sha256(text);
+    if digest == "" { return failed; }
+    return fixture_c_file_capture { valid: true, text: text, digest: digest, size: after.size, modified_ns: after.modified_ns, mode: after.mode };
+}
+
+fn fixture_c_running_image() -> fixture_c_file_capture {
+    let failed = fixture_c_file_capture { valid: false, text: "", digest: "", size: 0, modified_ns: 0, mode: 0 };
+    let Ok(before) = path_metadata("/proc/self/exe", true) else { return failed; };
+    let Ok(data) = read_file_bytes("/proc/self/exe") else { return failed; };
+    let text = str_from_bytes(ref data);
+    let Ok(after) = path_metadata("/proc/self/exe", true) else { return failed; };
+    if not before.is_file or not after.is_file or before.size != after.size or before.modified_ns != after.modified_ns or before.mode != after.mode { return failed; }
+    let digest = fixture_c_sha256(text);
+    if digest == "" { return failed; }
+    return fixture_c_file_capture { valid: true, text: text, digest: digest, size: after.size, modified_ns: after.modified_ns, mode: after.mode };
+}
+
+fn fixture_c_stdlib_exact(root: str) -> bool {
+    if not fixture_c_parent_chain(root, "stdlib/runtime.c") or not fixture_c_parent_chain(root, "stdlib/runtime.h") { return false; }
+    match read_dir(join_path(root, "stdlib")) {
+        Ok(entries) => {
+            if list_len(ref entries) != 2 { return false; }
+            let mut saw_c = false;
+            let mut saw_h = false;
+            let mut at = 0;
+            while at < 2 {
+                let Some(name) = list_get(ref entries, at) else { return false; };
+                if name == "runtime.c" { saw_c = true; }
+                else { if name == "runtime.h" { saw_h = true; } else { return false; } }
+                if not fixture_c_regular(join_path(join_path(root, "stdlib"), name)) { return false; }
+                at = at + 1;
+            }
+            return saw_c and saw_h;
+        },
+        Err(_) => { return false; },
+    }
+}
+
+fn fixture_c_absent(root: str, path: str) -> bool {
+    return fixture_c_parent_chain(root, path) and fixture_c_missing(join_path(root, path));
+}
+
+fn fixture_c_include_tail(value: str) -> bool {
+    let mut start = 0;
+    while start < str_len(value) and (char_at(value, start) == 32 or char_at(value, start) == 9) { start = start + 1; }
+    let tail = slice_text(value, start, str_len(value));
+    if tail == "" or str_starts_with(tail, "//") { return true; }
+    return str_starts_with(tail, "/*") and str_ends_with(tail, "*/") and fixture_c_count(tail, "/*") == 1 and fixture_c_count(tail, "*/") == 1;
+}
+
+fn fixture_c_directives_modeled(value: str, quoted: str) -> bool {
+    if fixture_c_contains(value, "??") or fixture_c_contains(value, "%:") or fixture_c_contains(value, "_Pragma") or fixture_c_contains(value, "__has_include") { return false; }
+    let headers = ["assert.h", "direct.h", "dirent.h", "errno.h", "fcntl.h", "limits.h", "poll.h", "signal.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "sys/ioctl.h", "sys/prctl.h", "sys/stat.h", "sys/time.h", "sys/types.h", "sys/wait.h", "time.h", "unistd.h", "windows.h"];
+    let directives = ["define", "undef", "if", "ifdef", "ifndef", "elif", "else", "endif", "error"];
+    let mut line_start = 0;
+    let mut at = 0;
+    while at <= str_len(value) {
+        if at == str_len(value) or char_at(value, at) == 10 {
+            let mut first = line_start;
+            while first < at and (char_at(value, first) == 32 or char_at(value, first) == 9) { first = first + 1; }
+            let mut scan = first;
+            while scan < at {
+                if char_at(value, scan) == 35 and scan != first { return false; }
+                scan = scan + 1;
+            }
+            if first < at and char_at(value, first) == 35 {
+                let mut end = first + 1;
+                while end < at and char_at(value, end) >= 97 and char_at(value, end) <= 122 { end = end + 1; }
+                let directive = slice_text(value, first + 1, end);
+                if end < at and char_at(value, end) != 32 and char_at(value, end) != 9 { return false; }
+                let mut body = end;
+                while body < at and (char_at(value, body) == 32 or char_at(value, body) == 9) { body = body + 1; }
+                if directive == "include" {
+                    let include = slice_text(value, body, at);
+                    if quoted != "" and str_starts_with(include, quoted) {
+                        if not fixture_c_include_tail(slice_text(include, str_len(quoted), str_len(include))) { return false; }
+                    } else {
+                        if not str_starts_with(include, "<") { return false; }
+                        let mut close = 1;
+                        while close < str_len(include) and char_at(include, close) != 62 { close = close + 1; }
+                        if close == str_len(include) or not list_contains_str(ref headers, slice_text(include, 1, close)) or not fixture_c_include_tail(slice_text(include, close + 1, str_len(include))) { return false; }
+                    }
+                } else {
+                    if not list_contains_str(ref directives, directive) { return false; }
+                }
+            }
+            line_start = at + 1;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_eligibility_view(value: str) -> str {
+    let mut chunks: list<str> = list();
+    let mut start = 0;
+    let mut at = 0;
+    while at < str_len(value) {
+        // The reuse subset is LF-only; GCC's other physical line endings decline.
+        if char_at(value, at) == 13 { return ""; }
+        let mut skip = 0;
+        if char_at(value, at) == 92 {
+            if char_at(value, at + 1) == 10 { skip = 2; }
+        }
+        if skip > 0 {
+            list_push(mutref chunks, slice_text(value, start, at));
+            at = at + skip;
+            start = at;
+        } else { at = at + 1; }
+    }
+    if start == 0 { return value; }
+    list_push(mutref chunks, slice_text(value, start, str_len(value)));
+    return str_join(ref chunks);
+}
+
+fn fixture_c_sources_modeled(include_mode: str, source_text: str, runtime_c: str, runtime_h: str) -> bool {
+    if fixture_c_contains(source_text, "include_next") or fixture_c_contains(runtime_c, "include_next") or fixture_c_contains(runtime_h, "include_next") { return false; }
+    let source_view = fixture_c_eligibility_view(source_text);
+    let runtime_view = fixture_c_eligibility_view(runtime_c);
+    let header_view = fixture_c_eligibility_view(runtime_h);
+    if source_view == "" or runtime_view == "" or header_view == "" { return false; }
+    let volatile = ["__DATE__", "__TIME__", "__TIMESTAMP__"];
+    for marker in volatile {
+        if fixture_c_contains(source_view, marker) or fixture_c_contains(runtime_view, marker) or fixture_c_contains(header_view, marker) { return false; }
+    }
+    let mut expected = "";
+    if include_mode == "runtime-c" { expected = "#include \"runtime.c\""; }
+    if include_mode == "process-runtime-c" { expected = "#include \"../../../stdlib/runtime.c\""; }
+    if include_mode == "runtime-h" { expected = "#include \"runtime.h\""; }
+    if expected == "" or fixture_c_count(source_text, "#include \"") != 1 or fixture_c_count(source_text, expected) != 1 { return false; }
+    if fixture_c_count(runtime_c, "#include \"") != 1 or fixture_c_count(runtime_c, "#include \"runtime.h\"") != 1 or fixture_c_count(runtime_h, "#include \"") != 0 { return false; }
+    let quoted = slice_text(expected, 9, str_len(expected));
+    if not fixture_c_directives_modeled(source_view, quoted) or not fixture_c_directives_modeled(runtime_view, "\"runtime.h\"") or not fixture_c_directives_modeled(header_view, "") { return false; }
+    return true;
+}
+
+fn fixture_c_filesystem_modeled(root: str, source: str, include_mode: str) -> bool {
+    let parent = path_dir(source);
+    // GCC searches these PCH entries even when the ordinary header is absent.
+    if not fixture_c_absent(root, join_path(parent, "runtime.c.gch")) or not fixture_c_absent(root, join_path(parent, "runtime.h.gch")) { return false; }
+    if include_mode == "runtime-h" {
+        if not fixture_c_absent(root, join_path(parent, "runtime.h")) { return false; }
+    } else {
+        if include_mode != "runtime-c" and include_mode != "process-runtime-c" { return false; }
+        if not fixture_c_absent(root, join_path(parent, "runtime.c")) or not fixture_c_absent(root, join_path(parent, "runtime.h")) { return false; }
+    }
+    return fixture_c_stdlib_exact(root);
+}
+
+fn fixture_c_forbidden_env_key(key: str) -> bool {
+    let exact = ["CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH", "LIBRARY_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "CFLAGS", "CPPFLAGS", "LDFLAGS", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "DEPENDENCIES_OUTPUT", "SUNPRO_DEPENDENCIES"];
+    for name in exact { if key == name { return true; } }
+    return str_starts_with(key, "GCC_") or str_starts_with(key, "COLLECT_") or str_starts_with(key, "CCACHE_") or str_starts_with(key, "DISTCC_");
+}
+
+fn fixture_c_env_allowed(raw: str) -> bool {
+    if raw == "" or char_at(raw, str_len(raw) - 1) != 0 { return false; }
+    let mut start = 0;
+    let mut at = 0;
+    while at < str_len(raw) {
+        if char_at(raw, at) == 0 {
+            let mut equal = start;
+            while equal < at and char_at(raw, equal) != 61 { equal = equal + 1; }
+            if equal == start or equal == at { return false; }
+            if fixture_c_forbidden_env_key(slice_text(raw, start, equal)) { return false; }
+            start = at + 1;
+        }
+        at = at + 1;
+    }
+    return start == str_len(raw);
+}
+
+fn fixture_c_environment_digest() -> str {
+    let args = ["-0"];
+    let result = fixture_c_pipe("/usr/bin/env", ref args, None, 1048576);
+    if not result.valid or not fixture_c_env_allowed(result.stdout) { return ""; }
+    return fixture_c_sha256(result.stdout);
+}
+
+fn fixture_c_executable_mode(mode: i32) -> bool {
+    let user = (mode / 64) - ((mode / 128) * 2);
+    let group = (mode / 8) - ((mode / 16) * 2);
+    let other = mode - ((mode / 2) * 2);
+    return user == 1 or group == 1 or other == 1;
+}
+
+fn fixture_c_physical_cc() -> str {
+    let Ok(path_value) = env_get("PATH") else { return ""; };
+    let Some(path) = path_value else { return ""; };
+    let mut start = 0;
+    let mut at = 0;
+    while at <= str_len(path) {
+        if at == str_len(path) or char_at(path, at) == 58 {
+            let mut directory = slice_text(path, start, at);
+            if directory == "" { directory = "."; }
+            let candidate = join_path(directory, "cc");
+            match path_metadata(candidate, true) {
+                Ok(info) => {
+                    if info.is_file and fixture_c_executable_mode(info.mode) {
+                        let physical = fixture_c_realpath(candidate);
+                        if physical == "" or not fixture_c_regular(physical) { return ""; }
+                        // Warm reuse is intentionally narrower than fresh compiler support.
+                        if physical != "/usr/bin/x86_64-linux-gnu-gcc-13" or fixture_c_realpath("/usr/bin/cc") != physical { return ""; }
+                        let Ok(bytes) = read_file_bytes(physical) else { return ""; };
+                        let Some(first) = bytes_get(ref bytes, 0) else { return ""; };
+                        let Some(second) = bytes_get(ref bytes, 1) else { return ""; };
+                        let Some(third) = bytes_get(ref bytes, 2) else { return ""; };
+                        let Some(fourth) = bytes_get(ref bytes, 3) else { return ""; };
+                        if first != 127 or second != 69 or third != 76 or fourth != 70 { return ""; }
+                        return physical;
+                    }
+                },
+                Err(_) => {},
+            }
+            start = at + 1;
+        }
+        at = at + 1;
+    }
+    return "";
+}
+
+fn fixture_c_frame(value: str) -> str {
+    return concat3(i32_to_str(str_len(value)), ":", value);
+}
+
+fn fixture_c_decimal_define(arg: str, prefix: str) -> bool {
+    if not str_starts_with(arg, prefix) { return false; }
+    let mut at = str_len(prefix);
+    if char_at(arg, at) == 45 { at = at + 1; }
+    if at == str_len(arg) { return false; }
+    while at < str_len(arg) {
+        let ch = char_at(arg, at);
+        if ch < 48 or ch > 57 { return false; }
+        at = at + 1;
+    }
+    return true;
+}
+
+fn fixture_c_argv_valid(args: ref list<str>, source: str, output: str) -> bool {
+    let count = list_len(ref args);
+    if count < 5 { return false; }
+    let Some(out_flag) = list_get(ref args, count - 2) else { return false; };
+    let Some(out_path) = list_get(ref args, count - 1) else { return false; };
+    if out_flag != "-o" or out_path != output { return false; }
+    let mut source_count = 0;
+    let mut runtime_count = 0;
+    let mut at = 0;
+    while at < count - 2 {
+        let Some(arg) = list_get(ref args, at) else { return false; };
+        let known = arg == "-std=c11" or arg == "-D_POSIX_C_SOURCE=200809L" or arg == "-Istdlib" or arg == "-O0" or arg == "-O2" or arg == "-fsanitize=undefined" or arg == "-fsanitize=address,undefined" or arg == "-fno-sanitize-recover=all" or arg == "-pedantic-errors" or arg == "-Wall" or arg == "-Wextra" or arg == "-Werror" or arg == "-DNQ_TEST_MAX_SEQUENCE_LENGTH=128" or fixture_c_decimal_define(arg, "-DNQ_TEST_MAX_ALLOCATION_BYTES=") or fixture_c_decimal_define(arg, "-DNQ_TEST_ALLOC_FAIL_AFTER=");
+        if arg == source { source_count = source_count + 1; }
+        else { if arg == "stdlib/runtime.c" { runtime_count = runtime_count + 1; } else { if not known { return false; } } }
+        at = at + 1;
+    }
+    return source_count == 1 and runtime_count <= 1;
+}
+
+fn fixture_c_identity_frame(cwd: str, producer: str, running_image_digest: str, cc: str, cc_digest: str, version: str, target: str, env_digest: str, args: ref list<str>, source: str, source_digest: str, runtime_c_digest: str, runtime_h_digest: str, include_mode: str) -> str {
+    let mut frame = fixture_c_frame("fixture-c-input/v2");
+    let fixed = [cwd, producer, running_image_digest, cc, cc_digest, version, target, env_digest, source, source_digest, runtime_c_digest, runtime_h_digest, include_mode];
+    for value in fixed { frame = str_concat(frame, fixture_c_frame(value)); }
+    frame = str_concat(frame, fixture_c_frame(i32_to_str(list_len(ref args))));
+    let mut at = 0;
+    while at < list_len(ref args) {
+        let Some(arg) = list_get(ref args, at) else { return ""; };
+        frame = str_concat(frame, fixture_c_frame(arg));
+        at = at + 1;
+    }
+    return frame;
+}
+
+fn fixture_c_image_identity_available(producer: str, running_valid: bool, running_digest: str) -> bool {
+    return producer != "" and running_valid and fixture_c_sha256_valid(running_digest);
+}
+
+fn fixture_c_identity_capture(root: str, source: str, output: str, args: ref list<str>, include_mode: str, validated_digest: option<str>) -> fixture_c_identity {
+    let failed = fixture_c_identity { valid: false, digest: "" };
+    if not fixture_c_relative_path(source) or not fixture_c_relative_path(output) or not fixture_c_parent_chain(root, source) or not fixture_c_parent_chain(root, output) or not fixture_c_argv_valid(ref args, source, output) { return failed; }
+    let source_file = fixture_c_capture(root, source);
+    let runtime_c = fixture_c_capture(root, "stdlib/runtime.c");
+    let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+    if not source_file.valid or not runtime_c.valid or not runtime_h.valid or not fixture_c_filesystem_modeled(root, source, include_mode) { return failed; }
+    let env_digest = fixture_c_environment_digest();
+    let cc = fixture_c_physical_cc();
+    if env_digest == "" or cc == "" { return failed; }
+    let cc_file = fixture_c_capture("/", slice_text(cc, 1, str_len(cc)));
+    if not cc_file.valid { return failed; }
+    let version_args = ["--version"];
+    let version = fixture_c_pipe(cc, ref version_args, None, 16384);
+    let target_args = ["-dumpmachine"];
+    let target = fixture_c_pipe(cc, ref target_args, None, 4096);
+    let Some(argv0) = arg_get(0) else { return failed; };
+    let producer = fixture_c_realpath(argv0);
+    if not version.valid or not target.valid or producer == "" or not fixture_c_regular(producer) { return failed; }
+    let running_image = fixture_c_running_image();
+    if not fixture_c_image_identity_available(producer, running_image.valid, running_image.digest) { return failed; }
+    let frame = fixture_c_identity_frame(root, producer, running_image.digest, cc, cc_file.digest, version.stdout, target.stdout, env_digest, ref args, source, source_file.digest, runtime_c.digest, runtime_h.digest, include_mode);
+    let digest = fixture_c_sha256(frame);
+    if digest == "" { return failed; }
+    match validated_digest {
+        Some(expected) => { if digest != expected { return failed; } },
+        None => { if not fixture_c_sources_modeled(include_mode, source_file.text, runtime_c.text, runtime_h.text) { return failed; } },
+    }
+    return fixture_c_identity { valid: true, digest: digest };
+}
+
+fn fixture_c_identity_now(root: str, source: str, output: str, args: ref list<str>, include_mode: str) -> fixture_c_identity {
+    return fixture_c_identity_capture(root, source, output, ref args, include_mode, None);
+}
+
+fn fixture_c_identity_confirm(root: str, source: str, output: str, args: ref list<str>, include_mode: str, validated_digest: str) -> fixture_c_identity {
+    return fixture_c_identity_capture(root, source, output, ref args, include_mode, Some(validated_digest));
+}
+
+fn fixture_c_remove_regular(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(info) => {
+            if not info.is_file or info.is_symlink { return false; }
+            match remove_file(path) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+        },
+        Err(err) => { return io_err_kind(ref err) == "not_found"; },
+    }
+}
+
+fn fixture_c_receipt(input_digest: str, output_digest: str) -> str {
+    return concat5("fixture-c/v2\ninput ", input_digest, "\noutput ", output_digest, "\n");
+}
+
+fn fixture_c_receipt_matches(root: str, receipt_path: str, output: str, input_digest: str) -> bool {
+    if not fixture_c_regular(join_path(root, receipt_path)) or not fixture_c_regular(join_path(root, output)) { return false; }
+    let output_file = fixture_c_capture(root, output);
+    if not output_file.valid { return false; }
+    if not fixture_c_executable_mode(output_file.mode) { return false; }
+    match read_file(join_path(root, receipt_path)) {
+        Ok(receipt) => { return receipt == fixture_c_receipt(input_digest, output_file.digest); },
+        Err(_) => { return false; },
+    }
+}
+
+fn fixture_c_publishable(code: i32, output: str, errors: str, fresh_output: bool, stable_inputs: bool, published: bool, readback: bool) -> bool {
+    return code == 0 and output == "" and errors == "" and fresh_output and stable_inputs and published and readback;
+}
+
+fn fixture_c_run_compiler(args: ref list<str>) -> fixture_c_compile_result {
+    match run_process("cc", ref args, ".") {
+        Ok(status) => { return fixture_c_status(true, false, status.exit_code, status.stdout, status.stderr); },
+        Err(err) => {
+            return fixture_c_compile_result { completed: false, compiler_ran: true, cache_hit: false, exit_code: 1, stdout: "", stderr: "", error_message: io_err_text(err) };
+        },
+    }
+}
+
+fn fixture_c_compile_mode(source: str, output: str, args: ref list<str>, include_mode: str, lock_path: str, requested_mode: i32) -> fixture_c_compile_result {
+    if requested_mode < 0 or requested_mode > 1 { return fixture_c_failed("fixture C cache mode must be 0 or 1"); }
+    let root = fixture_c_physical_root();
+    let receipt_path = str_concat(output, ".fixture-c-receipt");
+    if root == "" or not fixture_c_relative_path(source) or not fixture_c_relative_path(output) or not fixture_c_relative_path(receipt_path) or not fixture_c_relative_path(lock_path) { return fixture_c_failed("fixture C cache rejected an unsafe path"); }
+    if not fixture_c_parent_chain(root, source) or not fixture_c_regular(join_path(root, source)) or not fixture_c_parent_chain(root, output) or not fixture_c_parent_chain(root, receipt_path) or not fixture_c_directory(join_path(root, lock_path)) { return fixture_c_failed("fixture C cache rejected an unsafe source, output, receipt, or lock"); }
+    if not fixture_c_argv_valid(ref args, source, output) { return fixture_c_failed("fixture C cache rejected unrecognized compiler arguments"); }
+
+    let mut before = fixture_c_identity { valid: false, digest: "" };
+    if requested_mode == 1 { before = fixture_c_identity_now(root, source, output, ref args, include_mode); }
+    if before.valid and fixture_c_receipt_matches(root, receipt_path, output, before.digest) {
+        let confirm = fixture_c_identity_confirm(root, source, output, ref args, include_mode, before.digest);
+        if confirm.valid and confirm.digest == before.digest and fixture_c_receipt_matches(root, receipt_path, output, before.digest) {
+            return fixture_c_status(false, true, 0, "", "");
+        }
+    }
+
+    if not fixture_c_remove_regular(join_path(root, receipt_path)) { return fixture_c_failed("fixture C cache could not invalidate its receipt"); }
+    if not fixture_c_remove_regular(join_path(root, output)) { return fixture_c_failed("fixture C cache could not invalidate its executable"); }
+    let compiled = fixture_c_run_compiler(ref args);
+    if not compiled.completed {
+        let ignored_receipt = fixture_c_remove_regular(join_path(root, receipt_path));
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return compiled;
+    }
+    if compiled.exit_code != 0 or compiled.stdout != "" or compiled.stderr != "" {
+        let ignored_receipt = fixture_c_remove_regular(join_path(root, receipt_path));
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return compiled;
+    }
+    if not fixture_c_regular(join_path(root, output)) {
+        return fixture_c_failed_after_compile("fixture C compiler exited zero without a fresh regular executable");
+    }
+    let fresh_output = fixture_c_capture(root, output);
+    if not fresh_output.valid or not fixture_c_executable_mode(fresh_output.mode) {
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return fixture_c_failed_after_compile("fixture C compiler produced a non-executable artifact");
+    }
+    if requested_mode == 0 or not before.valid { return compiled; }
+
+    return fixture_c_finish_compile(root, source, output, ref args, include_mode, receipt_path, before, compiled);
+}
+
+fn fixture_c_finish_compile(root: str, source: str, output: str, args: ref list<str>, include_mode: str, receipt_path: str, before: fixture_c_identity, compiled: fixture_c_compile_result) -> fixture_c_compile_result {
+    let after = fixture_c_identity_confirm(root, source, output, ref args, include_mode, before.digest);
+    if not after.valid or after.digest != before.digest {
+        let ignored_receipt = fixture_c_remove_regular(join_path(root, receipt_path));
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return fixture_c_failed_after_compile("fixture C inputs changed during compilation");
+    }
+    let executable = fixture_c_capture(root, output);
+    if not executable.valid {
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return fixture_c_failed_after_compile("fixture C cache could not capture the fresh executable");
+    }
+    let receipt = fixture_c_receipt(before.digest, executable.digest);
+    let bytes = bytes_from_str(receipt);
+    let mut published = false;
+    match atomic_write_file(join_path(root, receipt_path), ref bytes) { Ok(_) => { published = true; }, Err(_) => {}, }
+    return fixture_c_readback_compile(root, source, output, ref args, include_mode, receipt_path, before, compiled, published);
+}
+
+fn fixture_c_readback_compile(root: str, source: str, output: str, args: ref list<str>, include_mode: str, receipt_path: str, before: fixture_c_identity, compiled: fixture_c_compile_result, published: bool) -> fixture_c_compile_result {
+    let final_identity = fixture_c_identity_confirm(root, source, output, ref args, include_mode, before.digest);
+    let stable = final_identity.valid and final_identity.digest == before.digest;
+    let readback = published and stable and fixture_c_receipt_matches(root, receipt_path, output, before.digest);
+    if not fixture_c_publishable(compiled.exit_code, compiled.stdout, compiled.stderr, true, stable, published, readback) {
+        let ignored_receipt = fixture_c_remove_regular(join_path(root, receipt_path));
+        let ignored_output = fixture_c_remove_regular(join_path(root, output));
+        return fixture_c_failed_after_compile("fixture C cache publication or readback failed");
+    }
+    return compiled;
+}
+
+pub fn fixture_c_compile(source: str, output: str, args: ref list<str>, include_mode: str, lock_path: str) -> fixture_c_compile_result
+audit {
+    intent("Reuse only a verified owned fixture executable or run the unchanged cc argv and publish a stable exact receipt");
+    mutates();
+    effects(io);
+}
+{
+    let mode = fixture_c_mode();
+    if mode < 0 { return fixture_c_failed("invalid fixture C reuse mode"); }
+    let Some(command) = arg_get(1) else { return fixture_c_compile_mode(source, output, ref args, include_mode, lock_path, 0); };
+    if command != "test" { return fixture_c_compile_mode(source, output, ref args, include_mode, lock_path, 0); }
+    return fixture_c_compile_mode(source, output, ref args, include_mode, lock_path, mode);
+}
+
+fn fixture_c_probe_identity_fields() -> bool {
+    let args = ["-std=c11", "-O2", "probe.c", "stdlib/runtime.c", "-o", "probe"];
+    let base = fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h");
+    let domain = fixture_c_frame("fixture-c-input/v2");
+    if base == "" or not str_starts_with(base, domain) or str_starts_with(base, fixture_c_frame("fixture-c-input/v1")) { return false; }
+    let receipt = fixture_c_receipt("input", "output");
+    if not str_starts_with(receipt, "fixture-c/v2\n") or str_starts_with(receipt, "fixture-c/v1\n") { return false; }
+    let changed = [
+        fixture_c_identity_frame("/other", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/other/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "other-producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc-2", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "other-cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "other-version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "other-target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "other-env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "other.c", "source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "other-source", "runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "other-runtime-c", "runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "other-runtime-h", "runtime-h"),
+        fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref args, "probe.c", "source", "runtime-c", "runtime-h", "runtime-c")
+    ];
+    for value in changed { if value == base { return false; } }
+    let profile = ["-std=c11", "-O0", "probe.c", "stdlib/runtime.c", "-o", "probe"];
+    return fixture_c_identity_frame("/repo", "/repo/nauqc", "producer", "/usr/bin/gcc", "cc", "version", "target", "env", ref profile, "probe.c", "source", "runtime-c", "runtime-h", "runtime-h") != base;
+}
+
+fn fixture_c_probe_contains_linear(value: str, needle: str) -> bool {
+    let mut at = 0;
+    while at + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, at, needle) { return true; }
+        at = at + 1;
+    }
+    return false;
+}
+
+fn fixture_c_probe_count_linear(value: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut at = 0;
+    while at + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, at, needle) { count = count + 1; }
+        at = at + 1;
+    }
+    return count;
+}
+
+fn fixture_c_probe_scan_pair(value: str, needle: str) -> bool {
+    return fixture_c_contains(value, needle) == fixture_c_probe_contains_linear(value, needle) and fixture_c_count(value, needle) == fixture_c_probe_count_linear(value, needle);
+}
+
+fn fixture_c_probe_scan_cases(nul: str, carriage: str) -> bool {
+    let values = ["", "abc", "aaaaa", "abababa", concat3("#include \"runtime.h\"\n__TIME__", carriage, "\n"), concat3(nul, "a", nul), concat3(nul, nul, nul)];
+    let needles = ["", "abc", "abcd", "aa", "aab", "aba", "#include", "__TIME__", "__DATE__", carriage, "\n", str_concat(carriage, "\n"), nul, str_concat(nul, nul)];
+    for value in values {
+        for needle in needles {
+            if not fixture_c_probe_scan_pair(value, needle) { return false; }
+        }
+    }
+    return true;
+}
+
+fn fixture_c_probe_runtime_scan_cases(source: str) -> bool {
+    for needle in ["nq_", "FIXTURE_SCAN_ABSENT"] {
+        if not fixture_c_probe_scan_pair(source, needle) { return false; }
+    }
+    return true;
+}
+
+fn fixture_c_probe_pure_cases(nul: str, carriage: str) -> bool {
+    if str_len(nul) != 1 or char_at(nul, 0) != 0 { return false; }
+    if str_len(carriage) != 1 or char_at(carriage, 0) != 13 { return false; }
+    if not fixture_c_probe_scan_cases(nul, carriage) { return false; }
+    if fixture_c_eligibility_view(concat3("__TI\\", carriage, "ME__")) != "" { return false; }
+    if fixture_c_eligibility_view(concat3("__TI\\", carriage, "\nME__")) != "" { return false; }
+    if not fixture_c_env_allowed(concat3("PATH=/usr/bin", nul, str_concat("HOME=/tmp", nul))) { return false; }
+    let refused = [str_concat("CPATH=", nul), str_concat("LD_PRELOAD=x", nul), str_concat("GCC_COMPARE_DEBUG=1", nul), str_concat("COLLECT_GCC=x", nul), str_concat("CCACHE_DIR=x", nul), str_concat("DISTCC_HOSTS=x", nul)];
+    for raw in refused { if fixture_c_env_allowed(raw) { return false; } }
+    // Synthetic unit states directly exercise the production publication predicate.
+    if fixture_c_publishable(0, "", "", false, true, true, true) { return false; }
+    if fixture_c_publishable(0, "", "", true, false, true, true) { return false; }
+    if fixture_c_publishable(0, "", "", true, true, false, true) { return false; }
+    if fixture_c_publishable(0, "", "", true, true, true, false) { return false; }
+    if fixture_c_publishable(1, "", "", true, true, true, true) { return false; }
+    let image_digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    if fixture_c_image_identity_available("/repo/nauqc", false, image_digest) or fixture_c_image_identity_available("/repo/nauqc", true, "") { return false; }
+    if not fixture_c_image_identity_available("/repo/nauqc", true, image_digest) { return false; }
+    if not fixture_c_probe_identity_fields() { return false; }
+    let rejected_directives = ["# include \"extra.h\"\n", "#include HEADER\n", "#/**/include \"extra.h\"\n", "/* lead */ #include \"extra.h\"\n", "??=include \"extra.h\"\n", "%:include \"extra.h\"\n", "#inc\\\nlude \"extra.h\"\n", "#include </tmp/extra.h>\n", "#include <../extra.h>\n"];
+    for value in rejected_directives { if fixture_c_directives_modeled(value, "\"runtime.h\"") { return false; } }
+    if not fixture_c_directives_modeled("#include \"runtime.c\" /* modeled quote include */\n#include <assert.h>\n", "\"runtime.c\"") { return false; }
+    let good = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "probe.c", "stdlib/runtime.c", "-o", "probe"];
+    if not fixture_c_argv_valid(ref good, "probe.c", "probe") { return false; }
+    let prefixes = ["-DNQ_TEST_MAX_ALLOCATION_BYTES=", "-DNQ_TEST_ALLOC_FAIL_AFTER="];
+    for prefix in prefixes {
+        let accepted = ["0", "128", "4096", "1048576", "1000000", "-1"];
+        for value in accepted {
+            let args = ["-std=c11", str_concat(prefix, value), "probe.c", "-o", "probe"];
+            if not fixture_c_argv_valid(ref args, "probe.c", "probe") { return false; }
+        }
+        let rejected = ["", "-", "+1", "--1", "1U", "1+2", "1\n", "__TIME__", "__has_include(\"runtime.h\")"];
+        for value in rejected {
+            let args = ["-std=c11", str_concat(prefix, value), "probe.c", "-o", "probe"];
+            if fixture_c_argv_valid(ref args, "probe.c", "probe") { return false; }
+        }
+    }
+    let bad = ["-std=c11", "-fplugin=unknown", "probe.c", "stdlib/runtime.c", "-o", "probe"];
+    return not fixture_c_argv_valid(ref bad, "probe.c", "probe");
+}
+
+fn fixture_c_probe_remove(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(info) => {
+            if info.is_file and not info.is_symlink {
+                match remove_file(path) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+            }
+            if info.is_directory and not info.is_symlink {
+                match remove_dir(path) { Ok(_) => { return true; }, Err(_) => { return false; }, }
+            }
+            return false;
+        },
+        Err(err) => { return io_err_kind(ref err) == "not_found"; },
+    }
+}
+
+fn fixture_c_probe_completion_faults(root: str, source: str, output: str, args: ref list<str>, lock: str, source_text: str) -> bool {
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let shadow = join_path(path_dir(source), "runtime.h");
+    let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+    if not runtime_h.valid { return false; }
+    let mut fault = 0;
+    while fault < 6 {
+        if not fixture_c_probe_remove(shadow) { return false; }
+        let Ok(_) = write_file(source, source_text) else { return false; };
+        let compiled = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        if not compiled.completed or compiled.exit_code != 0 { return false; }
+        let before = fixture_c_identity_now(root, source, output, ref args, "runtime-h");
+        if not before.valid { return false; }
+        if fault < 3 and not fixture_c_probe_remove(receipt) { return false; }
+        if fault == 0 {
+            let Ok(_) = write_file(source, str_concat(source_text, "/* persistent post-compile drift */\n")) else { return false; };
+        }
+        if fault == 1 and not fixture_c_probe_remove(output) { return false; }
+        if fault == 2 { let Ok(_) = create_dir(receipt) else { return false; }; }
+        if fault == 3 { let Ok(_) = write_file(receipt, "tampered after publication\n") else { return false; }; }
+        if fault == 4 { let Ok(_) = write_file(output, "tampered after publication\n") else { return false; }; }
+        if fault == 5 { let Ok(_) = write_file(shadow, runtime_h.text) else { return false; }; }
+        // Exercise the production completion phase with real files, not only its predicate.
+        let mut finished = fixture_c_failed("probe did not run");
+        if fault < 3 or fault == 5 { finished = fixture_c_finish_compile(root, source, output, ref args, "runtime-h", receipt, before, fixture_c_status(true, false, 0, "", "")); }
+        else { finished = fixture_c_readback_compile(root, source, output, ref args, "runtime-h", receipt, before, fixture_c_status(true, false, 0, "", ""), true); }
+        if finished.completed or not finished.compiler_ran or not fixture_c_missing(output) or fixture_c_regular(receipt) { return false; }
+        if not fixture_c_probe_remove(receipt) { return false; }
+        if not fixture_c_probe_remove(shadow) { return false; }
+        fault = fault + 1;
+    }
+    return true;
+}
+
+fn fixture_c_probe_include_refusal(root: str, source: str, output: str, args: ref list<str>, lock: str, source_text: str) -> bool {
+    let header = join_path(path_dir(source), "extra.h");
+    let forms = ["# include \"extra.h\"\n", "#define HEADER \"extra.h\"\n#include HEADER\n", "#if __has_inc\\\nlude(\"extra.h\")\n#define PROBE_EXIT 8\n#else\n#define PROBE_EXIT 7\n#endif\n"];
+    let empty: list<str> = list();
+    let mut ok = true;
+    for form in forms {
+        let program = concat3("#include \"runtime.h\"\n", form, "int main(void) { return PROBE_EXIT; }\n");
+        let mut expected = 7;
+        while ok and expected <= 8 {
+            match write_file(source, program) { Ok(_) => {}, Err(_) => { ok = false; }, }
+            if str_starts_with(form, "#if __has_inc") and expected == 7 {
+                if not fixture_c_probe_remove(header) { ok = false; }
+            } else {
+                match write_file(header, concat3("#define PROBE_EXIT ", i32_to_str(expected), "\n")) { Ok(_) => {}, Err(_) => { ok = false; }, }
+            }
+            if ok {
+                let compiled = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+                ok = compiled.completed and compiled.compiler_ran and not compiled.cache_hit and compiled.exit_code == 0 and not fixture_c_regular(str_concat(output, ".fixture-c-receipt"));
+                if ok {
+                    match run_process(join_path(root, output), ref empty, ".") {
+                        Ok(status) => { ok = status.exit_code == expected and status.stdout == "" and status.stderr == ""; },
+                        Err(_) => { ok = false; },
+                    }
+                }
+            }
+            expected = expected + 1;
+        }
+    }
+    if not fixture_c_probe_remove(header) { ok = false; }
+    match write_file(source, source_text) { Ok(_) => {}, Err(_) => { ok = false; }, }
+    return ok;
+}
+
+fn fixture_c_probe_unlink(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(info) => { if not info.is_symlink { return true; } match remove_file(path) { Ok(_) => { return true; }, Err(_) => { return false; }, } },
+        Err(err) => { return io_err_kind(ref err) == "not_found"; },
+    }
+}
+
+fn fixture_c_probe_inputs_match(root: str, source: str, source_digest: str, runtime_c_digest: str, runtime_h_digest: str) -> bool {
+    let source_file = fixture_c_capture(root, source);
+    let runtime_c = fixture_c_capture(root, "stdlib/runtime.c");
+    let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+    return source_file.valid and source_file.digest == source_digest and runtime_c.valid and runtime_c.digest == runtime_c_digest and runtime_h.valid and runtime_h.digest == runtime_h_digest;
+}
+
+fn fixture_c_probe_output(root: str, output: str, code: i32, stdout: str) -> bool {
+    let empty: list<str> = list();
+    match run_process(join_path(root, output), ref empty, ".") {
+        Ok(status) => { return status.exit_code == code and status.stdout == stdout and status.stderr == ""; },
+        Err(_) => { return false; },
+    }
+}
+
+fn fixture_c_probe_pch_boundaries(root: str, source: str, output: str, args: ref list<str>, lock: str) -> bool {
+    let source_file = fixture_c_capture(root, source);
+    let runtime_c = fixture_c_capture(root, "stdlib/runtime.c");
+    let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+    if not source_file.valid or not runtime_c.valid or not runtime_h.valid { return false; }
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let names = ["runtime.c.gch", "runtime.h.gch"];
+    for name in names {
+        let path = join_path(path_dir(source), name);
+        let mut shape = 0;
+        while shape < 3 {
+            let compiled = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+            let before = fixture_c_identity_now(root, source, output, ref args, "runtime-h");
+            if not compiled.completed or compiled.exit_code != 0 or not before.valid { return false; }
+            let mut ok = true;
+            // Manual completion-boundary faults; these artifacts are not claimed as valid GCC PCHs.
+            if shape == 0 { match write_file(path, "manual PCH boundary\n") { Ok(_) => {}, Err(_) => { ok = false; }, } }
+            if shape == 1 { match create_dir(path) { Ok(_) => {}, Err(_) => { ok = false; }, } }
+            if shape == 2 {
+                let link_args = ["-s", "absent-pch-target", path];
+                match run_process("/usr/bin/ln", ref link_args, ".") { Ok(status) => { ok = status.exit_code == 0; }, Err(_) => { ok = false; }, }
+            }
+            if ok {
+                let modes = ["runtime-h", "runtime-c", "process-runtime-c"];
+                for mode in modes { if fixture_c_filesystem_modeled(root, source, mode) { ok = false; } }
+                if fixture_c_identity_now(root, source, output, ref args, "runtime-h").valid or fixture_c_identity_confirm(root, source, output, ref args, "runtime-h", before.digest).valid { ok = false; }
+                if not fixture_c_probe_inputs_match(root, source, source_file.digest, runtime_c.digest, runtime_h.digest) { ok = false; }
+                let finished = fixture_c_finish_compile(root, source, output, ref args, "runtime-h", receipt, before, fixture_c_status(true, false, 0, "", ""));
+                if finished.completed or not finished.compiler_ran or not fixture_c_missing(output) or not fixture_c_missing(receipt) { ok = false; }
+            }
+            if not fixture_c_probe_unlink(path) or not fixture_c_probe_remove(path) { ok = false; }
+            let restored = fixture_c_identity_now(root, source, output, ref args, "runtime-h");
+            if not restored.valid or restored.digest != before.digest { ok = false; }
+            if not ok { return false; }
+            shape = shape + 1;
+        }
+    }
+    return true;
+}
+
+fn fixture_c_probe_pch_live(root: str, source: str, output: str, args: ref list<str>, lock: str, source_text: str) -> bool {
+    let directory = path_dir(source);
+    let header = join_path(directory, "pch-input.h");
+    let saved = join_path(directory, "pch-saved");
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let cc = fixture_c_physical_cc();
+    let runtime_c = fixture_c_capture(root, "stdlib/runtime.c");
+    let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+    if cc == "" or not runtime_c.valid or not runtime_h.valid { return false; }
+    let names = ["runtime.h", "runtime.c"];
+    let mut ok = true;
+    for name in names {
+        let pch = join_path(directory, str_concat(name, ".gch"));
+        let mut mode = "runtime-h";
+        if name == "runtime.c" { mode = "runtime-c"; }
+        let program = concat3("#include \"", name, "\"\n#include <stdio.h>\n#ifndef NQ_FIXTURE_PCH\n#define NQ_FIXTURE_PCH 0\n#endif\nint main(void) { if (NQ_FIXTURE_PCH) { puts(\"fixture-pch\"); return 7; } puts(\"fixture-baseline\"); return 0; }\n");
+        if ok { match write_file(source, program) { Ok(_) => {}, Err(_) => { ok = false; }, } }
+        if ok { match write_file(header, "#define NQ_FIXTURE_PCH 7\n") { Ok(_) => {}, Err(_) => { ok = false; }, } }
+        if ok {
+            // Actual GCC PCH, using the same language, target and compile flags as its consumer.
+            let pch_args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-x", "c-header", header, "-o", saved];
+            match run_process(cc, ref pch_args, ".") { Ok(status) => { ok = status.exit_code == 0 and status.stdout == "" and status.stderr == "" and fixture_c_regular(saved); }, Err(_) => { ok = false; }, }
+        }
+        let source_file = fixture_c_capture(root, source);
+        let initial = fixture_c_identity_now(root, source, output, ref args, mode);
+        if not source_file.valid or not initial.valid { ok = false; }
+        let mut step = 0;
+        while ok and step < 5 {
+            if step == 2 { match rename_path(saved, pch) { Ok(_) => {}, Err(_) => { ok = false; }, } }
+            if step == 3 and not fixture_c_probe_remove(pch) { ok = false; }
+            if not fixture_c_probe_inputs_match(root, source, source_file.digest, runtime_c.digest, runtime_h.digest) { ok = false; }
+            if step == 2 {
+                if not fixture_c_absent(root, join_path(directory, name)) or fixture_c_identity_now(root, source, output, ref args, mode).valid { ok = false; }
+            } else {
+                let current = fixture_c_identity_now(root, source, output, ref args, mode);
+                if not current.valid or current.digest != initial.digest { ok = false; }
+            }
+            if ok {
+                let compiled = fixture_c_compile_mode(source, output, ref args, mode, lock, 1);
+                let hit = step == 1 or step == 4;
+                ok = compiled.completed and compiled.exit_code == 0 and compiled.stdout == "" and compiled.stderr == "" and compiled.cache_hit == hit and compiled.compiler_ran != hit;
+                if step == 2 { ok = ok and fixture_c_missing(receipt) and fixture_c_probe_output(root, output, 7, "fixture-pch\n"); }
+                else { ok = ok and fixture_c_receipt_matches(root, receipt, output, initial.digest) and fixture_c_probe_output(root, output, 0, "fixture-baseline\n"); }
+            }
+            step = step + 1;
+        }
+        if not fixture_c_probe_remove(pch) or not fixture_c_probe_remove(saved) { ok = false; }
+    }
+    if not fixture_c_probe_remove(header) { ok = false; }
+    match write_file(source, source_text) { Ok(_) => {}, Err(_) => { ok = false; }, }
+    return ok;
+}
+
+fn fixture_c_probe_symlinks(root: str, directory: str, source: str, output: str, args: ref list<str>, lock: str, source_text: str) -> bool {
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let paths = [output, receipt, lock];
+    let mut ok = fixture_c_probe_remove(output) and fixture_c_probe_remove(receipt);
+    let mut at = 0;
+    while ok and at < 3 {
+        if at == 2 and not fixture_c_gate_end(lock) { ok = false; }
+        let Some(path) = list_get(ref paths, at) else { return false; };
+        let mut target = "probe.c";
+        if at == 2 { target = "."; }
+        let link_args = ["-s", target, path];
+        match run_process("/usr/bin/ln", ref link_args, ".") { Ok(status) => { ok = ok and status.exit_code == 0; }, Err(_) => { ok = false; }, }
+        if ok {
+            let rejected = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+            ok = not rejected.completed and not rejected.compiler_ran;
+            if at == 2 and fixture_c_gate_begin(directory, lock) { ok = false; }
+            match read_file(source) { Ok(value) => { ok = ok and value == source_text; }, Err(_) => { ok = false; }, }
+        }
+        if not fixture_c_probe_unlink(path) { ok = false; }
+        if at == 2 and not fixture_c_gate_begin(directory, lock) { ok = false; }
+        at = at + 1;
+    }
+    let alias = join_path(directory, "alias");
+    if ok {
+        let link_args = ["-s", ".", alias];
+        match run_process("/usr/bin/ln", ref link_args, ".") { Ok(status) => { ok = status.exit_code == 0; }, Err(_) => { ok = false; }, }
+        let aliased_source = join_path(alias, "probe.c");
+        let alias_args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", aliased_source, "-o", output];
+        if ok {
+            let rejected = fixture_c_compile_mode(aliased_source, output, ref alias_args, "runtime-h", lock, 1);
+            ok = not rejected.completed and not rejected.compiler_ran;
+        }
+    }
+    if not fixture_c_probe_unlink(alias) { ok = false; }
+    for path in paths { if not fixture_c_probe_unlink(path) { ok = false; } }
+    return ok;
+}
+
+fn fixture_c_owned_probe_image(root: str, physical: str) -> str {
+    let prefix = str_concat(join_path(root, "build/verification/p1-p4/cache-v2"), "/");
+    if not str_starts_with(physical, prefix) or str_len(physical) <= str_len(root) + 1 { return ""; }
+    let relative = slice_text(physical, str_len(root) + 1, str_len(physical));
+    if not fixture_c_relative_path(relative) or not fixture_c_parent_chain(root, relative) or not fixture_c_regular(physical) { return ""; }
+    return relative;
+}
+
+fn fixture_c_probe_replace_running_image(root: str, replacement_path: str) -> bool {
+    let Some(argv0) = arg_get(0) else { return false; };
+    let invoked = fixture_c_realpath(argv0);
+    let replacement = fixture_c_realpath(replacement_path);
+    let invoked_relative = fixture_c_owned_probe_image(root, invoked);
+    let replacement_relative = fixture_c_owned_probe_image(root, replacement);
+    if invoked_relative == "" or replacement_relative == "" or invoked == replacement { return false; }
+    let running_before = fixture_c_running_image();
+    let replacement_before = fixture_c_capture(root, replacement_relative);
+    if not running_before.valid or not replacement_before.valid or not fixture_c_executable_mode(replacement_before.mode) { return false; }
+    if running_before.digest == replacement_before.digest or replacement_before.size >= running_before.size { return false; }
+    match rename_path(replacement, invoked) { Ok(_) => {}, Err(_) => { return false; }, }
+    let invoked_after = fixture_c_capture(root, invoked_relative);
+    let running_after = fixture_c_running_image();
+    return invoked_after.valid and invoked_after.digest == replacement_before.digest and running_after.valid and running_after.digest == running_before.digest;
+}
+
+pub fn fixture_c_cache_cases() -> bool
+audit {
+    intent("Probe the actual bounded cache path plus labeled pure state-transition and identity invalidation cases");
+    mutates();
+    effects(io);
+}
+{
+    let nul_args = ["\\0"];
+    let nul = fixture_c_pipe("/usr/bin/printf", ref nul_args, None, 4);
+    let carriage_args = ["\\r"];
+    let carriage = fixture_c_pipe("/usr/bin/printf", ref carriage_args, None, 4);
+    if not nul.valid or not carriage.valid or not fixture_c_probe_pure_cases(nul.stdout, carriage.stdout) { let ignored = stderr_write("fixture C pure oracle failed\n"); return false; }
+    let root = fixture_c_physical_root();
+    if root == "" or not fixture_c_prepare_directory(root, "build") { return false; }
+    let Ok(directory) = create_temp_dir("build", ".fixture-c-probe-") else { return false; };
+    if not fixture_c_relative_path(directory) { return false; }
+    let source = join_path(directory, "probe.c");
+    let output = join_path(directory, "probe");
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let shadow = join_path(directory, "runtime.h");
+    let lock = join_path(directory, ".gate-lock");
+    let source_text = "#include \"runtime.h\"\nint main(void) { return 0; }\n";
+    let mut ok = true;
+    match write_file(source, source_text) { Ok(_) => {}, Err(_) => { ok = false; }, }
+    if ok {
+        let runtime_c = fixture_c_capture(root, "stdlib/runtime.c");
+        let runtime_h = fixture_c_capture(root, "stdlib/runtime.h");
+        if not runtime_c.valid or not runtime_h.valid { ok = false; }
+        if not fixture_c_probe_runtime_scan_cases(runtime_c.text) or not fixture_c_probe_runtime_scan_cases(runtime_h.text) { ok = false; }
+        if fixture_c_sources_modeled("runtime-h", "#include \"unmodeled.h\"\n", runtime_c.text, runtime_h.text) { ok = false; }
+        if fixture_c_sources_modeled("runtime-h", "#include \"runtime.h\"\nconst char *x = __DATE__;\n", runtime_c.text, runtime_h.text) { ok = false; }
+    }
+    if ok and not fixture_c_gate_begin(directory, lock) { ok = false; }
+    if ok and fixture_c_gate_begin(directory, lock) { ok = false; }
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", source, "-o", output];
+    let eligible = ok and fixture_c_identity_now(root, source, output, ref args, "runtime-h").valid;
+    if ok {
+        let first = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = first.completed and first.compiler_ran and not first.cache_hit and first.exit_code == 0 and first.stdout == "" and first.stderr == "";
+    }
+    if ok {
+        let second = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = second.completed and second.exit_code == 0;
+        if eligible { ok = ok and not second.compiler_ran and second.cache_hit; }
+        else { ok = ok and second.compiler_ran and not second.cache_hit and not fixture_c_regular(receipt); }
+    }
+    if ok {
+        let profile = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O0", source, "-o", output];
+        let changed = fixture_c_compile_mode(source, output, ref profile, "runtime-h", lock, 1);
+        ok = changed.completed and changed.compiler_ran and not changed.cache_hit and changed.exit_code == 0;
+    }
+    if ok {
+        match write_file(output, "modified") { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let modified = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and modified.completed and modified.compiler_ran and not modified.cache_hit;
+    }
+    if ok and eligible {
+        let old_identity = fixture_c_identity_now(root, source, output, ref args, "runtime-h");
+        let old_output = fixture_c_capture(root, output);
+        if not old_identity.valid or not old_output.valid { ok = false; }
+        let old_receipt = concat5("fixture-c/v1\ninput ", old_identity.digest, "\noutput ", old_output.digest, "\n");
+        match write_file(receipt, old_receipt) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let stale = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and stale.completed and stale.compiler_ran and not stale.cache_hit;
+    }
+    if ok {
+        if not fixture_c_probe_remove(output) { ok = false; }
+        let missing = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and missing.completed and missing.compiler_ran and not missing.cache_hit;
+    }
+    if ok {
+        match write_file(source, str_concat(source_text, "/* source invalidation */\n")) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let changed = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and changed.completed and changed.compiler_ran and not changed.cache_hit;
+    }
+    if ok {
+        match write_file(shadow, "/* earlier quote-search shadow */\n") { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let declined = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and declined.completed and declined.compiler_ran and not declined.cache_hit;
+        if not fixture_c_probe_remove(shadow) { ok = false; }
+    }
+    if ok {
+        if not fixture_c_probe_remove(receipt) { ok = false; }
+        match create_dir(receipt) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let unsafe_receipt = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and not unsafe_receipt.completed and not unsafe_receipt.compiler_ran;
+        if not fixture_c_probe_remove(receipt) { ok = false; }
+    }
+    if ok {
+        match write_file(source, "#include \"runtime.h\"\nint main(void) { invalid syntax }\n") { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let failed = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and failed.completed and failed.compiler_ran and failed.exit_code != 0 and fixture_c_missing(output) and fixture_c_missing(receipt);
+    }
+    if ok {
+        match write_file(source, source_text) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        match create_dir(output) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let unsafe_output = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and not unsafe_output.completed and not unsafe_output.compiler_ran;
+        if not fixture_c_probe_remove(output) { ok = false; }
+    }
+    if ok { ok = fixture_c_probe_include_refusal(root, source, output, ref args, lock, source_text); }
+    if ok {
+        let program = concat3("#include \"runtime.h\"\nconst char *clock_value = __TI\\", carriage.stdout, "ME__;\nint main(void) { return 0; }\n");
+        match write_file(source, program) { Ok(_) => {}, Err(_) => { ok = false; }, }
+        let declined = fixture_c_compile_mode(source, output, ref args, "runtime-h", lock, 1);
+        ok = ok and declined.completed and declined.compiler_ran and not declined.cache_hit and declined.exit_code == 0 and not fixture_c_regular(receipt);
+        match write_file(source, source_text) { Ok(_) => {}, Err(_) => { ok = false; }, }
+    }
+    if ok and eligible { ok = fixture_c_probe_completion_faults(root, source, output, ref args, lock, source_text); }
+    if ok and eligible { ok = fixture_c_probe_pch_boundaries(root, source, output, ref args, lock); }
+    if ok and eligible { ok = fixture_c_probe_pch_live(root, source, output, ref args, lock, source_text); }
+    if ok { ok = fixture_c_probe_symlinks(root, directory, source, output, ref args, lock, source_text); }
+    if fixture_c_directory(lock) {
+        if not fixture_c_gate_end(lock) { ok = false; }
+    } else { ok = false; }
+    if not fixture_c_probe_remove(shadow) { ok = false; }
+    if not fixture_c_probe_remove(receipt) { ok = false; }
+    if not fixture_c_probe_remove(output) { ok = false; }
+    if not fixture_c_probe_remove(source) { ok = false; }
+    if not fixture_c_probe_remove(directory) { ok = false; }
+    return ok;
+}
+
+fn fixture_c_context_cases(command: str) -> bool {
+    let root = fixture_c_physical_root();
+    if root == "" or not fixture_c_prepare_directory(root, "build") { return false; }
+    let mut directory = "";
+    match arg_get(2) {
+        Some(path) => {
+            if not str_starts_with(path, "build/.fixture-c-context-") or path_dir(path) != "build" or not fixture_c_prepare_directory(root, path) { return false; }
+            directory = path;
+        },
+        None => { let Ok(path) = create_temp_dir("build", ".fixture-c-context-") else { return false; }; directory = path; },
+    }
+    let mut first_hit = false;
+    match arg_get(3) { Some(value) => { if value != "hit" and value != "miss" { return false; } first_hit = value == "hit"; }, None => {}, }
+    let mut keep = false;
+    match arg_get(4) { Some(value) => { if value != "keep" { return false; } keep = true; }, None => {}, }
+    let mut replacement = "";
+    match arg_get(5) {
+        Some(marker) => {
+            if marker != "replace-stripped-image" or command != "test" or first_hit or not keep { return false; }
+            let Some(path) = arg_get(6) else { return false; };
+            match arg_get(7) { Some(_) => { return false; }, None => {}, }
+            replacement = path;
+        },
+        None => { match arg_get(6) { Some(_) => { return false; }, None => {}, } },
+    }
+    let source = join_path(directory, "probe.c");
+    let output = join_path(directory, "probe");
+    let receipt = str_concat(output, ".fixture-c-receipt");
+    let lock = join_path(directory, ".gate-lock");
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", source, "-o", output];
+    let mut ok = true;
+    match write_file(source, "#include \"runtime.h\"\nint main(void) { return 0; }\n") { Ok(_) => {}, Err(_) => { ok = false; }, }
+    let locked = fixture_c_gate_begin(directory, lock);
+    if not locked { ok = false; }
+    if ok and replacement != "" and not fixture_c_probe_replace_running_image(root, replacement) { ok = false; }
+    let warm = ok and command == "test" and fixture_c_mode() == 1 and fixture_c_identity_now(root, source, output, ref args, "runtime-h").valid;
+    if ok {
+        let first = fixture_c_compile(source, output, ref args, "runtime-h", lock);
+        ok = first.completed and first.exit_code == 0 and first.cache_hit == first_hit and first.compiler_ran != first_hit;
+    }
+    if ok {
+        let second = fixture_c_compile(source, output, ref args, "runtime-h", lock);
+        ok = second.completed and second.exit_code == 0;
+        if warm { ok = ok and second.cache_hit and not second.compiler_ran; }
+        else { ok = ok and not second.cache_hit and second.compiler_ran and not fixture_c_regular(receipt); }
+    }
+    if ok {
+        let empty: list<str> = list();
+        match run_process(join_path(root, output), ref empty, ".") {
+            Ok(status) => { ok = status.exit_code == 0 and status.stdout == "" and status.stderr == ""; },
+            Err(_) => { ok = false; },
+        }
+    }
+    if locked and not fixture_c_gate_end(lock) { ok = false; }
+    if ok and keep { return true; }
+    if not fixture_c_probe_remove(receipt) { ok = false; }
+    if not fixture_c_probe_remove(output) { ok = false; }
+    if not fixture_c_probe_remove(source) { ok = false; }
+    if not fixture_c_probe_remove(directory) { ok = false; }
+    return ok;
+}
+
+fn main() -> i32 {
+    match arg_get(1) {
+        Some(command) => { if not fixture_c_context_cases(command) { return 1; } return 0; },
+        None => {},
+    }
+    if not fixture_c_cache_cases() { return 1; }
+    return 0;
+}

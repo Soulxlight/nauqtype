@@ -26,19 +26,25 @@ prov_directory() {
     done
 }
 
-prov_regular() {
-    local p=$1 mode
+# Keep validation and the framed metadata in one observation, not cached state.
+prov_file_metadata() {
+    local p=$1 metadata mode size
     [[ -f "$p" && ! -L "$p" && -r "$p" ]] || return 1
     prov_directory "${p%/*}" || return 1
-    mode=$(stat -c '%a' -- "$p") || return 1
-    [[ "$mode" =~ ^[0-7]{1,4}$ ]] && (( (8#$mode & 0444) != 0 ))
+    metadata=$(stat -c '%a %s' -- "$p") || return 1
+    [[ "$metadata" =~ ^([0-7]{1,4})\ (0|[1-9][0-9]*)$ ]] || return 1
+    mode=${metadata%% *}; size=${metadata#* }
+    (( (8#$mode & 0444) != 0 )) || return 1
+    if (( (8#$mode & 0111) != 0 )); then mode=100755; else mode=100644; fi
+    printf '%s %s\n' "$mode" "$size"
 }
 
+prov_regular() { prov_file_metadata "$1" > /dev/null; }
+
 prov_mode() {
-    local mode
-    prov_regular "$1" || return 1
-    mode=$(stat -c '%a' -- "$1") || return 1
-    if (( (8#$mode & 0111) != 0 )); then printf '100755\n'; else printf '100644\n'; fi
+    local metadata
+    metadata=$(prov_file_metadata "$1") || return 1
+    printf '%s\n' "${metadata%% *}"
 }
 
 prov_sha256() {
@@ -60,7 +66,7 @@ prov_hash_stream() {
 
 # Enumerate every entry before filtering. Never silently skip unsafe entries.
 # kind=source permits regular non-source outputs; snapshot permits .nq only.
-prov_tree_paths() (
+_prov_tree_paths_legacy() (
     local root=$1 subtree=$2 kind=${3:-all} scratch p rel
     local LC_ALL=C
     prov_directory "$root" && prov_safe_relative "$subtree" || exit 1
@@ -84,8 +90,53 @@ prov_tree_paths() (
     LC_ALL=C sort "$scratch/paths"
 )
 
+prov_tree_paths() (
+    local root=$1 subtree=$2 kind=${3:-all} scratch version type mode p rel
+    local total consumed=0 records=0 code LC_ALL=C
+    prov_directory "$root" && prov_safe_relative "$subtree" || exit 1
+    prov_directory "$root/$subtree" || exit 1
+    # Choose capability handling before the operation, never after its failure.
+    version=$(find --version 2>/dev/null) || version=''
+    if [[ "$version" != 'find (GNU findutils) '* ]]; then
+        _prov_tree_paths_legacy "$root" "$subtree" "$kind"
+        exit $?
+    fi
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    find "$root/$subtree" -printf '%y\0%m\0%p\0' > "$scratch/entries" || exit 1
+    total=$(wc -c < "$scratch/entries") || exit 1
+    [[ "$total" =~ ^[1-9][0-9]*$ ]] || exit 1
+    : > "$scratch/paths" || exit 1
+    exec 3< "$scratch/entries" || exit 1
+    while :; do
+        type=''
+        if IFS= read -r -d '' type <&3; then :;
+        else code=$?; [[ "$code" == 1 && -z "$type" ]] || exit 1; break; fi
+        IFS= read -r -d '' mode <&3 || exit 1
+        IFS= read -r -d '' p <&3 || exit 1
+        consumed=$((consumed + ${#type} + ${#mode} + ${#p} + 3))
+        [[ "$mode" =~ ^[0-7]{1,4}$ && "$p" == "$root/$subtree"* ]] || exit 1
+        if (( records == 0 )); then [[ "$p" == "$root/$subtree" && "$type" == d ]] || exit 1; fi
+        [[ "$p" == "$root/$subtree" || "$p" == "$root/$subtree/"* ]] || exit 1
+        records=$((records + 1))
+        rel=${p#"$root/"}
+        prov_safe_relative "$rel" && [[ ! -L "$p" ]] || exit 1
+        if [[ "$type" == d ]]; then [[ -d "$p" ]] || exit 1; continue; fi
+        [[ "$type" == f && -f "$p" && -r "$p" ]] || exit 1
+        prov_directory "${p%/*}" || exit 1
+        (( (8#$mode & 0444) != 0 )) || exit 1
+        if [[ "$kind" != all && "$rel" != *.nq ]]; then
+            [[ "$kind" == source ]] || exit 1
+            continue
+        fi
+        printf '%s\n' "$rel" >> "$scratch/paths" || exit 1
+    done
+    [[ "$consumed" == "$total" && "$records" != 0 ]] || exit 1
+    LC_ALL=C sort "$scratch/paths"
+)
+
 # PATHS_FILE is canonical LF, sorted, unique, safe relative paths (empty allowed).
-prov_validate_paths() (
+_prov_validate_paths_legacy() (
     local list=$1 scratch p previous='' LC_ALL=C
     prov_regular "$list" || exit 1
     scratch=$(mktemp) || exit 1
@@ -99,25 +150,223 @@ prov_validate_paths() (
     cmp -s "$list" "$scratch"
 )
 
-prov_files_frame() {
-    local root=$1 domain=$2 list=$3 p count mode size LC_ALL=C
-    prov_directory "$root" && prov_validate_paths "$list" || return 1
-    [[ "$domain" =~ ^[a-z0-9-]+/v[0-9]+$ ]] || return 1
-    count=$(wc -l < "$list") || return 1
-    printf '%s\nfiles:%d\n' "$domain" "$count" || return 1
+prov_validate_paths() (
+    local list=$1 metadata size bytes again code p previous='' LC_ALL=C
+    metadata=$(prov_file_metadata "$list") || exit 1
+    size=${metadata#* }
+    if (( ${#size} > 5 )) || (( 10#$size > 65536 )); then
+        _prov_validate_paths_legacy "$list"
+        exit $?
+    fi
+    # Delimiter/limit completion (status0) rejects NULs and growth. Only a
+    # complete bounded EOF read may supply the immutable validation bytes.
+    if IFS= read -r -d '' -n "$((size + 1))" bytes < "$list"; then exit 1;
+    else code=$?; [[ "$code" == 1 && ${#bytes} == "$size" ]] || exit 1; fi
+    if IFS= read -r -d '' -n "$((size + 1))" again < "$list"; then exit 1;
+    else code=$?; [[ "$code" == 1 && ${#again} == "$size" && "$again" == "$bytes" ]] || exit 1; fi
+    metadata=$(prov_file_metadata "$list") || exit 1
+    [[ "${metadata#* }" == "$size" ]] || exit 1
+    [[ -n "$bytes" ]] || exit 0
+    [[ "$bytes" == *$'\n' ]] || exit 1
     while IFS= read -r p; do
-        mode=$(prov_mode "$root/$p") || return 1
-        size=$(stat -c '%s' -- "$root/$p") || return 1
-        [[ "$size" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+        prov_safe_relative "$p" || exit 1
+        [[ -z "$previous" || "$p" > "$previous" ]] || exit 1
+        previous=$p
+    done <<< "${bytes%$'\n'}"
+)
+
+# Linux's conservative argv budget includes worst-case environment pointer
+# overhead. Unsupported capacity selects legacy operation before any batch.
+_prov_batch_supported() {
+    local limit environment LC_ALL=C
+    [[ "$OSTYPE" == linux* ]] || return 1
+    limit=$(getconf ARG_MAX 2>/dev/null) || return 1
+    [[ "$limit" =~ ^[1-9][0-9]{0,9}$ ]] || return 1
+    (( limit >= 131072 )) || return 1
+    environment=$(set -o pipefail; env -0 | wc -c) 2>/dev/null || return 1
+    [[ "$environment" =~ ^(0|[1-9][0-9]{0,4})$ ]] || return 1
+    (( environment <= 32768 )) || return 1
+    (( 16 * (environment + 80) + environment + 32768 + 16384 < limit ))
+}
+
+_prov_paths_fit_batches() {
+    local root=$1 dest=$2 list=$3 p full parent LC_ALL=C
+    while IFS= read -r p; do
+        full="$root/$p"
+        (( ${#full} + 1 <= 8192 )) || return 1
+        if [[ -n "$dest" ]]; then
+            parent=$dest
+            [[ "$p" != */* ]] || parent="$dest/${p%/*}"
+            (( ${#parent} + 2 <= 8192 )) || return 1
+        fi
+    done < "$list"
+}
+
+_prov_frame_files_scalar() {
+    local root=$1 list=$2 p metadata mode size LC_ALL=C
+    while IFS= read -r p; do
+        metadata=$(prov_file_metadata "$root/$p") || return 1
+        mode=${metadata%% *}; size=${metadata#* }
         printf 'path-bytes:%d\n%s\nmode:%s\ncontent-bytes:%s\n' "${#p}" "$p" "$mode" "$size" || return 1
         cat -- "$root/$p" || return 1
         printf '\n' || return 1
     done < "$list"
 }
 
+# Private provider records bind metadata to argv paths before consumers see it.
+_prov_stat_rows() (
+    local output=$1 p row rest mode size total consumed=0 code LC_ALL=C
+    shift
+    (( $# > 0 && $# <= 64 )) || exit 1
+    stat --printf '%f %s %n\0' -- "$@" > "$output.raw" || exit 1
+    total=$(wc -c < "$output.raw") || exit 1
+    [[ "$total" =~ ^[1-9][0-9]{0,4}$ ]] && (( total <= 16384 )) || exit 1
+    : > "$output" || exit 1
+    exec 4< "$output.raw" || exit 1
+    for p in "$@"; do
+        IFS= read -r -d '' -n 16385 row <&4 || exit 1
+        consumed=$((consumed + ${#row} + 1))
+        mode=${row%% *}; rest=${row#* }; size=${rest%% *}
+        [[ "$row" != "$rest" && "$rest" == *' '* && "${rest#* }" == "$p" ]] || exit 1
+        [[ "$mode" =~ ^[0-9a-f]{1,8}$ && "$size" =~ ^(0|[1-9][0-9]*)$ ]] || exit 1
+        printf '%s %s\n' "$mode" "$size" >> "$output" || exit 1
+    done
+    row=''
+    if IFS= read -r -d '' -n 16385 row <&4; then exit 1;
+    else code=$?; [[ "$code" == 1 && -z "$row" && "$consumed" == "$total" ]] || exit 1; fi
+)
+
+prov_files_frame() {
+    local root=$1 domain=$2 list=$3 count LC_ALL=C
+    prov_directory "$root" && prov_validate_paths "$list" || return 1
+    [[ "$domain" =~ ^[a-z0-9-]+/v[0-9]+$ ]] || return 1
+    count=$(wc -l < "$list") || return 1
+    printf '%s\nfiles:%d\n' "$domain" "$count" || return 1
+    if _prov_batch_supported && _prov_paths_fit_batches "$root" '' "$list"; then
+        _prov_frame_files_batch "$root" "$list"
+    else
+        _prov_frame_files_scalar "$root" "$list"
+    fi
+}
+
+_prov_frame_files_batch() (
+    local root=$1 list=$2 scratch p full pending='' eof=false defect=false total=0 row mode size at LC_ALL=C
+    local -a paths=() absolute=() rows=()
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    exec 3< "$list" || exit 1
+    while :; do
+        paths=(); absolute=(); total=0; defect=false
+        while (( ${#paths[@]} < 64 )); do
+            if [[ -n "$pending" ]]; then p=$pending; pending='';
+            elif ! IFS= read -r p <&3; then eof=true; break; fi
+            full="$root/$p"
+            if (( total + ${#full} + 1 > 8192 )); then pending=$p; break; fi
+            if [[ ! -f "$full" || -L "$full" || ! -r "$full" ]] || ! prov_directory "${full%/*}"; then defect=true; break; fi
+            paths+=("$p"); absolute+=("$full"); total=$((total + ${#full} + 1))
+        done
+        if (( ${#paths[@]} == 0 )); then [[ "$defect" == false && "$eof" == true ]] || exit 1; exit 0; fi
+        _prov_stat_rows "$scratch/stat" "${absolute[@]}" || exit 1
+        mapfile -t rows < "$scratch/stat" || exit 1
+        (( ${#rows[@]} == ${#paths[@]} )) || exit 1
+        for ((at = 0; at < ${#paths[@]}; at++)); do
+            row=${rows[at]}
+            [[ "$row" =~ ^([0-9a-f]{1,8})\ (0|[1-9][0-9]*)$ ]] || exit 1
+            mode=${BASH_REMATCH[1]}; size=${BASH_REMATCH[2]}
+            (( (16#$mode & 8#170000) == 8#100000 && (16#$mode & 8#444) != 0 )) || exit 1
+            if (( (16#$mode & 8#111) != 0 )); then mode=100755; else mode=100644; fi
+            p=${paths[at]}; full=${absolute[at]}
+            [[ -f "$full" && ! -L "$full" && -r "$full" ]] && prov_directory "${full%/*}" || exit 1
+            printf 'path-bytes:%d\n%s\nmode:%s\ncontent-bytes:%s\n' "${#p}" "$p" "$mode" "$size" || exit 1
+            cat -- "$full" || exit 1
+            printf '\n' || exit 1
+        done
+        [[ "$defect" == false ]] || exit 1
+        [[ "$eof" == false ]] || exit 0
+    done
+)
+
 prov_files_digest() (
     set -o pipefail
     prov_files_frame "$@" | prov_hash_stream
+)
+
+_prov_file_hash_rows_scalar() {
+    local root=$1 list=$2 p mode hash
+    while IFS= read -r p; do
+        mode=$(prov_mode "$root/$p") || return 1
+        hash=$(prov_sha256 "$root/$p") || return 1
+        printf '%s\t%s\t%s\n' "$mode" "$hash" "$p" || return 1
+    done < "$list"
+}
+
+# Every call acquires fresh hashes. A final checksum pass calls this again;
+# it never reuses the earlier inventory's observations as current content.
+prov_file_hash_rows() (
+    local root=$1 list=$2 version LC_ALL=C
+    local -a sample=()
+    prov_directory "$root" && prov_validate_paths "$list" || exit 1
+    mapfile -t -n 8 sample < "$list" || exit 1
+    if (( ${#sample[@]} >= 8 )) && _prov_batch_supported && _prov_paths_fit_batches "$root" '' "$list"; then
+        version=$(sha256sum --version 2>/dev/null) || version=''
+        if [[ "$version" == 'sha256sum (GNU coreutils) '* ]]; then
+            _prov_file_hash_rows_batch "$root" "$list"
+            exit $?
+        fi
+    fi
+    _prov_file_hash_rows_scalar "$root" "$list"
+)
+
+_prov_file_hash_rows_batch() (
+    local root=$1 list=$2 scratch p full pending='' eof=false total=0 at mode size
+    local row hash bytes consumed code LC_ALL=C
+    local -a paths=() absolute=() metadata=() modes=()
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    exec 3< "$list" || exit 1
+    while :; do
+        paths=(); absolute=(); modes=(); total=0
+        while (( ${#paths[@]} < 64 )); do
+            if [[ -n "$pending" ]]; then p=$pending; pending='';
+            elif ! IFS= read -r p <&3; then eof=true; break; fi
+            full="$root/$p"
+            if (( total + ${#full} + 1 > 8192 )); then pending=$p; break; fi
+            [[ -f "$full" && ! -L "$full" && -r "$full" ]] && prov_directory "${full%/*}" || exit 1
+            paths+=("$p"); absolute+=("$full"); total=$((total + ${#full} + 1))
+        done
+        if (( ${#paths[@]} == 0 )); then [[ "$eof" == true ]] || exit 1; exit 0; fi
+        _prov_stat_rows "$scratch/stat" "${absolute[@]}" || exit 1
+        mapfile -t metadata < "$scratch/stat" || exit 1
+        (( ${#metadata[@]} == ${#paths[@]} )) || exit 1
+        for ((at=0; at < ${#paths[@]}; at++)); do
+            row=${metadata[at]}; mode=${row%% *}; size=${row#* }
+            (( (16#$mode & 8#170000) == 8#100000 && (16#$mode & 8#444) != 0 )) || exit 1
+            if (( (16#$mode & 8#111) != 0 )); then modes+=(100755); else modes+=(100644); fi
+            full=${absolute[at]}
+            [[ -f "$full" && ! -L "$full" && -r "$full" ]] && prov_directory "${full%/*}" || exit 1
+        done
+        sha256sum --zero -- "${absolute[@]}" > "$scratch/hashes" || exit 1
+        bytes=$(wc -c < "$scratch/hashes") || exit 1
+        [[ "$bytes" =~ ^[1-9][0-9]{0,4}$ ]] && (( bytes <= 16384 )) || exit 1
+        consumed=0
+        exec 4< "$scratch/hashes" || exit 1
+        : > "$scratch/rows" || exit 1
+        for ((at=0; at < ${#paths[@]}; at++)); do
+            IFS= read -r -d '' -n 16385 row <&4 || exit 1
+            consumed=$((consumed + ${#row} + 1))
+            hash=${row:0:64}
+            prov_hex "$hash" && [[ "${row:64:2}" == '  ' && "${row:66}" == "${absolute[at]}" ]] || exit 1
+            full=${absolute[at]}
+            [[ -f "$full" && ! -L "$full" && -r "$full" ]] && prov_directory "${full%/*}" || exit 1
+            printf '%s\t%s\t%s\n' "${modes[at]}" "$hash" "${paths[at]}" >> "$scratch/rows" || exit 1
+        done
+        row=''
+        if IFS= read -r -d '' -n 16385 row <&4; then exit 1;
+        else code=$?; [[ "$code" == 1 && -z "$row" && "$consumed" == "$bytes" ]] || exit 1; fi
+        exec 4<&-
+        cat "$scratch/rows" || exit 1
+        [[ "$eof" == false ]] || exit 0
+    done
 )
 
 prov_producer_scripts() {
@@ -170,14 +419,36 @@ prov_inputs_sha256() (
 
 # Snapshot must start empty. Verify the captured set and originals separately.
 prov_capture_inputs() {
-    local root=$1 dest=$2 list=$3 expected=$4 p actual
+    local root=$1 dest=$2 list=$3 expected=$4 p actual parent='' next_parent full bytes=0
+    local -a files=()
     prov_validate_paths "$list" || return 1
     mkdir -p -- "$dest" || return 1
-    while IFS= read -r p; do
-        prov_regular "$root/$p" || return 1
-        if [[ "$p" == */* ]]; then mkdir -p -- "$dest/${p%/*}" || return 1; fi
-        cp --preserve=mode -- "$root/$p" "$dest/$p" || return 1
-    done < "$list"
+    prov_directory "$dest" || return 1
+    if _prov_batch_supported && _prov_paths_fit_batches "$root" "$dest" "$list"; then
+        while IFS= read -r p; do
+            next_parent=''
+            [[ "$p" != */* ]] || next_parent=${p%/*}
+            full="$root/$p"
+            prov_regular "$full" || return 1
+            if (( ${#files[@]} > 0 )) && { [[ "$next_parent" != "$parent" ]] || (( ${#files[@]} == 64 || bytes + ${#full} + 1 > 8192 )); }; then
+                mkdir -p -- "$dest/$parent" || return 1
+                cp --preserve=mode -- "${files[@]}" "$dest/$parent/" || return 1
+                files=(); bytes=0
+            fi
+            parent=$next_parent
+            files+=("$full"); bytes=$((bytes + ${#full} + 1))
+        done < "$list"
+        if (( ${#files[@]} > 0 )); then
+            mkdir -p -- "$dest/$parent" || return 1
+            cp --preserve=mode -- "${files[@]}" "$dest/$parent/" || return 1
+        fi
+    else
+        while IFS= read -r p; do
+            prov_regular "$root/$p" || return 1
+            if [[ "$p" == */* ]]; then mkdir -p -- "$dest/${p%/*}" || return 1; fi
+            cp --preserve=mode -- "$root/$p" "$dest/$p" || return 1
+        done < "$list"
+    fi
     actual=$(prov_inputs_sha256 "$dest") || return 1
     [[ "$actual" == "$expected" ]] || prov_error 'captured inputs differ from pre-capture inventory' || return 1
     actual=$(prov_inputs_sha256 "$root") || return 1

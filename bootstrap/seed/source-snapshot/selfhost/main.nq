@@ -338,7 +338,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3|v4] | nauqc review <source> [--format v1|v2|v3|v4] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2|v3|v4 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3|v4] | nauqc review <source> [--format v1|v2|v3|v4] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2|v3|v4 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test [--suite <compiler-index|proof-artifacts|workspace-capture|workspace-evidence|integer-policy|allocation-policy|str-join|process-time|schema-profile|driver-fixtures|formatter>] | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -711,10 +711,18 @@ fn parse_driver_request() -> driver_request {
     }
 
     if command == "test" {
-        if argc != 2 {
+        if argc == 2 {
+            return make_driver_request(driver_test, option_text(arg_get(0)), "", ".", "", "", "");
+        }
+        if argc != 4 {
             return invalid_request(usage_text());
         }
-        return make_driver_request(driver_test, option_text(arg_get(0)), "", ".", "", "", "");
+        let suite_option = option_text(arg_get(2));
+        let suite = option_text(arg_get(3));
+        if not test_suite_selection_valid(argc, suite_option, suite) {
+            return invalid_request(usage_text());
+        }
+        return make_driver_request(driver_test, option_text(arg_get(0)), "", ".", "", suite, "");
     }
 
     if command == "" {
@@ -1669,7 +1677,8 @@ fn dispatch_driver_request(request: driver_request) -> i32 {
             return run_seed_structural_compare(request.entry_path, request.output_path);
         },
         driver_test => {
-            return run_nauq_tests(request.entry_path);
+            if request.extra_text == "" { return run_nauq_tests(request.entry_path); }
+            return run_nauq_tests_selected(request.entry_path, request.extra_text);
         },
         driver_prove_selfhost => {
             return run_selfhost_proof(request.entry_path);

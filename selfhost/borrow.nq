@@ -1,3 +1,4 @@
+use checked_index;
 use diag;
 use handoff;
 use text;
@@ -472,10 +473,12 @@ fn lookup_expr(expressions: ref list<checked_expr>, expr_id: i32) -> option<chec
     return None;
 }
 
-fn lookup_root_block_id(blocks: ref list<checked_block>, function_id: i32, root_scope_id: i32) -> i32 {
-    let mut index = 0;
-    while index < list_len(ref blocks) {
-        let entry = list_get(ref blocks, index);
+fn lookup_root_block_id(blocks: ref list<checked_block>, members: ref list<p2_checked_member_entry>, function_id: i32, root_scope_id: i32) -> i32 {
+    let range = p2_checked_member_range_for(ref members, function_id);
+    let mut index = range.start;
+    while index < range.end {
+        let source_index = p2_checked_member_source_index(ref members, index);
+        let entry = list_get(ref blocks, source_index);
         match entry {
             Some(value) => {
                 if value.function_id == function_id and value.scope_id == root_scope_id {
@@ -490,36 +493,15 @@ fn lookup_root_block_id(blocks: ref list<checked_block>, function_id: i32, root_
     return -1;
 }
 
-fn borrow_blocks_for_function(blocks: ref list<checked_block>, function_id: i32) -> list<checked_block> {
-    let mut result: list<checked_block> = list();
-    let mut index = 0;
-    while index < list_len(ref blocks) {
-        let entry = list_get(ref blocks, index);
-        match entry {
-            Some(value) => {
-                if value.function_id == function_id {
-                    list_push(mutref result, value);
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return result;
-}
-
-fn borrow_statements_for_function(statements: ref list<checked_stmt>, function_id: i32) -> list<checked_stmt> {
+fn borrow_statements_for_function(statements: ref list<checked_stmt>, members: ref list<p2_checked_member_entry>, function_id: i32) -> list<checked_stmt> {
     let mut result: list<checked_stmt> = list();
-    let mut index = 0;
-    while index < list_len(ref statements) {
-        let entry = list_get(ref statements, index);
+    let range = p2_checked_member_range_for(ref members, function_id);
+    let mut index = range.start;
+    while index < range.end {
+        let source_index = p2_checked_member_source_index(ref members, index);
+        let entry = list_get(ref statements, source_index);
         match entry {
-            Some(value) => {
-                if value.function_id == function_id {
-                    list_push(mutref result, value);
-                }
-            },
+            Some(value) => { list_push(mutref result, value); },
             None => {
             },
         }
@@ -1186,57 +1168,20 @@ fn builtin_function_param_is_borrow(name: str, index: i32) -> bool {
     return false;
 }
 
-fn lookup_function_id(functions: ref list<checked_function>, module_name: str, name: str) -> i32 {
-    let mut index = 0;
-    while index < list_len(ref functions) {
-        let entry = list_get(ref functions, index);
-        match entry {
-            Some(value) => {
-                if value.module_name == module_name and value.name == name {
-                    return value.id;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return -1;
+fn lookup_function_id(function_index: ref list<p2_checked_function_target>, module_name: str, name: str) -> i32 {
+    return p2_checked_first_function_id(ref function_index, module_name, name);
 }
 
-fn lookup_function_param_count(params: ref list<checked_param>, function_id: i32) -> i32 {
-    let mut count = 0;
-    let mut index = 0;
-    while index < list_len(ref params) {
-        let entry = list_get(ref params, index);
-        match entry {
-            Some(value) => {
-                if value.function_id == function_id {
-                    count = count + 1;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return count;
+fn lookup_function_param_count(param_index: ref list<p2_checked_param_mode>, function_id: i32) -> i32 {
+    return p2_checked_param_count(ref param_index, function_id);
 }
 
-fn lookup_function_param_is_borrow(params: ref list<checked_param>, function_id: i32, param_index: i32) -> bool {
-    let mut index = 0;
-    while index < list_len(ref params) {
-        let entry = list_get(ref params, index);
-        match entry {
-            Some(value) => {
-                if value.function_id == function_id and value.index == param_index {
-                    return value.is_borrow;
-                }
-            },
-            None => {
-            },
-        }
-        index = index + 1;
+fn lookup_function_param_is_borrow(param_index: ref list<p2_checked_param_mode>, function_id: i32, index: i32) -> bool {
+    let entry = p2_checked_first_param_mode(ref param_index, function_id, index);
+    match entry {
+        Some(value) => { return value.is_borrow; },
+        None => {
+        },
     }
     return false;
 }
@@ -1565,7 +1510,7 @@ fn lookup_owner_stmt_id_for_expr(statements: ref list<checked_stmt>, function_id
     return -1;
 }
 
-fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
+fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, params: ref list<p2_checked_param_mode>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<p2_checked_function_target>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, state: mutref list<move_binding_state>, consume: bool, in_call_arg: bool, emit_diagnostics: bool, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expr(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -1983,7 +1928,7 @@ fn reset_match_arm_bindings(pattern_bindings: ref list<checked_pattern_binding>,
     return;
 }
 
-fn check_block(function: checked_function, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<checked_function>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, block_id: i32, state: ref list<move_binding_state>, emit_diagnostics: bool, diags: mutref list<diag>) -> list<move_binding_state> {
+fn check_block(function: checked_function, bindings: ref list<checked_binding>, params: ref list<p2_checked_param_mode>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, functions: ref list<p2_checked_function_target>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<borrow_expr_child>, struct_fields: ref list<checked_struct_field_init>, block_id: i32, state: ref list<move_binding_state>, emit_diagnostics: bool, diags: mutref list<diag>) -> list<move_binding_state> {
     let mut current = clone_move_state(ref state);
     let mut stmt_index = 0;
     while stmt_index < list_len(ref statements) {
@@ -2162,24 +2107,27 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
 
 fn check_checked_handoff_borrows_impl(functions: ref list<checked_function>, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, diags: mutref list<diag>) -> borrow_summary {
     let start_diag_count = list_len(ref diags);
+    let function_targets = p2_checked_build_function_index(ref functions);
+    let param_modes = p2_checked_build_param_index(ref params);
+    let block_members = p2_checked_build_block_member_index(ref blocks);
+    let statement_members = p2_checked_build_stmt_member_index(ref statements);
     let indexed_expr_children = index_borrow_expr_children(ref expressions, ref expr_children);
     let mut function_index = 0;
     while function_index < list_len(ref functions) {
         let function_entry = list_get(ref functions, function_index);
         match function_entry {
             Some(function) => {
-                let local_blocks = borrow_blocks_for_function(ref blocks, function.id);
-                let local_statements = borrow_statements_for_function(ref statements, function.id);
+                let local_statements = borrow_statements_for_function(ref statements, ref statement_members, function.id);
                 let local_match_arms = borrow_match_arms_for_function(ref match_arms, function.id);
                 let local_pattern_bindings = borrow_pattern_bindings_for_function(ref pattern_bindings, function.id);
                 let local_expr_children = borrow_expr_children_for_function(ref indexed_expr_children, function.id);
                 let local_struct_fields = borrow_struct_fields_for_function(ref expressions, ref struct_fields, function.id);
-                let root_block_id = lookup_root_block_id(ref local_blocks, function.id, function.root_scope_id);
+                let root_block_id = lookup_root_block_id(ref blocks, ref block_members, function.id, function.root_scope_id);
                 if root_block_id < 0 {
                     push_borrow_limitation(mutref diags, function.module_name, function.at, str_concat("is missing the checked root block for `", str_concat(function.name, "`")));
                 } else {
                     let state = create_initial_state(ref bindings, function.id);
-                    let ignored_function_state = check_block(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref local_blocks, ref local_statements, ref local_match_arms, ref local_pattern_bindings, ref expressions, ref local_expr_children, ref local_struct_fields, root_block_id, ref state, true, mutref diags);
+                    let ignored_function_state = check_block(function, ref bindings, ref param_modes, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref function_targets, ref blocks, ref local_statements, ref local_match_arms, ref local_pattern_bindings, ref expressions, ref local_expr_children, ref local_struct_fields, root_block_id, ref state, true, mutref diags);
                 }
             },
             None => {

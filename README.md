@@ -176,13 +176,21 @@ not commands to run in sequence, and require the **source checkout**:
 | Question | Command |
 | --- | --- |
 | Does one program check? | `bin/nauqc check examples/hello.nq` or the affected fixture |
+| Does one compiler fixture group pass? | `scripts/check_fast.sh --suite compiler-index` (or another fixed suite) |
+| Does one host-unit group pass? | `scripts/check_fast.sh --host-suite provenance` (or `attestation`, `budget`) |
 | Does the complete owned fixture/tooling tier pass? | `scripts/check_fast.sh` |
 | Does a reviewed milestone candidate close? | `scripts/check_milestone.sh` |
 | Is the independent Linux alpha release gate green? | `scripts/check_linux_alpha.sh` |
 
 `check` validates a program through the checked compiler path; it does not
-compile or run generated host C. `test` runs the complete owned fixtures with
-no suite selector; `check_fast.sh` also checks cache/provenance machinery.
+compile or run generated host C. Unqualified `test` runs the complete owned
+fixtures; `test --suite <name>` is explicitly partial feedback. Compiler
+routes in `check_fast.sh` validate/rebuild the compiler cache; host-only routes
+do not claim a checked compiler. Unqualified `check_fast.sh` retains the full
+owned, provenance, attestation, and budget coverage.
+Local fast feedback defaults to checked fixture-C reuse; set
+`NQ_TEST_REUSE_C=0` for fresh compilation. Reuse never skips probe execution,
+and the complete milestone gate forces fresh fixture compilation.
 `prove` runs the owned proof path. The composed milestone gate includes these
 obligations without repeating the same build/proof for each phase. The
 independent Linux alpha gate rebuilds from the seed,

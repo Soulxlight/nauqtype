@@ -1,5 +1,6 @@
 use text;
 use c_emit;
+use fixture_c;
 
 fn integer_policy_path(name: str) -> str {
     return str_concat("tests/fixtures/m54_9_arithmetic/", name);
@@ -210,7 +211,15 @@ fn integer_policy_compile(source: str, output: str, profile: i32) -> bool {
     list_push(mutref args, "stdlib/runtime.c");
     list_push(mutref args, "-o");
     list_push(mutref args, output);
-    return integer_policy_expect(str_concat("compile ", output), run_process("cc", ref args, "."), 0, "", "");
+    let label = str_concat("compile ", output);
+    let status = fixture_c_compile(source, output, ref args, "runtime-h", "build/m54_9_arithmetic/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(str_concat(label, status.error_message)); return false; }
+    if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+    eprint_line(str_concat("integer policy failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(str_concat("stdout: ", status.stdout));
+    eprint_line(str_concat("stderr: ", status.stderr));
+    return false;
 }
 
 fn integer_policy_mode(executable: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
@@ -245,7 +254,7 @@ fn integer_policy_runtime(executable: str) -> bool {
     return true;
 }
 
-pub fn run_integer_policy_gate(driver: str) -> bool
+fn integer_policy_gate_impl(driver: str) -> bool
 audit {
     intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
     mutates();
@@ -298,4 +307,18 @@ audit {
         profile = profile + 1;
     }
     return true;
+}
+
+pub fn run_integer_policy_gate(driver: str) -> bool
+audit {
+    intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
+    mutates();
+    effects(print, io);
+}
+{
+    let lock = "build/m54_9_arithmetic/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m54_9_arithmetic", lock) { eprint_line("integer policy: fixture gate lock refused"); return false; }
+    let ok = integer_policy_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("integer policy: fixture gate lock release failed"); return false; }
+    return ok;
 }

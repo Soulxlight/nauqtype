@@ -1,0 +1,627 @@
+use handoff;
+
+pub type p2_checked_function_target {
+    module_name: str,
+    name: str,
+    function_id: i32,
+    source_index: i32,
+}
+
+pub type p2_checked_param_mode {
+    function_id: i32,
+    param_index: i32,
+    is_borrow: bool,
+    borrow_mutable: bool,
+    source_index: i32,
+}
+
+pub type p2_checked_member_entry {
+    function_id: i32,
+    source_index: i32,
+}
+
+pub type p2_checked_member_range {
+    start: i32,
+    end: i32,
+}
+
+fn p2_checked_str_less(left: str, right: str) -> bool {
+    let mut index = 0;
+    let left_len = str_len(left);
+    let right_len = str_len(right);
+    while index < left_len and index < right_len {
+        let left_entry = str_get(left, index);
+        let right_entry = str_get(right, index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if left_value < right_value { return true; }
+                        if left_value > right_value { return false; }
+                    },
+                    None => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return left_len < right_len;
+}
+
+fn p2_checked_function_before_or_equal(left: p2_checked_function_target, right: p2_checked_function_target) -> bool {
+    if p2_checked_str_less(left.module_name, right.module_name) { return true; }
+    if p2_checked_str_less(right.module_name, left.module_name) { return false; }
+    if p2_checked_str_less(left.name, right.name) { return true; }
+    if p2_checked_str_less(right.name, left.name) { return false; }
+    return left.source_index <= right.source_index;
+}
+
+fn p2_checked_sort_function_range(source: ref list<p2_checked_function_target>, start: i32, end: i32) -> list<p2_checked_function_target> {
+    let mut result: list<p2_checked_function_target> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => { list_push(mutref result, value); },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = p2_checked_sort_function_range(ref source, start, middle);
+            let right = p2_checked_sort_function_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if p2_checked_function_before_or_equal(left_value, right_value) {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => { left_index = list_len(ref left); },
+                        }
+                    },
+                    None => { left_index = list_len(ref left); },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+pub fn p2_checked_build_function_index(functions: ref list<checked_function>) -> list<p2_checked_function_target>
+audit {
+    intent("Build a phase-owned checked function target index without retaining full function records");
+    mutates();
+    effects();
+}
+{
+    let mut unsorted: list<p2_checked_function_target> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref functions) {
+        let entry = list_get(ref functions, source_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref unsorted, p2_checked_function_target {
+                    module_name: value.module_name,
+                    name: value.name,
+                    function_id: value.id,
+                    source_index: source_index,
+                });
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return p2_checked_sort_function_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+fn p2_checked_function_key_less(entry: p2_checked_function_target, module_name: str, name: str) -> bool {
+    if p2_checked_str_less(entry.module_name, module_name) { return true; }
+    if p2_checked_str_less(module_name, entry.module_name) { return false; }
+    return p2_checked_str_less(entry.name, name);
+}
+
+fn p2_checked_function_key_equal(entry: p2_checked_function_target, module_name: str, name: str) -> bool {
+    return entry.module_name == module_name and entry.name == name;
+}
+
+fn p2_checked_function_lower_bound(index: ref list<p2_checked_function_target>, module_name: str, name: str) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if p2_checked_function_key_less(value, module_name, name) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+fn p2_checked_function_upper_bound(index: ref list<p2_checked_function_target>, module_name: str, name: str) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if p2_checked_function_key_less(value, module_name, name) or p2_checked_function_key_equal(value, module_name, name) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+pub fn p2_checked_first_function_id(index: ref list<p2_checked_function_target>, module_name: str, name: str) -> i32
+audit {
+    intent("Return the first source-order checked function target for an exact key");
+    mutates();
+    effects();
+}
+{
+    let position = p2_checked_function_lower_bound(ref index, module_name, name);
+    let entry = list_get(ref index, position);
+    match entry {
+        Some(value) => {
+            if p2_checked_function_key_equal(value, module_name, name) { return value.function_id; }
+        },
+        None => {
+        },
+    }
+    return -1;
+}
+
+pub fn p2_checked_last_function_id(index: ref list<p2_checked_function_target>, module_name: str, name: str) -> i32
+audit {
+    intent("Return the last source-order checked function target for an exact key");
+    mutates();
+    effects();
+}
+{
+    let position = p2_checked_function_upper_bound(ref index, module_name, name) - 1;
+    if position < 0 { return -1; }
+    let entry = list_get(ref index, position);
+    match entry {
+        Some(value) => {
+            if p2_checked_function_key_equal(value, module_name, name) { return value.function_id; }
+        },
+        None => {
+        },
+    }
+    return -1;
+}
+
+fn p2_checked_param_before_or_equal(left: p2_checked_param_mode, right: p2_checked_param_mode) -> bool {
+    if left.function_id < right.function_id { return true; }
+    if left.function_id > right.function_id { return false; }
+    if left.param_index < right.param_index { return true; }
+    if left.param_index > right.param_index { return false; }
+    return left.source_index <= right.source_index;
+}
+
+fn p2_checked_sort_param_range(source: ref list<p2_checked_param_mode>, start: i32, end: i32) -> list<p2_checked_param_mode> {
+    let mut result: list<p2_checked_param_mode> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => { list_push(mutref result, value); },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = p2_checked_sort_param_range(ref source, start, middle);
+            let right = p2_checked_sort_param_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if p2_checked_param_before_or_equal(left_value, right_value) {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => { left_index = list_len(ref left); },
+                        }
+                    },
+                    None => { left_index = list_len(ref left); },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+pub fn p2_checked_build_param_index(params: ref list<checked_param>) -> list<p2_checked_param_mode>
+audit {
+    intent("Build a phase-owned checked parameter mode index without retaining full parameter records");
+    mutates();
+    effects();
+}
+{
+    let mut unsorted: list<p2_checked_param_mode> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref params) {
+        let entry = list_get(ref params, source_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref unsorted, p2_checked_param_mode {
+                    function_id: value.function_id,
+                    param_index: value.index,
+                    is_borrow: value.is_borrow,
+                    borrow_mutable: value.borrow_mutable,
+                    source_index: source_index,
+                });
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return p2_checked_sort_param_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+fn p2_checked_param_key_less(entry: p2_checked_param_mode, function_id: i32, param_index: i32) -> bool {
+    if entry.function_id < function_id { return true; }
+    if entry.function_id > function_id { return false; }
+    return entry.param_index < param_index;
+}
+
+fn p2_checked_param_lower_bound(index: ref list<p2_checked_param_mode>, function_id: i32, param_index: i32) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if p2_checked_param_key_less(value, function_id, param_index) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+fn p2_checked_param_function_lower_bound(index: ref list<p2_checked_param_mode>, function_id: i32) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if value.function_id < function_id { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+fn p2_checked_param_function_upper_bound(index: ref list<p2_checked_param_mode>, function_id: i32) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if value.function_id <= function_id { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+pub fn p2_checked_first_param_mode(index: ref list<p2_checked_param_mode>, function_id: i32, param_index: i32) -> option<p2_checked_param_mode>
+audit {
+    intent("Return the first source-order checked parameter mode for an exact key");
+    mutates();
+    effects();
+}
+{
+    let position = p2_checked_param_lower_bound(ref index, function_id, param_index);
+    let entry = list_get(ref index, position);
+    match entry {
+        Some(value) => {
+            if value.function_id == function_id and value.param_index == param_index { return Some(value); }
+        },
+        None => {
+        },
+    }
+    return None;
+}
+
+pub fn p2_checked_param_count(index: ref list<p2_checked_param_mode>, function_id: i32) -> i32
+audit {
+    intent("Count every checked parameter row for a function including duplicate indices");
+    mutates();
+    effects();
+}
+{
+    return p2_checked_param_function_upper_bound(ref index, function_id) - p2_checked_param_function_lower_bound(ref index, function_id);
+}
+
+fn p2_checked_member_before_or_equal(left: p2_checked_member_entry, right: p2_checked_member_entry) -> bool {
+    if left.function_id < right.function_id { return true; }
+    if left.function_id > right.function_id { return false; }
+    return left.source_index <= right.source_index;
+}
+
+fn p2_checked_sort_member_range(source: ref list<p2_checked_member_entry>, start: i32, end: i32) -> list<p2_checked_member_entry> {
+    let mut result: list<p2_checked_member_entry> = list();
+    if end > start {
+        if end == start + 1 {
+            let entry = list_get(ref source, start);
+            match entry {
+                Some(value) => { list_push(mutref result, value); },
+                None => {
+                },
+            }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = p2_checked_sort_member_range(ref source, start, middle);
+            let right = p2_checked_sort_member_range(ref source, middle, end);
+            let mut left_index = 0;
+            let mut right_index = 0;
+            while left_index < list_len(ref left) and right_index < list_len(ref right) {
+                let left_entry = list_get(ref left, left_index);
+                let right_entry = list_get(ref right, right_index);
+                match left_entry {
+                    Some(left_value) => {
+                        match right_entry {
+                            Some(right_value) => {
+                                if p2_checked_member_before_or_equal(left_value, right_value) {
+                                    list_push(mutref result, left_value);
+                                    left_index = left_index + 1;
+                                } else {
+                                    list_push(mutref result, right_value);
+                                    right_index = right_index + 1;
+                                }
+                            },
+                            None => { left_index = list_len(ref left); },
+                        }
+                    },
+                    None => { left_index = list_len(ref left); },
+                }
+            }
+            while left_index < list_len(ref left) {
+                let entry = list_get(ref left, left_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                left_index = left_index + 1;
+            }
+            while right_index < list_len(ref right) {
+                let entry = list_get(ref right, right_index);
+                match entry {
+                    Some(value) => { list_push(mutref result, value); },
+                    None => {
+                    },
+                }
+                right_index = right_index + 1;
+            }
+        }
+    }
+    return result;
+}
+
+pub fn p2_checked_build_member_index(function_ids: ref list<i32>) -> list<p2_checked_member_entry>
+audit {
+    intent("Build a source-order-preserving membership index for one exact checked collection");
+    mutates();
+    effects();
+}
+{
+    let mut unsorted: list<p2_checked_member_entry> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref function_ids) {
+        let entry = list_get(ref function_ids, source_index);
+        match entry {
+            Some(function_id) => {
+                list_push(mutref unsorted, p2_checked_member_entry {
+                    function_id: function_id,
+                    source_index: source_index,
+                });
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return p2_checked_sort_member_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+pub fn p2_checked_build_block_member_index(blocks: ref list<checked_block>) -> list<p2_checked_member_entry>
+audit {
+    intent("Build membership for the exact checked block collection supplied to the borrow phase");
+    mutates();
+    effects();
+}
+{
+    let mut unsorted: list<p2_checked_member_entry> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref blocks) {
+        let entry = list_get(ref blocks, source_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref unsorted, p2_checked_member_entry {
+                    function_id: value.function_id,
+                    source_index: source_index,
+                });
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return p2_checked_sort_member_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+pub fn p2_checked_build_stmt_member_index(statements: ref list<checked_stmt>) -> list<p2_checked_member_entry>
+audit {
+    intent("Build membership for the exact checked statement collection supplied to the borrow phase");
+    mutates();
+    effects();
+}
+{
+    let mut unsorted: list<p2_checked_member_entry> = list();
+    let mut source_index = 0;
+    while source_index < list_len(ref statements) {
+        let entry = list_get(ref statements, source_index);
+        match entry {
+            Some(value) => {
+                list_push(mutref unsorted, p2_checked_member_entry {
+                    function_id: value.function_id,
+                    source_index: source_index,
+                });
+            },
+            None => {
+            },
+        }
+        source_index = source_index + 1;
+    }
+    return p2_checked_sort_member_range(ref unsorted, 0, list_len(ref unsorted));
+}
+
+fn p2_checked_member_lower_bound(index: ref list<p2_checked_member_entry>, function_id: i32) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if value.function_id < function_id { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+fn p2_checked_member_upper_bound(index: ref list<p2_checked_member_entry>, function_id: i32) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref index);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        let entry = list_get(ref index, middle);
+        match entry {
+            Some(value) => {
+                if value.function_id <= function_id { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+pub fn p2_checked_member_range_for(index: ref list<p2_checked_member_entry>, function_id: i32) -> p2_checked_member_range
+audit {
+    intent("Return the bounded member run for one checked function identity");
+    mutates();
+    effects();
+}
+{
+    return p2_checked_member_range {
+        start: p2_checked_member_lower_bound(ref index, function_id),
+        end: p2_checked_member_upper_bound(ref index, function_id),
+    };
+}
+
+pub fn p2_checked_member_source_index(index: ref list<p2_checked_member_entry>, position: i32) -> i32
+audit {
+    intent("Return a checked member source position or the exact missing sentinel");
+    mutates();
+    effects();
+}
+{
+    if position < 0 or position >= list_len(ref index) { return -1; }
+    let entry = list_get(ref index, position);
+    match entry {
+        Some(value) => { return value.source_index; },
+        None => {
+        },
+    }
+    return -1;
+}

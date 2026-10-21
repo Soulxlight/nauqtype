@@ -219,7 +219,7 @@ run_phase seed_bootstrap scripts/check_seed_bootstrap.sh --reuse-stage1
 run_phase proof bin/nauqc prove
 run_phase linux_alpha scripts/check_linux_alpha.sh --reuse-stage1 --skip-prove
 run_phase stress_leg scripts/run_stress_leg.sh --release-root build/linux-release/nauqtype
-run_phase owned_tests scripts/check_fast.sh
+run_phase owned_tests env NQ_TEST_REUSE_C=0 NQ_FAST_CONCURRENT=0 scripts/check_fast.sh
 run_phase ownership_sanitizers scripts/check_m53_ownership.sh
 active_phase="attestation"
 scripts/milestone_attestation.sh finish

@@ -1,0 +1,163 @@
+use ir;
+
+// Invocation-local positions only. Keys are (domain, owner, secondary key).
+// Rebuild for each exact ordered collection, including filtered collections.
+pub type c_emit_member_position {
+    domain: i32,
+    owner: i32,
+    secondary: i32,
+    source_index: i32,
+}
+
+pub type c_emit_membership_index {
+    positions: list<c_emit_member_position>,
+}
+
+pub type c_emit_member_range {
+    start: i32,
+    end: i32,
+}
+
+fn position_before_key(value: c_emit_member_position, domain: i32, owner: i32, secondary: i32) -> bool {
+    if value.domain != domain { return value.domain < domain; }
+    if value.owner != owner { return value.owner < owner; }
+    return value.secondary < secondary;
+}
+
+fn position_less(left: c_emit_member_position, right: c_emit_member_position) -> bool {
+    if position_before_key(left, right.domain, right.owner, right.secondary) { return true; }
+    if position_before_key(right, left.domain, left.owner, left.secondary) { return false; }
+    return left.source_index < right.source_index;
+}
+
+fn merge_positions(left: ref list<c_emit_member_position>, right: ref list<c_emit_member_position>) -> list<c_emit_member_position> {
+    let mut result: list<c_emit_member_position> = list();
+    let mut a = 0;
+    let mut b = 0;
+    while a < list_len(ref left) or b < list_len(ref right) {
+        match list_get(ref left, a) {
+            Some(x) => {
+                match list_get(ref right, b) {
+                    Some(y) => {
+                        if position_less(y, x) { list_push(mutref result, y); b = b + 1; }
+                        else { list_push(mutref result, x); a = a + 1; }
+                    },
+                    None => { list_push(mutref result, x); a = a + 1; },
+                }
+            },
+            None => {
+                match list_get(ref right, b) { Some(y) => { list_push(mutref result, y); b = b + 1; }, None => {}, }
+            },
+        }
+    }
+    return result;
+}
+
+fn sort_positions(source: ref list<c_emit_member_position>, start: i32, end: i32) -> list<c_emit_member_position> {
+    let mut result: list<c_emit_member_position> = list();
+    if end > start {
+        if end - start == 1 {
+            match list_get(ref source, start) { Some(value) => { list_push(mutref result, value); }, None => {}, }
+        } else {
+            let middle = start + ((end - start) / 2);
+            let left = sort_positions(ref source, start, middle);
+            let right = sort_positions(ref source, middle, end);
+            result = merge_positions(ref left, ref right);
+        }
+    }
+    return result;
+}
+
+pub fn build_c_emit_membership_index(locals: ref list<ir_local>, children: ref list<ir_expr_child>, statements: ref list<ir_stmt>) -> c_emit_membership_index
+audit {
+    intent("Index exact IR collection positions for one C emission invocation");
+    mutates();
+    effects();
+}
+{
+    let mut positions: list<c_emit_member_position> = list();
+    let mut index = 0;
+    while index < list_len(ref locals) {
+        match list_get(ref locals, index) {
+            Some(value) => {
+                list_push(mutref positions, c_emit_member_position { domain: 0, owner: value.function_id, secondary: 0, source_index: index });
+                list_push(mutref positions, c_emit_member_position { domain: 1, owner: value.function_id, secondary: value.owner_block_id, source_index: index });
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < list_len(ref children) {
+        match list_get(ref children, index) {
+            Some(value) => { list_push(mutref positions, c_emit_member_position { domain: 2, owner: value.parent_expr_id, secondary: 0, source_index: index }); },
+            None => {},
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < list_len(ref statements) {
+        match list_get(ref statements, index) {
+            Some(value) => { list_push(mutref positions, c_emit_member_position { domain: 3, owner: value.block_id, secondary: 0, source_index: index }); },
+            None => {},
+        }
+        index = index + 1;
+    }
+    let sorted = sort_positions(ref positions, 0, list_len(ref positions));
+    return c_emit_membership_index { positions: sorted };
+}
+
+fn member_range(context: ref c_emit_membership_index, domain: i32, owner: i32, secondary: i32) -> c_emit_member_range {
+    let mut low = 0;
+    let mut high = list_len(ref context.positions);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        match list_get(ref context.positions, middle) {
+            Some(value) => { if position_before_key(value, domain, owner, secondary) { low = middle + 1; } else { high = middle; } },
+            None => { high = middle; },
+        }
+    }
+    let start = low;
+    high = list_len(ref context.positions);
+    while low < high {
+        let middle = low + ((high - low) / 2);
+        match list_get(ref context.positions, middle) {
+            Some(value) => {
+                if position_before_key(value, domain, owner, secondary) or (value.domain == domain and value.owner == owner and value.secondary == secondary) { low = middle + 1; }
+                else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return c_emit_member_range { start: start, end: low };
+}
+
+pub fn c_emit_function_locals(context: ref c_emit_membership_index, function_id: i32) -> c_emit_member_range
+audit { intent("Find exact function-local source positions"); mutates(); effects(); }
+{
+    return member_range(ref context, 0, function_id, 0);
+}
+
+pub fn c_emit_block_locals(context: ref c_emit_membership_index, function_id: i32, block_id: i32) -> c_emit_member_range
+audit { intent("Find exact function and block local positions"); mutates(); effects(); }
+{
+    return member_range(ref context, 1, function_id, block_id);
+}
+
+pub fn c_emit_parent_children(context: ref c_emit_membership_index, parent_id: i32) -> c_emit_member_range
+audit { intent("Find child links in original source order"); mutates(); effects(); }
+{
+    return member_range(ref context, 2, parent_id, 0);
+}
+
+pub fn c_emit_block_statements(context: ref c_emit_membership_index, block_id: i32) -> c_emit_member_range
+audit { intent("Find statements by the exact block-only predicate"); mutates(); effects(); }
+{
+    return member_range(ref context, 3, block_id, 0);
+}
+
+pub fn c_emit_member_source_index(context: ref c_emit_membership_index, position: i32) -> i32
+audit { intent("Read an indexed source position without owning IR records"); mutates(); effects(); }
+{
+    match list_get(ref context.positions, position) { Some(value) => { return value.source_index; }, None => { return -1; }, }
+}

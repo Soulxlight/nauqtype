@@ -1,0 +1,62 @@
+fn concurrent_witness_exec() -> i32
+audit {
+    intent("Send actual exec environment and argv bytes only through fixture-owned inherited FIFOs");
+    mutates();
+    effects(io);
+}
+{
+    let Ok(environment) = read_file_bytes("/proc/self/environ") else { return 71; };
+    let Ok(arguments) = read_file_bytes("/proc/self/cmdline") else { return 72; };
+    match write_file_bytes("/proc/self/fd/3", ref environment) {
+        Ok(_) => {},
+        Err(_) => { return 73; },
+    }
+    match write_file_bytes("/proc/self/fd/4", ref arguments) {
+        Ok(_) => {},
+        Err(_) => { return 74; },
+    }
+    return 0;
+}
+
+fn concurrent_witness_allocate(marker: str) -> i32
+audit {
+    intent("Keep an allocated detached fixture process alive through the coordinator freeze barrier");
+    mutates();
+    effects(io);
+}
+{
+    let mut allocation = "W";
+    let mut index = 0;
+    while index < 22 {
+        allocation = str_concat(allocation, allocation);
+        index = index + 1;
+    }
+    match write_file(marker, "allocated-ready\n") {
+        Ok(_) => {},
+        Err(_) => { return 75; },
+    }
+    let Some(span) = duration_from_ns(30000000000) else { return 76; };
+    match sleep_for(span) {
+        Ok(_) => {},
+        Err(_) => { return 77; },
+    }
+    if str_len(allocation) != 4194304 { return 78; }
+    return 0;
+}
+
+fn main() -> i32
+audit {
+    intent("Run only explicitly selected private concurrent-tier witnesses, never the compiler tests");
+    mutates();
+    effects(io);
+}
+{
+    let Some(mode) = arg_get(1) else { return 64; };
+    if mode == "exec" { return concurrent_witness_exec(); }
+    if mode == "allocate" {
+        if arg_count() != 3 { return 64; }
+        let Some(marker) = arg_get(2) else { return 64; };
+        return concurrent_witness_allocate(marker);
+    }
+    return 64;
+}

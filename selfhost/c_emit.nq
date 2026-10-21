@@ -1,6 +1,7 @@
 use diag;
 use handoff;
 use ir;
+use c_emit_index;
 use text;
 use value_plan;
 use const_word;
@@ -250,11 +251,12 @@ fn lookup_variant_decl(variant_decls: ref list<ir_variant_decl>, module_name: st
     return None;
 }
 
-fn lookup_expr_child_ids(expr_children: ref list<ir_expr_child>, parent_expr_id: i32) -> list<i32> {
+fn lookup_expr_child_ids(membership: ref c_emit_membership_index, expr_children: ref list<ir_expr_child>, parent_expr_id: i32) -> list<i32> {
     let mut ids: list<i32> = list();
-    let mut index = 0;
-    while index < list_len(ref expr_children) {
-        let entry = list_get(ref expr_children, index);
+    let members = c_emit_parent_children(ref membership, parent_expr_id);
+    let mut index = members.start;
+    while index < members.end {
+        let entry = list_get(ref expr_children, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.parent_expr_id == parent_expr_id {
@@ -326,11 +328,12 @@ fn lookup_match_arms_for_stmt(match_arms: ref list<ir_match_arm>, stmt_id: i32) 
     return arms;
 }
 
-fn lookup_statements_for_block(statements: ref list<ir_stmt>, block_id: i32) -> list<ir_stmt> {
+fn lookup_statements_for_block(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, block_id: i32) -> list<ir_stmt> {
     let mut result: list<ir_stmt> = list();
-    let mut index = 0;
-    while index < list_len(ref statements) {
-        let entry = list_get(ref statements, index);
+    let members = c_emit_block_statements(ref membership, block_id);
+    let mut index = members.start;
+    while index < members.end {
+        let entry = list_get(ref statements, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.block_id == block_id {
@@ -345,10 +348,11 @@ fn lookup_statements_for_block(statements: ref list<ir_stmt>, block_id: i32) -> 
     return result;
 }
 
-fn lookup_expr_child_id(expr_children: ref list<ir_expr_child>, parent_expr_id: i32, child_index: i32) -> i32 {
-    let mut index = 0;
-    while index < list_len(ref expr_children) {
-        let entry = list_get(ref expr_children, index);
+fn lookup_expr_child_id(membership: ref c_emit_membership_index, expr_children: ref list<ir_expr_child>, parent_expr_id: i32, child_index: i32) -> i32 {
+    let members = c_emit_parent_children(ref membership, parent_expr_id);
+    let mut index = members.start;
+    while index < members.end {
+        let entry = list_get(ref expr_children, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.parent_expr_id == parent_expr_id and value.index == child_index {
@@ -363,8 +367,8 @@ fn lookup_expr_child_id(expr_children: ref list<ir_expr_child>, parent_expr_id: 
     return -1;
 }
 
-fn block_ends_with_return(statements: ref list<ir_stmt>, block_id: i32) -> bool {
-    let block_statements = lookup_statements_for_block(ref statements, block_id);
+fn block_ends_with_return(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, block_id: i32) -> bool {
+    let block_statements = lookup_statements_for_block(ref membership, ref statements, block_id);
     let entry = list_get(ref block_statements, list_len(ref block_statements) - 1);
     match entry {
         Some(value) => {
@@ -1082,7 +1086,7 @@ fn collect_type_generics(type_shapes: ref list<ir_type_shape>, type_id: i32, opt
     return;
 }
 
-fn collect_program_generics(function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, options: mutref list<i32>, results: mutref list<result_generic_entry>, lists: mutref list<i32>) -> unit {
+fn collect_program_generics(membership: ref c_emit_membership_index, function_sigs: ref list<ir_function_sig>, functions: ref list<ir_function>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, field_decls: ref list<ir_field_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, options: mutref list<i32>, results: mutref list<result_generic_entry>, lists: mutref list<i32>) -> unit {
     let mut field_index = 0;
     while field_index < list_len(ref field_decls) {
         let entry = list_get(ref field_decls, field_index);
@@ -1153,9 +1157,10 @@ fn collect_program_generics(function_sigs: ref list<ir_function_sig>, functions:
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                let mut param_cursor = 0;
-                while param_cursor < list_len(ref locals) {
-                    let local_entry = list_get(ref locals, param_cursor);
+                let members = c_emit_function_locals(ref membership, value.id);
+                let mut param_cursor = members.start;
+                while param_cursor < members.end {
+                    let local_entry = list_get(ref locals, c_emit_member_source_index(ref membership, param_cursor));
                     match local_entry {
                         Some(local_value) => {
                             if local_value.function_id == value.id and local_value.param_index >= 0 {
@@ -1676,10 +1681,11 @@ fn block_parent_id(blocks: ref list<ir_block>, block_id: i32) -> i32 {
     }
 }
 
-fn emit_block_owned_cleanup(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function_id: i32, block_id: i32, level: i32) -> unit {
-    let mut index = list_len(ref locals) - 1;
-    while index >= 0 {
-        let entry = list_get(ref locals, index);
+fn emit_block_owned_cleanup(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function_id: i32, block_id: i32, level: i32) -> unit {
+    let members = c_emit_block_locals(ref membership, function_id, block_id);
+    let mut index = members.end - 1;
+    while index >= members.start {
+        let entry = list_get(ref locals, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.function_id == function_id and value.owner_block_id == block_id and value.param_index < 0 {
@@ -1694,26 +1700,27 @@ fn emit_block_owned_cleanup(lines: mutref list<str>, type_shapes: ref list<ir_ty
     return;
 }
 
-fn emit_cleanup_until_block(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, function_id: i32, start_block_id: i32, stop_block_id: i32, include_stop: bool, level: i32) -> unit {
+fn emit_cleanup_until_block(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, function_id: i32, start_block_id: i32, stop_block_id: i32, include_stop: bool, level: i32) -> unit {
     let mut current_block_id = start_block_id;
     while current_block_id >= 0 {
         if current_block_id == stop_block_id {
             if include_stop {
-                emit_block_owned_cleanup(mutref lines, ref type_shapes, ref locals, function_id, current_block_id, level);
+                emit_block_owned_cleanup(ref membership, mutref lines, ref type_shapes, ref locals, function_id, current_block_id, level);
             }
             return;
         }
-        emit_block_owned_cleanup(mutref lines, ref type_shapes, ref locals, function_id, current_block_id, level);
+        emit_block_owned_cleanup(ref membership, mutref lines, ref type_shapes, ref locals, function_id, current_block_id, level);
         current_block_id = block_parent_id(ref blocks, current_block_id);
     }
     return;
 }
 
-fn emit_function_prelude(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function: ir_function) -> unit {
+fn emit_function_prelude(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function: ir_function) -> unit {
     append_line(mutref lines, concat6("    ", c_type(ref type_shapes, function.return_type_id), " ", return_temp_name(function.id), " = {0};", ""));
-    let mut index = 0;
-    while index < list_len(ref locals) {
-        let entry = list_get(ref locals, index);
+    let members = c_emit_function_locals(ref membership, function.id);
+    let mut index = members.start;
+    while index < members.end {
+        let entry = list_get(ref locals, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.function_id == function.id and value.param_index < 0 {
@@ -1728,11 +1735,12 @@ fn emit_function_prelude(lines: mutref list<str>, type_shapes: ref list<ir_type_
     return;
 }
 
-fn emit_function_final_cleanup(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function: ir_function) -> unit {
+fn emit_function_final_cleanup(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, function: ir_function) -> unit {
     append_line(mutref lines, concat3(cleanup_label_name(function.id), ": {", ""));
-    let mut index = list_len(ref locals) - 1;
-    while index >= 0 {
-        let entry = list_get(ref locals, index);
+    let members = c_emit_function_locals(ref membership, function.id);
+    let mut index = members.end - 1;
+    while index >= members.start {
+        let entry = list_get(ref locals, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.function_id == function.id {
@@ -2372,10 +2380,10 @@ fn invalid_c_const(at: i32, diags: mutref list<diag>) -> folded_c_const {
     return folded_c_const { valid: false, type_id: -1, bits: const_word_decimal("0", 4), boolean: false, text: "" };
 }
 
-fn fold_c_const(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, evaluate: bool, diags: mutref list<diag>) -> folded_c_const {
+fn fold_c_const(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, evaluate: bool, diags: mutref list<diag>) -> folded_c_const {
     match lookup_expression(ref expressions, expr_id) {
         Some(expr) => {
-            let child_ids = lookup_expr_child_ids(ref children, expr.id);
+            let child_ids = lookup_expr_child_ids(ref membership, ref children, expr.id);
             let width = const_integer_width(ref type_shapes, expr.type_id);
             let is_bool = const_is_bool(ref type_shapes, expr.type_id);
             let mut out = folded_c_const { valid: true, type_id: expr.type_id, bits: const_word_decimal("0", 4), boolean: false, text: "" };
@@ -2402,21 +2410,21 @@ fn fold_c_const(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_e
                 },
                 ir_expr_neg => {
                     if width > 0 and list_len(ref child_ids) == 1 {
-                        let inner = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                        let inner = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref membership, ref children, expr.id, 0), evaluate, mutref diags);
                         if not inner.valid { return inner; }
                         if inner.type_id == expr.type_id { out.bits = const_word_neg(inner.bits, width); return out; }
                     }
                 },
                 ir_expr_not => {
                     if is_bool and list_len(ref child_ids) == 1 {
-                        let inner = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                        let inner = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref membership, ref children, expr.id, 0), evaluate, mutref diags);
                         if not inner.valid { return inner; }
                         if inner.type_id == expr.type_id { out.boolean = not inner.boolean; return out; }
                     }
                 },
                 _ => {
                     if list_len(ref child_ids) != 2 { return invalid_c_const(expr.at, mutref diags); }
-                    let left = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 0), evaluate, mutref diags);
+                    let left = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref membership, ref children, expr.id, 0), evaluate, mutref diags);
                     if not left.valid { return left; }
                     let mut right_evaluate = evaluate;
                     match expr.kind {
@@ -2426,7 +2434,7 @@ fn fold_c_const(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_e
                     }
                     // Dead operands still validate their IR links/types, but cannot
                     // trigger arithmetic failure or expand into recursive C macros.
-                    let right = fold_c_const(ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref children, expr.id, 1), right_evaluate, mutref diags);
+                    let right = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, lookup_expr_child_id(ref membership, ref children, expr.id, 1), right_evaluate, mutref diags);
                     if not right.valid { return right; }
                     if left.type_id != right.type_id { return invalid_c_const(expr.at, mutref diags); }
                     if integer_operator_suffix(expr.kind, false) != "" {
@@ -2493,27 +2501,30 @@ audit {
     let mut children: list<ir_expr_child> = list();
     list_push(mutref children, ir_expr_child { parent_expr_id: 1, index: 0, child_expr_id: 0 });
     list_push(mutref children, ir_expr_child { parent_expr_id: 1, index: 1, child_expr_id: 9 });
+    let locals: list<ir_local> = list();
+    let index_statements: list<ir_stmt> = list();
+    let membership = build_c_emit_membership_index(ref locals, ref children, ref index_statements);
     let mut diags: list<diag> = list();
-    let folded = fold_c_const(ref shapes, ref expressions, ref children, 1, true, mutref diags);
+    let folded = fold_c_const(ref membership, ref shapes, ref expressions, ref children, 1, true, mutref diags);
     if folded.valid or list_len(ref diags) != 1 { return false; }
     diags = list();
     let mut lines: list<str> = list();
-    let locals: list<ir_local> = list();
     let fields: list<ir_field_value> = list();
     let variants: list<ir_variant_decl> = list();
     let payloads: list<ir_variant_payload_decl> = list();
     let mut temp = 0;
-    let value = lower_planned_borrow_argument(mutref lines, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, 1, 0, mutref temp, mutref diags);
+    let value = lower_planned_borrow_argument(ref membership, mutref lines, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, 1, 0, mutref temp, mutref diags);
     if value != "0" or list_len(ref lines) != 0 or list_len(ref diags) != 1 { return false; }
     diags = list();
     list_push(mutref expressions, arithmetic_probe_expr(2, ir_expr_borrow, 0, ""));
     list_push(mutref children, ir_expr_child { parent_expr_id: 2, index: 0, child_expr_id: 1 });
-    let borrowed = emit_borrow_expr(ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, arithmetic_probe_expr(2, ir_expr_borrow, 0, ""), mutref diags);
+    let rebuilt_membership = build_c_emit_membership_index(ref locals, ref children, ref index_statements);
+    let borrowed = emit_borrow_expr(ref rebuilt_membership, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, arithmetic_probe_expr(2, ir_expr_borrow, 0, ""), mutref diags);
     return borrowed == "0" and list_len(ref diags) == 1;
 }
 
-fn emit_const_expr(type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, diags: mutref list<diag>) -> str {
-    let value = fold_c_const(ref type_shapes, ref expressions, ref children, expr_id, true, mutref diags);
+fn emit_const_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, diags: mutref list<diag>) -> str {
+    let value = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, expr_id, true, mutref diags);
     if not value.valid { return "0"; }
     let width = const_integer_width(ref type_shapes, value.type_id);
     if width > 0 {
@@ -2529,12 +2540,12 @@ fn emit_const_expr(type_shapes: ref list<ir_type_shape>, expressions: ref list<i
     return concat5("{ .data = \"", escape_c_string(value.text), "\", .len = ", i32_to_str(str_len(value.text)), " }");
 }
 
-fn emit_const_decl(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, const_decl: ir_const_decl, diags: mutref list<diag>) -> unit {
+fn emit_const_decl(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, const_decl: ir_const_decl, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, const_decl.expr_id);
     match expr_entry {
         Some(expr) => {
             let c_name = const_name(const_decl.module_name, const_decl.name);
-            let mut value_text = emit_const_expr(ref type_shapes, ref expressions, ref expr_children, const_decl.expr_id, mutref diags);
+            let mut value_text = emit_const_expr(ref membership, ref type_shapes, ref expressions, ref expr_children, const_decl.expr_id, mutref diags);
             match expr.kind {
                 ir_expr_str => {
                     value_text = concat6("{ .data = \"", escape_c_string(expr.name), "\", .len = ", i32_to_str(str_len(expr.name)), " }", "");
@@ -2551,10 +2562,11 @@ fn emit_const_decl(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>
     return;
 }
 
-fn lookup_param_local(locals: ref list<ir_local>, function_id: i32, param_index: i32) -> option<ir_local> {
-    let mut index = 0;
-    while index < list_len(ref locals) {
-        let entry = list_get(ref locals, index);
+fn lookup_param_local(membership: ref c_emit_membership_index, locals: ref list<ir_local>, function_id: i32, param_index: i32) -> option<ir_local> {
+    let members = c_emit_function_locals(ref membership, function_id);
+    let mut index = members.start;
+    while index < members.end {
+        let entry = list_get(ref locals, c_emit_member_source_index(ref membership, index));
         match entry {
             Some(value) => {
                 if value.function_id == function_id and value.param_index == param_index {
@@ -2569,11 +2581,11 @@ fn lookup_param_local(locals: ref list<ir_local>, function_id: i32, param_index:
     return None;
 }
 
-fn function_signature(function: ir_function, locals: ref list<ir_local>, type_shapes: ref list<ir_type_shape>) -> str {
+fn function_signature(membership: ref c_emit_membership_index, function: ir_function, locals: ref list<ir_local>, type_shapes: ref list<ir_type_shape>) -> str {
     let mut rendered_params = "";
     let mut index = 0;
     while true {
-        let entry = lookup_param_local(ref locals, function.id, index);
+        let entry = lookup_param_local(ref membership, ref locals, function.id, index);
         match entry {
             Some(value) => {
                 let mut rendered = "";
@@ -2784,11 +2796,11 @@ fn emit_variant_constructor(type_shapes: ref list<ir_type_shape>, variant_decls:
     }
 }
 
-fn borrow_child_is_place(locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, expr_id: i32, remaining: i32) -> bool {
+fn borrow_child_is_place(membership: ref c_emit_membership_index, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, expr_id: i32, remaining: i32) -> bool {
     if remaining <= 0 { return false; }
     match lookup_expression(ref expressions, expr_id) {
         Some(expr) => {
-            let children = lookup_expr_child_ids(ref expr_children, expr.id);
+            let children = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
             match expr.kind {
                 ir_expr_name => {
                     if list_len(ref children) != 0 { return false; }
@@ -2797,7 +2809,7 @@ fn borrow_child_is_place(locals: ref list<ir_local>, expressions: ref list<ir_ex
                 ir_expr_field => {
                     if list_len(ref children) != 1 { return false; }
                     match list_get(ref children, 0) {
-                        Some(child) => { return borrow_child_is_place(ref locals, ref expressions, ref expr_children, child, remaining - 1); },
+                        Some(child) => { return borrow_child_is_place(ref membership, ref locals, ref expressions, ref expr_children, child, remaining - 1); },
                         None => { return false; },
                     }
                 },
@@ -2808,8 +2820,8 @@ fn borrow_child_is_place(locals: ref list<ir_local>, expressions: ref list<ir_ex
     }
 }
 
-fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr: ir_expr, diags: mutref list<diag>) -> str {
-    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+fn emit_borrow_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr: ir_expr, diags: mutref list<diag>) -> str {
+    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
     if list_len(ref child_ids) != 1 {
         push_c_error(mutref diags, "", expr.at, "borrow expression requires one binding child");
         return "0";
@@ -2817,7 +2829,7 @@ fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_lo
     let child_entry = list_get(ref child_ids, 0);
     match child_entry {
         Some(child_id) => {
-            if not borrow_child_is_place(ref locals, ref expressions, ref expr_children, child_id, list_len(ref expressions)) {
+            if not borrow_child_is_place(ref membership, ref locals, ref expressions, ref expr_children, child_id, list_len(ref expressions)) {
                 push_c_error(mutref diags, "", expr.at, "borrow expression requires a binding or field path");
                 return "0";
             }
@@ -2842,7 +2854,7 @@ fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_lo
                             }
                         },
                         ir_expr_field => {
-                            return concat3("&(", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")");
+                            return concat3("&(", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")");
                         },
                         _ => { push_c_error(mutref diags, "", expr.at, "borrow expression requires a binding or field path"); return "0"; },
                     }
@@ -2860,7 +2872,7 @@ fn emit_borrow_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_lo
     }
 }
 
-fn emit_list_first_argument(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
+fn emit_list_first_argument(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(value) => {
@@ -2888,10 +2900,10 @@ fn emit_list_first_argument(type_shapes: ref list<ir_type_shape>, locals: ref li
             return "0";
         },
     }
-    return emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, mutref diags);
+    return emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, mutref diags);
 }
 
-fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
+fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, diags: mutref list<diag>) -> str {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -2934,14 +2946,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return const_name(expr.target_origin_module, expr.name);
                 },
                 ir_expr_borrow => {
-                    return emit_borrow_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
+                    return emit_borrow_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
                 },
                 ir_expr_not => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let child_entry = list_get(ref child_ids, 0);
                     match child_entry {
                         Some(child_id) => {
-                            return concat3("(!", str_concat(emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")"), "");
+                            return concat3("(!", str_concat(emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")"), "");
                         },
                         None => {
                             push_c_error(mutref diags, "", expr.at, "missing unary child expression");
@@ -2950,7 +2962,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     }
                 },
                 ir_expr_neg => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let child_entry = list_get(ref child_ids, 0);
                     match child_entry {
                         Some(child_id) => {
@@ -2976,7 +2988,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                                 None => {
                                 },
                             }
-                            return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), "", false, expr.at, mutref diags);
+                            return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), "", false, expr.at, mutref diags);
                         },
                         None => {
                             push_c_error(mutref diags, "", expr.at, "missing unary child expression");
@@ -2985,14 +2997,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     }
                 },
                 ir_expr_add => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -3005,14 +3017,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_sub => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -3025,14 +3037,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_mul => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -3045,14 +3057,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_div => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
                                 },
                                 None => {
                                 },
@@ -3065,15 +3077,15 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_eq => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    let left_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
-                                    let right_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
+                                    let left_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
+                                    let right_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
                                     let left_shape = lookup_type_shape(ref type_shapes, expr.type_id);
                                     match left_shape {
                                         Some(shape) => {
@@ -3121,15 +3133,15 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_ne => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    let left_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
-                                    let right_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
+                                    let left_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags);
+                                    let right_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags);
                                     let left_expr = lookup_expression(ref expressions, left_id);
                                     match left_expr {
                                         Some(left_value) => {
@@ -3164,14 +3176,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_lt => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") < (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") < (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3184,14 +3196,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_lte => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") <= (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") <= (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3204,14 +3216,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_gt => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") > (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") > (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3224,14 +3236,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_gte => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") >= (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") >= (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3244,14 +3256,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_and => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") && (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") && (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3264,14 +3276,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_or => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
                     let right_entry = list_get(ref child_ids, 1);
                     match left_entry {
                         Some(left_id) => {
                             match right_entry {
                                 Some(right_id) => {
-                                    return concat5("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") || (", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
+                                    return concat5("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), ") || (", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), "))");
                                 },
                                 None => {
                                 },
@@ -3301,7 +3313,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                             match list_shape.kind {
                                 checked_type_list => {
                                     let helper = list_helper_prefix(ref type_shapes, list_shape.arg1_id);
-                                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                                     if list_len(ref child_ids) == 0 {
                                         return concat4(helper, "_make(", "", ")");
                                     }
@@ -3311,7 +3323,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                                         let child_entry = list_get(ref child_ids, child_index);
                                         match child_entry {
                                             Some(child_id) => {
-                                                let item_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                                let item_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
                                                 if items == "" {
                                                     items = item_text;
                                                 } else {
@@ -3336,7 +3348,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return "0";
                 },
                 ir_expr_call => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let mut args = "";
                     let mut arg_index = 0;
                     let is_list_call = expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or (expr.target_origin_module == "__builtin__" and expr.target_name == "str_join");
@@ -3346,9 +3358,9 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                             Some(child_id) => {
                                 let mut arg_text = "";
                                 if is_list_call and arg_index == 0 {
-                                    arg_text = emit_list_first_argument(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                    arg_text = emit_list_first_argument(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
                                 } else {
-                                    arg_text = emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
+                                    arg_text = emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags);
                                 }
                                 if args == "" {
                                     args = arg_text;
@@ -3414,14 +3426,14 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return concat4(function_name(named_type_full_name(expr.target_origin_module, expr.target_name)), "(", args, ")");
                 },
                 ir_expr_variant => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let mut payloads: list<str> = list();
                     let mut arg_index = 0;
                     while arg_index < list_len(ref child_ids) {
                         let child_entry = list_get(ref child_ids, arg_index);
                         match child_entry {
                             Some(child_id) => {
-                                list_push(mutref payloads, emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags));
+                                list_push(mutref payloads, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags));
                             },
                             None => {
                             },
@@ -3431,11 +3443,11 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                     return emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, expr.type_id, expr.name, ref payloads);
                 },
                 ir_expr_field => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let child_entry = list_get(ref child_ids, 0);
                     match child_entry {
                         Some(child_id) => {
-                            return concat4("((", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")).", expression_field_name(ref type_shapes, ref expressions, child_id, expr.field_name, mutref diags));
+                            return concat4("((", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, mutref diags), ")).", expression_field_name(ref type_shapes, ref expressions, child_id, expr.field_name, mutref diags));
                         },
                         None => {
                             push_c_error(mutref diags, "", expr.at, "missing field base expression");
@@ -3451,7 +3463,7 @@ fn emit_expr(type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, e
                         let entry = list_get(ref fields, index);
                         match entry {
                             Some(value) => {
-                                let rendered = concat4(".", user_member_name(value.field_name), " = ", emit_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, mutref diags));
+                                let rendered = concat4(".", user_member_name(value.field_name), " = ", emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, mutref diags));
                                 if field_text == "" {
                                     field_text = rendered;
                                 } else {
@@ -3534,13 +3546,13 @@ fn is_ordered_binary(kind: ir_expr_kind) -> bool {
     return binary_operator_text(kind) != "";
 }
 
-fn lower_planned_borrow_argument(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
+fn lower_planned_borrow_argument(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
             match expr.kind {
                 ir_expr_borrow => {
-                    return emit_borrow_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
+                    return emit_borrow_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
                 },
                 ir_expr_name => {
                     let local_entry = lookup_local(ref locals, expr.local_id);
@@ -3569,7 +3581,7 @@ fn lower_planned_borrow_argument(lines: mutref list<str>, type_shapes: ref list<
     }
 }
 
-fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
+fn lower_expr_value(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -3599,15 +3611,15 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                     return apply_planned_lvalue_use(mutref lines, ref type_shapes, expr, const_name(expr.target_origin_module, expr.name), level, mutref temp_index, mutref diags);
                 },
                 ir_expr_borrow => {
-                    return emit_borrow_expr(ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
+                    return emit_borrow_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr, mutref diags);
                 },
                 ir_expr_not => {
-                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
-                    let child_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                    let child_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
+                    let child_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                     return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, concat3("(!", child_text, ")"), level, mutref temp_index);
                 },
                 ir_expr_neg => {
-                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
+                    let child_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
                     let child_entry = lookup_expression(ref expressions, child_id);
                     match child_entry {
                         Some(child) => {
@@ -3621,37 +3633,37 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                         None => {
                         },
                     }
-                    let child_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                    let child_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                     return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, integer_operation_text(ref type_shapes, expr.type_id, expr.kind, child_text, "", false, expr.at, mutref diags), level, mutref temp_index);
                 },
                 ir_expr_and => {
-                    let left_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
-                    let right_id = lookup_expr_child_id(ref expr_children, expr.id, 1);
-                    let left_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
+                    let left_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
+                    let right_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 1);
+                    let left_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
                     temp_index = temp_index + 1;
                     let result_temp = concat3("nq_logic_", i32_to_str(temp_index), "");
                     append_line(mutref lines, concat5(indent(level), "bool ", result_temp, " = ", str_concat(left_text, ";")));
                     append_line(mutref lines, concat4(indent(level), "if (", result_temp, ") {"));
-                    let right_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level + 1, mutref temp_index, mutref diags);
+                    let right_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level + 1, mutref temp_index, mutref diags);
                     append_line(mutref lines, concat5(indent(level + 1), result_temp, " = ", right_text, ";"));
                     append_line(mutref lines, concat3(indent(level), "}", ""));
                     return result_temp;
                 },
                 ir_expr_or => {
-                    let left_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
-                    let right_id = lookup_expr_child_id(ref expr_children, expr.id, 1);
-                    let left_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
+                    let left_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
+                    let right_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 1);
+                    let left_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
                     temp_index = temp_index + 1;
                     let result_temp = concat3("nq_logic_", i32_to_str(temp_index), "");
                     append_line(mutref lines, concat5(indent(level), "bool ", result_temp, " = ", str_concat(left_text, ";")));
                     append_line(mutref lines, concat4(indent(level), "if (!", result_temp, ") {"));
-                    let right_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level + 1, mutref temp_index, mutref diags);
+                    let right_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level + 1, mutref temp_index, mutref diags);
                     append_line(mutref lines, concat5(indent(level + 1), result_temp, " = ", right_text, ";"));
                     append_line(mutref lines, concat3(indent(level), "}", ""));
                     return result_temp;
                 },
                 ir_expr_call => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let mut args = "";
                     let mut arg_cleanups: list<str> = list();
                     let mut arg_index = 0;
@@ -3665,13 +3677,13 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                                     Some(child_value) => {
                                         match child_value.use_kind {
                                             checked_value_borrow => {
-                                                child_text = lower_planned_borrow_argument(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                                                child_text = lower_planned_borrow_argument(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                                             },
                                             _ => {
                                                 if call_arg_transfers_ownership(expr, arg_index) {
-                                                    child_text = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                                                    child_text = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                                                 } else {
-                                                    child_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                                                    child_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                                                 }
                                             },
                                         }
@@ -3700,7 +3712,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                             match list_shape { Some(value) => { call_text = concat4(list_helper_prefix(ref type_shapes, value.arg1_id), "_make(", "", ")"); }, None => { } }
                         } else {
                             if expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" {
-                                let first_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
+                                let first_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
                                 let first_expr = lookup_expression(ref expressions, first_id);
                                 match first_expr {
                                     Some(value) => {
@@ -3733,13 +3745,13 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                     return result_text;
                 },
                 ir_expr_variant => {
-                    let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let mut payloads: list<str> = list();
                     let mut index = 0;
                     while index < list_len(ref child_ids) {
                         let child_entry = list_get(ref child_ids, index);
                         match child_entry {
-                            Some(child_id) => { list_push(mutref payloads, lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags)); },
+                            Some(child_id) => { list_push(mutref payloads, lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags)); },
                             None => {
                             },
                         }
@@ -3748,8 +3760,8 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                     return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, expr.type_id, expr.name, ref payloads), level, mutref temp_index);
                 },
                 ir_expr_field => {
-                    let child_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
-                    let base = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                    let child_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
+                    let base = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                     let value_text = concat4("((", base, ")).", expression_field_name(ref type_shapes, ref expressions, child_id, expr.field_name, mutref diags));
                     let mut result_text = "";
                     if expr_result_needs_discard_drop(ref type_shapes, ref expressions, child_id) {
@@ -3777,7 +3789,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                         let entry = list_get(ref fields, index);
                         match entry {
                             Some(field) => {
-                                let field_text = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, field.value_expr_id, level, mutref temp_index, mutref diags);
+                                let field_text = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, field.value_expr_id, level, mutref temp_index, mutref diags);
                                 let part = concat4(".", user_member_name(field.field_name), " = ", field_text);
                                 if rendered == "" { rendered = part; } else { rendered = str_concat(rendered, str_concat(", ", part)); }
                             },
@@ -3800,7 +3812,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                     match shape_entry {
                         Some(shape) => {
                             let helper = list_helper_prefix(ref type_shapes, shape.arg1_id);
-                            let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+                            let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                             if list_len(ref child_ids) == 0 {
                                 return materialize_c_value(mutref lines, ref type_shapes, expr.type_id, concat4(helper, "_make(", "", ")"), level, mutref temp_index);
                             }
@@ -3810,7 +3822,7 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                                 let child_entry = list_get(ref child_ids, index);
                                 match child_entry {
                                     Some(child_id) => {
-                                        let item = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
+                                        let item = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags);
                                         if items == "" { items = item; } else { items = str_concat(items, str_concat(", ", item)); }
                                     },
                                     None => {
@@ -3838,10 +3850,10 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
                 },
                 _ => {
                     if is_ordered_binary(expr.kind) {
-                        let left_id = lookup_expr_child_id(ref expr_children, expr.id, 0);
-                        let right_id = lookup_expr_child_id(ref expr_children, expr.id, 1);
-                        let left_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
-                        let right_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level, mutref temp_index, mutref diags);
+                        let left_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
+                        let right_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 1);
+                        let left_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, level, mutref temp_index, mutref diags);
+                        let right_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, level, mutref temp_index, mutref diags);
                         let mut value_text = concat5("((", left_text, ") ", binary_operator_text(expr.kind), str_concat(" (", str_concat(right_text, "))")));
                         if integer_operator_suffix(expr.kind, false) != "" { value_text = integer_operation_text(ref type_shapes, expr.type_id, expr.kind, left_text, right_text, false, expr.at, mutref diags); }
                         let mut is_equality = false;
@@ -3893,8 +3905,8 @@ fn lower_expr_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape
     }
 }
 
-fn lower_expr_transfer_value(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
-    let value_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, level, mutref temp_index, mutref diags);
+fn lower_expr_transfer_value(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> str {
+    let value_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, level, mutref temp_index, mutref diags);
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -4329,13 +4341,13 @@ fn pattern_condition(type_shapes: ref list<ir_type_shape>, patterns: ref list<ir
     return "false";
 }
 
-fn emit_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_match_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, stmt.expr_id);
     match expr_entry {
         Some(scrutinee_expr) => {
             temp_index = temp_index + 1;
             let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
-            let scrutinee_value = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+            let scrutinee_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
             append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(scrutinee_value, ";")));
             let arms = lookup_match_arms_for_stmt(ref match_arms, stmt.id);
             let mut arm_return_cleanups = clone_cleanup_lines(ref active_return_cleanups);
@@ -4348,7 +4360,7 @@ fn emit_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>
                     return;
                 }
             }
-            emit_ordered_match_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref arm_return_cleanups, ref arm_jump_cleanups, ref arms, scrutinee_expr.type_id, temp_name, level, mutref temp_index, mutref diags);
+            emit_ordered_match_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref arm_return_cleanups, ref arm_jump_cleanups, ref arms, scrutinee_expr.type_id, temp_name, level, mutref temp_index, mutref diags);
             emit_drop_target(mutref lines, ref type_shapes, scrutinee_expr.type_id, temp_name, level);
         },
         None => {
@@ -4358,7 +4370,7 @@ fn emit_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>
     return;
 }
 
-fn emit_ordered_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_ordered_match_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let mut index = 0;
     while index < list_len(ref arms) {
         let arm_entry = list_get(ref arms, index);
@@ -4371,7 +4383,7 @@ fn emit_ordered_match_stmt(lines: mutref list<str>, type_shapes: ref list<ir_typ
                 let condition = pattern_condition(ref type_shapes, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_type_id, temp_name, mutref diags);
                 append_line(mutref lines, concat6(indent(level), keyword, " (", condition, ") {", ""));
                 emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_type_id, temp_name, level + 1, mutref diags);
-                emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, arm.block_id, level + 1, mutref temp_index, mutref diags);
+                emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, arm.block_id, level + 1, mutref temp_index, mutref diags);
                 append_line(mutref lines, concat3(indent(level), "}", ""));
             },
             None => {
@@ -4612,11 +4624,11 @@ fn match_arms_exhaust_type(type_shapes: ref list<ir_type_shape>, variant_decls: 
     }
 }
 
-fn emit_match_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_temp_cleanups: ref list<str>, stmt_id: i32, match_expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_match_expr_assignment(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_temp_cleanups: ref list<str>, stmt_id: i32, match_expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, match_expr_id);
     match expr_entry {
         Some(match_expr) => {
-            let child_ids = lookup_expr_child_ids(ref expr_children, match_expr.id);
+            let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, match_expr.id);
             let scrutinee_entry = list_get(ref child_ids, 0);
             match scrutinee_entry {
                 Some(scrutinee_id) => {
@@ -4630,7 +4642,7 @@ fn emit_match_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_
                                 push_c_error(mutref diags, "", match_expr.at, "match expression must be exhaustive");
                                 return;
                             }
-                            let scrutinee_value = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, scrutinee_id, level, mutref temp_index, mutref diags);
+                            let scrutinee_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, scrutinee_id, level, mutref temp_index, mutref diags);
                             append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(scrutinee_value, ";")));
                             if type_id_is_integer(ref type_shapes, scrutinee_expr.type_id) or match_arms_have_refined(ref arms, ref patterns, ref pattern_children) {
                                 if not match_arms_have_default(ref arms, ref patterns) {
@@ -4638,7 +4650,7 @@ fn emit_match_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_
                                     return;
                                 }
                             }
-                            emit_ordered_match_expr(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function.id, ref arms, scrutinee_expr.type_id, temp_name, target_expr, level, mutref temp_index, mutref diags);
+                            emit_ordered_match_expr(ref membership, mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function.id, ref arms, scrutinee_expr.type_id, temp_name, target_expr, level, mutref temp_index, mutref diags);
                             emit_drop_target(mutref lines, ref type_shapes, scrutinee_expr.type_id, temp_name, level);
                         },
                         None => {
@@ -4658,7 +4670,7 @@ fn emit_match_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_
     return;
 }
 
-fn emit_ordered_match_expr(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function_id: i32, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_ordered_match_expr(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function_id: i32, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let mut index = 0;
     while index < list_len(ref arms) {
         let arm_entry = list_get(ref arms, index);
@@ -4671,8 +4683,8 @@ fn emit_ordered_match_expr(lines: mutref list<str>, type_shapes: ref list<ir_typ
                 let condition = pattern_condition(ref type_shapes, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_type_id, temp_name, mutref diags);
                 append_line(mutref lines, concat6(indent(level), keyword, " (", condition, ") {", ""));
                 emit_pattern_bindings(mutref lines, ref type_shapes, ref locals, ref patterns, ref pattern_children, ref variant_decls, ref variant_payload_decls, arm.pattern_id, scrutinee_type_id, temp_name, level + 1, mutref diags);
-                append_line(mutref lines, concat5(indent(level + 1), target_expr, " = ", lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.result_expr_id, level + 1, mutref temp_index, mutref diags), ";"));
-                emit_block_owned_cleanup(mutref lines, ref type_shapes, ref locals, function_id, arm.block_id, level + 1);
+                append_line(mutref lines, concat5(indent(level + 1), target_expr, " = ", lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, arm.result_expr_id, level + 1, mutref temp_index, mutref diags), ";"));
+                emit_block_owned_cleanup(ref membership, mutref lines, ref type_shapes, ref locals, function_id, arm.block_id, level + 1);
                 append_line(mutref lines, concat3(indent(level), "}", ""));
             },
             None => {
@@ -4683,7 +4695,7 @@ fn emit_ordered_match_expr(lines: mutref list<str>, type_shapes: ref list<ir_typ
     return;
 }
 
-fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_let_else_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let local_entry = lookup_local(ref locals, stmt.target_local_id);
     let scrutinee_entry = lookup_expression(ref expressions, stmt.expr_id);
     match local_entry {
@@ -4697,7 +4709,7 @@ fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sha
                     }
                     temp_index = temp_index + 1;
                     let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
-                    let scrutinee_value = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+                    let scrutinee_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
                     append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(scrutinee_value, ";")));
                     emit_drop_local(mutref lines, ref type_shapes, local_value, level);
                     let mut else_return_cleanups = clone_cleanup_lines(ref active_return_cleanups);
@@ -4705,7 +4717,7 @@ fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sha
                     list_push(mutref else_return_cleanups, cleanup_statement(ref type_shapes, scrutinee_expr.type_id, temp_name));
                     list_push(mutref else_jump_cleanups, cleanup_statement(ref type_shapes, scrutinee_expr.type_id, temp_name));
                     append_line(mutref lines, concat6(indent(level), "if (", temp_name, ".tag != ", tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, success_variant), ") {"));
-                    emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref else_return_cleanups, ref else_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+                    emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref else_return_cleanups, ref else_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
                     append_line(mutref lines, concat3(indent(level), "}", ""));
                     let payload_expr = concat5(temp_name, ".data.", success_variant, "._0", "");
                     append_line(mutref lines, concat5(indent(level), binding_name(local_value), " = ", pattern_payload_value(ref type_shapes, local_value.type_id, payload_expr), ";"));
@@ -4723,7 +4735,7 @@ fn emit_let_else_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sha
     return;
 }
 
-fn emit_propagate_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_propagate_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let local_entry = lookup_local(ref locals, stmt.target_local_id);
     let scrutinee_entry = lookup_expression(ref expressions, stmt.expr_id);
     match local_entry {
@@ -4741,7 +4753,7 @@ fn emit_propagate_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sh
                     }
                     temp_index = temp_index + 1;
                     let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
-                    let scrutinee_value = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+                    let scrutinee_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
                     append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, scrutinee_expr.type_id), " ", temp_name, " = ", str_concat(scrutinee_value, ";")));
                     emit_drop_local(mutref lines, ref type_shapes, local_value, level);
                     append_line(mutref lines, concat6(indent(level), "if (", temp_name, ".tag == ", tag_name_for_variant(ref type_shapes, scrutinee_expr.type_id, "Err"), ") {"));
@@ -4755,7 +4767,7 @@ fn emit_propagate_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sh
                     append_line(mutref lines, concat5(indent(level + 1), return_temp_name(function.id), " = ", err_return, ";"));
                     emit_drop_target(mutref lines, ref type_shapes, scrutinee_expr.type_id, temp_name, level + 1);
                     emit_cleanup_lines(mutref lines, ref active_return_cleanups, level + 1);
-                    emit_cleanup_until_block(mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, function.root_block_id, false, level + 1);
+                    emit_cleanup_until_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, function.root_block_id, false, level + 1);
                     append_line(mutref lines, concat4(indent(level + 1), "goto ", cleanup_label_name(function.id), ";"));
                     append_line(mutref lines, concat3(indent(level), "}", ""));
                     let payload_expr = str_concat(temp_name, ".data.Ok._0");
@@ -4774,17 +4786,17 @@ fn emit_propagate_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_sh
     return;
 }
 
-fn emit_try_propagation_preludes(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, boundary_type_id: i32, target_expr: str, end_label: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_try_propagation_preludes(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, boundary_type_id: i32, target_expr: str, end_label: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
-            let child_ids = lookup_expr_child_ids(ref expr_children, expr.id);
+            let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
             let mut child_index = 0;
             while child_index < list_len(ref child_ids) {
                 let child_entry = list_get(ref child_ids, child_index);
                 match child_entry {
                     Some(child_id) => {
-                        emit_try_propagation_preludes(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+                        emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
                     },
                     None => {
                     },
@@ -4797,7 +4809,7 @@ fn emit_try_propagation_preludes(lines: mutref list<str>, type_shapes: ref list<
                 match field_entry {
                     Some(value) => {
                         if value.expr_id == expr.id {
-                            emit_try_propagation_preludes(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+                            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
                         }
                     },
                     None => {
@@ -4819,7 +4831,7 @@ fn emit_try_propagation_preludes(lines: mutref list<str>, type_shapes: ref list<
                                     }
                                     let result_temp = concat3("nq_try_result_", i32_to_str(expr.id), "");
                                     let value_temp = concat3("nq_try_value_", i32_to_str(expr.id), "");
-                                    let operand_value = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, operand_id, level, mutref temp_index, mutref diags);
+                                    let operand_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, operand_id, level, mutref temp_index, mutref diags);
                                     append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, result_expr.type_id), " ", result_temp, " = ", str_concat(operand_value, ";")));
                                     append_line(mutref lines, concat6(indent(level), "if (", result_temp, ".tag == ", tag_name_for_variant(ref type_shapes, result_expr.type_id, "Err"), ") {"));
                                     let mut errors: list<str> = list();
@@ -4857,11 +4869,11 @@ fn emit_try_propagation_preludes(lines: mutref list<str>, type_shapes: ref list<
     return;
 }
 
-fn emit_try_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, try_expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_try_expr_assignment(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, try_expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let try_entry = lookup_expression(ref expressions, try_expr_id);
     match try_entry {
         Some(try_expr) => {
-            let child_id = lookup_expr_child_id(ref expr_children, try_expr.id, 0);
+            let child_id = lookup_expr_child_id(ref membership, ref expr_children, try_expr.id, 0);
             if child_id < 0 {
                 push_c_error(mutref diags, "", try_expr.at, "missing try success expression child");
                 return;
@@ -4872,9 +4884,9 @@ fn emit_try_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_ty
             }
             temp_index = temp_index + 1;
             let end_label = concat3("nq_try_end_", i32_to_str(temp_index), "");
-            emit_try_propagation_preludes(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, try_expr.type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, try_expr.type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
             let mut successes: list<str> = list();
-            list_push(mutref successes, lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags));
+            list_push(mutref successes, lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags));
             let ok_value = emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, try_expr.type_id, "Ok", ref successes);
             append_line(mutref lines, concat5(indent(level), target_expr, " = ", ok_value, ";"));
             append_line(mutref lines, concat3(end_label, ": ;", ""));
@@ -4886,23 +4898,23 @@ fn emit_try_expr_assignment(lines: mutref list<str>, type_shapes: ref list<ir_ty
     return;
 }
 
-fn emit_assign_expr_to_target(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt_id: i32, expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_assign_expr_to_target(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt_id: i32, expr_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     if ir_expr_id_is_try(ref expressions, expr_id) {
-        emit_try_expr_assignment(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, target_expr, level, mutref temp_index, mutref diags);
+        emit_try_expr_assignment(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, target_expr, level, mutref temp_index, mutref diags);
         return;
     }
     if ir_expr_id_is_match(ref expressions, expr_id) {
-        emit_match_expr_assignment(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, stmt_id, expr_id, target_expr, level, mutref temp_index, mutref diags);
+        emit_match_expr_assignment(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, stmt_id, expr_id, target_expr, level, mutref temp_index, mutref diags);
         return;
     }
-    let value_text = lower_expr_transfer_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, level, mutref temp_index, mutref diags);
+    let value_text = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, expr_id, level, mutref temp_index, mutref diags);
     append_line(mutref lines, concat5(indent(level), target_expr, " = ", value_text, ";"));
     return;
 }
 
-fn emit_replace_expr_target(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt_id: i32, expr_id: i32, target_type_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_replace_expr_target(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt_id: i32, expr_id: i32, target_type_id: i32, target_expr: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     if not type_needs_drop(ref type_shapes, target_type_id) {
-        emit_assign_expr_to_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt_id, expr_id, target_expr, level, mutref temp_index, mutref diags);
+        emit_assign_expr_to_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt_id, expr_id, target_expr, level, mutref temp_index, mutref diags);
         return;
     }
 
@@ -4910,21 +4922,21 @@ fn emit_replace_expr_target(lines: mutref list<str>, type_shapes: ref list<ir_ty
     temp_index = temp_index + 1;
     let replacement_temp = concat3("nq_replacement_value_", i32_to_str(temp_index), "");
     append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, target_type_id), " ", replacement_temp, " = {0};", ""));
-    emit_assign_expr_to_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt_id, expr_id, replacement_temp, level, mutref temp_index, mutref diags);
+    emit_assign_expr_to_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt_id, expr_id, replacement_temp, level, mutref temp_index, mutref diags);
     emit_drop_target(mutref lines, ref type_shapes, target_type_id, target_expr, level);
     append_line(mutref lines, concat6(indent(level), target_expr, " = ", value_helper_prefix(ref type_shapes, target_type_id), "_move(&", concat3(replacement_temp, ");", "")));
     emit_drop_target(mutref lines, ref type_shapes, target_type_id, replacement_temp, level);
     return;
 }
 
-fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let prefix = indent(level);
     match stmt.kind {
         ir_stmt_let => {
             let local_entry = lookup_local(ref locals, stmt.target_local_id);
             match local_entry {
                 Some(local_value) => {
-                    emit_assign_expr_to_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, binding_name(local_value), level, mutref temp_index, mutref diags);
+                    emit_assign_expr_to_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, binding_name(local_value), level, mutref temp_index, mutref diags);
                 },
                 None => {
                     push_c_error(mutref diags, "", stmt.at, "missing local identity for let statement");
@@ -4939,7 +4951,7 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                     if local_value.is_ref_param {
                         target = concat3("*", target, "");
                     }
-                    emit_replace_expr_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, local_value_type_id(ref type_shapes, local_value), target, level, mutref temp_index, mutref diags);
+                    emit_replace_expr_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, local_value_type_id(ref type_shapes, local_value), target, level, mutref temp_index, mutref diags);
                 },
                 None => {
                     push_c_error(mutref diags, "", stmt.at, "missing local identity for assignment");
@@ -4960,7 +4972,7 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                                 push_c_error(mutref diags, "", stmt.at, "field assignment is missing field type truth");
                             } else {
                                 let target = concat3(binding_name(local_value), ".", member_name(ref type_shapes, local_value.type_id, stmt.field_name));
-                                emit_replace_expr_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, stmt.type_id, target, level, mutref temp_index, mutref diags);
+                                emit_replace_expr_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, stmt.type_id, target, level, mutref temp_index, mutref diags);
                             }
                         }
                     }
@@ -4971,20 +4983,20 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
             }
         },
         ir_stmt_if => {
-            let condition = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+            let condition = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
             append_line(mutref lines, concat4(prefix, "if (", condition, ") {"));
-            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+            emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
             if stmt.alt_block_id > 0 {
                 append_line(mutref lines, concat3(prefix, "} else {", ""));
-                emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.alt_block_id, level + 1, mutref temp_index, mutref diags);
+                emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.alt_block_id, level + 1, mutref temp_index, mutref diags);
             }
             append_line(mutref lines, concat3(prefix, "}", ""));
         },
         ir_stmt_while => {
             append_line(mutref lines, concat3(prefix, "while (true) {", ""));
-            let condition = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level + 1, mutref temp_index, mutref diags);
+            let condition = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level + 1, mutref temp_index, mutref diags);
             append_line(mutref lines, concat5(indent(level + 1), "if (!", condition, ") { break; }", ""));
-            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+            emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
             append_line(mutref lines, concat3(prefix, "}", ""));
         },
         ir_stmt_for => {
@@ -5003,7 +5015,7 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                                             let list_temp = concat3("nq_for_items_", i32_to_str(temp_index), "");
                                             let index_temp = concat3("nq_for_index_", i32_to_str(temp_index), "");
                                             let helper = list_helper_prefix(ref type_shapes, list_shape.arg1_id);
-                                            let iterable_value = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+                                            let iterable_value = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
                                             append_line(mutref lines, concat6(prefix, c_type(ref type_shapes, iterable_expr.type_id), " ", list_temp, " = ", str_concat(iterable_value, ";")));
                                             let iterable_temp_owned = expr_result_needs_discard_drop(ref type_shapes, ref expressions, stmt.expr_id);
                                             let mut loop_line = concat7(prefix, "for (int32_t ", index_temp, " = 0; ", index_temp, " < ", helper);
@@ -5016,7 +5028,7 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
                                             if iterable_temp_owned {
                                                 list_push(mutref loop_return_cleanups, cleanup_statement(ref type_shapes, iterable_expr.type_id, list_temp));
                                             }
-                                            emit_block(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref loop_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+                                            emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref loop_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
                                             append_line(mutref lines, concat3(prefix, "}", ""));
                                             if iterable_temp_owned {
                                                 emit_drop_target(mutref lines, ref type_shapes, iterable_expr.type_id, list_temp, level);
@@ -5043,50 +5055,50 @@ fn emit_stmt(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loca
             }
         },
         ir_stmt_match => {
-            emit_match_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
+            emit_match_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
         },
         ir_stmt_let_else => {
-            emit_let_else_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
+            emit_let_else_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
         },
         ir_stmt_propagate => {
-            emit_propagate_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
+            emit_propagate_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
         },
         ir_stmt_return => {
             if stmt.expr_id > 0 {
-                emit_assign_expr_to_target(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, return_temp_name(function.id), level, mutref temp_index, mutref diags);
+                emit_assign_expr_to_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, return_temp_name(function.id), level, mutref temp_index, mutref diags);
             } else {
                 append_line(mutref lines, concat5(prefix, return_temp_name(function.id), " = NQ_UNIT;", "", ""));
             }
             emit_cleanup_lines(mutref lines, ref active_return_cleanups, level);
-            emit_cleanup_until_block(mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, function.root_block_id, false, level);
+            emit_cleanup_until_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, function.root_block_id, false, level);
             append_line(mutref lines, concat4(prefix, "goto ", cleanup_label_name(function.id), ";"));
         },
         ir_stmt_break => {
             emit_cleanup_lines(mutref lines, ref active_jump_cleanups, level);
-            emit_cleanup_until_block(mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, stmt.exit_target_block_id, true, level);
+            emit_cleanup_until_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, stmt.exit_target_block_id, true, level);
             append_line(mutref lines, concat3(prefix, "break;", ""));
         },
         ir_stmt_continue => {
             emit_cleanup_lines(mutref lines, ref active_jump_cleanups, level);
-            emit_cleanup_until_block(mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, stmt.exit_target_block_id, true, level);
+            emit_cleanup_until_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, function.id, stmt.block_id, stmt.exit_target_block_id, true, level);
             append_line(mutref lines, concat3(prefix, "continue;", ""));
         },
         _ => {
-            let value_text = lower_expr_value(mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+            let value_text = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
             emit_expr_discard_cleanup(mutref lines, ref type_shapes, ref expressions, stmt.expr_id, value_text, level, mutref diags);
         },
     }
     return;
 }
 
-fn emit_block(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, block_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
-    let block_statements = lookup_statements_for_block(ref statements, block_id);
+fn emit_block(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, block_id: i32, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let block_statements = lookup_statements_for_block(ref membership, ref statements, block_id);
     let mut index = 0;
     while index < list_len(ref block_statements) {
         let entry = list_get(ref block_statements, index);
         match entry {
             Some(value) => {
-                emit_stmt(mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, value, level, mutref temp_index, mutref diags);
+                emit_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, value, level, mutref temp_index, mutref diags);
             },
             None => {
             },
@@ -5094,7 +5106,7 @@ fn emit_block(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, loc
         index = index + 1;
     }
     if block_id != function.root_block_id {
-        emit_block_owned_cleanup(mutref lines, ref type_shapes, ref locals, function.id, block_id, level);
+        emit_block_owned_cleanup(ref membership, mutref lines, ref type_shapes, ref locals, function.id, block_id, level);
     }
     return;
 }
@@ -5106,6 +5118,7 @@ audit {
     effects();
 }
   {
+      let membership = build_c_emit_membership_index(ref locals, ref expr_children, ref statements);
       let start_diag_count = list_len(ref diags);
       let mut option_types: list<i32> = list();
       let mut result_types: list<result_generic_entry> = list();
@@ -5121,7 +5134,7 @@ audit {
           );
       }
   
-      collect_program_generics(ref function_sigs, ref functions, ref locals, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref option_types, mutref result_types, mutref list_types);
+      collect_program_generics(ref membership, ref function_sigs, ref functions, ref locals, ref expressions, ref type_shapes, ref field_decls, ref variant_payload_decls, mutref option_types, mutref result_types, mutref list_types);
 
     append_line(mutref lines_out, "#include \"runtime.h\"");
     append_line(mutref lines_out, "");
@@ -5145,7 +5158,7 @@ audit {
         let entry = list_get(ref consts, const_index);
         match entry {
             Some(value) => {
-                emit_const_decl(mutref lines_out, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, mutref diags);
+                emit_const_decl(ref membership, mutref lines_out, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, mutref diags);
             },
             None => {
             },
@@ -5161,7 +5174,7 @@ audit {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                append_line(mutref lines_out, concat3(function_signature(value, ref locals, ref type_shapes), ";", ""));
+                append_line(mutref lines_out, concat3(function_signature(ref membership, value, ref locals, ref type_shapes), ";", ""));
             },
             None => {
             },
@@ -5177,12 +5190,12 @@ audit {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                append_line(mutref lines_out, concat3(function_signature(value, ref locals, ref type_shapes), " {", ""));
-                emit_function_prelude(mutref lines_out, ref type_shapes, ref locals, value);
+                append_line(mutref lines_out, concat3(function_signature(ref membership, value, ref locals, ref type_shapes), " {", ""));
+                emit_function_prelude(ref membership, mutref lines_out, ref type_shapes, ref locals, value);
                 let return_cleanups: list<str> = list();
                 let jump_cleanups: list<str> = list();
-                emit_block(mutref lines_out, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, ref return_cleanups, ref jump_cleanups, value.root_block_id, 1, mutref temp_index, mutref diags);
-                emit_function_final_cleanup(mutref lines_out, ref type_shapes, ref locals, value);
+                emit_block(ref membership, mutref lines_out, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value, ref return_cleanups, ref jump_cleanups, value.root_block_id, 1, mutref temp_index, mutref diags);
+                emit_function_final_cleanup(ref membership, mutref lines_out, ref type_shapes, ref locals, value);
                 append_line(mutref lines_out, "}");
                 append_line(mutref lines_out, "");
             },
@@ -5258,4 +5271,118 @@ audit {
 }
 {
     return write_file(path, text);
+}
+
+pub fn c_emit_index_probe_param(membership: ref c_emit_membership_index, locals: ref list<ir_local>, function_id: i32, param_index: i32) -> option<ir_local>
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return lookup_param_local(ref membership, ref locals, function_id, param_index);
+}
+
+pub fn c_emit_index_probe_child_ids(membership: ref c_emit_membership_index, children: ref list<ir_expr_child>, parent_id: i32) -> list<i32>
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return lookup_expr_child_ids(ref membership, ref children, parent_id);
+}
+
+pub fn c_emit_index_probe_child_id(membership: ref c_emit_membership_index, children: ref list<ir_expr_child>, parent_id: i32, child_index: i32) -> i32
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return lookup_expr_child_id(ref membership, ref children, parent_id, child_index);
+}
+
+pub fn c_emit_index_probe_statements(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, block_id: i32) -> list<ir_stmt>
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return lookup_statements_for_block(ref membership, ref statements, block_id);
+}
+
+pub fn c_emit_index_probe_return(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, block_id: i32) -> bool
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return block_ends_with_return(ref membership, ref statements, block_id);
+}
+
+pub fn c_emit_index_probe_signature(membership: ref c_emit_membership_index, function: ir_function, locals: ref list<ir_local>, shapes: ref list<ir_type_shape>) -> str
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    return function_signature(ref membership, function, ref locals, ref shapes);
+}
+
+// Narrow adapters keep independent fixtures out of the production module graph.
+// All observations below run the actual private emission helpers.
+pub fn c_emit_index_probe_cleanup(membership: ref c_emit_membership_index, shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, function: ir_function, mode: i32, lines: mutref list<str>, diags: mutref list<diag>) -> unit
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(lines, diags); effects(); }
+{
+    if mode == 0 { emit_function_prelude(ref membership, mutref lines, ref shapes, ref locals, function); return; }
+    if mode == 1 { emit_function_final_cleanup(ref membership, mutref lines, ref shapes, ref locals, function); return; }
+    if mode == 2 { emit_block_owned_cleanup(ref membership, mutref lines, ref shapes, ref locals, function.id, 40, 1); return; }
+    if mode == 3 or mode == 4 {
+        emit_cleanup_until_block(ref membership, mutref lines, ref shapes, ref locals, ref blocks, function.id, 40, 20, mode == 3, 1);
+        return;
+    }
+    let statements: list<ir_stmt> = list();
+    let arms: list<ir_match_arm> = list();
+    let patterns: list<ir_pattern> = list();
+    let pattern_children: list<ir_pattern_child> = list();
+    let expressions: list<ir_expr> = list();
+    let children: list<ir_expr_child> = list();
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let return_cleanups: list<str> = list();
+    let mut jump_cleanups: list<str> = list();
+    list_push(mutref jump_cleanups, "jump_first();");
+    list_push(mutref jump_cleanups, "jump_second();");
+    let mut temp = 0;
+    let mut kind = ir_stmt_break;
+    if mode == 6 { kind = ir_stmt_continue; }
+    if mode == 7 { kind = ir_stmt_return; }
+    let stmt = ir_stmt { id: 8, function_id: function.id, block_id: 40, at: 9, kind: kind, type_id: 3, target_local_id: -1, field_name: "", expr_id: -1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: 20 };
+    emit_stmt(ref membership, mutref lines, ref shapes, ref locals, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref variants, ref payloads, function, ref return_cleanups, ref jump_cleanups, stmt, 1, mutref temp, mutref diags);
+    return;
+}
+
+pub fn c_emit_index_probe_match(membership: ref c_emit_membership_index, shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, function: ir_function, expression: bool, lines: mutref list<str>, diags: mutref list<diag>) -> unit
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(lines, diags); effects(); }
+{
+    let statements: list<ir_stmt> = list();
+    let mut arms: list<ir_match_arm> = list();
+    let mut patterns: list<ir_pattern> = list();
+    let pattern_children: list<ir_pattern_child> = list();
+    let mut expressions: list<ir_expr> = list();
+    let children: list<ir_expr_child> = list();
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let cleanups: list<str> = list();
+    let mut temp = 0;
+    list_push(mutref patterns, ir_pattern { id: 1, arm_id: 6, function_id: function.id, at: 7, start: 7, end: 8, kind: ir_pattern_wildcard, local_id: -1, name: "", constructor_origin_module: "", constructor_enum_name: "" });
+    list_push(mutref arms, ir_match_arm { id: 6, stmt_id: 8, block_id: 30, pattern_id: 1, result_expr_id: 1, at: 7 });
+    list_push(mutref expressions, arithmetic_probe_expr(1, ir_expr_i32, 2, "5"));
+    if expression {
+        emit_ordered_match_expr(ref membership, mutref lines, ref shapes, ref locals, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref variants, ref payloads, function.id, ref arms, 2, "scrutinee", "result", 0, mutref temp, mutref diags);
+    } else {
+        emit_ordered_match_stmt(ref membership, mutref lines, ref shapes, ref locals, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref variants, ref payloads, function, ref cleanups, ref cleanups, ref arms, 2, "scrutinee", 0, mutref temp, mutref diags);
+    }
+    return;
+}
+
+pub fn c_emit_index_probe_missing_child() -> bool
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(); effects(); }
+{
+    let shapes: list<ir_type_shape> = list();
+    let locals: list<ir_local> = list();
+    let mut expressions: list<ir_expr> = list();
+    let children: list<ir_expr_child> = list();
+    let statements: list<ir_stmt> = list();
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let mut diags: list<diag> = list();
+    let expr = arithmetic_probe_expr(7, ir_expr_borrow, 1, "");
+    list_push(mutref expressions, expr);
+    let membership = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let actual = emit_borrow_expr(ref membership, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, expr, mutref diags);
+    return actual == "0" and list_len(ref diags) == 1;
 }

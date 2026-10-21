@@ -1,4 +1,5 @@
 use text;
+use fixture_c;
 
 fn allocation_policy_fixture(name: str) -> str {
     return str_concat("tests/fixtures/m54_9_allocation/", name);
@@ -44,8 +45,19 @@ fn allocation_policy_compile(source: str, name: str, cap: str, fault_after: str,
     // includes only runtime.h and must link the actual runtime separately.
     if generated { list_push(mutref args, "stdlib/runtime.c"); }
     list_push(mutref args, "-o");
-    list_push(mutref args, allocation_policy_output(name));
-    return allocation_policy_expect(str_concat("compile ", name), run_process("cc", ref args, "."), 0, "", "");
+    let output = allocation_policy_output(name);
+    list_push(mutref args, output);
+    let label = str_concat("compile ", name);
+    let mut include_mode = "runtime-c";
+    if generated { include_mode = "runtime-h"; }
+    let status = fixture_c_compile(source, output, ref args, include_mode, "build/m54_9_allocation/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3(label, ": ", status.error_message)); return false; }
+    if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+    eprint_line(str_concat("allocation policy failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(str_concat("stdout: ", status.stdout));
+    eprint_line(str_concat("stderr: ", status.stderr));
+    return false;
 }
 
 fn allocation_policy_run(name: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
@@ -132,7 +144,7 @@ fn allocation_policy_generated_carriers(path: str) -> bool {
     return false;
 }
 
-pub fn run_allocation_policy_gate(driver: str) -> bool
+fn allocation_policy_gate_impl(driver: str) -> bool
 audit {
     intent("Lock bounded allocation failures, allocation-free IO errors, cleanup, and generated copy-struct list sizing");
     mutates();
@@ -173,4 +185,18 @@ audit {
     if not allocation_policy_run("generated-lists", "grow", 1, "generated list growth\n", size) { return false; }
     if not allocation_policy_run("generated-lists", "array", 1, "generated list from_array\n", size) { return false; }
     return true;
+}
+
+pub fn run_allocation_policy_gate(driver: str) -> bool
+audit {
+    intent("Lock bounded allocation failures, allocation-free IO errors, cleanup, and generated copy-struct list sizing");
+    mutates();
+    effects(print, io);
+}
+{
+    let lock = "build/m54_9_allocation/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m54_9_allocation", lock) { eprint_line("allocation policy: fixture gate lock refused"); return false; }
+    let ok = allocation_policy_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("allocation policy: fixture gate lock release failed"); return false; }
+    return ok;
 }

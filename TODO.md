@@ -1,5 +1,29 @@
 # Nauqtype TODO
 
+## Current Performance Checkpoint
+
+P1-P4's required performance goals are met on reviewed frozen candidate
+`42999a5f31a8993b5ac8e38235ef5645d074af2d` in the supported WSL2/Linux-ext4
+environment. Focused feedback takes0.85s; two complete opt-in warm runs take
+49.46s/46.82s. The new serial seven-phase gate passes in1055.50s,58.13% less
+than P0's2520.62s. The10min cold working target remains unmet, not waived or
+reclassified as a passing result.
+
+Both independent source-readiness audits pass. Exact80-source/runtime seed
+propagation, both seed comparisons,12 proof phases,44 corpus cases, copied
+Linux layout, stress, fresh fixtures and sanitizers remain green. All23
+receipt bodies/inodes/mtimes are unchanged across both warm runs; every check
+executes. Whole warm workflow150.274565627s includes population and readbacks.
+Default/full-milestone/proof/release execution remains serial; the under60s
+result belongs only to the explicitly selected supported concurrent mode.
+See the [current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close)
+for identities, costs, scope and closing-review evidence.
+
+M56 generic reuse is the next language milestone, not implemented here.
+No stable release, publication or downstream pin change follows from this
+performance close. Earlier1055.02s/1011.04s cold and100.58s serial-warm results
+remain historical candidate-bound evidence, not the new gate's measurements.
+
 ## Current Refactor Checkpoint
 
 Use [docs/README.md](docs/README.md) for authoritative-document routing and
@@ -473,8 +497,8 @@ release, or a claim of GitHub publication.
 - [ ] Checkpoint the reviewed portable-documentation cleanup and establish supported-Linux verification with exact source, seed, and toolchain identities before feature work resumes
 - [x] PRE-M56 environment basics: verify Ubuntu 24.04 WSL2, a non-root user, native ext4 home, GCC 13.3.0, Git, and GNU time on 2026-09-30; compiler P0 gate now passed separately below, library integration remains pending
 - [x] PRE-M56 P0: verify native capture/cache and reviewed cold gate (2520.62s), two repeatable checks (304.23s/308.99s), phase work inventory, snapshot/hash costs, and identities; see `PERFORMANCE_BASELINE.md`; no optimization acceptance is claimed
-- [ ] PRE-M56 P1: provide relevant focused feedback and remove measured repeated captures/hashing without reusing stale artifacts; keep interruption/provenance coverage in the appropriate full gate
-- [ ] PRE-M56 P2: measure and optimize visibility/membership scans and any dominant normalization cost; preserve origins, ambiguity, ordering, and both direct seed comparisons
+- [x] PRE-M56 P1: verified focused feedback0.85s, checked compile reuse, measured capture/hash reductions and opt-in complete warm49.46s/46.82s; interruption/provenance and all default checks remain
+- [x] PRE-M56 P2: measured frontend/checked/review/C-emission membership slices preserve origins, ambiguity, source order and both direct comparisons; exact seed and frozen1055.02s native gate pass
 - [x] PRE-M56 P2 mapping close: private sorted-run normalizer, 36 oracle pairs, owned invariants, sanitizers, 25-26x complete-compiler comparison gain, exact seed, and both final audits passed; one cold seven-phase gate/attestation passed in 2485.30s on candidate `36e68e791d3ec2bb3b068fbabd69894a01913803`; see `PERFORMANCE_MAPPING.md` and `ROADMAP.md`
   Total cold-run improvement is 2.90% vs E1, 1.40% vs P0; broader scan,
   warm-fixture, and >=50% gate-speed goals remain open. No reduced coverage.
@@ -483,9 +507,10 @@ release, or a claim of GitHub publication.
   Both audits passed; one cold seven-phase gate/attestation passed in
   2559.57s on candidate `7a5a1a894537989c64ca59ce7803fd8d8c398781`.
   No cold-gate gain or P1-P4 closure; see `PERFORMANCE_ENABLEMENT.md`.
-- [ ] PRE-M56 P3: eliminate only demonstrated redundant clone/drop transfers, with cleanup and behavioral evidence
-- [ ] PRE-M56 P4: regenerate the seed through the existing proof procedure, obtain required audits, and run one complete final gate on the reviewed candidate
-- [ ] PRE-M56 goals: focused feedback <=10s, warm full fixtures <=60s, cold full gate >=50% faster than the new same-host baseline with <=10min as the working target; record achieved times and remaining gaps without relaxing budgets
+- [x] PRE-M56 P3: indexed lookups avoid measured redundant record/string transfers; diagnostic counts, exact outputs, cleanup oracles and the frozen native gate support this bounded slice, not general ownership optimization
+- [x] PRE-M56 P4: exact80-source/runtime seed propagation, full-byte self-emission, original-builder reconstruction, mixed source audits and the fresh frozen `42999a5` seven-phase gate/attestation pass in1055.50s
+- [x] PRE-M56 required goals: focused0.85s meets10s, complete opt-in warm49.46s/46.82s meets60s, and observed cold reduction58.13% meets>=50%; unchanged budgets/coverage and no waiver
+- [ ] Further cold-gate improvement toward the10min working target; current1055.50s is not a10min pass and this stretch goal remains distinct from completed P1-P4 acceptance
 - [ ] Assign an authoring-kit owner and correct the compiler-versioned guide and examples, including the minimum-i32 behavior test
 - [ ] Make grammar validation portable and fail closed, pin the decoder build/content, and retire conflicting drafts before any authoring pilot
 - [ ] Run a separately authorized isolated same-model authoring comparison with held-out behavior tests, equal repair budgets, and actual cost/time reporting

@@ -2967,6 +2967,7 @@ static bool nq_process_pump(NQProcessState* state, NQ_Option__instant deadline, 
                             const char* operation, NQIoErr* error) {
     bool draining = false;
     size_t output_remaining = 0, error_remaining = 0;
+    unsigned idle_attempts = 0;
     while (true) {
         bool exited = false;
         int system_error = nq_process_probe(state, &exited);
@@ -3011,6 +3012,13 @@ static bool nq_process_pump(NQProcessState* state, NQ_Option__instant deadline, 
             return nq_process_finish(state, operation, error);
         if (state->input_fd >= 0 && state->sent == (size_t)state->input.len)
             nq_process_close_fd(&state->input_fd);
+        if (!exited && state->input_fd < 0 && state->output_fd < 0 && state->error_fd < 0) {
+            /* Bound quick exit rechecks, including interrupted poll attempts. */
+            if (idle_attempts < 5) {
+                idle_attempts++;
+                if (timeout > 1) timeout = 1;
+            }
+        } else idle_attempts = 0;
         struct pollfd fds[3] = {
             { .fd = state->input_fd, .events = POLLOUT },
             { .fd = state->output_fd, .events = POLLIN },

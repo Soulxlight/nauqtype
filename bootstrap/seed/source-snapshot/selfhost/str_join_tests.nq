@@ -3,6 +3,7 @@ use diag;
 use handoff;
 use ir;
 use value_plan;
+use fixture_c;
 
 fn str_join_planned_borrow(uses: ref list<checked_value_use>, id: i32) -> bool {
     match lookup_checked_value_use(ref uses, id) {
@@ -195,7 +196,17 @@ fn str_join_compile(source: str, output: str, generated: bool, fail_after: str) 
     if generated { list_push(mutref args, "stdlib/runtime.c"); }
     list_push(mutref args, "-o");
     list_push(mutref args, output);
-    return str_join_expect(str_concat("compile ", output), run_process("cc", ref args, "."), 0, "", "");
+    let label = str_concat("compile ", output);
+    let mut include_mode = "runtime-c";
+    if generated { include_mode = "runtime-h"; }
+    let status = fixture_c_compile(source, output, ref args, include_mode, "build/str_join/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(str_concat(label, status.error_message)); return false; }
+    if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+    eprint_line(str_concat("str_join failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(str_concat("stdout: ", status.stdout));
+    eprint_line(str_concat("stderr: ", status.stderr));
+    return false;
 }
 
 fn str_join_run_native(name: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
@@ -292,7 +303,7 @@ fn str_join_pure_helper_review(driver: str) -> bool {
     return false;
 }
 
-pub fn run_str_join_gate(driver_path: str) -> bool
+fn str_join_gate_impl(driver_path: str) -> bool
 audit {
     intent("Verify str_join runtime allocation, ownership, compiler diagnostics, and evidence facts");
     mutates();
@@ -350,4 +361,18 @@ audit {
         Err(err) => { eprint_line(io_err_text(err)); return false; },
     }
     return true;
+}
+
+pub fn run_str_join_gate(driver_path: str) -> bool
+audit {
+    intent("Verify str_join runtime allocation, ownership, compiler diagnostics, and evidence facts under one fixture lock");
+    mutates();
+    effects(print, io);
+}
+{
+    let lock = "build/str_join/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/str_join", lock) { eprint_line("str_join: fixture gate lock refused"); return false; }
+    let ok = str_join_gate_impl(driver_path);
+    if not fixture_c_gate_end(lock) { eprint_line("str_join: fixture gate lock release failed"); return false; }
+    return ok;
 }

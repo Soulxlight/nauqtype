@@ -28,6 +28,51 @@ This update does not refresh dated downstream evidence or recover the missing
 workspaces/documents listed below. The required read-only status snapshot on
 2026-10-19 found local Libraries changes; they remain outside this write set.
 
+PRE-M56 local candidate update,2026-10-19: measured P2/P3 indexing and
+redundant-transfer slices, exact80-source seed propagation and the reviewed
+seven-phase Linux gate pass on`1afea662cc62bc88914a295ed407c6ddeaf650aa`.
+Cold time1055.02s meets the>=50% reduction goal; focused0.75s meets10s.
+Complete warm128.52s still misses60s, without an owner waiver. Overall P1-P4
+acceptance and M56 remain held; no publication or consumer pin changes.
+The10-minute cold working target is also unmet. See
+[candidate gate evidence](AUDIT_REMEDIATION.md#pre-m56-p1-p4-functional-candidate).
+
+Earlier follow-up: exact 80-source/runtime seed propagation and original-builder
+reconstruction pass, followed by the reviewed frozen seven-phase native gate
+on `03a3b53c865b9bccfd6a372668a600e5c1239770`: 1011.04s / 520388 KiB,
+59.89% less than P0. Post-gate focused feedback passes in 0.64s and complete
+serial warm coverage in 100.58s after 154.38s population; all checks execute
+and all 23 fixture receipt bodies/metadata remain unchanged. Both seed
+comparisons, 12 proof phases and 44 corpus cases remain. This closes the P4
+functional slice, not overall P1-P4 performance acceptance: strict warm 60s
+and the 10min cold working target remain unmet. On 2026-10-21 the owner
+authorized the [opt-in concurrent local tier](docs/P1_CONCURRENT_WARM_CONTRACT.md).
+Both mixed Gate A reviews passed its descriptor-bound ownership, frozen
+resource quiescence and environment boundary; implementation/verification are
+in progress, not accepted timing evidence. Default/milestone/proof/release
+remain serial. M56, publication and downstream pin
+changes remained held at that freeze. The old `1afea66` attestation is not reused; see
+[current evidence](AUDIT_REMEDIATION.md#follow-up-frozen-gate-and-warm-results).
+
+Current compiler performance close,2026-10-21: reviewed frozen candidate
+`42999a5f31a8993b5ac8e38235ef5645d074af2d` passes both independent source
+audits and its own fresh seven-phase native gate/attestation in1055.50s,
+58.13% below P0. Focused0.85s and complete opt-in warm49.46s/46.82s meet the
+required10s/60s goals. All23 receipt bodies/inodes/mtimes and protected
+identities remain unchanged across warm repeats. The current compiler/C images
+also match after the cold rebuild; no redundant warm rerun is substituted
+for identity checks. Both seed comparisons,12 proof phases,44 corpus cases,
+copied Linux layout, stress, fresh fixtures and sanitizers remain green.
+
+This closes required P1-P4 acceptance and unblocks M56 planning, not M56
+implementation, stable release or publication. The10min cold working target
+remains unmet. Concurrent timing applies only to the explicit supported local
+mode; default/full-milestone/proof/release remain serial. See the
+[current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
+The older pending statuses above are dated planning context, not current
+compiler acceptance. Downstream needs, missing workspaces, library evidence
+and consumer pins are not refreshed by this compiler-only close.
+
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
 on NauqType must load the `$nauqtype-work` skill and read this file before
@@ -83,7 +128,7 @@ repository owner's sources and compiler/dependency pins explicit.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 complete; candidate-specific P0, E1, and P2 mapping evidenced; pre-M56 gate efficiency remains the highest priority | Use `PERFORMANCE_BASELINE.md`, `PERFORMANCE_MAPPING.md`, and the closure below; broader P1-P4 must still shorten focused checks and measured snapshot/scan/comparison/clone costs before M56. Use `AGENT_ROUTING.md`; the modest single cold-run gain does not meet campaign goals, and no external repository change is claimed. |
+| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 and required P1-P4 performance goals complete; new frozen `42999a5` gate/attestation1055.50s with mixed source audits | Focused0.85s, complete opt-in warm49.46s/46.82s, observed cold reduction58.13%. The10min working target remains unmet; default/full/proof/release stay serial. M56 planning is next, not implemented. No stable release, publication or consumer pin change is claimed. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -178,7 +223,7 @@ P2 scan/mapping attribution and optimization, not full generics.
 | AIML deterministic RNG and entropy | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | Seeded RNG needs versioned wrapping/bit operations or another frozen primitive. Seeded generation must remain pure. OS entropy is separate checked authority and must not be replaced by time-derived seeding. |
 | Locked `nauqtype.ai` integration fixture | NauqType | NQType AI/ML | Blocked | Add only after float, storage, codec, and deterministic RNG contracts are evidenced. It must prove library-only checking, facts/review provenance, source and copied-release build/run, deterministic numeric behavior, failures, and cleanup. |
 | [AUTHORING_KIT.md](AUTHORING_KIT.md) | Compiler lead owns guide-only integration; Sol High Professor worker stages the bounded draft | Human-supervised model authors | Guide-only work assigned 2026-10-04; not integrated/evidenced, grammar and pilot remain design | Compact repo-local onboarding skill and authoritative compiler/example references first, staged outside the frozen P2 candidate. Lead verifies before integration. No grammar/decoder/model call, savings claim, or pilot authorization; conditional M59 maintained-kit integration remains separate from M56. |
-| [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md) | NauqType | Compiler developers and future M56 work | Highest priority; candidate-specific P0 and P2 mapping evidenced, broader P1-P4 open | `PERFORMANCE_BASELINE.md`: P0 cold gate 2520.62s; repeat checks 304.23s/308.99s. P2 mapping cold gate 2485.30s; its single run improved modestly but did not meet the >=50% campaign goal. P1 focused checks/capture reuse; P2 compiler scans; P3 redundant transfers; P4 campaign-wide attested acceptance remain. Goals: <=10s focused, <=60s warm fixtures, >=50% faster cold gate with <=10min working target. No relaxed budget is claimed. |
+| [PERFORMANCE_CHECKPOINT.md](PERFORMANCE_CHECKPOINT.md) | NauqType | Compiler developers and future M56 work | Required P1-P4 goals evidenced on frozen `42999a5` | New gate1055.50s/58.13% below P0; focused0.85s and complete opt-in warm49.46s/46.82s. Exact seed, mixed source audits and fresh attestation pass. The10min working target remains unmet; default/full/proof/release stay serial. M56 planning is unblocked, not implemented. No waiver, relaxed budget, publication or downstream adoption is implied. |
 
 ## Completed Foundation
 

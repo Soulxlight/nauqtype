@@ -773,6 +773,12 @@ type review_io_kind_fact {
     kind: str,
 }
 
+type review_call_owner {
+    module: str,
+    function_name: str,
+    source_index: i32,
+}
+
 pub fn make_review_summary(function_count: i32, declaration_count: i32, warning_count: i32, error_count: i32) -> review_summary
 audit {
     intent("Build a stage1 review summary record");
@@ -1829,6 +1835,119 @@ fn io_kinds_for_function(entries: ref list<review_io_kind_fact>, module: str, fu
     return kinds;
 }
 
+fn review_call_owner_text_less(left: str, right: str) -> bool {
+    let mut index = 0;
+    while index < str_len(left) and index < str_len(right) {
+        match str_get(left, index) {
+            Some(a) => {
+                match str_get(right, index) {
+                    Some(b) => {
+                        if a < b { return true; }
+                        if a > b { return false; }
+                    },
+                    None => {},
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return str_len(left) < str_len(right);
+}
+
+fn review_call_owner_before(left: review_call_owner, right: review_call_owner) -> bool {
+    if left.module != right.module { return review_call_owner_text_less(left.module, right.module); }
+    if left.function_name != right.function_name { return review_call_owner_text_less(left.function_name, right.function_name); }
+    return left.source_index <= right.source_index;
+}
+
+fn review_sort_call_owners(source: ref list<review_call_owner>, start: i32, end: i32) -> list<review_call_owner> {
+    let mut result: list<review_call_owner> = list();
+    if end - start <= 1 {
+        if start < end { match list_get(ref source, start) { Some(value) => { list_push(mutref result, value); }, None => {}, } }
+    } else {
+        let middle = start + (end - start) / 2;
+        let left = review_sort_call_owners(ref source, start, middle);
+        let right = review_sort_call_owners(ref source, middle, end);
+        let mut l = 0;
+        let mut r = 0;
+        while l < list_len(ref left) or r < list_len(ref right) {
+            let mut take_left = r == list_len(ref right);
+            match list_get(ref left, l) {
+                Some(a) => { match list_get(ref right, r) { Some(b) => { take_left = review_call_owner_before(a, b); }, None => {}, } },
+                None => { take_left = false; },
+            }
+            if take_left {
+                match list_get(ref left, l) { Some(value) => { list_push(mutref result, value); }, None => {}, }
+                l = l + 1;
+            } else {
+                match list_get(ref right, r) { Some(value) => { list_push(mutref result, value); }, None => {}, }
+                r = r + 1;
+            }
+        }
+    }
+    return result;
+}
+
+fn build_review_call_owners(calls: ref list<call_fact>) -> list<review_call_owner> {
+    let mut owners: list<review_call_owner> = list();
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        match list_get(ref calls, index) {
+            Some(value) => { list_push(mutref owners, review_call_owner { module: value.module, function_name: value.function_name, source_index: index }); },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return review_sort_call_owners(ref owners, 0, list_len(ref owners));
+}
+
+fn review_first_call_owner(owners: ref list<review_call_owner>, module: str, function_name: str) -> i32 {
+    let mut low = 0;
+    let mut high = list_len(ref owners);
+    while low < high {
+        let middle = low + (high - low) / 2;
+        match list_get(ref owners, middle) {
+            Some(value) => {
+                let before = review_call_owner_text_less(value.module, module)
+                    or (value.module == module and review_call_owner_text_less(value.function_name, function_name));
+                if before { low = middle + 1; } else { high = middle; }
+            },
+            None => { high = middle; },
+        }
+    }
+    return low;
+}
+
+fn review_effect_calls(calls: ref list<call_fact>, owners: ref list<review_call_owner>, module: str, function_name: str, indexed: bool) -> list<call_fact> {
+    let mut selected: list<call_fact> = list();
+    // The oracle's linear mode keeps the original whole-collection scans.
+    if not indexed {
+        let mut index = 0;
+        while index < list_len(ref calls) {
+            match list_get(ref calls, index) { Some(value) => { list_push(mutref selected, value); }, None => {}, }
+            index = index + 1;
+        }
+    } else {
+        let mut index = review_first_call_owner(ref owners, module, function_name);
+        let mut keep_scanning = true;
+        while keep_scanning and index < list_len(ref owners) {
+            match list_get(ref owners, index) {
+                Some(owner) => {
+                    if owner.module == module and owner.function_name == function_name {
+                        match list_get(ref calls, owner.source_index) { Some(value) => { list_push(mutref selected, value); }, None => {}, }
+                    } else {
+                        keep_scanning = false;
+                    }
+                },
+                None => {},
+            }
+            index = index + 1;
+        }
+    }
+    return selected;
+}
+
 fn function_has_direct_print(calls: ref list<call_fact>, module: str, function_name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref calls) {
@@ -1865,14 +1984,15 @@ fn function_has_direct_io(calls: ref list<call_fact>, module: str, function_name
     return false;
 }
 
-fn build_print_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {
+fn build_print_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, owners: ref list<review_call_owner>, indexed: bool) -> list<str> {
     let mut inferred: list<str> = list();
     let mut function_index = 0;
     while function_index < list_len(ref functions) {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                if function_has_direct_print(ref calls, value.module, value.name) {
+                let owner_calls = review_effect_calls(ref calls, ref owners, value.module, value.name, indexed);
+                if function_has_direct_print(ref owner_calls, value.module, value.name) {
                     push_if_missing(mutref inferred, function_internal_name(value.module, value.name));
                 }
             },
@@ -1892,10 +2012,11 @@ fn build_print_effects(functions: ref list<review_function_fact>, calls: ref lis
                 Some(value) => {
                     let internal_name = function_internal_name(value.module, value.name);
                     if not list_contains(ref inferred, internal_name) {
+                        let owner_calls = review_effect_calls(ref calls, ref owners, value.module, value.name, indexed);
                         let mut call_index = 0;
                         let mut found_print = false;
-                        while call_index < list_len(ref calls) {
-                            let current = list_get(ref calls, call_index);
+                        while call_index < list_len(ref owner_calls) {
+                            let current = list_get(ref owner_calls, call_index);
                             match current {
                                 Some(call_entry) => {
                                     if call_entry.module == value.module and call_entry.function_name == value.name {
@@ -1929,14 +2050,15 @@ fn build_print_effects(functions: ref list<review_function_fact>, calls: ref lis
     return inferred;
 }
 
-fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<str> {
+fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, owners: ref list<review_call_owner>, indexed: bool) -> list<str> {
     let mut inferred: list<str> = list();
     let mut function_index = 0;
     while function_index < list_len(ref functions) {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                if value.owns_process or function_has_direct_io(ref calls, value.module, value.name) {
+                let owner_calls = review_effect_calls(ref calls, ref owners, value.module, value.name, indexed);
+                if value.owns_process or function_has_direct_io(ref owner_calls, value.module, value.name) {
                     push_if_missing(mutref inferred, function_internal_name(value.module, value.name));
                 }
             },
@@ -1956,10 +2078,11 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
                 Some(value) => {
                     let internal_name = function_internal_name(value.module, value.name);
                     if not list_contains(ref inferred, internal_name) {
+                        let owner_calls = review_effect_calls(ref calls, ref owners, value.module, value.name, indexed);
                         let mut call_index = 0;
                         let mut found_io = false;
-                        while call_index < list_len(ref calls) {
-                            let current = list_get(ref calls, call_index);
+                        while call_index < list_len(ref owner_calls) {
+                            let current = list_get(ref owner_calls, call_index);
                             match current {
                                 Some(call_entry) => {
                                     if call_entry.module == value.module and call_entry.function_name == value.name {
@@ -1993,7 +2116,7 @@ fn build_io_effects(functions: ref list<review_function_fact>, calls: ref list<c
     return inferred;
 }
 
-fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> list<review_io_kind_fact> {
+fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, owners: ref list<review_call_owner>, indexed: bool) -> list<review_io_kind_fact> {
     let mut inferred: list<review_io_kind_fact> = list();
     let mut owner_index = 0;
     while owner_index < list_len(ref functions) {
@@ -2016,9 +2139,10 @@ fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref l
             match function_entry {
                 Some(function_value) => {
                     let function_id = function_internal_name(function_value.module, function_value.name);
+                    let owner_calls = review_effect_calls(ref calls, ref owners, function_value.module, function_value.name, indexed);
                     let mut call_index = 0;
-                    while call_index < list_len(ref calls) {
-                        let call_entry = list_get(ref calls, call_index);
+                    while call_index < list_len(ref owner_calls) {
+                        let call_entry = list_get(ref owner_calls, call_index);
                         match call_entry {
                             Some(call_value) => {
                                 if call_value.module == function_value.module and call_value.function_name == function_value.name {
@@ -2066,6 +2190,206 @@ fn build_io_kind_effects(functions: ref list<review_function_fact>, calls: ref l
     return inferred;
 }
 
+fn review_index_same_call(left: call_fact, right: call_fact) -> bool {
+    return left.module == right.module and left.function_name == right.function_name
+        and left.name == right.name and left.at == right.at and left.arg_count == right.arg_count
+        and left.checked_origin == right.checked_origin and left.checked_kind == right.checked_kind
+        and left.checked_start == right.checked_start and left.checked_end == right.checked_end
+        and left.checked_error_name == right.checked_error_name;
+}
+
+fn review_index_owner_case(calls: ref list<call_fact>, owners: ref list<review_call_owner>, module: str, function_name: str) -> bool {
+    let selected = review_effect_calls(ref calls, ref owners, module, function_name, true);
+    let mut source_index = 0;
+    let mut selected_index = 0;
+    while source_index < list_len(ref calls) {
+        match list_get(ref calls, source_index) {
+            Some(value) => {
+                if value.module == module and value.function_name == function_name {
+                    match list_get(ref selected, selected_index) {
+                        Some(actual) => { if not review_index_same_call(value, actual) { return false; } },
+                        None => { return false; },
+                    }
+                    selected_index = selected_index + 1;
+                }
+            },
+            None => { return false; },
+        }
+        source_index = source_index + 1;
+    }
+    return selected_index == list_len(ref selected);
+}
+
+fn review_index_same_names(left: ref list<str>, right: ref list<str>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => { match list_get(ref right, index) { Some(b) => { if a != b { return false; } }, None => { return false; }, } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn review_index_same_kinds(left: ref list<review_io_kind_fact>, right: ref list<review_io_kind_fact>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => {
+                match list_get(ref right, index) {
+                    Some(b) => { if a.function_id != b.function_id or a.kind != b.kind { return false; } },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn review_index_effect_case(functions: ref list<review_function_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> bool {
+    let owners = build_review_call_owners(ref calls);
+    if list_len(ref owners) != list_len(ref calls) { return false; }
+    let mut index = 0;
+    while index < list_len(ref calls) {
+        match list_get(ref calls, index) {
+            Some(value) => { if not review_index_owner_case(ref calls, ref owners, value.module, value.function_name) { return false; } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not review_index_owner_case(ref calls, ref owners, "missing", "missing") { return false; }
+    if not review_index_owner_case(ref calls, ref owners, "", "") { return false; }
+    index = 0;
+    while index < list_len(ref functions) {
+        match list_get(ref functions, index) {
+            Some(value) => {
+                let selected = review_effect_calls(ref calls, ref owners, value.module, value.name, true);
+                if function_has_direct_print(ref calls, value.module, value.name) != function_has_direct_print(ref selected, value.module, value.name) { return false; }
+                if function_has_direct_io(ref calls, value.module, value.name) != function_has_direct_io(ref selected, value.module, value.name) { return false; }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let linear_print = build_print_effects(ref functions, ref calls, ref uses, ref owners, false);
+    let indexed_print = build_print_effects(ref functions, ref calls, ref uses, ref owners, true);
+    let linear_io = build_io_effects(ref functions, ref calls, ref uses, ref owners, false);
+    let indexed_io = build_io_effects(ref functions, ref calls, ref uses, ref owners, true);
+    let linear_kinds = build_io_kind_effects(ref functions, ref calls, ref uses, ref owners, false);
+    let indexed_kinds = build_io_kind_effects(ref functions, ref calls, ref uses, ref owners, true);
+    return review_index_same_names(ref linear_print, ref indexed_print)
+        and review_index_same_names(ref linear_io, ref indexed_io)
+        and review_index_same_kinds(ref linear_kinds, ref indexed_kinds);
+}
+
+fn review_index_call(module: str, function_name: str, name: str, at: i32, kind: str, origin: str) -> call_fact {
+    let mut value = make_call_fact(module, function_name, name, at, at + 1);
+    value.checked_kind = kind;
+    value.checked_origin = origin;
+    value.checked_start = at + 2;
+    value.checked_end = at + 3;
+    value.checked_error_name = name;
+    return value;
+}
+
+fn review_index_order_case() -> bool {
+    let mut functions: list<review_function_fact> = list();
+    list_push(mutref functions, make_review_function_fact("a", "first", 0, false, false, ""));
+    list_push(mutref functions, make_review_function_fact("a", "second", 1, false, false, ""));
+    list_push(mutref functions, make_review_function_fact("a", "first", 2, true, false, ""));
+    let mut process_owner = make_review_function_fact("a", "owner", 3, false, false, "");
+    process_owner.owns_process = true;
+    list_push(mutref functions, process_owner);
+    let uses: list<module_use> = list();
+    let mut calls: list<call_fact> = list();
+    list_push(mutref calls, review_index_call("a", "first", "second", 0, "function", "a"));
+    list_push(mutref calls, review_index_call("a", "second", "first", 1, "function", "a"));
+    list_push(mutref calls, review_index_call("a", "first", "read_file", 2, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("a", "second", "write_file", 3, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("a", "second", "print_line", 4, "builtin", "__builtin__"));
+    if not review_index_effect_case(ref functions, ref calls, ref uses) { return false; }
+    let owners = build_review_call_owners(ref calls);
+    let actual_print = build_print_effects(ref functions, ref calls, ref uses, ref owners, true);
+    let actual_io = build_io_effects(ref functions, ref calls, ref uses, ref owners, true);
+    let actual_kinds = build_io_kind_effects(ref functions, ref calls, ref uses, ref owners, true);
+    let mut expected_print: list<str> = list();
+    list_push(mutref expected_print, "a::second");
+    list_push(mutref expected_print, "a::first");
+    let mut expected_io: list<str> = list();
+    list_push(mutref expected_io, "a::first");
+    list_push(mutref expected_io, "a::second");
+    list_push(mutref expected_io, "a::owner");
+    let mut expected_kinds: list<review_io_kind_fact> = list();
+    list_push(mutref expected_kinds, make_review_io_kind_fact("a::owner", "process"));
+    list_push(mutref expected_kinds, make_review_io_kind_fact("a::first", "read"));
+    list_push(mutref expected_kinds, make_review_io_kind_fact("a::second", "read"));
+    list_push(mutref expected_kinds, make_review_io_kind_fact("a::second", "write"));
+    list_push(mutref expected_kinds, make_review_io_kind_fact("a::first", "write"));
+    return review_index_same_names(ref actual_print, ref expected_print)
+        and review_index_same_names(ref actual_io, ref expected_io)
+        and review_index_same_kinds(ref actual_kinds, ref expected_kinds);
+}
+
+pub fn review_call_index_cases() -> bool
+audit {
+    intent("Compare indexed review call membership and raw ordered effects with linear scans");
+    mutates();
+    effects();
+}
+{
+    let mut functions: list<review_function_fact> = list();
+    let mut calls: list<call_fact> = list();
+    let mut uses: list<module_use> = list();
+    if not review_index_effect_case(ref functions, ref calls, ref uses) { return false; }
+    let mut process_owner = make_review_function_fact("app", "process_only", 0, false, false, "");
+    process_owner.owns_process = true;
+    list_push(mutref functions, process_owner);
+    if not review_index_effect_case(ref functions, ref calls, ref uses) { return false; }
+    list_push(mutref functions, make_review_function_fact("app", "top", 1, true, false, ""));
+    list_push(mutref functions, make_review_function_fact("app", "middle", 2, false, false, ""));
+    list_push(mutref functions, make_review_function_fact("lib", "leaf", 3, true, false, ""));
+    list_push(mutref functions, make_review_function_fact("app", "leaf", 4, false, false, ""));
+    list_push(mutref functions, make_review_function_fact("app", "middle", 5, true, false, ""));
+    list_push(mutref functions, make_review_function_fact("app", "mismatches", 6, false, false, ""));
+    list_push(mutref functions, make_review_function_fact("app", "read_file", 7, false, false, ""));
+    list_push(mutref uses, make_module_use("app", "lib", "qualified", 0));
+    list_push(mutref calls, review_index_call("app", "top", "middle", 10, "function", "app"));
+    list_push(mutref calls, review_index_call("lib", "leaf", "write_file", 11, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "middle", "leaf", 12, "function", "lib"));
+    list_push(mutref calls, review_index_call("app", "leaf", "print_line", 13, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "middle", "leaf", 14, "function", "app"));
+    list_push(mutref calls, review_index_call("lib", "leaf", "write_file", 11, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "middle", "read_file", 15, "function", "app"));
+    list_push(mutref calls, review_index_call("app", "read_file", "stdout_write", 16, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "mismatches", "read_file", 17, "builtin", "app"));
+    list_push(mutref calls, review_index_call("app", "mismatches", "write_file", 18, "function", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "mismatches", "print_line", 19, "", "__builtin__"));
+    list_push(mutref calls, review_index_call("app", "mismatches", "leaf", 20, "variant", "lib"));
+    list_push(mutref calls, review_index_call("app", "mismatches", "unknown", 21, "function", "missing"));
+    list_push(mutref calls, review_index_call("foreign", "before_only", "env_get", 22, "builtin", "__builtin__"));
+    list_push(mutref calls, review_index_call("", "", "eprint_line", 23, "builtin", "__builtin__"));
+    if not review_index_effect_case(ref functions, ref calls, ref uses) { return false; }
+
+    let mut after_calls: list<call_fact> = list();
+    let mut cursor = 0;
+    while cursor < list_len(ref calls) {
+        match list_get(ref calls, cursor) {
+            Some(value) => { if value.module == "app" { list_push(mutref after_calls, value); } },
+            None => { return false; },
+        }
+        cursor = cursor + 1;
+    }
+    list_push(mutref after_calls, review_index_call("foreign", "after_only", "read_file", 24, "builtin", "__builtin__"));
+    if not review_index_effect_case(ref functions, ref after_calls, ref uses) { return false; }
+    if not review_index_effect_case(ref functions, ref calls, ref uses) { return false; }
+    return review_index_order_case();
+}
+
 fn push_contract_diag(diags: mutref list<diag>, module: str, at: i32, name: str, code: str, severity: diag_severity, message: str, help: str) -> unit {
     let mut category = diag_contract;
     if code == "NQ-PROPAGATE-004" or code == "NQ-PROPAGATE-005" or code == "NQ-PROPAGATE-006" {
@@ -2082,8 +2406,9 @@ fn audit_effect_is_supported(name: str) -> bool {
 fn validate_contracts(functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, uses: ref list<module_use>, diags: mutref list<diag>) -> review_summary {
     let mut warning_count = 0;
     let mut error_count = 0;
-    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
-    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
+    let call_owners = build_review_call_owners(ref calls);
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses, ref call_owners, true);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses, ref call_owners, true);
     let mut index = 0;
     while index < list_len(ref functions) {
         let entry = list_get(ref functions, index);
@@ -2346,8 +2671,9 @@ fn target_id_for_call(origin: str, name: str) -> str {
 }
 
 fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
-    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
-    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
+    let call_owners = build_review_call_owners(ref calls);
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses, ref call_owners, true);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses, ref call_owners, true);
     let total_functions = module_function_count(ref functions, entry_module);
     let mut emitted_functions = 0;
 
@@ -2464,9 +2790,10 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
 
 fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32) -> unit {
     let use_v3 = format_version >= 3;
-    let print_effects = build_print_effects(ref functions, ref calls, ref uses);
-    let io_effects = build_io_effects(ref functions, ref calls, ref uses);
-    let io_kind_effects = build_io_kind_effects(ref functions, ref calls, ref uses);
+    let call_owners = build_review_call_owners(ref calls);
+    let print_effects = build_print_effects(ref functions, ref calls, ref uses, ref call_owners, true);
+    let io_effects = build_io_effects(ref functions, ref calls, ref uses, ref call_owners, true);
+    let io_kind_effects = build_io_kind_effects(ref functions, ref calls, ref uses, ref call_owners, true);
     let total_functions = list_len(ref functions);
     list_push(mutref lines, "  \"functions\": [");
     let mut index = 0;
@@ -3287,12 +3614,14 @@ fn collect_removed_functions(before_functions: ref list<review_function_fact>, a
 }
 
 fn collect_changed_functions(before_functions: ref list<review_function_fact>, before_decls: ref list<review_decl_entry>, before_items: ref list<top_item>, before_function_facts: ref list<function_fact>, before_variants: ref list<variant_fact>, before_params: ref list<function_param_fact>, before_assignments: ref list<assignment_fact>, before_calls: ref list<call_fact>, before_locals: ref list<local_init_fact>, before_uses: ref list<module_use>, after_functions: ref list<review_function_fact>, after_decls: ref list<review_decl_entry>, after_items: ref list<top_item>, after_function_facts: ref list<function_fact>, after_variants: ref list<variant_fact>, after_params: ref list<function_param_fact>, after_assignments: ref list<assignment_fact>, after_calls: ref list<call_fact>, after_locals: ref list<local_init_fact>, after_uses: ref list<module_use>, changed_out: mutref list<str>) -> unit {
-    let before_print_effects = build_print_effects(ref before_functions, ref before_calls, ref before_uses);
-    let before_io_effects = build_io_effects(ref before_functions, ref before_calls, ref before_uses);
-    let before_io_kind_effects = build_io_kind_effects(ref before_functions, ref before_calls, ref before_uses);
-    let after_print_effects = build_print_effects(ref after_functions, ref after_calls, ref after_uses);
-    let after_io_effects = build_io_effects(ref after_functions, ref after_calls, ref after_uses);
-    let after_io_kind_effects = build_io_kind_effects(ref after_functions, ref after_calls, ref after_uses);
+    let before_call_owners = build_review_call_owners(ref before_calls);
+    let after_call_owners = build_review_call_owners(ref after_calls);
+    let before_print_effects = build_print_effects(ref before_functions, ref before_calls, ref before_uses, ref before_call_owners, true);
+    let before_io_effects = build_io_effects(ref before_functions, ref before_calls, ref before_uses, ref before_call_owners, true);
+    let before_io_kind_effects = build_io_kind_effects(ref before_functions, ref before_calls, ref before_uses, ref before_call_owners, true);
+    let after_print_effects = build_print_effects(ref after_functions, ref after_calls, ref after_uses, ref after_call_owners, true);
+    let after_io_effects = build_io_effects(ref after_functions, ref after_calls, ref after_uses, ref after_call_owners, true);
+    let after_io_kind_effects = build_io_kind_effects(ref after_functions, ref after_calls, ref after_uses, ref after_call_owners, true);
     let mut index = 0;
     while index < list_len(ref after_functions) {
         let entry = list_get(ref after_functions, index);

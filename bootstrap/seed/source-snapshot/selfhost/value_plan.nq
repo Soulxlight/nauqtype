@@ -1,3 +1,4 @@
+use checked_index;
 use diag;
 use handoff;
 use text;
@@ -540,41 +541,19 @@ fn builtin_arg_is_borrow(name: str, index: i32) -> bool {
     return false;
 }
 
-fn call_arg_is_borrow(functions: ref list<checked_function>, params: ref list<checked_param>, call: checked_expr, index: i32) -> bool {
+fn call_arg_is_borrow(function_index: ref list<p2_checked_function_target>, param_index: ref list<p2_checked_param_mode>, call: checked_expr, index: i32) -> bool {
     if call.target_origin_module == "__builtin__" {
         return builtin_arg_is_borrow(call.name, index);
     }
-    let mut function_id = -1;
-    let mut function_index = 0;
-    while function_index < list_len(ref functions) {
-        let entry = list_get(ref functions, function_index);
-        match entry {
-            Some(value) => {
-                if value.module_name == call.target_origin_module and value.name == call.name {
-                    function_id = value.id;
-                }
-            },
-            None => {
-            },
-        }
-        function_index = function_index + 1;
-    }
+    let function_id = p2_checked_last_function_id(ref function_index, call.target_origin_module, call.name);
     if function_id < 0 {
         return false;
     }
-    let mut param_index = 0;
-    while param_index < list_len(ref params) {
-        let entry = list_get(ref params, param_index);
-        match entry {
-            Some(value) => {
-                if value.function_id == function_id and value.index == index {
-                    return value.is_borrow;
-                }
-            },
-            None => {
-            },
-        }
-        param_index = param_index + 1;
+    let mode_entry = p2_checked_first_param_mode(ref param_index, function_id, index);
+    match mode_entry {
+        Some(value) => { return value.is_borrow; },
+        None => {
+        },
     }
     return false;
 }
@@ -716,7 +695,7 @@ fn append_canonical_value_uses(raw_uses: ref list<checked_value_use>, uses_out: 
     return;
 }
 
-fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_param>, properties: ref list<checked_type_property>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, consume: bool, borrow_value: bool, uses: mutref list<checked_value_use>, diags: mutref list<diag>) -> unit {
+fn plan_expr(function_index: ref list<p2_checked_function_target>, param_index: ref list<p2_checked_param_mode>, properties: ref list<checked_type_property>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, expr_id: i32, consume: bool, borrow_value: bool, uses: mutref list<checked_value_use>, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_checked_expr(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
@@ -729,14 +708,14 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                 checked_expr_ref => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
                         None => { push_value_plan_error(mutref diags, "stage1 value plan found a borrow without a target expression"); },
                     }
                 },
                 checked_expr_mutref => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, true, mutref uses, mutref diags); },
                         None => { push_value_plan_error(mutref diags, "stage1 value plan found a mutable borrow without a target expression"); },
                     }
                 },
@@ -746,8 +725,8 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                         let child_entry = list_get(ref children, index);
                         match child_entry {
                             Some(child) => {
-                                let arg_borrow = not target_is_constructor(expr.target_kind) and call_arg_is_borrow(ref functions, ref params, expr, index);
-                                plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, not arg_borrow, arg_borrow, mutref uses, mutref diags);
+                                let arg_borrow = not target_is_constructor(expr.target_kind) and call_arg_is_borrow(ref function_index, ref param_index, expr, index);
+                                plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, not arg_borrow, arg_borrow, mutref uses, mutref diags);
                             },
                             None => {
                             },
@@ -761,7 +740,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                     while index < list_len(ref fields) {
                         let field_entry = list_get(ref fields, index);
                         match field_entry {
-                            Some(field) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, field.value_expr_id, true, false, mutref uses, mutref diags); },
+                            Some(field) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, field.value_expr_id, true, false, mutref uses, mutref diags); },
                             None => {
                             },
                         }
@@ -773,7 +752,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                     while index < list_len(ref children) {
                         let child_entry = list_get(ref children, index);
                         match child_entry {
-                            Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
+                            Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
                             None => {
                             },
                         }
@@ -783,14 +762,14 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                 checked_expr_field => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
                         None => { push_value_plan_error(mutref diags, "stage1 value plan found a field access without a base expression"); },
                     }
                 },
                 checked_expr_match => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, true, false, mutref uses, mutref diags); },
                         None => { push_value_plan_error(mutref diags, "stage1 value plan found a match without a scrutinee"); },
                     }
                     let stmt_id = stmt_for_expr(ref statements, expr.id);
@@ -800,7 +779,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                         match arm_entry {
                             Some(arm) => {
                                 if arm.stmt_id == stmt_id and arm.result_expr_id > 0 {
-                                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, arm.result_expr_id, consume, false, mutref uses, mutref diags);
+                                    plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, arm.result_expr_id, consume, false, mutref uses, mutref diags);
                                 }
                             },
                             None => {
@@ -812,7 +791,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                 checked_expr_not => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
                         None => {
                         },
                     }
@@ -820,7 +799,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                 checked_expr_neg => {
                     let child_entry = list_get(ref children, 0);
                     match child_entry {
-                        Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                        Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
                         None => {
                         },
                     }
@@ -830,7 +809,7 @@ fn plan_expr(functions: ref list<checked_function>, params: ref list<checked_par
                     while index < list_len(ref children) {
                         let child_entry = list_get(ref children, index);
                         match child_entry {
-                            Some(child) => { plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
+                            Some(child) => { plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref expr_children, ref struct_fields, child.child_expr_id, false, false, mutref uses, mutref diags); },
                             None => {
                             },
                         }
@@ -870,6 +849,8 @@ audit {
 {
     let start_diag_count = list_len(ref diags);
     let mut raw_uses: list<checked_value_use> = list();
+    let function_index = p2_checked_build_function_index(ref functions);
+    let param_index = p2_checked_build_param_index(ref params);
     let indexed_expr_children = index_checked_expr_children(ref expr_children);
 
     let mut const_expr_index = 0;
@@ -878,7 +859,7 @@ audit {
         match entry {
             Some(expr) => {
                 if expr.function_id == 0 {
-                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, expr.id, true, false, mutref raw_uses, mutref diags);
+                    plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, expr.id, true, false, mutref raw_uses, mutref diags);
                 }
             },
             None => {
@@ -893,7 +874,7 @@ audit {
         match entry {
             Some(stmt) => {
                 if stmt.expr_id > 0 {
-                    plan_expr(ref functions, ref params, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, stmt.expr_id, stmt_consumes_expr(stmt.kind), false, mutref raw_uses, mutref diags);
+                    plan_expr(ref function_index, ref param_index, ref properties, ref statements, ref match_arms, ref expressions, ref indexed_expr_children, ref struct_fields, stmt.expr_id, stmt_consumes_expr(stmt.kind), false, mutref raw_uses, mutref diags);
                 }
             },
             None => {

@@ -2,6 +2,9 @@ use files;
 use contract_evidence_tests;
 use diag;
 use handoff;
+use checked_index_probe;
+use c_emit_index_probe;
+use fixture_c;
 use host_c;
 use review;
 use schema_profile_tests;
@@ -1170,6 +1173,12 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "type_text");
     list_push(mutref modules, "typecheck");
     list_push(mutref modules, "value_plan");
+    list_push(mutref modules, "checked_index");
+    list_push(mutref modules, "checked_index_probe");
+    list_push(mutref modules, "fixture_c");
+    list_push(mutref modules, "review_index_probe");
+    list_push(mutref modules, "c_emit_index");
+    list_push(mutref modules, "c_emit_index_probe");
     list_push(mutref modules, "workspace");
     return;
 }
@@ -3205,35 +3214,66 @@ fn run_m39_fixture_manifest_gate() -> bool {
     }
 }
 
-pub fn run_nauq_tests(driver_path: str) -> i32
+pub fn test_suite_selection_valid(argc: i32, option: str, suite: str) -> bool
 audit {
-    intent("Run the Nauqtype-owned fixture and tooling test suite");
+    intent("Validate the exact argument shape and fixed names of partial test suites");
+    mutates();
+    effects();
+}
+{
+    if argc != 4 or option != "--suite" { return false; }
+    return suite == "compiler-index" or suite == "proof-artifacts" or suite == "workspace-capture" or suite == "workspace-evidence" or suite == "integer-policy" or suite == "allocation-policy" or suite == "str-join" or suite == "process-time" or suite == "schema-profile" or suite == "driver-fixtures" or suite == "formatter";
+}
+
+fn test_suite_selection_cases() -> bool {
+    let names = ["compiler-index", "proof-artifacts", "workspace-capture", "workspace-evidence", "integer-policy", "allocation-policy", "str-join", "process-time", "schema-profile", "driver-fixtures", "formatter"];
+    for name in names {
+        if not test_suite_selection_valid(4, "--suite", name) { return false; }
+    }
+    let invalid_counts = [0, 1, 2, 3, 5, 6];
+    for count in invalid_counts {
+        if test_suite_selection_valid(count, "--suite", "compiler-index") { return false; }
+    }
+    if test_suite_selection_valid(4, "--suite", "all") or test_suite_selection_valid(4, "--suite", "") or test_suite_selection_valid(4, "--suite", "unknown") { return false; }
+    if test_suite_selection_valid(4, "--other", "compiler-index") or test_suite_selection_valid(4, "", "compiler-index") { return false; }
+    return true;
+}
+
+fn run_nauq_tests_selected_impl(driver_path: str, suite: str) -> i32
+audit {
+    intent("Run the complete Nauqtype-owned test suite or one fixed feedback suite");
     mutates();
     effects(print, io);
 }
 {
-    if not normalizer_index_cases() {
-        return 1;
+    if suite == "" or suite == "compiler-index" {
+        if not normalizer_index_cases() { return 1; }
+        if not visibility_index_cases() { eprint_line("visibility index oracle failed"); return 1; }
+        if not builtin_evidence_cases() { eprint_line("builtin evidence table oracle failed"); return 1; }
+        if not frontend_lookup_index_cases() { eprint_line("frontend lookup index oracle failed"); return 1; }
+        if not handoff_lookup_index_cases() { eprint_line("handoff lookup index oracle failed"); return 1; }
+        if not p2_checked_index_cases() { eprint_line("checked lookup index oracle failed"); return 1; }
+        if not checked_membership_cleanup_cases() { eprint_line("checked membership cleanup oracle failed"); return 1; }
+        if not c_emit_membership_index_cases() { eprint_line("C emission membership oracle failed"); return 1; }
+        if not review_call_index_cases() { eprint_line("review call index oracle failed"); return 1; }
+        if not test_suite_selection_cases() { eprint_line("test suite argument selection cases failed"); return 1; }
     }
-    if not visibility_index_cases() {
-        eprint_line("visibility index oracle failed");
-        return 1;
+    if suite == "" or suite == "proof-artifacts" { if not run_proof_artifact_gate() { return 1; } }
+    if suite == "" or suite == "workspace-capture" { if not run_workspace_capture_tests("tests/fixtures/m54_10_workspace") { return 1; } }
+    if suite == "" or suite == "workspace-evidence" { if not run_workspace_evidence_gate(driver_path) { return 1; } }
+    if suite == "" or suite == "integer-policy" { if not run_integer_policy_gate(driver_path) { return 1; } }
+    if suite == "" or suite == "allocation-policy" {
+        if not fixture_c_cache_cases() { eprint_line("fixture C cache oracle failed"); return 1; }
+        if not run_allocation_policy_gate(driver_path) { return 1; }
     }
-    if not builtin_evidence_cases() {
-        eprint_line("builtin evidence table oracle failed");
-        return 1;
+    if suite == "" or suite == "str-join" { if not run_str_join_gate(driver_path) { return 1; } }
+    if suite == "" or suite == "process-time" { if not run_process_time_gate(driver_path) { return 1; } }
+    if suite == "" or suite == "schema-profile" {
+        if not run_schema_profile_gate() { return 1; }
+        if not run_m39_fixture_manifest_gate() { return 1; }
     }
-    if not run_proof_artifact_gate() { return 1; }
-    if not run_workspace_capture_tests("tests/fixtures/m54_10_workspace") { return 1; }
-    if not run_workspace_evidence_gate(driver_path) { return 1; }
-    if not run_integer_policy_gate(driver_path) { return 1; }
-    if not run_allocation_policy_gate(driver_path) { return 1; }
-    if not run_str_join_gate(driver_path) { return 1; }
-    if not run_process_time_gate(driver_path) { return 1; }
-    if not run_schema_profile_gate() { return 1; }
-    if not run_m39_fixture_manifest_gate() {
-        return 1;
-    }
+    let mut failed_phase = "";
+    if suite == "" or suite == "driver-fixtures" {
     if not run_quiet_result("fixture check hello", run_driver_check(driver_path, "examples/hello.nq")) {
         return 1;
     }
@@ -3314,13 +3354,36 @@ audit {
     if not run_json_golden_result("fixture review v2", run_driver_review(driver_path, "tests/fixtures/review_v2.nq", "v2"), "tests/golden/review/review_v2.json") {
         return 1;
     }
-    let mut failed_phase = "";
-    if not run_supervised_workflow_gate(driver_path, mutref failed_phase) {
-        return 1;
+        if not run_supervised_workflow_gate(driver_path, mutref failed_phase) { return 1; }
     }
-    if not run_formatter_tooling_checks(driver_path, mutref failed_phase) {
-        return 1;
+    if suite == "" or suite == "formatter" {
+        if not run_formatter_tooling_checks(driver_path, mutref failed_phase) { return 1; }
     }
-    print_line("nauqtype test ok");
+    if suite == "" { print_line("nauqtype test ok"); }
+    else { print_line(str_concat(str_concat("nauqtype test suite ", suite), " ok")); }
     return 0;
+}
+
+pub fn run_nauq_tests(driver_path: str) -> i32
+audit {
+    intent("Run the complete Nauqtype-owned fixture and tooling test suite");
+    mutates();
+    effects(print, io);
+}
+{
+    return run_nauq_tests_selected_impl(driver_path, "");
+}
+
+pub fn run_nauq_tests_selected(driver_path: str, suite: str) -> i32
+audit {
+    intent("Run one validated partial test suite without claiming complete fixture coverage");
+    mutates();
+    effects(print, io);
+}
+{
+    if not test_suite_selection_valid(4, "--suite", suite) {
+        eprint_line("invalid partial test suite");
+        return 1;
+    }
+    return run_nauq_tests_selected_impl(driver_path, suite);
 }

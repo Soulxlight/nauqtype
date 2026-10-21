@@ -20,6 +20,91 @@ check_case() {
     printf 'PASS %s\n' "$id"
 }
 
+timeout_shim="$scratch/timeout-shim"
+mkdir "$timeout_shim"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -u' \
+    'if [[ "$#" == 1 && "${1-}" == --version ]]; then exec /usr/bin/timeout "$@"; fi' \
+    'args=("$@")' \
+    'delimiter=-1' \
+    'policy=-1' \
+    'verbose=false' \
+    'signal=false' \
+    'for ((i=0; i<${#args[@]}; i++)); do' \
+    '    case "${args[i]}" in' \
+    '        --) delimiter=$i; break ;;' \
+    '        --verbose) [[ "$verbose" == false ]] || exit 2; verbose=true ;;' \
+    '        --signal=TERM) [[ "$signal" == false ]] || exit 2; signal=true ;;' \
+    '        --kill-after=5s) [[ "$policy" == -1 ]] || exit 2; policy=$i ;;' \
+    '        *) exit 2 ;;' \
+    '    esac' \
+    'done' \
+    '(( delimiter >= 0 && policy >= 0 )) || exit 2' \
+    'witness=${TIMEOUT_SHIM_WITNESS:-}' \
+    '[[ -n "$witness" && ! -e "$witness" && ! -L "$witness" ]] || exit 2' \
+    'if ! printf "%s\n" "${args[policy]}" > "$witness"; then exit 2; fi' \
+    'args[policy]=--kill-after=0.01s' \
+    'exec /usr/bin/timeout "${args[@]}"' \
+    > "$timeout_shim/timeout"
+chmod 755 "$timeout_shim/timeout"
+
+expect_timeout_shim_reject() {
+    local id=$1 code=0
+    shift
+    TIMEOUT_SHIM_WITNESS="$scratch/reject-$id.witness" \
+        "$timeout_shim/timeout" "$@" -- 1s /usr/bin/touch "$scratch/reject-$id.executed" \
+        > "$scratch/reject-$id.stdout" 2> "$scratch/reject-$id.stderr" || code=$?
+    [[ "$code" == 2 && ! -e "$scratch/reject-$id.executed" ]]
+}
+
+expect_timeout_shim_reject missing --verbose --signal=TERM
+expect_timeout_shim_reject duplicate --verbose --signal=TERM --kill-after=5s --kill-after=5s
+expect_timeout_shim_reject wrong --verbose --signal=TERM --kill-after=2s
+expect_timeout_shim_reject alias-short --verbose --signal=TERM -k 5s --kill-after=5s
+expect_timeout_shim_reject alias-joined --verbose --signal=TERM -k5s --kill-after=5s
+expect_timeout_shim_reject alias-long --verbose --signal=TERM --kill-after 5s --kill-after=5s
+expect_timeout_shim_reject alias-abbreviated --verbose --signal=TERM --kill-af=2s --kill-after=5s
+expect_timeout_shim_reject alias-bundled --verbose --signal=TERM -vk2s --kill-after=5s
+
+mkdir "$scratch/witness-is-directory"
+code=0
+TIMEOUT_SHIM_WITNESS="$scratch/witness-is-directory" \
+    "$timeout_shim/timeout" --verbose --signal=TERM --kill-after=5s -- \
+    1s /usr/bin/touch "$scratch/witness-failure.executed" \
+    > "$scratch/witness-failure.stdout" 2> "$scratch/witness-failure.stderr" || code=$?
+[[ "$code" == 2 && ! -e "$scratch/witness-failure.executed" ]]
+
+code=0
+TIMEOUT_SHIM_WITNESS="$scratch/missing-parent/witness" \
+    "$timeout_shim/timeout" --verbose --signal=TERM --kill-after=5s -- \
+    1s /usr/bin/touch "$scratch/missing-parent.executed" \
+    > "$scratch/missing-parent.stdout" 2> "$scratch/missing-parent.stderr" || code=$?
+[[ "$code" == 2 && ! -e "$scratch/missing-parent.executed" ]]
+
+printf '%s\n' 'stale witness' > "$scratch/stale.witness"
+code=0
+TIMEOUT_SHIM_WITNESS="$scratch/stale.witness" \
+    "$timeout_shim/timeout" --verbose --signal=TERM --kill-after=5s -- \
+    1s /usr/bin/touch "$scratch/stale-witness.executed" \
+    > "$scratch/stale-witness.stdout" 2> "$scratch/stale-witness.stderr" || code=$?
+[[ "$code" == 2 && ! -e "$scratch/stale-witness.executed" ]]
+grep -Fqx 'stale witness' "$scratch/stale.witness"
+
+TIMEOUT_SHIM_WITNESS="$scratch/version.witness" \
+    "$timeout_shim/timeout" --version > "$scratch/shim-version.stdout" 2> "$scratch/shim-version.stderr"
+/usr/bin/timeout --version > "$scratch/real-timeout-version.stdout" 2> "$scratch/real-timeout-version.stderr"
+cmp -s "$scratch/shim-version.stdout" "$scratch/real-timeout-version.stdout"
+cmp -s "$scratch/shim-version.stderr" "$scratch/real-timeout-version.stderr"
+[[ ! -e "$scratch/version.witness" ]]
+
+TIMEOUT_SHIM_WITNESS="$scratch/passthrough.witness" \
+    "$timeout_shim/timeout" --verbose --signal=TERM --kill-after=5s -- \
+    1s /usr/bin/printf '%s|%s' '--kill-after=5s' '--kill-after=2s' \
+    > "$scratch/passthrough.stdout" 2> "$scratch/passthrough.stderr"
+[[ "$(< "$scratch/passthrough.stdout")" == '--kill-after=5s|--kill-after=2s' ]]
+[[ "$(< "$scratch/passthrough.witness")" == --kill-after=5s ]]
+
 check_case success 0 none bash -c 'printf stdout-ok; printf stderr-ok >&2'
 [[ "$(< "$scratch/success.stdout")" == stdout-ok ]]
 [[ "$(< "$scratch/success.stderr")" == stderr-ok ]]
@@ -50,7 +135,13 @@ grep -Fqx '  "failure": "command",' "$scratch/early-term.json"
 passed=$((passed + 1))
 printf 'PASS early-term\n'
 
-check_case timeout137 137 command bash -c 'trap "" TERM; exec sleep 10'
+path_before_timeout137=$PATH
+[[ ! -e "$scratch/timeout137.witness" && ! -L "$scratch/timeout137.witness" ]]
+# Unit-only scaling preserves real TERM/KILL escalation; it is not a 5s elapsed-grace proof.
+TIMEOUT_SHIM_WITNESS="$scratch/timeout137.witness" PATH="$timeout_shim:$PATH" \
+    check_case timeout137 137 command bash -c 'trap "" TERM; exec sleep 10'
+[[ "$PATH" == "$path_before_timeout137" ]]
+grep -Fqx -- '--kill-after=5s' "$scratch/timeout137.witness"
 check_case timeout-handler124 124 command bash -c 'trap "exit 124" TERM; sleep 2'
 check_case not-a-builtin 127 command exit 7
 printf '#!/bin/sh\nexit 7\n' > "$scratch/-budget-command"

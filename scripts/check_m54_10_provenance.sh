@@ -219,6 +219,43 @@ if [[ "$publication_only" == true ]]; then
     exit 0
 fi
 
+# Trigger GNU timeout's real alarm handler once the child reaches the phase.
+# The 30s deadline remains a safety bound, not a mandatory fixture delay.
+interrupt_blocked_seed_phase() (
+    local root=$1 log=$2 supervisor='' code=1 ready=false deadline
+    cleanup_interruption() {
+        local saved=$?
+        trap - EXIT
+        if [[ -n "$supervisor" ]]; then
+            kill -ALRM "$supervisor" 2>/dev/null || true
+            wait "$supervisor" 2>/dev/null || true
+        fi
+        exit "$saved"
+    }
+    trap cleanup_interruption EXIT
+    NQ_TEST_PHASE=stage2_emit NQ_TEST_PHASE_ACTION=block \
+        timeout --signal=TERM --kill-after=3s 30s \
+        bash "$root/scripts/check_seed_bootstrap.sh" --reuse-stage1 > "$log" 2>&1 &
+    supervisor=$!
+    deadline=$((SECONDS + 25))
+    while (( SECONDS < deadline )); do
+        if grep -Fqx 'phase-blocked:stage2_emit' "$NQ_TEST_LOG"; then
+            ready=true
+            break
+        fi
+        kill -0 "$supervisor" 2>/dev/null || break
+        sleep 0.01 || exit 1
+    done
+    if [[ "$ready" != true ]]; then
+        printf 'FAIL interruption fixture never reached the blocked phase\n' >&2
+        exit 1
+    fi
+    kill -ALRM "$supervisor" || exit 1
+    if wait "$supervisor"; then code=0; else code=$?; fi
+    supervisor=''
+    exit "$code"
+)
+
 check_seed_phases() {
     local root="$scratch/phase-fixture" evidence log phase index code pattern label
     make_fixture "$root"
@@ -291,7 +328,7 @@ check_seed_phases() {
     # Exercise the same process-group TERM behavior as run_budgeted.sh. The
     # aggregate timeout owns exit 124; the sidecar reports observed interruption.
     : > "$NQ_TEST_LOG"
-    if NQ_TEST_PHASE=stage2_emit NQ_TEST_PHASE_ACTION=block timeout --signal=TERM --kill-after=3s 30s bash "$root/scripts/check_seed_bootstrap.sh" --reuse-stage1 > "$log" 2>&1; then code=0; else code=$?; fi
+    if interrupt_blocked_seed_phase "$root" "$log"; then code=0; else code=$?; fi
     assert_equal "$code" 124 'external GNU timeout exit'
     grep -qx 'phase-blocked:stage2_emit' "$NQ_TEST_LOG"
     assert_overall interrupted stage2_emit 143
@@ -330,6 +367,9 @@ if [[ "$phase_only" == true ]]; then
 fi
 
 fixture="$scratch/fixture"
+bash "$script_dir/check_provenance_metadata.sh"
+bash "$script_dir/check_fast_routing.sh"
+bash "$script_dir/check_fast_concurrent.sh"
 make_fixture "$fixture"
 export NQ_TEST_ROOT="$fixture"
 seed_verify "$fixture"

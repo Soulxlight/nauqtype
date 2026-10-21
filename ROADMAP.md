@@ -2,28 +2,38 @@
 
 ## Current Position And Resumption
 
-M55 is complete in the recorded Linux evidence. Gate efficiency is the first
-priority: complete the PRE-M56 Performance Checkpoint before M56 generic
-reuse. Ubuntu 24.04 on WSL2 now runs with GCC and a native ext4 home; the
-reviewed compiler P0 baseline is complete for its exact indexed candidate. The
-project remains an organizational alpha, not a v1.0 stable or feature-complete
-terminal/application language. M56-M61 below remain the release sequence; the
-earlier sections retain milestone history. Use the
-[documentation guide](docs/README.md) for task routing and authoritative
+M55 and the required PRE-M56 P1-P4 efficiency goals are complete in recorded
+Linux evidence. The next language milestone is M56 generic reuse; it is not
+implemented by this performance pass. The project remains an organizational
+alpha, not a v1.0 stable or feature-complete terminal/application language.
+M56-M61 below remain the release sequence; earlier sections retain milestone
+history. Use the [documentation guide](docs/README.md) for authoritative
 contracts rather than treating historical steps as current instructions.
 
-The campaign goals are focused feedback within 10 seconds, the warm complete
-fixture tier within 60 seconds, and a cold milestone gate at least 50% faster
-than the new same-host baseline, with 10 minutes as the working target.
-These are planning goals, not achieved reductions. P0's cold gate passed in
-2520.62s; repeated checks passed in 304.23s/308.99s. E1 and P2 mapping now
-have candidate-specific evidence: P2's one cold gate took 2485.30s, 1.40% less
-than P0, while measured comparisons improve about 25-26x with higher memory.
-The overall goals and broader P1-P4 remain open; see
-[PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) and
-[PERFORMANCE_MAPPING.md](PERFORMANCE_MAPPING.md). The reviewed P0/E1/P2
-baseline is locally checkpointed in `0564a32`, with its P2 closing receipt
-verified. This is not a new published or stable release.
+Reviewed frozen candidate `42999a5f31a8993b5ac8e38235ef5645d074af2d` passes
+the new native seven-phase gate in1055.50s/520116KiB,58.13% less elapsed time
+than P0's2520.62s. Focused feedback is0.85s. Two complete opt-in warm runs
+take49.46s/46.82s, with all23 fixture receipt bodies/inodes/mtimes unchanged.
+Both independent source-readiness audits pass; both seed comparisons,12 proof
+phases,44 corpus cases, copied Linux layout, stress, fresh fixtures and
+sanitizers remain. See the
+[current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
+
+The warm result applies only to the owner-approved
+[concurrent local tier](docs/P1_CONCURRENT_WARM_CONTRACT.md) on its pinned
+supported WSL2/Ubuntu24.04 provider. Default/full-milestone/proof/release
+execution remains serial. No budget, coverage or strict60 waiver is involved.
+The10min cold working target remains unmet and is tracked separately from
+the required>=50% reduction. These measurements are observed historical
+comparisons, not randomized causal estimates or release certification.
+
+The [P1-P4 pre-close report](PERFORMANCE_P1_P4.md) preserves component and
+intermediate evidence. Earlier1055.02s/1011.04s cold and128.52s/100.58s warm
+observations remain bound to their older candidates in the completion ledger;
+they do not attest the new host scripts. Current completion supersedes the
+pre-close pending statuses without rewriting sealed evidence. No publication,
+stable release, M56 implementation or downstream pin change is claimed.
+
 The recorded M55 gate was 2,504 seconds, with about 91% in driver, seed
 bootstrap, and proof. The native P0 now establishes 92.4% in those phases;
 use the same-host costs before choosing an implementation.

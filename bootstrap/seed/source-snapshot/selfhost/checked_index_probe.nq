@@ -1,0 +1,587 @@
+use checked_index;
+use diag;
+use handoff;
+use ir;
+
+fn p2_probe_function(id: i32, module_name: str, name: str) -> checked_function {
+    return checked_function {
+        id: id,
+        module_id: 1,
+        module_name: module_name,
+        name: name,
+        at: 0,
+        root_scope_id: 1,
+        return_name: "unit",
+        return_arg1_name: "",
+        return_arg2_name: "",
+        return_is_borrow: false,
+        return_borrow_mutable: false,
+        return_type_id: 1,
+    };
+}
+
+fn p2_probe_param(function_id: i32, index: i32, is_borrow: bool, borrow_mutable: bool) -> checked_param {
+    return checked_param {
+        function_id: function_id,
+        binding_id: 100 + function_id + index,
+        module_name: "probe",
+        function_name: "target",
+        index: index,
+        name: "value",
+        at: 0,
+        type_name: "i32",
+        type_arg1_name: "",
+        type_arg2_name: "",
+        is_borrow: is_borrow,
+        borrow_mutable: borrow_mutable,
+        type_id: 1,
+    };
+}
+
+fn p2_probe_block(id: i32, function_id: i32, scope_id: i32) -> checked_block {
+    return checked_block {
+        id: id,
+        function_id: function_id,
+        module_name: "probe",
+        function_name: "target",
+        scope_id: scope_id,
+        parent_block_id: -1,
+        depth: 0,
+    };
+}
+
+fn p2_probe_stmt(id: i32, function_id: i32) -> checked_stmt {
+    return checked_stmt {
+        id: id,
+        function_id: function_id,
+        module_name: "probe",
+        function_name: "target",
+        block_id: 1,
+        scope_id: 1,
+        at: id,
+        kind: checked_stmt_expr,
+        name: "",
+        field_owner_module: "",
+        field_owner_type: "",
+        field_name: "",
+        type_name: "unit",
+        type_arg1_name: "",
+        type_arg2_name: "",
+        is_borrow: false,
+        borrow_mutable: false,
+        type_id: 1,
+        target_binding_id: -1,
+        expr_id: -1,
+        child_block_id: -1,
+        alt_block_id: -1,
+    };
+}
+
+fn p2_probe_linear_first_function(functions: ref list<checked_function>, module_name: str, name: str) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == name { return value.id; }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn p2_probe_linear_last_function(functions: ref list<checked_function>, module_name: str, name: str) -> i32 {
+    let mut result = -1;
+    let mut index = 0;
+    while index < list_len(ref functions) {
+        let entry = list_get(ref functions, index);
+        match entry {
+            Some(value) => {
+                if value.module_name == module_name and value.name == name { result = value.id; }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn p2_probe_linear_first_param(params: ref list<checked_param>, function_id: i32, param_index: i32) -> option<p2_checked_param_mode> {
+    let mut index = 0;
+    while index < list_len(ref params) {
+        let entry = list_get(ref params, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id and value.index == param_index {
+                    return Some(p2_checked_param_mode {
+                        function_id: value.function_id,
+                        param_index: value.index,
+                        is_borrow: value.is_borrow,
+                        borrow_mutable: value.borrow_mutable,
+                        source_index: index,
+                    });
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return None;
+}
+
+fn p2_probe_linear_param_count(params: ref list<checked_param>, function_id: i32) -> i32 {
+    let mut count = 0;
+    let mut index = 0;
+    while index < list_len(ref params) {
+        let entry = list_get(ref params, index);
+        match entry {
+            Some(value) => {
+                if value.function_id == function_id { count = count + 1; }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return count;
+}
+
+fn p2_probe_modes_equal(left: option<p2_checked_param_mode>, right: option<p2_checked_param_mode>) -> bool {
+    match left {
+        Some(left_value) => {
+            match right {
+                Some(right_value) => {
+                    return left_value.function_id == right_value.function_id and left_value.param_index == right_value.param_index and left_value.is_borrow == right_value.is_borrow and left_value.borrow_mutable == right_value.borrow_mutable and left_value.source_index == right_value.source_index;
+                },
+                None => { return false; },
+            }
+        },
+        None => {
+            match right {
+                Some(_) => { return false; },
+                None => { return true; },
+            }
+        },
+    }
+}
+
+fn p2_probe_linear_members(function_ids: ref list<i32>, function_id: i32) -> list<i32> {
+    let mut result: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref function_ids) {
+        let entry = list_get(ref function_ids, index);
+        match entry {
+            Some(value) => {
+                if value == function_id { list_push(mutref result, index); }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return result;
+}
+
+fn p2_probe_indexed_members(index: ref list<p2_checked_member_entry>, function_id: i32) -> list<i32> {
+    let mut result: list<i32> = list();
+    let range = p2_checked_member_range_for(ref index, function_id);
+    let mut position = range.start;
+    while position < range.end {
+        list_push(mutref result, p2_checked_member_source_index(ref index, position));
+        position = position + 1;
+    }
+    return result;
+}
+
+fn p2_probe_i32_lists_equal(left: ref list<i32>, right: ref list<i32>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        let left_entry = list_get(ref left, index);
+        let right_entry = list_get(ref right, index);
+        match left_entry {
+            Some(left_value) => {
+                match right_entry {
+                    Some(right_value) => {
+                        if left_value != right_value { return false; }
+                    },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub fn p2_checked_index_cases() -> bool
+audit {
+    intent("Compare checked-only function parameter and membership indexes with independent linear oracles");
+    mutates();
+    effects();
+}
+{
+    let mut functions: list<checked_function> = list();
+    list_push(mutref functions, p2_probe_function(40, "probe", "other"));
+    list_push(mutref functions, p2_probe_function(7, "probe", "target"));
+    list_push(mutref functions, p2_probe_function(91, "other", "target"));
+    list_push(mutref functions, p2_probe_function(13, "probe", "target"));
+    let function_index = p2_checked_build_function_index(ref functions);
+
+    let linear_first = p2_probe_linear_first_function(ref functions, "probe", "target");
+    let linear_last = p2_probe_linear_last_function(ref functions, "probe", "target");
+    if linear_first != 7 or linear_last != 13 or linear_first == linear_last { return false; }
+    if p2_checked_first_function_id(ref function_index, "probe", "target") != linear_first { return false; }
+    if p2_checked_last_function_id(ref function_index, "probe", "target") != linear_last { return false; }
+    if p2_checked_first_function_id(ref function_index, "other", "target") != p2_probe_linear_first_function(ref functions, "other", "target") { return false; }
+    if p2_checked_last_function_id(ref function_index, "missing", "target") != -1 { return false; }
+
+    let mut params: list<checked_param> = list();
+    list_push(mutref params, p2_probe_param(7, 0, true, false));
+    list_push(mutref params, p2_probe_param(13, 0, false, false));
+    list_push(mutref params, p2_probe_param(7, 1, true, true));
+    list_push(mutref params, p2_probe_param(91, 3, false, false));
+    list_push(mutref params, p2_probe_param(7, 0, false, false));
+    let param_index = p2_checked_build_param_index(ref params);
+    if not p2_probe_modes_equal(p2_checked_first_param_mode(ref param_index, 7, 0), p2_probe_linear_first_param(ref params, 7, 0)) { return false; }
+    if not p2_probe_modes_equal(p2_checked_first_param_mode(ref param_index, 7, 1), p2_probe_linear_first_param(ref params, 7, 1)) { return false; }
+    if not p2_probe_modes_equal(p2_checked_first_param_mode(ref param_index, 13, 0), p2_probe_linear_first_param(ref params, 13, 0)) { return false; }
+    if not p2_probe_modes_equal(p2_checked_first_param_mode(ref param_index, 7, 9), p2_probe_linear_first_param(ref params, 7, 9)) { return false; }
+    if not p2_probe_modes_equal(p2_checked_first_param_mode(ref param_index, 999, 0), p2_probe_linear_first_param(ref params, 999, 0)) { return false; }
+    if p2_checked_param_count(ref param_index, 7) != p2_probe_linear_param_count(ref params, 7) { return false; }
+    if p2_checked_param_count(ref param_index, 7) != 3 { return false; }
+    if p2_checked_param_count(ref param_index, 999) != 0 { return false; }
+
+    let mut member_functions: list<i32> = list();
+    list_push(mutref member_functions, 30);
+    list_push(mutref member_functions, 4);
+    list_push(mutref member_functions, 30);
+    list_push(mutref member_functions, 9);
+    list_push(mutref member_functions, 4);
+    let member_index = p2_checked_build_member_index(ref member_functions);
+    let linear_30 = p2_probe_linear_members(ref member_functions, 30);
+    let indexed_30 = p2_probe_indexed_members(ref member_index, 30);
+    if not p2_probe_i32_lists_equal(ref linear_30, ref indexed_30) { return false; }
+    let linear_4 = p2_probe_linear_members(ref member_functions, 4);
+    let indexed_4 = p2_probe_indexed_members(ref member_index, 4);
+    if not p2_probe_i32_lists_equal(ref linear_4, ref indexed_4) { return false; }
+
+    let mut blocks: list<checked_block> = list();
+    list_push(mutref blocks, p2_probe_block(70, 30, 8));
+    list_push(mutref blocks, p2_probe_block(11, 4, 2));
+    list_push(mutref blocks, p2_probe_block(90, 30, 3));
+    list_push(mutref blocks, p2_probe_block(22, 9, 1));
+    list_push(mutref blocks, p2_probe_block(13, 4, 7));
+    let block_index = p2_checked_build_block_member_index(ref blocks);
+    let indexed_blocks_30 = p2_probe_indexed_members(ref block_index, 30);
+    if not p2_probe_i32_lists_equal(ref linear_30, ref indexed_blocks_30) { return false; }
+
+    let mut statements: list<checked_stmt> = list();
+    list_push(mutref statements, p2_probe_stmt(70, 30));
+    list_push(mutref statements, p2_probe_stmt(11, 4));
+    list_push(mutref statements, p2_probe_stmt(90, 30));
+    list_push(mutref statements, p2_probe_stmt(22, 9));
+    list_push(mutref statements, p2_probe_stmt(13, 4));
+    let statement_index = p2_checked_build_stmt_member_index(ref statements);
+    let indexed_statements_4 = p2_probe_indexed_members(ref statement_index, 4);
+    if not p2_probe_i32_lists_equal(ref linear_4, ref indexed_statements_4) { return false; }
+
+    let missing = p2_checked_member_range_for(ref member_index, 77);
+    if missing.start != missing.end { return false; }
+    if p2_checked_member_source_index(ref member_index, -1) != -1 { return false; }
+    if p2_checked_member_source_index(ref member_index, list_len(ref member_index)) != -1 { return false; }
+    return true;
+}
+
+fn p2_probe_stmt_kind_key(kind: checked_stmt_kind) -> i32 {
+    match kind {
+        checked_stmt_local => { return 1; }, checked_stmt_expr => { return 2; }, checked_stmt_assign => { return 3; },
+        checked_stmt_field_assign => { return 4; }, checked_stmt_return => { return 5; }, checked_stmt_if => { return 6; },
+        checked_stmt_while => { return 7; }, checked_stmt_for => { return 8; }, checked_stmt_match => { return 9; },
+        checked_stmt_let_else => { return 10; }, checked_stmt_propagate => { return 11; },
+        checked_stmt_break => { return 12; }, checked_stmt_continue => { return 13; },
+    }
+}
+
+fn p2_probe_blocks_equal(left: ref list<checked_block>, right: ref list<checked_block>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => {
+                match list_get(ref right, index) {
+                    Some(b) => { if a.id != b.id or a.function_id != b.function_id or a.module_name != b.module_name or a.function_name != b.function_name or a.scope_id != b.scope_id or a.parent_block_id != b.parent_block_id or a.depth != b.depth { return false; } },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn p2_probe_blocks_members_case(source: ref list<checked_block>, owner: i32) -> bool {
+    let mut expected: list<checked_block> = list();
+    let mut snapshot: list<checked_block> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) {
+            Some(value) => {
+                list_push(mutref snapshot, value);
+                if value.function_id == owner { list_push(mutref expected, value); }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let members = p2_checked_build_block_member_index(ref source);
+    let range = p2_checked_member_range_for(ref members, owner);
+    let mut actual: list<checked_block> = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, p2_checked_member_source_index(ref members, index)) {
+            Some(value) => { list_push(mutref actual, value); },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not p2_probe_blocks_equal(ref expected, ref actual) { return false; }
+    match list_get(ref actual, 0) {
+        Some(value) => { let mut changed = value; changed.parent_block_id = 987; list_push(mutref actual, changed); },
+        None => {},
+    }
+    actual = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, p2_checked_member_source_index(ref members, index)) {
+            Some(value) => { list_push(mutref actual, value); },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return p2_probe_blocks_equal(ref expected, ref actual) and p2_probe_blocks_equal(ref snapshot, ref source);
+}
+
+fn p2_probe_statements_equal(left: ref list<checked_stmt>, right: ref list<checked_stmt>) -> bool {
+    if list_len(ref left) != list_len(ref right) { return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => {
+                match list_get(ref right, index) {
+                    Some(b) => { if a.id != b.id or a.function_id != b.function_id or a.module_name != b.module_name or a.function_name != b.function_name or a.block_id != b.block_id or a.scope_id != b.scope_id or a.at != b.at or p2_probe_stmt_kind_key(a.kind) != p2_probe_stmt_kind_key(b.kind) or a.name != b.name or a.field_owner_module != b.field_owner_module or a.field_owner_type != b.field_owner_type or a.field_name != b.field_name or a.type_name != b.type_name or a.type_arg1_name != b.type_arg1_name or a.type_arg2_name != b.type_arg2_name or a.is_borrow != b.is_borrow or a.borrow_mutable != b.borrow_mutable or a.type_id != b.type_id or a.target_binding_id != b.target_binding_id or a.expr_id != b.expr_id or a.child_block_id != b.child_block_id or a.alt_block_id != b.alt_block_id { return false; } },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn p2_probe_statements_members_case(source: ref list<checked_stmt>, owner: i32) -> bool {
+    let mut expected: list<checked_stmt> = list();
+    let mut snapshot: list<checked_stmt> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) {
+            Some(value) => {
+                list_push(mutref snapshot, value);
+                if value.function_id == owner { list_push(mutref expected, value); }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let members = p2_checked_build_stmt_member_index(ref source);
+    let range = p2_checked_member_range_for(ref members, owner);
+    let mut actual: list<checked_stmt> = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, p2_checked_member_source_index(ref members, index)) {
+            Some(value) => { list_push(mutref actual, value); },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not p2_probe_statements_equal(ref expected, ref actual) { return false; }
+    match list_get(ref actual, 0) {
+        Some(value) => { let mut changed = value; changed.child_block_id = 987; changed.alt_block_id = 654; list_push(mutref actual, changed); },
+        None => {},
+    }
+    actual = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, p2_checked_member_source_index(ref members, index)) {
+            Some(value) => { list_push(mutref actual, value); },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return p2_probe_statements_equal(ref expected, ref actual) and p2_probe_statements_equal(ref snapshot, ref source);
+}
+
+fn p2_cleanup_stmt(id: i32, owner: i32, block_id: i32, scope_id: i32, kind: checked_stmt_kind, expr_id: i32, type_id: i32, child: i32) -> checked_stmt {
+    let mut value = p2_probe_stmt(id, owner);
+    if owner == 7 { value.module_name = "foreign"; }
+    value.block_id = block_id; value.scope_id = scope_id; value.kind = kind;
+    value.expr_id = expr_id; value.type_id = type_id; value.child_block_id = child;
+    if type_id == 2 { value.type_name = "bool"; }
+    if type_id == 3 { value.type_name = "i32"; }
+    if type_id == 4 { value.type_name = "list"; value.type_arg1_name = "i32"; }
+    match kind { checked_stmt_for => { value.target_binding_id = 19; value.name = "item"; }, _ => {}, }
+    return value;
+}
+
+fn p2_cleanup_expr(id: i32, owner: i32, scope_id: i32, kind: checked_expr_kind, type_name: str, type_id: i32, name: str) -> checked_expr {
+    let mut module_name = "probe";
+    if owner == 7 { module_name = "foreign"; }
+    let mut value = checked_expr { id: id, function_id: owner, module_name: module_name, function_name: "target", scope_id: scope_id, at: id, start: 0, end: 1, kind: kind, type_name: type_name, type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: type_id, binding_id: -1, name: name, target_kind: checked_target_none, target_origin_module: "", target_at: -1, field_owner_module: "", field_owner_type: "", field_name: "" };
+    if type_id == 4 { value.type_arg1_name = "i32"; }
+    return value;
+}
+
+fn p2_cleanup_block(id: i32, owner: i32, scope_id: i32, parent: i32, depth: i32) -> checked_block {
+    let mut value = p2_probe_block(id, owner, scope_id);
+    if owner == 7 { value.module_name = "foreign"; }
+    value.parent_block_id = parent; value.depth = depth;
+    return value;
+}
+
+fn p2_cleanup_lower_case(functions: ref list<checked_function>, bindings: ref list<checked_binding>, types: ref list<checked_type_shape>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, arms: ref list<checked_match_arm>, patterns: ref list<checked_pattern>, expressions: ref list<checked_expr>, negative: bool) -> bool {
+    let params: list<checked_param> = list();
+    let consts: list<checked_const_decl> = list();
+    let type_decls: list<checked_type_decl> = list();
+    let fields: list<checked_field_decl> = list();
+    let enums: list<checked_enum_decl> = list();
+    let variants: list<checked_variant_decl> = list();
+    let payloads: list<checked_variant_payload_decl> = list();
+    let pattern_children: list<checked_pattern_child> = list();
+    let pattern_bindings: list<checked_pattern_binding> = list();
+    let children: list<checked_expr_child> = list();
+    let struct_fields: list<checked_struct_field_init> = list();
+    let mut programs_out: list<ir_program> = list();
+    let mut signatures_out: list<ir_function_sig> = list();
+    let mut functions_out: list<ir_function> = list();
+    let mut locals_out: list<ir_local> = list();
+    let mut consts_out: list<ir_const_decl> = list();
+    let mut blocks_out: list<ir_block> = list();
+    let mut statements_out: list<ir_stmt> = list();
+    let mut arms_out: list<ir_match_arm> = list();
+    let mut patterns_out: list<ir_pattern> = list();
+    let mut pattern_children_out: list<ir_pattern_child> = list();
+    let mut expressions_out: list<ir_expr> = list();
+    let mut children_out: list<ir_expr_child> = list();
+    let mut field_values_out: list<ir_field_value> = list();
+    let mut types_out: list<ir_type_shape> = list();
+    let mut structs_out: list<ir_struct_decl> = list();
+    let mut fields_out: list<ir_field_decl> = list();
+    let mut enums_out: list<ir_enum_decl> = list();
+    let mut variants_out: list<ir_variant_decl> = list();
+    let mut payloads_out: list<ir_variant_payload_decl> = list();
+    let mut diags: list<diag> = list();
+    let summary = build_ir_program_for_entry(ref functions, ref bindings, ref params, ref consts, ref types, ref type_decls, ref fields, ref enums, ref variants, ref payloads, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref pattern_bindings, ref expressions, ref children, ref struct_fields, "probe", false, mutref programs_out, mutref signatures_out, mutref functions_out, mutref locals_out, mutref consts_out, mutref blocks_out, mutref statements_out, mutref arms_out, mutref patterns_out, mutref pattern_children_out, mutref expressions_out, mutref children_out, mutref field_values_out, mutref types_out, mutref structs_out, mutref fields_out, mutref enums_out, mutref variants_out, mutref payloads_out, mutref diags);
+    let mut expected_diags = 0;
+    if negative { expected_diags = 1; }
+    if summary.diag_count != expected_diags or list_len(ref diags) != expected_diags { return false; }
+    if list_len(ref statements_out) != list_len(ref statements) { return false; }
+    let mut index = 0;
+    let mut control_count = 0;
+    while index < list_len(ref statements_out) {
+        match list_get(ref statements_out, index) {
+            Some(value) => {
+                let mut expected_target = -1;
+                if value.id == 705 or value.id == 709 { expected_target = 222; control_count = control_count + 1; }
+                if value.id == 706 or value.id == 708 { expected_target = 12; control_count = control_count + 1; }
+                if value.exit_target_block_id != expected_target { return false; }
+                match list_get(ref statements, index) {
+                    Some(source) => {
+                        if value.id != source.id or value.function_id != source.function_id or value.block_id != source.block_id or value.target_local_id != source.target_binding_id or value.child_block_id != source.child_block_id or value.alt_block_id != source.alt_block_id { return false; }
+                    },
+                    None => { return false; },
+                }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if control_count != 4 or list_len(ref arms_out) != 1 or list_len(ref locals_out) != 1 { return false; }
+    match list_get(ref locals_out, 0) { Some(value) => { if value.binding_id != 19 or value.owner_block_id != 222 { return false; } }, None => { return false; }, }
+    match list_get(ref arms_out, 0) { Some(value) => { if value.id != 37 or value.stmt_id != 702 or value.block_id != 730 { return false; } }, None => { return false; }, }
+    return true;
+}
+
+pub fn checked_membership_cleanup_cases() -> bool
+audit {
+    intent("Compare full ordered checked membership records and nested loop cleanup targets");
+    mutates();
+    effects();
+}
+{
+    let mut functions: list<checked_function> = list();
+    list_push(mutref functions, p2_probe_function(41, "probe", "target"));
+    list_push(mutref functions, p2_probe_function(7, "foreign", "target"));
+    let mut types: list<checked_type_shape> = list();
+    list_push(mutref types, checked_type_shape { id: 1, kind: checked_type_unit, name: "unit", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false });
+    list_push(mutref types, checked_type_shape { id: 2, kind: checked_type_bool, name: "bool", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false });
+    list_push(mutref types, checked_type_shape { id: 3, kind: checked_type_i32, name: "i32", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false });
+    list_push(mutref types, checked_type_shape { id: 4, kind: checked_type_list, name: "list", origin_module: "", arg1_id: 3, arg2_id: -1, mutable: false });
+    let mut blocks: list<checked_block> = list();
+    list_push(mutref blocks, p2_cleanup_block(300, 41, 1, -1, 0));
+    list_push(mutref blocks, p2_cleanup_block(900, 7, 1, -1, 0));
+    list_push(mutref blocks, p2_cleanup_block(12, 41, 2, 300, 1));
+    list_push(mutref blocks, p2_cleanup_block(730, 41, 3, 12, 2));
+    list_push(mutref blocks, p2_cleanup_block(222, 41, 4, 730, 3));
+    list_push(mutref blocks, p2_cleanup_block(444, 41, 5, 222, 4));
+    let mut statements: list<checked_stmt> = list();
+    list_push(mutref statements, p2_cleanup_stmt(701, 41, 300, 1, checked_stmt_while, 1, 1, 12));
+    list_push(mutref statements, p2_cleanup_stmt(750, 7, 900, 1, checked_stmt_return, 6, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(702, 41, 12, 2, checked_stmt_match, 2, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(703, 41, 730, 3, checked_stmt_for, 3, 3, 222));
+    list_push(mutref statements, p2_cleanup_stmt(704, 41, 222, 4, checked_stmt_if, 4, 1, 444));
+    list_push(mutref statements, p2_cleanup_stmt(705, 41, 444, 5, checked_stmt_continue, -1, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(706, 41, 730, 3, checked_stmt_break, -1, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(708, 41, 730, 3, checked_stmt_continue, -1, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(709, 41, 444, 5, checked_stmt_break, -1, 1, -1));
+    list_push(mutref statements, p2_cleanup_stmt(707, 41, 300, 1, checked_stmt_return, 5, 1, -1));
+    if not p2_probe_blocks_members_case(ref blocks, 41) or not p2_probe_blocks_members_case(ref blocks, 7) or not p2_probe_blocks_members_case(ref blocks, 999) { return false; }
+    if not p2_probe_statements_members_case(ref statements, 41) or not p2_probe_statements_members_case(ref statements, 7) or not p2_probe_statements_members_case(ref statements, 999) { return false; }
+    let mut compact_blocks: list<checked_block> = list();
+    let mut compact_statements: list<checked_stmt> = list();
+    match list_get(ref blocks, 4) { Some(value) => { list_push(mutref compact_blocks, value); }, None => { return false; }, }
+    match list_get(ref statements, 5) { Some(value) => { list_push(mutref compact_statements, value); }, None => { return false; }, }
+    if not p2_probe_blocks_members_case(ref compact_blocks, 41) or not p2_probe_statements_members_case(ref compact_statements, 41) { return false; }
+    compact_blocks = list(); compact_statements = list();
+    if not p2_probe_blocks_members_case(ref compact_blocks, 41) or not p2_probe_statements_members_case(ref compact_statements, 41) { return false; }
+
+    let mut bindings: list<checked_binding> = list();
+    list_push(mutref bindings, checked_binding { id: 19, function_id: 41, module_name: "probe", function_name: "target", scope_id: 4, name: "item", at: 703, kind: checked_binding_local, type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 3, origin_stmt_id: 703, origin_arm_id: -1, param_index: -1 });
+    let mut arms: list<checked_match_arm> = list();
+    list_push(mutref arms, checked_match_arm { id: 37, stmt_id: 702, function_id: 41, module_name: "probe", function_name: "target", block_id: 730, scope_id: 3, at: 702, constructor_name: "", constructor_origin_module: "", constructor_enum_name: "", is_wildcard: true, pattern_id: 51, result_expr_id: -1 });
+    let mut patterns: list<checked_pattern> = list();
+    list_push(mutref patterns, checked_pattern { id: 51, arm_id: 37, function_id: 41, module_name: "probe", function_name: "target", scope_id: 3, at: 702, start: 0, end: 1, kind: checked_pattern_wildcard, binding_id: -1, name: "", constructor_origin_module: "", constructor_enum_name: "" });
+    let mut expressions: list<checked_expr> = list();
+    list_push(mutref expressions, p2_cleanup_expr(1, 41, 1, checked_expr_bool, "bool", 2, "true"));
+    list_push(mutref expressions, p2_cleanup_expr(2, 41, 2, checked_expr_i32, "i32", 3, "0"));
+    list_push(mutref expressions, p2_cleanup_expr(3, 41, 3, checked_expr_list, "list", 4, ""));
+    list_push(mutref expressions, p2_cleanup_expr(4, 41, 4, checked_expr_bool, "bool", 2, "true"));
+    list_push(mutref expressions, p2_cleanup_expr(5, 41, 1, checked_expr_unit, "unit", 1, ""));
+    list_push(mutref expressions, p2_cleanup_expr(6, 7, 1, checked_expr_unit, "unit", 1, ""));
+    if not p2_cleanup_lower_case(ref functions, ref bindings, ref types, ref blocks, ref statements, ref arms, ref patterns, ref expressions, false) { return false; }
+    list_push(mutref statements, p2_cleanup_stmt(710, 41, 300, 1, checked_stmt_break, -1, 1, -1));
+    return p2_cleanup_lower_case(ref functions, ref bindings, ref types, ref blocks, ref statements, ref arms, ref patterns, ref expressions, true);
+}
+
+fn main() -> i32 {
+    if not p2_checked_index_cases() { return 1; }
+    if not checked_membership_cleanup_cases() { return 2; }
+    return 0;
+}

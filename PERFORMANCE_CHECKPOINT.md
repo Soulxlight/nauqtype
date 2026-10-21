@@ -1,12 +1,25 @@
 # PRE-M56 Performance Checkpoint
 
-Priority updated 2026-09-30: shorten the development feedback loop and the
+Priority updated 2026-10-21: shorten the development feedback loop and the
 complete milestone gate before starting M56. M55 remains the last completed
 language milestone. P0 now has an audited native-ext4 baseline: the complete
 gate passed in 2520.62s and repeated full-tree checks passed in 304.23s and
-308.99s. Optimization acceptance remains open. See
+308.99s. See
 [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) for identities, costs, and
-the exact verification boundary; no speedup is claimed.
+the exact baseline boundary.
+
+Current P1-P4 component work is recorded separately in
+[PERFORMANCE_P1_P4.md](PERFORMANCE_P1_P4.md). Repeated common-source compiler
+checks improve. The later frozen `03a3b53` seven-phase gate passed in1011.04s,
+59.89% less elapsed time than P0; its post-gate focused route passed in0.64s.
+Complete serial warm100.58s still misses60s. The owner approved an opt-in local
+concurrent warm tier on2026-10-21; its first guarded complete observation was
+46.99s, followed by audit-driven host-script repairs. Repeat timings, trailing
+audits and a fresh complete gate are required for the changed candidate.
+Later acceptance belongs in the
+[completion ledger](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close), not an
+extension of earlier attestations. The10min cold working target is distinct
+from the required>=50% reduction and remains unmet at this pre-close freeze.
 
 ## Goals And Current Evidence
 
@@ -75,15 +88,17 @@ the M55 section records exact artifact identities.
 ### P1: Iteration And Snapshot Reuse
 
 Choose the relevant existing fixture/command before launching a broad suite.
-`nauqc test` currently has no suite selector; a selector is planned tooling,
-not a flag agents can already use. Scope-specific feedback must retain the
-complete fixture tier at milestone close.
+The in-flight P1-P4 candidate adds fixed `nauqc test --suite` and
+`scripts/check_fast.sh --suite` selectors, plus explicitly host-unit-only
+routes. A published older compiler may not implement them. Scope-specific
+feedback must retain the complete fixture tier at milestone close.
 
 Measure cache validation, fixture startup, copied source bytes, and hash/read
-passes. A new 30-second interruption fixture is present in the uncommitted
-provenance suite that `check_fast.sh` invokes; the old 1.3-second warm result
-cannot describe that candidate. Retain interruption coverage and give routine
-edits a smaller relevant path.
+passes. The in-flight candidate replaces the former30-second interruption
+wait with ready-triggered interruption of a real blocked phase. Completion,
+timeout exit, unreached phases, cleanup and missing receipt assertions remain.
+The0.71-second V10 focused result and115.71-second complete warm result are
+different measurements; neither extends an earlier candidate's attestation.
 
 Only share inputs whose content and derivation have been checked. Preserve
 isolated mutable outputs, failed/unreached artifact handling, dependency and

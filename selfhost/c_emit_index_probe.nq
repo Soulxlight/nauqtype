@@ -1,0 +1,410 @@
+use c_emit;
+use c_emit_index;
+use diag;
+use handoff;
+use ir;
+use text;
+
+fn emit_probe_failure(label: str) -> unit {
+    eprint_line(str_concat("C_EMIT_INDEX_FAILURE ", label));
+    return;
+}
+fn emit_probe_check(okay: bool, label: str) -> bool {
+    if not okay { emit_probe_failure(label); }
+    return okay;
+}
+fn emit_probe_literal(actual: str, expected: str, label: str) -> bool {
+    if actual != expected {
+        emit_probe_failure(label);
+        eprint_line(str_concat("actual:\n", actual));
+        eprint_line(str_concat("expected:\n", expected));
+        return false;
+    }
+    return true;
+}
+
+fn emit_probe_binding_key(kind: checked_binding_kind) -> i32 {
+    match kind { checked_binding_param => { return 0; }, checked_binding_local => { return 1; }, checked_binding_pattern => { return 2; }, }
+}
+fn emit_probe_stmt_key(kind: ir_stmt_kind) -> i32 {
+    match kind {
+        ir_stmt_let => { return 0; }, ir_stmt_assign => { return 1; }, ir_stmt_field_assign => { return 2; },
+        ir_stmt_if => { return 3; }, ir_stmt_while => { return 4; }, ir_stmt_for => { return 5; },
+        ir_stmt_match => { return 6; }, ir_stmt_let_else => { return 7; }, ir_stmt_propagate => { return 8; },
+        ir_stmt_return => { return 9; }, ir_stmt_expr => { return 10; }, ir_stmt_break => { return 11; }, ir_stmt_continue => { return 12; },
+    }
+}
+fn emit_probe_local_equal(a: ir_local, b: ir_local) -> bool {
+    return a.binding_id == b.binding_id and a.function_id == b.function_id and a.module_name == b.module_name and a.function_name == b.function_name and a.name == b.name and a.at == b.at and emit_probe_binding_key(a.binding_kind) == emit_probe_binding_key(b.binding_kind) and a.param_index == b.param_index and a.type_id == b.type_id and a.owner_block_id == b.owner_block_id and a.is_ref_param == b.is_ref_param and a.ref_mutable == b.ref_mutable;
+}
+fn emit_probe_stmt_equal(a: ir_stmt, b: ir_stmt) -> bool {
+    return a.id == b.id and a.function_id == b.function_id and a.block_id == b.block_id and a.at == b.at and emit_probe_stmt_key(a.kind) == emit_probe_stmt_key(b.kind) and a.type_id == b.type_id and a.target_local_id == b.target_local_id and a.field_name == b.field_name and a.expr_id == b.expr_id and a.child_block_id == b.child_block_id and a.alt_block_id == b.alt_block_id and a.exit_target_block_id == b.exit_target_block_id;
+}
+fn emit_probe_child_equal(a: ir_expr_child, b: ir_expr_child) -> bool {
+    return a.parent_expr_id == b.parent_expr_id and a.index == b.index and a.child_expr_id == b.child_expr_id;
+}
+fn emit_probe_param_equal(a: option<ir_local>, b: option<ir_local>) -> bool {
+    match a {
+        Some(left) => { match b { Some(right) => { return emit_probe_local_equal(left, right); }, None => { return false; }, } },
+        None => { match b { Some(right) => { return false; }, None => { return true; }, } },
+    }
+}
+
+fn emit_probe_locals_equal(left: ref list<ir_local>, right: ref list<ir_local>) -> bool {
+    if list_len(ref left) != list_len(ref right) { emit_probe_failure("records=locals length"); return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => { match list_get(ref right, index) { Some(b) => { if not emit_probe_local_equal(a, b) { emit_probe_failure(str_concat("records=locals index=", i32_to_str(index))); return false; } }, None => { return false; }, } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn emit_probe_statements_equal(left: ref list<ir_stmt>, right: ref list<ir_stmt>) -> bool {
+    if list_len(ref left) != list_len(ref right) { emit_probe_failure("records=statements length"); return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => { match list_get(ref right, index) { Some(b) => { if not emit_probe_stmt_equal(a, b) { emit_probe_failure(str_concat("records=statements index=", i32_to_str(index))); return false; } }, None => { return false; }, } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn emit_probe_children_equal(left: ref list<ir_expr_child>, right: ref list<ir_expr_child>) -> bool {
+    if list_len(ref left) != list_len(ref right) { emit_probe_failure("records=children length"); return false; }
+    let mut index = 0;
+    while index < list_len(ref left) {
+        match list_get(ref left, index) {
+            Some(a) => { match list_get(ref right, index) { Some(b) => { if not emit_probe_child_equal(a, b) { emit_probe_failure(str_concat("records=children index=", i32_to_str(index))); return false; } }, None => { return false; }, } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn emit_probe_local(id: i32, owner: i32, block: i32, param: i32, name: str) -> ir_local {
+    let mut kind = checked_binding_local;
+    if param >= 0 { kind = checked_binding_param; }
+    if id == 14 or id == 16 { kind = checked_binding_pattern; }
+    return ir_local { binding_id: id, function_id: owner, module_name: str_concat("module", i32_to_str(owner)), function_name: str_concat("function", i32_to_str(owner)), name: name, at: id + 100, binding_kind: kind, param_index: param, type_id: 1, owner_block_id: block, is_ref_param: false, ref_mutable: false };
+}
+fn emit_probe_locals() -> list<ir_local> {
+    let mut source: list<ir_local> = list();
+    list_push(mutref source, emit_probe_local(10, 41, 10, -1, "a"));
+    list_push(mutref source, emit_probe_local(11, 7, 70, 0, "callee"));
+    list_push(mutref source, emit_probe_local(12, 41, 10, 0, "p0"));
+    list_push(mutref source, emit_probe_local(13, 41, 20, -1, "loop"));
+    list_push(mutref source, emit_probe_local(14, -7, -4, -2, "negative"));
+    list_push(mutref source, emit_probe_local(15, 41, 10, 2, "p2"));
+    list_push(mutref source, emit_probe_local(16, 41, 30, -1, "arm"));
+    list_push(mutref source, emit_probe_local(17, 41, 10, -1, "b"));
+    list_push(mutref source, emit_probe_local(18, 41, 10, 0, "duplicate"));
+    let mut reference = emit_probe_local(19, 41, 10, 3, "ref");
+    reference.is_ref_param = true;
+    list_push(mutref source, reference);
+    list_push(mutref source, emit_probe_local(20, 41, 40, -1, "n1"));
+    list_push(mutref source, emit_probe_local(21, 41, 40, -1, "n2"));
+    let mut scalar = emit_probe_local(22, 41, 20, -1, "scalar");
+    scalar.type_id = 2;
+    list_push(mutref source, scalar);
+    reference = emit_probe_local(23, 7, 70, 1, "ref");
+    reference.is_ref_param = true;
+    reference.ref_mutable = true;
+    list_push(mutref source, reference);
+    reference = emit_probe_local(24, 99, 90, 0, "constref");
+    reference.is_ref_param = true;
+    list_push(mutref source, reference);
+    return source;
+}
+fn emit_probe_stmt(id: i32, owner: i32, block: i32, kind: ir_stmt_kind) -> ir_stmt {
+    return ir_stmt { id: id, function_id: owner, block_id: block, at: id + 100, kind: kind, type_id: id + 101, target_local_id: id + 102, field_name: i32_to_str(id), expr_id: id + 103, child_block_id: id + 104, alt_block_id: id + 105, exit_target_block_id: id + 106 };
+}
+
+// These scans deliberately know nothing about the index or its sort order.
+fn emit_probe_param_case(context: ref c_emit_membership_index, source: ref list<ir_local>, owner: i32, param: i32) -> bool {
+    let mut expected: option<ir_local> = None;
+    let mut found = false;
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) {
+            Some(value) => { if not found and value.function_id == owner and value.param_index == param { expected = Some(value); found = true; } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let mut actual = c_emit_index_probe_param(ref context, ref source, owner, param);
+    if not emit_probe_param_equal(expected, actual) { return false; }
+    match actual { Some(value) => { let mut changed = value; changed.name = "changed"; changed.owner_block_id = 987; actual = Some(changed); }, None => {}, }
+    return emit_probe_param_equal(expected, c_emit_index_probe_param(ref context, ref source, owner, param));
+}
+fn emit_probe_locals_case(context: ref c_emit_membership_index, source: ref list<ir_local>, owner: i32, block: i32, by_block: bool) -> bool {
+    let mut expected: list<ir_local> = list();
+    let mut snapshot: list<ir_local> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) {
+            Some(value) => {
+                list_push(mutref snapshot, value);
+                if value.function_id == owner and (not by_block or value.owner_block_id == block) { list_push(mutref expected, value); }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let mut range = c_emit_function_locals(ref context, owner);
+    if by_block { range = c_emit_block_locals(ref context, owner, block); }
+    let mut actual: list<ir_local> = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, c_emit_member_source_index(ref context, index)) {
+            Some(value) => { list_push(mutref actual, value); }, None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not emit_probe_locals_equal(ref expected, ref actual) { return false; }
+    match list_get(ref actual, 0) {
+        Some(value) => { let mut changed = value; changed.name = "changed"; changed.ref_mutable = not changed.ref_mutable; list_push(mutref actual, changed); },
+        None => {},
+    }
+    actual = list();
+    return emit_probe_locals_equal(ref snapshot, ref source);
+}
+fn emit_probe_children_case(context: ref c_emit_membership_index, source: ref list<ir_expr_child>, parent: i32) -> bool {
+    let mut expected: list<ir_expr_child> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) { Some(value) => { if value.parent_expr_id == parent { list_push(mutref expected, value); } }, None => { return false; }, }
+        index = index + 1;
+    }
+    let range = c_emit_parent_children(ref context, parent);
+    let mut actual: list<ir_expr_child> = list();
+    index = range.start;
+    while index < range.end {
+        match list_get(ref source, c_emit_member_source_index(ref context, index)) { Some(value) => { list_push(mutref actual, value); }, None => { return false; }, }
+        index = index + 1;
+    }
+    if not emit_probe_children_equal(ref expected, ref actual) { return false; }
+    let mut ids = c_emit_index_probe_child_ids(ref context, ref source, parent);
+    if list_len(ref ids) != list_len(ref expected) { return false; }
+    index = 0;
+    while index < list_len(ref expected) {
+        match list_get(ref expected, index) {
+            Some(value) => { match list_get(ref ids, index) { Some(id) => { if id != value.child_expr_id { emit_probe_failure(str_concat("child-ids index=", i32_to_str(index))); return false; } }, None => { return false; }, } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    list_push(mutref ids, 987);
+    let again = c_emit_index_probe_child_ids(ref context, ref source, parent);
+    if list_len(ref again) != list_len(ref expected) { return false; }
+    let mut child_index = -2;
+    while child_index < 5 {
+        let mut expected_id = -1;
+        let mut found = false;
+        index = 0;
+        while index < list_len(ref source) {
+            match list_get(ref source, index) {
+                Some(value) => { if not found and value.parent_expr_id == parent and value.index == child_index { expected_id = value.child_expr_id; found = true; } },
+                None => { return false; },
+            }
+            index = index + 1;
+        }
+        if c_emit_index_probe_child_id(ref context, ref source, parent, child_index) != expected_id { emit_probe_failure(str_concat("first-child child-index=", i32_to_str(child_index))); return false; }
+        child_index = child_index + 1;
+    }
+    return c_emit_index_probe_child_id(ref context, ref source, parent, 999) == -1;
+}
+fn emit_probe_statements_case(context: ref c_emit_membership_index, source: ref list<ir_stmt>, block: i32) -> bool {
+    let mut expected: list<ir_stmt> = list();
+    let mut snapshot: list<ir_stmt> = list();
+    let mut index = 0;
+    while index < list_len(ref source) {
+        match list_get(ref source, index) {
+            Some(value) => { list_push(mutref snapshot, value); if value.block_id == block { list_push(mutref expected, value); } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    let mut actual = c_emit_index_probe_statements(ref context, ref source, block);
+    if not emit_probe_statements_equal(ref expected, ref actual) { return false; }
+    let mut returns = false;
+    match list_get(ref expected, list_len(ref expected) - 1) { Some(value) => { match value.kind { ir_stmt_return => { returns = true; }, _ => {}, } }, None => {}, }
+    if c_emit_index_probe_return(ref context, ref source, block) != returns { return false; }
+    match list_get(ref actual, 0) { Some(value) => { let mut changed = value; changed.field_name = "changed"; changed.exit_target_block_id = 987; list_push(mutref actual, changed); }, None => {}, }
+    actual = list();
+    let again = c_emit_index_probe_statements(ref context, ref source, block);
+    return emit_probe_statements_equal(ref expected, ref again) and emit_probe_statements_equal(ref snapshot, ref source);
+}
+fn emit_probe_collection_case(locals: ref list<ir_local>, children: ref list<ir_expr_child>, statements: ref list<ir_stmt>, collection_name: str) -> bool {
+    let mut okay = true;
+    let context = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let mut index = 0;
+    while index < 6 {
+        let mut owner = 41;
+        let mut block = 40;
+        let mut parent = 90;
+        if index == 1 { owner = 7; block = 70; parent = -5; }
+        if index == 2 { owner = -7; block = -4; parent = 999; }
+        if index == 3 { owner = 999; block = 999; parent = 0; }
+        if index == 4 { owner = 99; block = 10; parent = 2; }
+        if index == 5 { owner = 41; block = 20; parent = 90; }
+        let label = concat6("collection=", collection_name, " case-index=", i32_to_str(index), " owner=", i32_to_str(owner));
+        let block_label = concat3(label, " block=", i32_to_str(block));
+        if not emit_probe_check(emit_probe_locals_case(ref context, ref locals, owner, block, false), str_concat(block_label, " query=function-locals")) { okay = false; }
+        if not emit_probe_check(emit_probe_locals_case(ref context, ref locals, owner, block, true), str_concat(block_label, " query=block-locals")) { okay = false; }
+        if not emit_probe_check(emit_probe_children_case(ref context, ref children, parent), concat3(label, " query=children parent=", i32_to_str(parent))) { okay = false; }
+        if not emit_probe_check(emit_probe_statements_case(ref context, ref statements, block), str_concat(block_label, " query=statements")) { okay = false; }
+        let mut param = -2;
+        while param < 5 {
+            if not emit_probe_check(emit_probe_param_case(ref context, ref locals, owner, param), concat3(label, " query=param param-index=", i32_to_str(param))) { okay = false; }
+            param = param + 1;
+        }
+        if not emit_probe_check(emit_probe_param_case(ref context, ref locals, owner, 999), str_concat(label, " query=param param-index=999")) { okay = false; }
+        index = index + 1;
+    }
+    let mut copied = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    copied.positions = list();
+    if not emit_probe_check(emit_probe_param_case(ref context, ref locals, 41, 0), concat3("collection=", collection_name, " query=rebuild-isolation owner=41 param-index=0")) { okay = false; }
+    if not emit_probe_check(c_emit_member_source_index(ref context, -1) == -1 and c_emit_member_source_index(ref context, list_len(ref context.positions)) == -1, concat3("collection=", collection_name, " query=source-index-bounds")) { okay = false; }
+    return okay;
+}
+
+fn emit_probe_shape(id: i32, kind: checked_type_shape_kind, name: str, drop: bool) -> ir_type_shape {
+    return ir_type_shape { id: id, kind: kind, name: name, origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: not drop, needs_drop: drop };
+}
+fn emit_probe_function() -> ir_function {
+    return ir_function { id: 41, module_name: "probe", name: "probe", internal_name: "probe", return_type_id: 3, root_block_id: 10, at: 100 };
+}
+fn emit_probe_cleanup_expected(mode: i32) -> str {
+    if mode == 0 { return "    NQUnit nq_return_value_41 = {0};\n    NQStr nqv_10_a = {0};\n    NQStr nqv_13_loop = {0};\n    NQStr nqv_16_arm = {0};\n    NQStr nqv_17_b = {0};\n    NQStr nqv_20_n1 = {0};\n    NQStr nqv_21_n2 = {0};\n    int32_t nqv_22_scalar = {0};\n"; }
+    if mode == 1 { return "nq_function_cleanup_41: {\n    nq_str_drop(&nqv_18_duplicate);\n    nq_str_drop(&nqv_17_b);\n    nq_str_drop(&nqv_15_p2);\n    nq_str_drop(&nqv_12_p0);\n    nq_str_drop(&nqv_10_a);\n    return nq_return_value_41;\n}\n"; }
+    if mode == 2 { return "    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n"; }
+    if mode == 3 { return "    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n    nq_str_drop(&nqv_16_arm);\n    nq_str_drop(&nqv_13_loop);\n"; }
+    if mode == 4 { return "    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n    nq_str_drop(&nqv_16_arm);\n"; }
+    if mode == 5 { return "    jump_second();\n    jump_first();\n    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n    nq_str_drop(&nqv_16_arm);\n    nq_str_drop(&nqv_13_loop);\n    break;\n"; }
+    if mode == 6 { return "    jump_second();\n    jump_first();\n    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n    nq_str_drop(&nqv_16_arm);\n    nq_str_drop(&nqv_13_loop);\n    continue;\n"; }
+    return "    nq_return_value_41 = NQ_UNIT;\n    nq_str_drop(&nqv_21_n2);\n    nq_str_drop(&nqv_20_n1);\n    nq_str_drop(&nqv_16_arm);\n    nq_str_drop(&nqv_13_loop);\n    goto nq_function_cleanup_41;\n";
+}
+fn emit_probe_cleanup_cases() -> bool {
+    let mut okay = true;
+    let locals = emit_probe_locals();
+    let children: list<ir_expr_child> = list();
+    let statements: list<ir_stmt> = list();
+    let context = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, emit_probe_shape(1, checked_type_str, "str", true));
+    list_push(mutref shapes, emit_probe_shape(2, checked_type_i32, "i32", false));
+    list_push(mutref shapes, emit_probe_shape(3, checked_type_unit, "unit", false));
+    let mut blocks: list<ir_block> = list();
+    // Parent traversal retains its pre-existing positional IR identity contract.
+    let mut block_id = 1;
+    while block_id <= 40 {
+        let mut parent = -1;
+        let mut depth = 0;
+        if block_id == 20 { parent = 10; depth = 1; }
+        if block_id == 30 { parent = 20; depth = 2; }
+        if block_id == 40 { parent = 30; depth = 3; }
+        list_push(mutref blocks, ir_block { id: block_id, function_id: 41, parent_block_id: parent, depth: depth });
+        block_id = block_id + 1;
+    }
+    list_push(mutref blocks, ir_block { id: 40, function_id: 7, parent_block_id: 999, depth: 4 });
+    let mut function = emit_probe_function();
+    if not emit_probe_literal(c_emit_index_probe_signature(ref context, function, ref locals, ref shapes), "NQUnit nq_fn_probe(NQStr nqv_12_p0)", "signature=gap-first-duplicate") { okay = false; }
+    function.id = 7;
+    function.internal_name = "callee";
+    if not emit_probe_literal(c_emit_index_probe_signature(ref context, function, ref locals, ref shapes), "NQUnit nq_fn_callee(NQStr nqv_11_callee, NQStr* nqv_23_ref)", "signature=all-callee-mutref") { okay = false; }
+    function.id = 99;
+    function.internal_name = "constref";
+    if not emit_probe_literal(c_emit_index_probe_signature(ref context, function, ref locals, ref shapes), "NQUnit nq_fn_constref(const NQStr* nqv_24_constref)", "signature=constref") { okay = false; }
+    function = emit_probe_function();
+    let mut mode = 0;
+    while mode < 8 {
+        let mut lines: list<str> = list();
+        let mut diags: list<diag> = list();
+        c_emit_index_probe_cleanup(ref context, ref shapes, ref locals, ref blocks, function, mode, mutref lines, mutref diags);
+        let label = str_concat("cleanup mode=", i32_to_str(mode));
+        if not emit_probe_check(list_len(ref diags) == 0, str_concat(label, " diagnostics")) { okay = false; }
+        if not emit_probe_literal(render_c_lines(ref lines), emit_probe_cleanup_expected(mode), label) { okay = false; }
+        mode = mode + 1;
+    }
+    let mut lines: list<str> = list();
+    let mut diags: list<diag> = list();
+    c_emit_index_probe_match(ref context, ref shapes, ref locals, ref blocks, function, false, mutref lines, mutref diags);
+    if not emit_probe_check(list_len(ref diags) == 0, "match=statement diagnostics") { okay = false; }
+    if not emit_probe_literal(render_c_lines(ref lines), "if (true) {\n    nq_str_drop(&nqv_16_arm);\n}\n", "match=statement") { okay = false; }
+    lines = list();
+    diags = list();
+    c_emit_index_probe_match(ref context, ref shapes, ref locals, ref blocks, function, true, mutref lines, mutref diags);
+    if not emit_probe_check(list_len(ref diags) == 0, "match=expression diagnostics") { okay = false; }
+    if not emit_probe_literal(render_c_lines(ref lines), "if (true) {\n    result = 5;\n    nq_str_drop(&nqv_16_arm);\n}\n", "match=expression") { okay = false; }
+    return okay;
+}
+fn emit_probe_collection_cases() -> bool {
+    let mut okay = true;
+    let locals = emit_probe_locals();
+    let mut children: list<ir_expr_child> = list();
+    list_push(mutref children, ir_expr_child { parent_expr_id: 90, index: 2, child_expr_id: 902 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: -5, index: -1, child_expr_id: -8 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 90, index: 0, child_expr_id: 900 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 2, index: 0, child_expr_id: 3 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 90, index: 2, child_expr_id: 999 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 90, index: 1, child_expr_id: -1 });
+    let mut statements: list<ir_stmt> = list();
+    list_push(mutref statements, emit_probe_stmt(9, 41, 40, ir_stmt_return));
+    list_push(mutref statements, emit_probe_stmt(-8, -7, -4, ir_stmt_break));
+    list_push(mutref statements, emit_probe_stmt(8, 7, 40, ir_stmt_continue));
+    list_push(mutref statements, emit_probe_stmt(9, 41, 10, ir_stmt_while));
+    list_push(mutref statements, emit_probe_stmt(9, 7, 40, ir_stmt_return));
+    list_push(mutref statements, emit_probe_stmt(90, 41, 20, ir_stmt_for));
+    if not emit_probe_collection_case(ref locals, ref children, ref statements, "full") { okay = false; }
+    let mut filtered_locals: list<ir_local> = list();
+    let mut filtered_children: list<ir_expr_child> = list();
+    let mut filtered_statements: list<ir_stmt> = list();
+    let mut index = 1;
+    while index < list_len(ref locals) {
+        match list_get(ref locals, index) { Some(value) => { list_push(mutref filtered_locals, value); }, None => { return false; }, }
+        index = index + 2;
+    }
+    index = 1;
+    while index < list_len(ref children) {
+        match list_get(ref children, index) { Some(value) => { list_push(mutref filtered_children, value); }, None => { return false; }, }
+        index = index + 2;
+    }
+    index = 1;
+    while index < list_len(ref statements) {
+        match list_get(ref statements, index) { Some(value) => { list_push(mutref filtered_statements, value); }, None => { return false; }, }
+        index = index + 2;
+    }
+    if not emit_probe_collection_case(ref filtered_locals, ref filtered_children, ref filtered_statements, "filtered") { okay = false; }
+    filtered_locals = list();
+    filtered_children = list();
+    filtered_statements = list();
+    if not emit_probe_collection_case(ref filtered_locals, ref filtered_children, ref filtered_statements, "empty") { okay = false; }
+    return okay;
+}
+pub fn c_emit_membership_index_cases() -> bool
+audit {
+    intent("Compare actual C-emitter membership helpers with independent full ordered IR scans and literal cleanup lines");
+    mutates();
+    effects(print);
+}
+{
+    let collections_ok = emit_probe_collection_cases();
+    let cleanup_ok = emit_probe_cleanup_cases();
+    let missing_ok = emit_probe_check(c_emit_index_probe_missing_child(), "missing-child");
+    return collections_ok and cleanup_ok and missing_ok;
+}
+fn main() -> i32 {
+    let membership_ok = c_emit_membership_index_cases();
+    let arithmetic_ok = emit_probe_check(check_c_arithmetic_export_failures(), "old-arithmetic");
+    if not membership_ok { return 1; }
+    if not arithmetic_ok { return 2; }
+    return 0;
+}

@@ -269,3 +269,380 @@ inputs; their SHA-256 identities anchor the observed closure:
 | `build/proof/summary.json` | `fa9f419bd6fdd905a8a26b87a3376b04c503dd999ebf97e8c96b9004aa09ca81` |
 | Copied-selfhost stage1 and stage2 C (both) | `9cabe9044b148eb1f76ef254f95c1e85565fa0a849872ae7e126ef4cc5f0efc1` |
 | Published `selfhost/build/nauqc` | `56b17fd0299273b8eaede99955279072972a9d980233f3bf6640fd19428847a3` |
+
+## PRE-M56 P1-P4 Functional Candidate
+
+2026-10-19: functional source/seed evidence passes locally; overall performance
+campaign acceptance remains open. No commit, publication, stable release,
+consumer adoption or M56 readiness is implied. The required60s complete warm
+goal is not waived.
+
+Independent `gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh reviews passed the
+source and final seed candidate. Astra is the recorded unavailable-GPT-5.5
+fallback. Initial findings were repaired and re-reviewed: fail-closed spool
+writes/counts, empty cache-mode rejection, GCC PCH shadow refusal and actual
+full-record/cleanup oracles. Both final reviews preceded the single complete
+native Linux gate on indexed candidate
+`1afea662cc62bc88914a295ed407c6ddeaf650aa`.
+
+`scripts/check_milestone.sh` passes in1055.02s with518896KiB peak RSS.
+All phase ceilings remain unchanged; owned tests explicitly use
+`NQ_TEST_REUSE_C=0`. All copied-selfhost/corpus, release, stress, fixture and
+sanitizer coverage remains. The attestation verifies again after warm tests.
+
+| Phase | Wall Seconds | Peak RSS KiB |
+| --- | ---: | ---: |
+| stage1.driver | 223.24 | 518804 |
+| seed_bootstrap | 137.97 | 131252 |
+| proof | 488.69 | 518896 |
+| linux_alpha | 9.74 | 63348 |
+| stress_leg | 2.90 | 63312 |
+| owned_tests | 172.91 | 136164 |
+| ownership_sanitizers | 7.59 | 57768 |
+
+Phase totals are1043.04s; the remaining11.98s includes composed-gate setup
+and attestation. Versus P0's2520.62s, observed complete wall time is58.14%
+lower, meeting the>=50% goal, but not the10-minute working target. This is
+not a randomized causal estimate. Owned-test cold time is slightly above
+R4-R6's171.44s while adding adversarial coverage. Compiler-build RSS is close
+to its524288KiB ceiling; no memory improvement or spare growth capacity is
+claimed.
+
+Final current-cache focused feedback passes in0.75s/5144KiB. Warm population
+takes180.52s; the complete warm tier passes functionally in128.52s/63604KiB,
+25.88% below the173.385372168s reference observation but still above60s.
+All23 fixture receipts retain their metadata on the warm pass; that is
+observability, not cache authority. Every probe executes. Inputs, CC, running
+kernel, compiler and attestation readbacks pass; cached test results are not
+used. The owner decision on the remaining warm goal is pending.
+
+Ordinary checks94.46s/93.38s and emissions96.79s/97.56s use the unchanged
+e9d3 source. All82 compatibility rows and11 user C files agree; both whole
+reference emissions match raw bytes. The exact current80-source self-emission
+takes125.00s and equals its builder input C byte-for-byte. The seed and all86
+checksums validate. No generated C was manually edited or cache hand-blessed.
+
+| Identity | SHA-256 |
+| --- | --- |
+| Verified milestone attestation | `d1e8e416021eb6453c21f222a4caf99071b2b1ff37c984cf0653b62de8482021` |
+| Builder input, self-emission and promoted seed C | `f3e07bc8f01b3b30a06bcd9ed79391f82bcf69537c229a9abe445c904e83fcdc` |
+| Generating compiler | `b433c28985766400a085523162c8b5b820b31d35865db351f857b3529ebd599f` |
+| Source inventory | `4fdea26aa0c43c7c37b9cee79a2b1dba87cc3b29f8648ed808d6eee5b4974d79` |
+| Source tree | `842ae7506518d14ae3c3c4c639da558a4486445cc832ea5a63e3370f78b88b11` |
+
+The native candidate is retained rather than recopied for each probe. Its
+changed-file transfer is1,487,090bytes/24.865071774s; seed copy-back changes
+14,302,976bytes excluding checksums in8.421834152s, with complete readback.
+One-time construction, setup/copy and warm population costs are separate from
+steady-state feedback. Native receipts are retained under
+`build/verification/p1-p4/`; compact canonical evidence is under
+`build/verification/p1-p4-20261019/`. These ignored receipts are not a release.
+Only allowlisted completion documents change after the attested candidate.
+
+### Warm Follow-Up: Unpromoted Source Candidate
+
+The separate `379392c84d2ee1623dc431d3ac9f5542ff02307c` candidate has both
+independent source-readiness approvals, not final milestone approval. Its
+literal-scan change preserves the old byte predicates through retained
+linear oracles. Its eight-line runtime change bounds the first five no-I/O
+exit rechecks, including EINTR, without changing deadlines or ownership.
+All six native process fixtures pass with the original ASan/UBSan flags,
+including seven new scheduling assertions. Both ordinary component pairs
+and their boundaries are recorded in `PERFORMANCE_P1_P4.md`.
+
+The original seed builder legitimately constructs this current-source
+compiler in 222.18s at 520068 KiB, below the unchanged 524288 KiB ceiling.
+Focused feedback is 0.76s. In one persistent native session, complete warm
+population takes 152.52s and the warm repeat takes 104.53s. All checks
+execute; all 23 receipt body hashes and inode/mtime records are unchanged
+on the repeat. Input, CC, boot, artifact, index and cache readbacks pass.
+This is 18.67% less warm time than 128.52s, but still misses 60s by 44.53s.
+The earlier 1055.02s cold gate is not evidence for these new source bytes.
+
+| Follow-Up Identity | SHA-256 |
+| --- | --- |
+| Current compiler | `d334d2d9e4eaf46fb8edd29b1ef07237339802e95a38a9f3a9502ed5fe53b716` |
+| Builder-generated C | `44c6a2f620a2513596965a5839fc68701bd08ac36c26018e3c30189849f4436f` |
+| Pre-promotion input frame | `060f7b1bc22c3c16885523e0b8c86f585e02a7af35084bc7b40283abf312d2ca` |
+
+Old source/artifact/release evidence is preserved in
+`build/verification/p1-p4/warm-followup-build-v1/old-capsule/`. Current
+construction and warm receipts are in `warm-followup-build-v1/` and
+`warm-followup-measure-v1/` under the same evidence root. This capture
+preceded the seed propagation below; a fresh complete gate remains pending. The strict warm goal,
+overall P1-P4 acceptance and M56 remain held; no waiver, commit, push or
+consumer-pin update is claimed.
+
+Remaining-cost research uses a passing 156-assertion host provenance run:
+39.76s wall, 19.32s user and 7.78s system CPU. A separate diagnostic records
+8280 stat, 4306 cat and 2859 SHA provider-wrapper entries. These are attempted
+delegations, not syscall counts or production timing. No test is removed or
+cached. A timeout137 shortcut was withdrawn rather than adding an unsafe or
+disproportionate supervisor. Further host reuse needs a measured, independently
+reviewed fresh-read contract before implementation.
+
+The later time-scaled timeout unit is a separate, independently approved
+design, not the withdrawn process controller. It preserves the production
+runner, all14 cases and exact success text. A private unit-only shim proves
+the literal5s production argument and genuine GNU TERM/KILL escalation with
+0.01s delegated grace; it does not prove5s elapsed grace. Both trailing
+auditors pass. Ordinary ABBA unit times are9.48/4.41/4.57/9.57s.
+
+With unchanged `379392c` compiler/producer inputs plus that reviewed test
+script, a fresh same-session complete population takes145.77s/141388KiB;
+the complete warm repeat passes in99.89s/63528KiB. Every check executes,
+all23 fixture receipt body hashes and inode/mtime records remain unchanged,
+and artifact/input/CC/boot/index/cache readbacks pass. The single temporary
+native script substitution is restored exactly afterward; this is composed
+warm evidence, not a new indexed-source attestation or seed promotion.
+Receipts are retained under `build/verification/p1-p4/warm-timeout-v1/`.
+Warm is22.28% below128.52s but still39.89s above the strict60s target.
+
+Two independently designed experiments were removed after measurement:
+fresh attestation metadata batching made the complete tier4.22% slower;
+kernel-anchored ELF hashing improved a padded component by9.42%, below its
+15% adoption threshold. Their rejected contracts retain the exact boundary;
+neither implementation remains. No tests, failure paths or budgets were
+weakened. An opt-in concurrent local warm tier is only proposed for owner
+approval and read-only safety research; serial/release/proof behavior is
+unchanged. P1-P4 and M56 remain held, with no new commit or push.
+
+### Follow-Up Seed Propagation
+
+The current compiler actually self-emits C in130.07s/126144KiB; full-byte
+comparison equals the builder's `44c6a2f6...` input. Both independent
+pre-install reviews approve the bounded mechanical recipe on source index
+`379392c84d2ee1623dc431d3ac9f5542ff02307c`. The exact output, current runtime
+and complete80-source snapshot are promoted with the unchanged19-field
+manifest, inventory and86 checksums. Installation takes6.12s/4976KiB.
+
+The predecessor `f3e07bc8...` seed remains in native and canonical backups.
+Native installation is two renames with catchable rollback, not a crash-safe
+atomic exchange. Canonical copy-back is in-place and is accepted only after
+complete tree/byte/checksum readback. Six files change:12,705,819bytes in
+14.312843997s, excluding checksum-copy bytes. All six staged Git blobs also
+match their raw sealed bytes; NTFS modes are not Linux mode certification.
+
+The original seed builder then legitimately rebuilds from the new seed in
+224.02s/520020KiB, below the unchanged600s/524288KiB ceiling. Total wrapper
+work, including validation and focused feedback, is228.625767586s. Generated
+C again matches exactly, the executable is byte-identical to the earlier
+`d334d2d9...` compiler, and fresh source/input/CC/boot/index/artifact/seed/cache
+readbacks pass. Verified-current focused feedback passes in0.65s/5776KiB.
+The old cache was expectedly stale after promotion; only the real builder
+published its replacement. An earlier ignored-wrapper preflight stopped
+before compilation on a relative-path hashing argument; that harness-only
+error was corrected without source changes or discarding its evidence.
+
+| Promoted Identity | SHA-256 |
+| --- | --- |
+| Seed and rebuilt generated C | `44c6a2f620a2513596965a5839fc68701bd08ac36c26018e3c30189849f4436f` |
+| Seed manifest | `19ab725e2398cce3c15b8a6ce94ef81e9fa45523cdf488f13e4d4801b6d570ae` |
+| Source inventory | `2d8639f423bd97a3bbfcf20fc8a980756195ecb605d62228df69714f964d4c77` |
+| Source tree | `3528fa5c070782f8f42ca38ae3d23f555908b06b3bcb0a56823975bb6ca7afd8` |
+| Current build input frame | `d8db0622d5cf14a40a1cba5ca6b3434a08d59fa6187dcbe3dde71cd3797fffc9` |
+| New cache manifest | `71701aa59421105ab9308698942c6fc373406a4a3904b98df8abd82a6e6bd172` |
+| New derivation receipt | `a2345cf238e0ffd8df2613ee76ad700716f4ede79c6e8dd9141fe3a7fcbb1953` |
+
+Native construction index is `a501b673243f707ee7a975a89de91b15716fb866`.
+Local receipts are in `followup-self-emission-v1/`, `followup-promotion-v1/`
+and `followup-promoted-build-v2/` under `build/verification/p1-p4/`; canonical
+copy/readback records remain in `build/verification/p1-p4-20261019/`.
+This completes seed propagation and current-cache reconstruction, not the
+fresh seven-phase close or overall P1-P4 acceptance. The99.89s full warm
+observation belongs to the preceding composed capture, not a new full-gate
+attestation. Strict60, M56, commit and push remain held; opt-in concurrent
+warm execution remains unapproved and unimplemented.
+
+Both independent mixed-model trailing reviews return **PASS for the P4 seed
+portion only**, with no blocking findings. Their overall verdict remains
+**HOLD** for the missed60s warm goal and pending fresh seven-phase gate.
+
+### Follow-Up Frozen Gate And Warm Results
+
+The subsequent reviewed, frozen candidate
+`03a3b53c865b9bccfd6a372668a600e5c1239770` now passes its own complete
+native `scripts/check_milestone.sh`: exit 0, 1011.04s / 520388 KiB. This
+is an observed 59.89% wall reduction from the same-host P0's 2520.62s,
+not a controlled paired A/B claim. The >=50% cold goal is met; the
+10-minute cold working target is not. The existing phase ceilings are unchanged.
+
+| Phase | Wall Seconds | Peak RSS KiB |
+| --- | ---: | ---: |
+| Driver | 223.49 | 520388 |
+| Seed bootstrap | 137.64 | 132656 |
+| Proof | 475.78 | 519968 |
+| Linux alpha | 8.17 | 63504 |
+| Stress leg | 2.80 | 63412 |
+| Owned tests | 145.92 | 141372 |
+| Ownership sanitizers | 5.84 | 57472 |
+
+Both direct seed comparisons, all 12 proof phases, all 44 corpus cases,
+copied release checks, stress and sanitizer coverage pass. The cold owned
+tests explicitly use `NQ_TEST_REUSE_C=0`. Driver peak RSS has only 3900 KiB
+headroom below its unchanged 524288 KiB ceiling; this is not broad memory
+margin. Source/input/index, CC, boot, seed, protected scripts, retained prior
+receipts and closing artifact readbacks all pass.
+
+The actual post-gate same-session serial measurements are focused 0.64s /
+4700 KiB, full fixture-cache population 154.38s / 141540 KiB, and complete
+warm coverage 100.58s / 63544 KiB. Every Nauqtype probe and host assertion
+executes. All 23 fixture receipt body hashes and inode/mtime records are
+unchanged on warm reuse; metadata stability is observability, not cache
+authority. The complete measurement workflow, including setup, population,
+warm run and all final readbacks, is 266.178453369s. Final cache and
+attestation verification pass. The older 99.89s observation is not reused
+as this candidate's result.
+
+| Frozen Gate Identity | SHA-256 |
+| --- | --- |
+| Milestone attestation | `e9ba14fb03848f977ca50a2093f8846e9118a284ab82064aa065b56b85074c7c` |
+| Performance summary | `280f6c9c3a8ef6e871959338fb697138b473a70c0265ff1934d827367f5a8d44` |
+| Proof summary | `b8609960f36159f87f0a117009b69060366240547b4f1fa7c8cdd21083bc2894` |
+
+The seed, runtime, generated C, compiler and input identities remain those
+of the seed-propagation table above. Native receipts are retained in
+`build/verification/p1-p4/followup-full-gate-v1/` and
+`followup-gated-warm-v1/`. The compact canonical byte-verified capsule is
+`build/verification/p1-p4-20261019/followup-final-evidence-v1/`; its
+`SHA256SUMS` seals the copied receipts without copying compiler C or whole
+workspaces again. Only the allowlisted completion ledgers change after the
+frozen gate; they do not extend its exact candidate identity.
+
+Source/seed and fresh full-gate evidence have independent mixed-model
+functional passes. This completes the functional P4 slice, not overall
+performance acceptance: the strict warm 60s target still misses by 40.58s.
+An opt-in concurrent local tier remains proposed, unapproved and unimplemented;
+no tests, failure paths, serial/release behavior or budgets are weakened.
+P1-P4 campaign closure and M56 remain held. No commit, push, release or
+downstream pin change is claimed.
+
+### Owner-Authorized Concurrent Warm Tier (In Progress)
+
+On 2026-10-21 the owner explicitly authorized the proposed opt-in local warm
+tier. Both independent mixed Gate A reviews passed the repaired design before
+worker dispatch; the approved review-packet SHA-256 is
+`375311b26ba68a7286dbc71c5eb94fadcdfab3443b21302f5277d1b064429aa3`.
+The tracked [contract](docs/P1_CONCURRENT_WARM_CONTRACT.md) records that design.
+This is not implementation, performance, publication or M56 acceptance.
+
+One sourceable shell coordinator owns four fixed, isolated groups; the existing
+Nauqtype tests remain authoritative. An opt-in user scope has fixed aggregate
+resource/deadline limits. Retained cgroup descriptors, not unit-name/PID signals,
+bind cancellation. A blocked READY/GO handshake and bounded frozen quiescence
+precede green resource evidence. Default and full milestone/release/proof
+behavior remain serial; scope cancellation is explicitly immediate SIGKILL,
+not a new production process rule or graceful-shutdown guarantee.
+
+Approved disposable native capability probes establish only feasibility. The
+metadata probe passed. A first FD harness had a syntax error before launch;
+the next failed safely because Description appeared before ACTIVE/cgroup/UUID.
+No kill FD was opened in that failed run. The corrected probe passes genuine
+owned-FD write0/wait137/drain, then retains the old descriptor across removal
+and deliberate private-name replacement: old-FD write fails with ENODEV,
+while the replacement stays live and naturally exits0. The earlier failures
+remain preserved. These probes do not substitute for the production fixtures.
+
+The native routing UNIT/SPIES suite passes all18 cases in0.27s/3560KiB with
+source-byte readbacks. A small Nauqtype actual-exec witness builds in
+1.39s/63416KiB, with source guards and its invalid mode returning64 with empty
+outputs. Actual caller environment/argv comparisons will use memory/FIFOs,
+never regular environment dumps. Native receipts are under
+`build/verification/p1-p4/concurrent-capability-v1/`, `concurrent-fd-v3/`,
+`concurrent-routing-native-v1/` and `concurrent-witness-v1/`.
+
+Coordinator and fixture workers have disjoint write sets; the lead owns routing,
+forced-serial milestone behavior, integration and all native runs. Compiler,
+runtime, seed and producer inputs are unchanged. Focused implementation tests,
+two full opt-in warm observations, final mixed audits and one new frozen
+seven-phase gate remain required. The old03a3 attestation is retained only
+for its prior candidate. Strict60 and overall P1-P4 acceptance remain open.
+
+## PRE-M56 Concurrent Warm Close
+
+Required P1-P4 goals pass on reviewed frozen candidate
+`42999a5f31a8993b5ac8e38235ef5645d074af2d`,2026-10-21. Both independent
+source-readiness Gate B verdicts are PASS before the one new full gate.
+Primary `gpt-5.6-sol` xhigh and independent `gpt-6-astra` xhigh retain the
+explicit unavailable-GPT-5.5 fallback. Final closing review checks these
+receipts and only the allowlisted completion-document delta; no changed
+executable is covered by an earlier gate.
+
+The repaired source retains uncertain common leases on interrupted cache,
+builder or serial work; normal serial completion releases explicitly.
+Installed client AND running-manager Version are pinned independently, before
+launch and on unit observations. The detached live-child negative proves
+rejection before resource capture/ACK with exercised positive spies. Its
+owned kill/drain is not mislabeled as a naturally exiting-before-ACK case.
+Retired-node stderr is quiet only with independent descriptor-bound retirement
+proof; unproven read failure still fails closed. Native routing22 cases pass
+in1.81s/3952KiB and focused UNIT/native69 checks in24.66s/7676KiB. Default
+unit execution does not require a real manager. Manager-checker refusal uses
+actual checker/stub providers; prepare entry order is explicitly STATIC.
+
+| Complete Native Measurement | Seconds | Scope |
+| --- | ---: | --- |
+| Focused compiler-index with current-cache validation |0.85|No compiler rebuild hidden in this number. |
+| Population/setup pass in retained concurrent context |50.13|Existing valid artifacts may hit; not relabeled as fresh compilation. |
+| Complete opt-in warm1 |49.46|Aggregate scope peak96215040B; GNU time max-individual63748KiB. |
+| Complete opt-in warm2 |46.82|Aggregate scope peak99516416B; GNU time max-individual63640KiB. |
+| Whole focused/population/two-warm workflow |150.274565627|Includes setup, three complete passes and final readbacks. |
+| New complete serial seven-phase gate |1055.50|520116KiB maximum individual RSS;58.13% below P0's2520.62s. |
+| Whole cold measurement workflow |1064.651207127|Includes pre/postflight identity checks and receipt preservation. |
+
+Both warm runs are exit0/drained1 with zero OOM counters, empty stderr and
+all8 coverage markers. All23 receipt bodies/inodes/mtimes are unchanged
+after EACH warm run. Metadata stability is observability, not cache authority;
+the ordinary input/producer/environment/compiler/artifact checks still run.
+The complete native workflow preserves source/input/index, toolchain, boot,
+provider and protected artifact identities. The cold rebuild reproduces the
+same compiler/C/cache/derivation images used by the warm measurements; a
+duplicate warm test is not needed merely because construction ran again.
+
+| Fresh Gate Phase | Seconds | Peak RSS,KiB |
+| --- | ---: | ---: |
+| Stage1 driver |235.04|520116|
+| Seed bootstrap |142.53|132540|
+| Proof |493.01|519284|
+| Linux alpha |9.68|63528|
+| Stress leg |2.67|63380|
+| Owned tests |153.12|141440|
+| Ownership sanitizers |7.83|57848|
+
+All7 phases, both direct seed comparisons, all12 proof phases and44 corpus
+cases pass. The cold owned tier explicitly forces reuse0/concurrency0;
+default/full-milestone/proof/release remain serial. Strict warm60 is met only
+by the explicitly selected supported concurrent local mode. Every test still
+executes, no test-result cache is added, and existing budgets remain unchanged.
+Driver RSS headroom is4172KiB below its524288KiB ceiling, not broad margin.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `3f1de94bd3c608853dad092ec47cfa8c7cd759acb2281270a6d2c85abec10520` |
+| Performance summary | `778082b58557b36ebd21b4a914839a8ef1e667b305a916c8c2064e1236b19d82` |
+| Proof summary | `b8609960f36159f87f0a117009b69060366240547b4f1fa7c8cdd21083bc2894` |
+| Compact evidence capsule SHA256SUMS | `0070cb30aed03a8964375a59946f927f9303aa43efa864e6768e98d151d8002e` |
+
+The compiler SHA remains`d334d2d9e4eaf46fb8edd29b1ef07237339802e95a38a9f3a9502ed5fe53b716`;
+emitted/seed/proof C remains`44c6a2f620a2513596965a5839fc68701bd08ac36c26018e3c30189849f4436f`.
+Seed/runtime/input identities remain the exact80-source propagation recorded
+above. The compact byte-verified capsule is
+`build/verification/p1-p4-20261019/concurrent-final-evidence-v1/`; native
+`concurrent-focused-v3/`, `concurrent-warm-v2/` and `concurrent-full-gate-v1/`
+remain under`build/verification/p1-p4/`. Collection takes20.454243446s and
+copies small receipts/source probes, not generated C, seed or whole workspaces.
+The9-file196181B repair transfer's4.481862651s excludes its preceding
+unmeasured Windows-mounted Git preflight; that partial cost is NOT a complete
+workflow speedup. The earlier03a3 capsule and its seal remain unchanged.
+Local`refs/nauqtype/verification/pre-m56-20261021` retains the gated tree;
+`refs/nauqtype/verification/pre-m56-followup-20261019` preserves03a3 without
+rewriting either candidate.
+
+Earlier46.99s/67-check observations remain partial historical evidence and
+are not reused as these results. Pre-close pending statuses in the frozen
+design/report refer to their earlier capture; this completion entry is current.
+Observed cold comparisons are not a randomized causal estimate. Required
+focused10/warm60/cold>=50% goals pass, while the10min cold working target
+remains unmet and separately tracked. This unblocks M56 planning only: no
+language/runtime widening, M56 implementation, stable-release certification,
+publication or downstream consumer pin change is claimed.
