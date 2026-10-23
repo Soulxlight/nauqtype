@@ -60,6 +60,20 @@ make_fixture() {
     repo_root="$root"; script_dir="$root/scripts"
     prov_inputs_sha256(){ sha256sum "$1/selfhost/main.nq" | cut -d ' ' -f 1; }
     prov_bootstrap_flags_sha256(){ [[ "${NQ_FLAGS_ERROR:-0}" == 0 ]] || return 1; sha256sum "$repo_root/state/flags" | cut -d ' ' -f 1; }
+    profile_cc_profile_dir="$root/profile"
+    mkdir -p "$profile_cc_profile_dir"
+    printf 'portable\n' > "$profile_cc_profile_dir/cc-profile"
+    prov_bootstrap_args_materialize portable "$profile_cc_profile_dir"
+    profile_flags_sha256_from_dir(){
+        local result
+        [[ "${NQ_FLAGS_ERROR:-0}" == 0 ]] || return 1
+        result=$(sha256sum "$repo_root/state/flags" | cut -d ' ' -f 1) || return 1
+        if [[ "${NQ_FLAGS_MUTATE:-0}" == 1 ]]; then
+            printf '%s\0' -std=c11 -O0 -D_POSIX_C_SOURCE=200809L -Istdlib \
+                build/seed/stage1.c stdlib/runtime.c -o selfhost/build/nauqc > "$1/stage1-args"
+        fi
+        printf '%s\n' "$result"
+    }
     prov_cc_identity(){ printf 'cc_path=/usr/bin/cc\ncc_sha256=%064d\ncc_version_sha256=%064d\ncc_target=x86_64-linux-gnu\n' 0 0 > "$2"; }
     profile_linux_host_ok(){ :; }; profile_native_fs_identity(){ :; }; profile_gnu_tools_ok(){ :; }; profile_cc_available(){ :; }; profile_host_cpu_available(){ :; }
     digest(){ sha256sum "$1" | cut -d ' ' -f 1; }
@@ -99,13 +113,41 @@ make_fixture() {
     if profile_identity_matches_pin "$root/bad-identity.txt" "$root/pin" "$(printf '%064d' 0)"; then exit 1; fi
     NQ_FLAGS_ERROR=1 profile_cache_matches "$root/pin" && exit 1
     NQ_FLAGS_ERROR=1 profile_write_stage1_flags "$root/flags-output.txt" && exit 1
-    if ( prov_stage1_args(){ return 1; }; profile_write_stage1_flags "$root/flags-output.txt" ); then exit 1; fi
+    cp "$profile_cc_profile_dir/stage1-args" "$root/stage1-args-good"
+    printf '%s' truncated > "$profile_cc_profile_dir/stage1-args"
+    if profile_write_stage1_flags "$root/flags-output.txt"; then exit 1; fi
+    cp "$root/stage1-args-good" "$profile_cc_profile_dir/stage1-args"
+    if NQ_FLAGS_MUTATE=1 profile_write_stage1_flags "$root/flags-output.txt"; then exit 1; fi
+    cp "$root/stage1-args-good" "$profile_cc_profile_dir/stage1-args"
     NQ_MUTATE_ON_CACHE=source profile_preflight "$root/late-pin-source" && exit 1
     printf 'source\n' > "$root/selfhost/main.nq"
     NQ_MUTATE_ON_CACHE=driver profile_preflight "$root/late-pin-driver" && exit 1
     :
 ) || { printf 'FAIL checked cache pin or late mutation rejection\n' >&2; exit 1; }
 pass 'pinned cache, source/driver races, and flags failure'
+
+(
+    root="$scratch/standalone-flags"
+    mkdir -p "$root"
+    profile_cc_profile_dir=''
+    profile_freeze_cc_profile() {
+        mkdir -p "$1"
+        printf 'gcc-20-32768\n' > "$1/cc-profile"
+        prov_bootstrap_args_materialize gcc-20-32768 "$1"
+        printf 'freeze\n' >> "$root/freeze.log"
+    }
+    profile_write_stage1_flags "$root/record.txt"
+    [[ "$(grep -c '^freeze$' "$root/freeze.log")" == 1 ]]
+    grep -Fqx 'cc_gc_profile=gcc-20-32768' "$root/record.txt"
+    mkdir -p "$root/expected"
+    prov_bootstrap_args_materialize gcc-20-32768 "$root/expected"
+    expected_hash=$(prov_bootstrap_flags_sha256_from_files gcc-20-32768 "$root/expected/seed-args" "$root/expected/stage1-args")
+    grep -Fqx "bootstrap_flags_sha256=$expected_hash" "$root/record.txt"
+    sed -n '3,12p' "$root/record.txt" > "$root/displayed"
+    while IFS= read -r -d '' arg; do printf '%q\n' "$arg"; done < "$root/expected/stage1-args" > "$root/expected-display"
+    cmp -s "$root/displayed" "$root/expected-display"
+) || { printf 'FAIL standalone flags did not share one frozen profile\n' >&2; exit 1; }
+pass 'standalone stage1 flags freeze one profile for display and digest'
 
 {
     printf 'original runner\n' > "$scratch/runner-original"

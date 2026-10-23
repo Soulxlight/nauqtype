@@ -7,7 +7,7 @@ source "$script_dir/provenance.sh"
 source "$script_dir/seed_manifest.sh"
 
 cache_is_current() (
-    local scratch key value current
+    local scratch key value current cc_profile
     local -A cache=() receipt=() cc=()
     scratch=$(mktemp -d) || exit 1
     trap 'rm -rf -- "$scratch"' EXIT
@@ -21,6 +21,9 @@ cache_is_current() (
     while IFS='=' read -r key value; do receipt[$key]=$value; done < "$scratch/receipt"
     # Execute toolchain identity probes before reading current inputs/artifacts.
     prov_cc_identity "${CC:-cc}" "$scratch/cc" || exit 1
+    prov_cc_gc_profile_select "${CC:-cc}" "$scratch/cc" "$scratch/cc-profile" || exit 1
+    cc_profile=$(< "$scratch/cc-profile")
+    prov_bootstrap_args_materialize "$cc_profile" "$scratch" || exit 1
     while IFS='=' read -r key value; do cc[$key]=$value; done < "$scratch/cc"
     for key in cc_path cc_sha256 cc_version_sha256 cc_target; do
         [[ "${cc[$key]}" == "${receipt[$key]}" ]] || exit 1
@@ -37,7 +40,7 @@ cache_is_current() (
     [[ "$current" == "${cache[stage1_c_sha256]}" && "$current" == "${receipt[stage1_c_sha256]}" ]] || exit 1
     current=$(prov_sha256 "$repo_root/selfhost/build/nauqc") || exit 1
     [[ "$current" == "${cache[stage1_exe_sha256]}" && "$current" == "${receipt[stage1_exe_sha256]}" && -x "$repo_root/selfhost/build/nauqc" ]] || exit 1
-    current=$(prov_bootstrap_flags_sha256) || exit 1
+    current=$(prov_bootstrap_flags_sha256_from_files "$cc_profile" "$scratch/seed-args" "$scratch/stage1-args") || exit 1
     [[ "$current" == "${receipt[flags_sha256]}" ]] || exit 1
 )
 

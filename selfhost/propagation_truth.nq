@@ -1,0 +1,473 @@
+use ast;
+use diag;
+use handoff;
+use text;
+use type_text;
+use typecheck;
+
+fn propagation_unique_shape(shapes: ref list<checked_type_shape>, id: i32) -> option<checked_type_shape> {
+    let mut found: option<checked_type_shape> = None;
+    let mut count = 0;
+    for shape in shapes { if shape.id == id { found = Some(shape); count = count + 1; } }
+    if id <= 0 or count != 1 { return None; }
+    return found;
+}
+
+fn propagation_unique_binding(bindings: ref list<checked_binding>, id: i32) -> option<checked_binding> {
+    let mut found: option<checked_binding> = None;
+    let mut count = 0;
+    for binding in bindings { if binding.id == id { found = Some(binding); count = count + 1; } }
+    if id <= 0 or count != 1 { return None; }
+    return found;
+}
+
+fn propagation_unique_expr(expressions: ref list<checked_expr>, id: i32) -> option<checked_expr> {
+    let mut found: option<checked_expr> = None;
+    let mut count = 0;
+    for expression in expressions { if expression.id == id { found = Some(expression); count = count + 1; } }
+    if id <= 0 or count != 1 { return None; }
+    return found;
+}
+
+fn propagation_source_statement(statements: ref list<checked_stmt>, local: local_init_fact) -> option<checked_stmt> {
+    let mut found: option<checked_stmt> = None;
+    let mut count = 0;
+    for statement in statements {
+        match statement.kind {
+            checked_stmt_propagate => {
+                if statement.module_name == local.module and statement.function_name == local.function_name and statement.scope_id == local.scope_id and statement.name == local.name {
+                    found = Some(statement); count = count + 1;
+                }
+            },
+            _ => {},
+        }
+    }
+    if count != 1 { return None; }
+    match found {
+        Some(value) => {
+            let mut identities = 0;
+            for statement in statements { if statement.id == value.id { identities = identities + 1; } }
+            if value.id > 0 and identities == 1 { return Some(value); }
+        },
+        None => {},
+    }
+    return None;
+}
+
+fn propagation_failure(diags: mutref list<diag>, module: str, at: i32, detail: str) -> unit {
+    let mut start = at;
+    if start < 0 { start = 0; }
+    let mut end = start;
+    if end < 2147483647 { end = end + 1; }
+    list_push(mutref diags, make_error("NQ-INTERNAL-012", diag_internal, module, start, end, str_concat("stage1 internal error: propagation evidence ", detail)));
+}
+
+fn propagation_scalar_name(kind: checked_type_shape_kind) -> str {
+    match kind {
+        checked_type_bool => { return "bool"; }, checked_type_i32 => { return "i32"; }, checked_type_i64 => { return "i64"; },
+        checked_type_str => { return "str"; }, checked_type_unit => { return "unit"; }, checked_type_io_err => { return "io_err"; },
+        checked_type_process_result => { return "process_result"; }, checked_type_duration => { return "duration"; },
+        checked_type_instant => { return "instant"; }, checked_type_process => { return "process"; },
+        checked_type_process_outcome => { return "process_outcome"; }, checked_type_path_metadata => { return "path_metadata"; },
+        checked_type_bytes => { return "bytes"; }, _ => { return ""; },
+    }
+}
+
+fn propagation_builtin_spelling(name: str) -> bool {
+    return name == "bool" or name == "i32" or name == "i64" or name == "str" or name == "unit" or name == "io_err"
+        or name == "process_result" or name == "duration" or name == "instant" or name == "process" or name == "process_outcome"
+        or name == "path_metadata" or name == "bytes" or name == "list" or name == "option" or name == "result";
+}
+
+fn propagation_named_shape_matches(visibility: ref visibility_index, shape: checked_type_shape, uses: ref list<module_use>, items: ref list<top_item>, module: str, spelling: str) -> bool {
+    if spelling == "" or spelling != shape.name or shape.origin_module == "" or propagation_builtin_spelling(spelling) { return false; }
+    if shape.arg1_id != -1 or shape.arg2_id != -1 or shape.mutable { return false; }
+    if visible_type_origin_module_indexed(ref visibility, ref uses, ref items, module, spelling) != shape.origin_module { return false; }
+    let mut declarations = 0;
+    for item in items {
+        if item.module == shape.origin_module and item.name == shape.name {
+            match item.kind { item_type => { declarations = declarations + 1; }, item_enum => { declarations = declarations + 1; }, _ => {}, }
+        }
+    }
+    return declarations == 1;
+}
+
+// Checked text is accepted only after its complete tree agrees with unique
+// checked type IDs. Recursion consumes a strictly smaller serialized child;
+// malformed cyclic shapes cannot trigger unbounded traversal or expansion.
+fn propagation_type_matches(visibility: ref visibility_index, shapes: ref list<checked_type_shape>, uses: ref list<module_use>, items: ref list<top_item>, module: str, id: i32, spelling: str) -> bool {
+    let entry = propagation_unique_shape(ref shapes, id);
+    match entry {
+        Some(shape) => {
+            if spelling == "" { return false; }
+            let head = type_text_head(spelling);
+            let first = type_text_arg1(spelling);
+            let second = type_text_arg2(spelling);
+            let borrowed = type_text_is_borrow(spelling);
+            let mutable = type_text_borrow_mutable(spelling);
+            if render_type_text(head, first, second, borrowed, mutable) != spelling { return false; }
+            match shape.kind {
+                checked_type_ref => {
+                    if not borrowed or shape.mutable != mutable or shape.name != "" or shape.origin_module != "" or shape.arg2_id != -1 { return false; }
+                    let inner = render_type_text(head, first, second, false, false);
+                    if str_len(inner) >= str_len(spelling) { return false; }
+                    return propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, module, shape.arg1_id, inner);
+                },
+                _ => {},
+            }
+            if borrowed or shape.mutable { return false; }
+            match shape.kind {
+                checked_type_named => { return propagation_named_shape_matches(ref visibility, shape, ref uses, ref items, module, spelling); },
+                _ => {},
+            }
+            if shape.name != "" or shape.origin_module != "" { return false; }
+            let scalar = propagation_scalar_name(shape.kind);
+            if scalar != "" { return spelling == scalar and shape.arg1_id == -1 and shape.arg2_id == -1; }
+            let mut expected = "";
+            let mut binary = false;
+            match shape.kind {
+                checked_type_list => { expected = "list"; }, checked_type_option => { expected = "option"; },
+                checked_type_result => { expected = "result"; binary = true; }, _ => { return false; },
+            }
+            if head != expected or first == "" or str_len(first) >= str_len(spelling) { return false; }
+            if not propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, module, shape.arg1_id, first) { return false; }
+            if binary {
+                if second == "" or str_len(second) >= str_len(spelling) { return false; }
+                return propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, module, shape.arg2_id, second);
+            }
+            return second == "" and shape.arg2_id == -1;
+        },
+        None => { return false; },
+    }
+}
+
+fn propagation_target_matches(statement: checked_stmt, binding: checked_binding, local: local_init_fact) -> bool {
+    if statement.function_id <= 0 or statement.module_name != local.module or statement.function_name != local.function_name or statement.scope_id != local.scope_id or statement.name != local.name { return false; }
+    if binding.id != statement.target_binding_id or binding.function_id != statement.function_id or binding.module_name != local.module or binding.function_name != local.function_name or binding.scope_id != local.scope_id or binding.name != local.name { return false; }
+    if binding.at != statement.at or binding.origin_stmt_id != statement.id or binding.origin_arm_id != -1 or binding.param_index != -1 { return false; }
+    if binding.borrow_mutable and not binding.is_borrow { return false; }
+    if local.name == "" or statement.at < 0 or local.at <= statement.at { return false; }
+    match binding.kind { checked_binding_local => { return true; }, _ => { return false; }, }
+}
+
+fn propagation_root_matches(statement: checked_stmt, expression: checked_expr, local: local_init_fact) -> bool {
+    if expression.function_id != statement.function_id or expression.module_name != local.module or expression.function_name != local.function_name or expression.scope_id != local.scope_id { return false; }
+    if expression.at < statement.at or expression.start < 0 or expression.end <= expression.start or local.expr_start < 0 or local.expr_end <= local.expr_start { return false; }
+    if expression.start <= local.expr_start or expression.end > local.expr_end { return false; }
+    // Both ranges are elaborated TOKEN indexes, not the byte offsets in `at`.
+    // The local range includes '=', and handoff strips paired outer parens.
+    let leading = expression.start - local.expr_start;
+    let trailing = local.expr_end - expression.end;
+    return leading - trailing == 1;
+}
+
+fn propagation_name_binding_matches(bindings: ref list<checked_binding>, shapes: ref list<checked_type_shape>, expression: checked_expr, statement: checked_stmt) -> bool {
+    match expression.kind {
+        checked_expr_name => {
+            match propagation_unique_binding(ref bindings, expression.binding_id) {
+                Some(binding) => {
+                    if binding.id == statement.target_binding_id or binding.function_id != expression.function_id or binding.module_name != expression.module_name or binding.function_name != expression.function_name or binding.name != expression.name { return false; }
+                    if binding.is_borrow != expression.is_borrow or binding.borrow_mutable != expression.borrow_mutable or binding.at >= statement.at { return false; }
+                    if binding.type_name != expression.type_name or binding.type_arg1_name != expression.type_arg1_name or binding.type_arg2_name != expression.type_arg2_name { return false; }
+                    if not binding.is_borrow { return binding.type_id == expression.type_id; }
+                    match propagation_unique_shape(ref shapes, binding.type_id) {
+                        Some(shape) => {
+                            match shape.kind { checked_type_ref => { return shape.arg1_id == expression.type_id and shape.arg2_id == -1 and shape.name == "" and shape.origin_module == "" and shape.mutable == binding.borrow_mutable; }, _ => { return false; }, }
+                        },
+                        None => { return false; },
+                    }
+                },
+                None => { return false; },
+            }
+        },
+        _ => { return true; },
+    }
+}
+
+fn propagation_checked_error(visibility: ref visibility_index, expressions: ref list<checked_expr>, bindings: ref list<checked_binding>, shapes: ref list<checked_type_shape>, uses: ref list<module_use>, items: ref list<top_item>, statement: checked_stmt, local: local_init_fact) -> str {
+    match propagation_unique_binding(ref bindings, statement.target_binding_id) {
+        Some(binding) => {
+            if not propagation_target_matches(statement, binding, local) { return ""; }
+            let target_text = render_type_text(binding.type_name, binding.type_arg1_name, binding.type_arg2_name, binding.is_borrow, binding.borrow_mutable);
+            if not propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, local.module, binding.type_id, target_text) { return ""; }
+            match propagation_unique_expr(ref expressions, statement.expr_id) {
+                Some(expression) => {
+                    if not propagation_root_matches(statement, expression, local) or expression.type_name != "result" { return ""; }
+                    if expression.borrow_mutable and not expression.is_borrow { return ""; }
+                    if not propagation_name_binding_matches(ref bindings, ref shapes, expression, statement) { return ""; }
+                    match propagation_unique_shape(ref shapes, expression.type_id) {
+                        Some(result_shape) => {
+                            match result_shape.kind { checked_type_result => {}, _ => { return ""; }, }
+                            if result_shape.name != "" or result_shape.origin_module != "" or result_shape.mutable or binding.type_id != result_shape.arg1_id { return ""; }
+                            if not propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, local.module, result_shape.arg1_id, expression.type_arg1_name) { return ""; }
+                            if not propagation_type_matches(ref visibility, ref shapes, ref uses, ref items, local.module, result_shape.arg2_id, expression.type_arg2_name) { return ""; }
+                            match propagation_unique_shape(ref shapes, result_shape.arg2_id) {
+                                Some(error_shape) => {
+                                    let scalar = propagation_scalar_name(error_shape.kind);
+                                    if scalar != "" { return scalar; }
+                                    match error_shape.kind { checked_type_named => { return error_shape.name; }, _ => { return ""; }, }
+                                },
+                                None => { return ""; },
+                            }
+                        },
+                        None => { return ""; },
+                    }
+                },
+                None => { return ""; },
+            }
+        },
+        None => { return ""; },
+    }
+}
+
+pub fn checked_propagation_locals(locals: ref list<local_init_fact>, statements: ref list<checked_stmt>, expressions: ref list<checked_expr>, bindings: ref list<checked_binding>, shapes: ref list<checked_type_shape>, uses: ref list<module_use>, items: ref list<top_item>, diags: mutref list<diag>) -> list<local_init_fact>
+audit {
+    intent("Enrich ordinary propagation from the unique checked statement root and exact result argument type identities");
+    mutates(diags);
+    effects();
+}
+{
+    let mut result: list<local_init_fact> = list();
+    if diagnostics_have_errors(ref diags) { return list(); }
+    let visibility = build_visibility_index(ref uses, ref items);
+    let mut joined: list<i32> = list();
+    for local in locals {
+        let mut enriched = local;
+        if local.expr_member_name == "propagate" {
+            match propagation_source_statement(ref statements, local) {
+                Some(statement) => {
+                    if list_contains_i32(ref joined, statement.id) { propagation_failure(mutref diags, local.module, local.at, "has duplicate source-to-statement joins"); return list(); }
+                    let error_name = propagation_checked_error(ref visibility, ref expressions, ref bindings, ref shapes, ref uses, ref items, statement, local);
+                    if error_name == "" { propagation_failure(mutref diags, local.module, local.at, "has inconsistent checked binding, operand, span, type, or nominal origin"); return list(); }
+                    enriched.checked_error_name = error_name;
+                    list_push(mutref joined, statement.id);
+                },
+                None => { propagation_failure(mutref diags, local.module, local.at, "lacks a unique checked propagation statement"); return list(); },
+            }
+        }
+        list_push(mutref result, enriched);
+    }
+    for statement in statements {
+        match statement.kind {
+            checked_stmt_propagate => {
+                if not list_contains_i32(ref joined, statement.id) { propagation_failure(mutref diags, statement.module_name, statement.at, "lacks its source propagation record"); return list(); }
+            },
+            _ => {},
+        }
+    }
+    return result;
+}
+
+fn propagation_case_error(mode: i32) -> str {
+    if mode == 16 or mode == 24 or mode == 25 or mode == 26 { return "Failure"; }
+    if mode == 17 { return "io_err"; }
+    if mode == 20 { return "list<str>"; }
+    return "str";
+}
+
+fn propagation_case_shape(id: i32, kind: checked_type_shape_kind, first: i32, second: i32) -> checked_type_shape {
+    return checked_type_shape { id: id, kind: kind, name: "", origin_module: "", arg1_id: first, arg2_id: second, mutable: false };
+}
+
+fn propagation_case_shapes(mode: i32) -> list<checked_type_shape> {
+    let mut shapes: list<checked_type_shape> = list();
+    list_push(mutref shapes, propagation_case_shape(11, checked_type_i32, -1, -1));
+    let mut error_shape = propagation_case_shape(12, checked_type_str, -1, -1);
+    if mode == 15 { error_shape.origin_module = "wrong"; }
+    if mode == 16 or mode == 24 or mode == 25 or mode == 26 {
+        error_shape.kind = checked_type_named; error_shape.name = "Failure"; error_shape.origin_module = "app";
+        if mode == 16 { error_shape.origin_module = "wrong"; }
+        if mode == 26 { error_shape.origin_module = "errors"; }
+    }
+    if mode == 20 { error_shape.kind = checked_type_list; error_shape.arg1_id = 14; }
+    list_push(mutref shapes, error_shape);
+    if mode == 23 { list_push(mutref shapes, error_shape); }
+    list_push(mutref shapes, propagation_case_shape(14, checked_type_str, -1, -1));
+    list_push(mutref shapes, propagation_case_shape(19, checked_type_io_err, -1, -1));
+    let mut result_shape = propagation_case_shape(106, checked_type_result, 11, 12);
+    if mode == 13 { result_shape.kind = checked_type_option; }
+    if mode == 14 { result_shape.arg2_id = 999; }
+    if mode != 11 { list_push(mutref shapes, result_shape); }
+    if mode == 12 { list_push(mutref shapes, result_shape); }
+    list_push(mutref shapes, propagation_case_shape(127, checked_type_result, 11, 19));
+    if mode == 29 { list_push(mutref shapes, propagation_case_shape(300, checked_type_ref, 106, -1)); }
+    if mode >= 30 and mode <= 33 {
+        list_push(mutref shapes, propagation_case_shape(21, checked_type_bool, -1, -1));
+        list_push(mutref shapes, propagation_case_shape(401, checked_type_result, 11, 21));
+    }
+    return shapes;
+}
+
+fn propagation_case_binding(source: bool, mode: i32) -> checked_binding {
+    let mut value = checked_binding { id: 799, function_id: 77, module_name: "app", function_name: "forward", scope_id: 13, name: "item", at: 40, kind: checked_binding_local, type_name: "i32", type_arg1_name: "", type_arg2_name: "", is_borrow: false, borrow_mutable: false, type_id: 11, origin_stmt_id: 931, origin_arm_id: -1, param_index: -1 };
+    if source {
+        value.id = 601; value.scope_id = 1; value.name = "source"; value.at = 8;
+        value.kind = checked_binding_param; value.type_name = "result"; value.type_arg1_name = "i32";
+        value.type_arg2_name = propagation_case_error(mode); value.type_id = 106;
+        value.origin_stmt_id = -1; value.param_index = 0;
+        if mode == 21 { value.type_id = 127; }
+        if mode == 29 { value.type_id = 300; value.is_borrow = true; }
+        if mode >= 30 and mode <= 33 {
+            value.scope_id = 13; value.at = 24; value.kind = checked_binding_local;
+            value.origin_stmt_id = 919; value.param_index = -1;
+            if mode == 31 { value.type_arg2_name = "bool"; value.type_id = 401; }
+        }
+    } else {
+        if mode == 5 { value.scope_id = 99; }
+        if mode == 6 { value.origin_stmt_id = 932; }
+        if mode == 22 { value.type_id = 19; }
+    }
+    return value;
+}
+
+fn propagation_case_bindings(mode: i32) -> list<checked_binding> {
+    let mut bindings: list<checked_binding> = list();
+    let mut outer = propagation_case_binding(true, 0);
+    outer.id = 509; outer.type_arg2_name = "bool"; outer.type_id = 401;
+    // The same-name parameter must never supply the inner operand's type.
+    if mode == 30 or mode == 31 or mode == 33 { list_push(mutref bindings, outer); }
+    list_push(mutref bindings, propagation_case_binding(true, mode));
+    if mode != 3 { list_push(mutref bindings, propagation_case_binding(false, mode)); }
+    if mode == 4 { list_push(mutref bindings, propagation_case_binding(false, mode)); }
+    if mode == 32 { list_push(mutref bindings, outer); }
+    return bindings;
+}
+
+fn propagation_case_statements(mode: i32) -> list<checked_stmt> {
+    let mut statements: list<checked_stmt> = list();
+    let mut statement = checked_stmt { id: 931, function_id: 77, module_name: "app", function_name: "forward", block_id: 231, scope_id: 13, at: 40, kind: checked_stmt_propagate, name: "item", field_owner_module: "", field_owner_type: "", field_name: "", type_name: "result", type_arg1_name: "i32", type_arg2_name: propagation_case_error(mode), is_borrow: false, borrow_mutable: false, type_id: 106, target_binding_id: 799, expr_id: 1101, child_block_id: -1, alt_block_id: -1 };
+    if mode != 1 { list_push(mutref statements, statement); }
+    if mode == 2 {
+        // A duplicate ID in another owner must not be hidden by tuple lookup.
+        statement.function_name = "other"; statement.name = "other"; statement.kind = checked_stmt_local;
+        list_push(mutref statements, statement);
+    }
+    return statements;
+}
+
+fn propagation_case_expressions(mode: i32) -> list<checked_expr> {
+    let mut expressions: list<checked_expr> = list();
+    let mut expression = checked_expr { id: 1101, function_id: 77, module_name: "app", function_name: "forward", scope_id: 13, at: 40, start: 100, end: 101, kind: checked_expr_name, type_name: "result", type_arg1_name: "i32", type_arg2_name: propagation_case_error(mode), is_borrow: false, borrow_mutable: false, type_id: 106, binding_id: 601, name: "source", target_kind: checked_target_none, target_origin_module: "", target_at: -1, field_owner_module: "", field_owner_type: "", field_name: "" };
+    if mode == 9 { expression.scope_id = 99; }
+    if mode == 10 { expression.start = 102; }
+    if mode == 27 {
+        expression.kind = checked_expr_field; expression.binding_id = -1; expression.name = "";
+        expression.field_owner_module = "app"; expression.field_owner_type = "Carrier"; expression.field_name = "value";
+        expression.at = 60; expression.end = 103;
+    }
+    if mode == 29 { expression.is_borrow = true; }
+    if mode == 33 { expression.binding_id = 509; }
+    if mode != 7 { list_push(mutref expressions, expression); }
+    if mode == 8 { list_push(mutref expressions, expression); }
+    // An overlapping call has the wrong error. Only the statement's exact root
+    // ID is evidence; neither matching names nor a widest-call scan may win.
+    expression.id = 1199; expression.kind = checked_expr_call; expression.name = "source";
+    expression.start = 100; expression.end = 101; expression.type_id = 127;
+    expression.type_arg2_name = "io_err"; expression.binding_id = -1;
+    expression.target_kind = checked_target_function; expression.target_origin_module = "decoy";
+    list_push(mutref expressions, expression);
+    return expressions;
+}
+
+fn propagation_case_locals(mode: i32) -> list<local_init_fact> {
+    let mut locals: list<local_init_fact> = list();
+    let mut ordinary = make_local_init_fact("app", "forward", 13, "ordinary", 25, "str", false, false, 80, 83, expr_str, "", "", "");
+    ordinary.checked_error_name = "unchanged";
+    list_push(mutref locals, ordinary);
+    let mut local = make_local_init_fact("app", "forward", 13, "item", 44, "", false, false, 99, 101, expr_name, "source", "propagate", "context");
+    local.checked_error_name = "stale";
+    if mode == 27 { local.expr_kind = expr_field; local.expr_name = "owner"; local.expr_end = 103; }
+    if mode == 28 { local.expr_start = 97; local.expr_end = 103; }
+    if mode != 19 { list_push(mutref locals, local); }
+    let mut try_local = make_local_init_fact("app", "forward", 13, "", 95, "", false, false, 140, 145, expr_call, "fallible", "try_propagate", "try-context");
+    try_local.checked_error_name = "try-unchanged";
+    list_push(mutref locals, try_local);
+    if mode == 18 { list_push(mutref locals, local); }
+    return locals;
+}
+
+fn propagation_case_kind(kind: expr_fact_kind) -> i32 {
+    match kind {
+        expr_unknown => { return 0; }, expr_unit => { return 1; }, expr_bool => { return 2; }, expr_i32 => { return 3; },
+        expr_str => { return 4; }, expr_name => { return 5; }, expr_field => { return 6; }, expr_call => { return 7; },
+        expr_struct => { return 8; }, expr_list => { return 9; }, expr_match => { return 10; }, expr_try => { return 11; },
+    }
+}
+
+fn propagation_case_same_local(left: local_init_fact, right: local_init_fact) -> bool {
+    return left.module == right.module and left.function_name == right.function_name and left.scope_id == right.scope_id
+        and left.name == right.name and left.at == right.at and left.expected_type_name == right.expected_type_name
+        and left.expected_is_borrow == right.expected_is_borrow and left.is_mutable == right.is_mutable
+        and left.expr_start == right.expr_start and left.expr_end == right.expr_end and propagation_case_kind(left.expr_kind) == propagation_case_kind(right.expr_kind)
+        and left.expr_name == right.expr_name and left.expr_member_name == right.expr_member_name
+        and left.propagation_label == right.propagation_label and left.checked_error_name == right.checked_error_name;
+}
+
+fn propagation_case_result(mode: i32, expected: str) -> bool {
+    let locals = propagation_case_locals(mode);
+    let statements = propagation_case_statements(mode);
+    let expressions = propagation_case_expressions(mode);
+    let bindings = propagation_case_bindings(mode);
+    let shapes = propagation_case_shapes(mode);
+    let mut uses: list<module_use> = list();
+    let mut items: list<top_item> = list();
+    if mode == 16 or mode == 24 or mode == 25 { list_push(mutref items, make_top_item("app", "Failure", item_enum, false, 2)); }
+    if mode == 24 { list_push(mutref items, make_top_item("app", "Failure", item_enum, false, 2)); }
+    if mode == 26 {
+        list_push(mutref uses, make_module_use("app", "errors", "errors_alias", 0));
+        list_push(mutref items, make_top_item("errors", "Failure", item_type, true, 2));
+    }
+    let mut diags: list<diag> = list();
+    let actual = checked_propagation_locals(ref locals, ref statements, ref expressions, ref bindings, ref shapes, ref uses, ref items, mutref diags);
+    if expected == "" {
+        if list_len(ref actual) != 0 or list_len(ref diags) != 1 { return false; }
+        match list_get(ref diags, 0) {
+            Some(value) => {
+                let mut at = 44;
+                if mode == 19 { at = 40; }
+                if value.code != "NQ-INTERNAL-012" or value.source_name != "app" or value.start != at or value.end != at + 1 { return false; }
+                match value.category { diag_internal => {}, _ => { return false; }, }
+                match value.severity { diag_error => { return true; }, _ => { return false; }, }
+            },
+            None => { return false; },
+        }
+    }
+    if list_len(ref diags) != 0 or list_len(ref actual) != list_len(ref locals) { return false; }
+    let mut index = 0;
+    for original in locals {
+        let mut wanted = original;
+        if original.expr_member_name == "propagate" { wanted.checked_error_name = expected; }
+        match list_get(ref actual, index) { Some(value) => { if not propagation_case_same_local(wanted, value) { return false; } }, None => { return false; }, }
+        index = index + 1;
+    }
+    match list_get(ref locals, 1) { Some(value) => { return value.checked_error_name == "stale"; }, None => { return false; }, }
+}
+
+pub fn propagation_truth_cases() -> bool
+audit {
+    intent("Check exact propagation operand identities, malformed metadata rejection, ordered records, and local state isolation");
+    mutates();
+    effects();
+}
+{
+    let locals: list<local_init_fact> = list();
+    let statements: list<checked_stmt> = list();
+    let expressions: list<checked_expr> = list();
+    let bindings: list<checked_binding> = list();
+    let shapes: list<checked_type_shape> = list();
+    let uses: list<module_use> = list();
+    let items: list<top_item> = list();
+    let mut diags: list<diag> = list();
+    let empty = checked_propagation_locals(ref locals, ref statements, ref expressions, ref bindings, ref shapes, ref uses, ref items, mutref diags);
+    if list_len(ref empty) != 0 or list_len(ref diags) != 0 { return false; }
+    let default = make_local_init_fact("", "", 0, "", 0, "", false, false, 0, 0, expr_unknown, "", "", "");
+    if default.checked_error_name != "" { return false; }
+    if not propagation_case_result(0, "str") { return false; }
+    let mut mode = 1;
+    while mode <= 24 { if not propagation_case_result(mode, "") { return false; } mode = mode + 1; }
+    if not propagation_case_result(25, "Failure") or not propagation_case_result(26, "Failure") { return false; }
+    if not propagation_case_result(27, "str") or not propagation_case_result(28, "str") or not propagation_case_result(29, "str") { return false; }
+    if not propagation_case_result(30, "str") or not propagation_case_result(32, "str") { return false; }
+    if not propagation_case_result(31, "") or not propagation_case_result(33, "") { return false; }
+    return propagation_case_result(0, "str");
+}

@@ -1,0 +1,19 @@
+use generic_values as values;
+
+fn main() -> i32 {
+    let parcel: Parcel<i32> = values::package::<i32>(value: 7);
+    let selected: Outcome<Parcel<i32>, str> = values::Ready::<Parcel<i32>, str>(parcel);
+    let names: list<str> = ["Nauqtype"];
+    let Some(name) = values::first::<str>(ref names) else { return 1; };
+    match selected {
+        values::Ready::<Parcel<i32>, str>(ready) => {
+            if ready.value == 7 and name == "Nauqtype" {
+                print_line("generic reuse: ready");
+                return 0;
+            }
+            return 2;
+        },
+        values::Failed::<Parcel<i32>, str>(_) => { return 3; },
+        values::Vacant::<Parcel<i32>, str> => { return 4; },
+    }
+}

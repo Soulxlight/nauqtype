@@ -5,7 +5,10 @@ that have since shipped are historical, not current limitations.
 
 ## Language Features
 
-- User-defined generics
+- Generic inference/defaults/constraints, generic constants, higher-kinded
+  parameters, and generic-aware legacy evidence/refactor exports (M56's explicit
+  function/product/enum foundation is specified in `docs/M56_CONTRACT.md`;
+  closing acceptance remains in ROADMAP/TODO)
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond `while` and list-only `for`, including iterator protocols

@@ -324,6 +324,13 @@ audit {
     spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects absent policy marked provided", spt_change_v3_doc("true", "absent", "true", "policy.json", 1, 0, "false", 1, 0));
     spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects checked policy with errors", spt_change_v3_doc("true", "checked", "true", "policy.json", 1, 1, "false", 1, 1));
     spt_expect_schema_file_reject(mutref failures, "schemas/change-report-v3.schema.json", "change-report-v3 rejects failed policy without errors", spt_change_v3_doc("false", "failed", "true", "policy.json", 1, 0, "true", 1, 0));
+    let mut error_schema = "";
+    if spt_read_text("schemas/evidence-error-v1.schema.json", "error envelope schema read failed", mutref error_schema, mutref failures) {
+        let suffix = ",\"ok\":false,\"stage\":\"before_check\",\"code\":\"NQ-EVIDENCE-002\",\"message\":\"input failed\"}";
+        spt_expect_accept(mutref failures, "existing change-report v4 failure envelope", error_schema, str_concat("{\"version\":1,\"command\":\"change-report\",\"requested_format\":4", suffix));
+        spt_expect_reject(mutref failures, "error envelope rejects review-diff v4", error_schema, str_concat("{\"version\":1,\"command\":\"review-diff\",\"requested_format\":4", suffix));
+        spt_expect_reject(mutref failures, "error envelope rejects change-report v5", error_schema, str_concat("{\"version\":1,\"command\":\"change-report\",\"requested_format\":5", suffix));
+    }
 }
 
 fn spt_read_text(path: str, label: str, out: mutref str, failures: mutref list<str>) -> bool

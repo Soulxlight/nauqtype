@@ -1,0 +1,208 @@
+use ast;
+use diag;
+use generic_names;
+use source;
+use text;
+
+type generic_registered_decl {
+    name: str,
+    kind: i32,
+    module: str,
+    original_at: i32,
+}
+
+fn auth_number(value: str, cursor: mutref i32) -> i32 {
+    let start = cursor;
+    let mut number = 0;
+    while cursor < str_len(value) {
+        let digit = char_at(value, cursor) - 48;
+        if digit < 0 or digit > 9 { return -1; }
+        if number > 214748364 or (number == 214748364 and digit > 7) { return -1; }
+        number = number * 10 + digit;
+        cursor = cursor + 1;
+    }
+    if cursor == start or i32_to_str(number) != value { return -1; }
+    return number;
+}
+
+fn auth_field(value: str, cursor: mutref i32, keep: bool) -> option<str> {
+    let start = cursor;
+    while cursor < str_len(value) and char_at(value, cursor) != 58 { cursor = cursor + 1; }
+    if cursor >= str_len(value) { return None; }
+    let digits = slice_text(value, start, cursor);
+    let mut number_at = 0;
+    let count = auth_number(digits, mutref number_at);
+    cursor = cursor + 1;
+    if count < 0 or count > str_len(value) - cursor { return None; }
+    let begin = cursor;
+    cursor = cursor + count;
+    if keep { return Some(slice_text(value, begin, cursor)); }
+    return Some("");
+}
+
+fn auth_failure(diags: mutref list<diag>, module: str) -> unit {
+    list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, module, -1, -1, "generated declaration kind, identity, or origin is absent from its exact elaborator registry"));
+}
+
+fn auth_registry(file: source_file, out: mutref list<generic_registered_decl>) -> bool {
+    let mut cursor = 0;
+    while cursor < str_len(file.generic_origins) {
+        let tag = slice_text(file.generic_origins, cursor, cursor + 1);
+        cursor = cursor + 1;
+        if tag != "D" and tag != "N" and tag != "I" and tag != "V" and tag != "A" { return false; }
+        let mut fields: list<str> = list();
+        let mut count = 0;
+        let mut arity_text = "";
+        while cursor < str_len(file.generic_origins) and char_at(file.generic_origins, cursor) != 59 {
+            if count >= 131072 or (tag == "D" and count >= 4) { return false; }
+            let field = auth_field(file.generic_origins, mutref cursor, tag == "D" or (tag == "I" and count == 5));
+            match field {
+                Some(value) => {
+                    if tag == "D" { list_push(mutref fields, value); }
+                    if tag == "I" and count == 5 { arity_text = value; }
+                },
+                None => { return false; },
+            }
+            count = count + 1;
+        }
+        if cursor >= str_len(file.generic_origins) { return false; }
+        cursor = cursor + 1;
+        if tag == "N" and count != 6 { return false; }
+        if (tag == "V" or tag == "A") and count != 5 { return false; }
+        if tag == "I" {
+            let mut at = 0;
+            let arity = auth_number(arity_text, mutref at);
+            if arity < 0 or arity > 131066 or count != arity + 6 { return false; }
+        }
+        if tag == "D" {
+            if count != 4 { return false; }
+            let Some(name) = list_get(ref fields, 0) else { return false; };
+            let Some(kind_text) = list_get(ref fields, 1) else { return false; };
+            let Some(module) = list_get(ref fields, 2) else { return false; };
+            let Some(at_text) = list_get(ref fields, 3) else { return false; };
+            let mut number_at = 0;
+            let kind = auth_number(kind_text, mutref number_at);
+            number_at = 0;
+            let original_at = auth_number(at_text, mutref number_at);
+            if module != file.name or generic_name_module(name) != module or not source_generated_name(file, name) or original_at < 0 or original_at >= str_len(file.original_text) { return false; }
+            let key = generic_key_from_name(name);
+            if kind == 1 { if not str_starts_with(key, "f|") { return false; } }
+            else {
+                if kind == 2 or kind == 3 { if not str_starts_with(key, "t|") { return false; } }
+                else { if kind != 5 or not str_starts_with(key, "v|") { return false; } }
+            }
+            for previous in out { if previous.name == name { return false; } }
+            list_push(mutref out, generic_registered_decl { name: name, kind: kind, module: module, original_at: original_at });
+        }
+    }
+    return true;
+}
+
+fn auth_item_kind(kind: top_item_kind) -> i32 {
+    match kind { item_fn => { return 1; }, item_type => { return 2; }, item_enum => { return 3; }, item_variant => { return 5; }, _ => { return -1; }, }
+}
+
+pub fn authenticate_generic_items(sources: ref list<source_file>, items: mutref list<top_item>, diags: mutref list<diag>) -> unit
+audit {
+    intent("Authenticate exact generated declaration identities, kinds and original name spans without trusting incoming bits");
+    mutates(items, diags);
+    effects();
+}
+{
+    let mut cleared: list<top_item> = list();
+    for item in items {
+        let mut current = item;
+        current.is_generated = false;
+        list_push(mutref cleared, current);
+    }
+    items = cleared;
+    let mut registry: list<generic_registered_decl> = list();
+    for file in sources {
+        if not auth_registry(file, mutref registry) { auth_failure(mutref diags, file.name); return; }
+    }
+    let mut authenticated: list<top_item> = list();
+    for item in items {
+        let mut current = item;
+        current.is_generated = false;
+        if str_starts_with(current.name, "__nqg_") {
+            let mut item_count = 0;
+            for candidate in items { if candidate.name == item.name { item_count = item_count + 1; } }
+            if item_count == 1 {
+                for declaration in registry {
+                    if declaration.name == item.name and declaration.module == item.module and declaration.kind == auth_item_kind(item.kind) {
+                        for file in sources {
+                            if file.name == item.module and item.at >= 0 and str_len(item.name) <= str_len(file.text) - item.at {
+                                let origin = source_origin_at(file, item.at, item.at + str_len(item.name));
+                                if origin.valid and origin.start == declaration.original_at { current.is_generated = true; }
+                            }
+                        }
+                    }
+                }
+            }
+            if not current.is_generated { auth_failure(mutref diags, current.module); }
+        }
+        list_push(mutref authenticated, current);
+    }
+    items = authenticated;
+    if diagnostics_have_errors(ref diags) { return; }
+    for declaration in registry {
+        let mut count = 0;
+        for item in items {
+            if item.is_generated and item.name == declaration.name and item.module == declaration.module { count = count + 1; }
+        }
+        if count != 1 { auth_failure(mutref diags, declaration.module); }
+    }
+}
+
+fn auth_case(file: source_file, item: top_item, accepted: bool) -> bool {
+    let sources = [file];
+    let mut items = [item];
+    let mut diags: list<diag> = list();
+    authenticate_generic_items(ref sources, mutref items, mutref diags);
+    if accepted and list_len(ref diags) != 0 { return false; }
+    if not accepted {
+        if list_len(ref diags) != 1 { return false; }
+        let Some(entry) = list_get(ref diags, 0) else { return false; };
+        if entry.code != "NQ-GENERIC-009" { return false; }
+    }
+    let Some(current) = list_get(ref items, 0) else { return false; };
+    return current.is_generated == accepted;
+}
+
+pub fn generic_auth_cases() -> bool
+audit { intent("Check exact generated kind, identity, span and recomputed-bit authentication"); mutates(); effects(); }
+{
+    let key = "f|m|old<i32>";
+    let name = generic_name_from_key(key);
+    let mut file = make_source_file("m", "old");
+    file.text = name;
+    file.has_generics = true;
+    file.generated_names = concat3("\n", name, "\n");
+    let end = i32_to_str(str_len(name));
+    file.origin_map = concat6("0:", end, ":0:3:", key, ";", concat3(end, str_concat(":", end), ":3:3:;"));
+    file.generic_origins = str_concat(concat5("D", generic_pack_field(name), generic_pack_field("1"), generic_pack_field("m"), generic_pack_field("0")), ";");
+    if not source_map_valid(file) or not auth_case(file, make_top_item("m", name, item_fn, false, 0), true) { return false; }
+    let mut forged = make_top_item("m", name, item_type, false, 0);
+    forged.is_generated = true;
+    if not auth_case(file, forged, false) { return false; }
+    let mut missing = file;
+    missing.generic_origins = "";
+    if not auth_case(missing, forged, false) { return false; }
+    let mut wrong_origin = file;
+    wrong_origin.generic_origins = str_concat(concat5("D", generic_pack_field(name), generic_pack_field("1"), generic_pack_field("m"), generic_pack_field("1")), ";");
+    if not auth_case(wrong_origin, make_top_item("m", name, item_fn, false, 0), false) { return false; }
+    let mut duplicate = file;
+    duplicate.generic_origins = str_concat(file.generic_origins, file.generic_origins);
+    if not auth_case(duplicate, forged, false) { return false; }
+    let product_key = "t|m|old<i32>";
+    let product_name = generic_name_from_key(product_key);
+    let product_end = i32_to_str(str_len(product_name));
+    let mut product = file;
+    product.text = product_name;
+    product.generated_names = concat3("\n", product_name, "\n");
+    product.origin_map = concat6("0:", product_end, ":0:3:", product_key, ";", concat3(product_end, str_concat(":", product_end), ":3:3:;"));
+    product.generic_origins = str_concat(concat5("D", generic_pack_field(product_name), generic_pack_field("2"), generic_pack_field("m"), generic_pack_field("0")), ";");
+    if not auth_case(product, make_top_item("m", product_name, item_type, false, 0), true) { return false; }
+    if not auth_case(product, make_top_item("m", product_name, item_enum, false, 0), false) { return false; }
+    return true;
+}

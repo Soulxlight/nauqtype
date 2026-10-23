@@ -10,6 +10,13 @@ unreached outputs. See [M54_10_CONTRACTS.md](M54_10_CONTRACTS.md) for exact
 encodings and the trusted-host boundary. None of this adds audit clauses or
 hidden model decisions to compiler correctness.
 
+M56's explicit generic foundation checks concrete instances, not all possible
+types for an unused template. Existing facts/review/diff/change/policy/rename
+formats reject generic graphs with NQ-GENERIC-008, including unused templates,
+rather than present generated instances as source identities. Generic-aware
+evidence requires a separate versioned contract before library adoption can
+claim supervision parity. `check`, `emit-c`, `build` and `run` remain available.
+
 AI Contracts are Nauqtype's first explicitly AI-first language feature.
 
 They are designed to make AI-authored code easier to supervise by attaching a small, fixed-shape, compiler-checked review surface to functions.
@@ -154,7 +161,7 @@ evidence `absent`. A valid supplied policy is `checked`. Invalid, malformed,
 or unreadable supplied policy is `failed`, with nonzero errors and `ok: false`;
 `malformed` is explicit. No policy becomes compiler enforcement or approval.
 
-For review-diff v1/v2 and change-report v1/v2/v3, source/load failures now
+For review-diff v1/v2 and change-report v1-v4, source/load failures now
 emit [evidence-error v1](schemas/evidence-error-v1.schema.json) instead of a
 success-shaped or misleading v1 fallback document. The exact fields are
 `version`, `command`, `requested_format`, `ok: false`, `stage`, `code`, and

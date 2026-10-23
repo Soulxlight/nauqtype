@@ -1,0 +1,23 @@
+use foreign as model;
+use template as reuse;
+
+fn main() -> i32 {
+    let original: Tag = model::Tag { value: 42 };
+    let repeated = reuse::echo::<model::Tag>(original);
+    let boxed = reuse::pack::<model::Tag>(repeated);
+    let selected = reuse::select::<model::Tag>(boxed.value);
+    if not reuse::local_unchanged() {
+        return 1;
+    }
+    match selected {
+        reuse::Loaded::<model::Tag>(tag) => {
+            if tag.value != 42 {
+                return 2;
+            }
+        },
+        reuse::Vacant::<model::Tag> => {
+            return 3;
+        },
+    }
+    return 0;
+}

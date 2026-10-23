@@ -1055,6 +1055,12 @@ fn indexed_module_has_item(index: ref visibility_index, items: ref list<top_item
 }
 
 fn visible_item_origin_indexed(index: ref visibility_index, uses: ref list<module_use>, items: ref list<top_item>, module: str, name: str, kind: visible_item_kind) -> str {
+    match kind {
+        visible_item_type => {
+            if str_starts_with(name, "__nqg_") { return generated_nominal_origin(ref items, name); }
+        },
+        _ => {},
+    }
     if indexed_module_has_item(ref index, ref items, module, name, kind, false) {
         return module;
     }
@@ -7829,6 +7835,17 @@ fn p2_frontend_membership_cases(base: ref visibility_index) -> bool {
     return p2_frontend_members_case(ref base, ref compact_scopes, ref compact_statements, "a", "same");
 }
 
+fn generic_nominal_lookup_cases() -> bool {
+    // A well-formed internal atom is still untrusted without registry marking.
+    let name = "__nqg_747c6f726967696e7c546167";
+    let items = [make_top_item("origin", name, item_type, true, 0)];
+    let uses = [make_module_use("caller", "origin", "", 0)];
+    let index = build_visibility_index(ref uses, ref items);
+    if visible_type_origin_module_indexed(ref index, ref uses, ref items, "origin", name) != "" { return false; }
+    if visible_type_origin_module_indexed(ref index, ref uses, ref items, "caller", name) != "" { return false; }
+    return true;
+}
+
 pub fn frontend_lookup_index_cases() -> bool
 audit {
     intent("Compare exact linear and indexed frontend lookup behavior over adversarial ordering");
@@ -7836,6 +7853,7 @@ audit {
     effects();
 }
 {
+    if not generic_nominal_lookup_cases() { return false; }
     let empty_uses: list<module_use> = list();
     let empty_items: list<top_item> = list();
     let base = build_visibility_index(ref empty_uses, ref empty_items);

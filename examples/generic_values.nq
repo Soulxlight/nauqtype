@@ -1,0 +1,39 @@
+pub type Parcel<T> {
+    value: T,
+}
+
+pub enum Outcome<T, E> {
+    Ready(T),
+    Failed(E),
+    Vacant,
+}
+
+pub fn identity<T>(value: T) -> T
+audit {
+    intent("Forward an explicitly selected value type unchanged");
+    mutates();
+    effects();
+}
+{
+    return value;
+}
+
+pub fn package<T>(value: T) -> Parcel<T>
+audit {
+    intent("Place an explicitly selected owned value in a typed parcel");
+    mutates();
+    effects();
+}
+{
+    return Parcel::<T> { value: identity::<T>(value) };
+}
+
+pub fn first<T>(values: ref list<T>) -> option<T>
+audit {
+    intent("Read the first optional list value through a temporary explicit borrow");
+    mutates();
+    effects();
+}
+{
+    return list_get(ref values, 0);
+}

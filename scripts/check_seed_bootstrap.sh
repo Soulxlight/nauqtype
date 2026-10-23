@@ -127,9 +127,18 @@ run_seed_phase() {
 seed_verify "$repo_root"
 prov_input_paths "$repo_root" > "$work_dir/paths"
 inputs_hash=$(prov_files_digest "$repo_root" nauqtype-build-inputs/v2 "$work_dir/paths")
+# The generic smoke is separately captured, not silently added to the compiler
+# cache's input contract. Both original and captured bytes are checked again.
+printf '%s\n' examples/generic_reuse.nq examples/generic_values.nq > "$work_dir/generic-paths"
+prov_flat_loading "$repo_root/examples"
+generic_inputs=$(prov_files_digest "$repo_root" nauqtype-generic-smoke/v1 "$work_dir/generic-paths")
 prov_cc_identity "${CC:-cc}" "$work_dir/cc-before"
 snapshot="$work_dir/input"
 prov_capture_inputs "$repo_root" "$snapshot" "$work_dir/paths" "$inputs_hash"
+mkdir -p "$snapshot/examples"
+cp --preserve=mode -- "$repo_root/examples/generic_reuse.nq" "$repo_root/examples/generic_values.nq" "$snapshot/examples/"
+prov_flat_loading "$snapshot/examples"
+[[ "$(prov_files_digest "$snapshot" nauqtype-generic-smoke/v1 "$work_dir/generic-paths")" == "$generic_inputs" ]]
 mkdir -p "$snapshot/build/seed" "$snapshot/selfhost/build"
 if [[ "$reuse_stage1" == true ]]; then
     bash "$repo_root/scripts/stage1_cache.sh" require
@@ -179,6 +188,22 @@ prov_flat_loading "$snapshot"
 run_seed_phase 1 "$stage1_exe" emit-c selfhost/main.nq -o build/seed/stage2.c
 run_seed_phase 2 "$stage1_exe" prove-seed build/seed/stage1.c build/seed/stage2.c
 phase_active=-1
+phase_boundary=generic_composition
+write_phase_report
+prov_flat_loading "$repo_root/examples"
+prov_flat_loading "$snapshot/examples"
+(
+    cd "$snapshot"
+    "$stage1_exe" run examples/generic_reuse.nq -o "$snapshot/build/seed/generic-smoke" > "$work_dir/generic.stdout" 2> "$work_dir/generic.stderr"
+)
+printf 'generic reuse: ready\n' > "$work_dir/generic.expected"
+cmp -s "$work_dir/generic.expected" "$work_dir/generic.stdout"
+[[ ! -s "$work_dir/generic.stderr" ]]
+prov_flat_loading "$repo_root/examples"
+prov_flat_loading "$snapshot/examples"
+[[ "$(prov_files_digest "$snapshot" nauqtype-generic-smoke/v1 "$work_dir/generic-paths")" == "$generic_inputs" ]]
+[[ "$(prov_files_digest "$repo_root" nauqtype-generic-smoke/v1 "$work_dir/generic-paths")" == "$generic_inputs" ]]
+printf 'seed-rebuilt generic composition ok\n'
 phase_boundary=provenance
 write_phase_report
 # Historical proof output is not historical source material.
@@ -188,6 +213,8 @@ cmp -s "$work_dir/cc-before" "$work_dir/cc-after"
 [[ "$(prov_inputs_sha256 "$snapshot")" == "$inputs_hash" ]]
 [[ "$(prov_inputs_sha256 "$repo_root")" == "$inputs_hash" ]]
 if [[ "$reuse_stage1" == true ]]; then bash "$repo_root/scripts/stage1_cache.sh" require; fi
+prov_flat_loading "$repo_root/examples"
+prov_flat_loading "$snapshot/examples"
 {
     printf 'seed-bootstrap-proof/v1\nhistorical_reused=%s\n' "$historical_reused"
     printf 'historical_source_sha256=%s\ncurrent_source_sha256=%s\n' "$historical_hash" "$current_hash"

@@ -45,6 +45,15 @@ part of this documentation slice.
 
 ## Dispatch Rules
 
+M56 on2026-10-23 uses `gpt-5.6-sol` high workers for disjoint generic
+elaboration, owned Nauqtype fixtures, checked propagation evidence repair and
+the bounded host compiler memory profile. Ownership transfers are explicit;
+workers do not commit, promote seeds or launch native heavyweight jobs. The
+lead owns integration, exact generated-seed lineage, docs and serial Linux
+measurements. Independent `gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh audits
+retain the unavailable-GPT-5.5 fallback. M56 has no paid model dependency,
+new runtime authority, traits, methods or inferred generic requirements.
+
 On 2026-10-21 the owner explicitly approved an opt-in local concurrent warm
 tier. Both independent mixed Gate A reviews passed the revised
 `docs/P1_CONCURRENT_WARM_CONTRACT.md`, including descriptor-bound cleanup and

@@ -19,7 +19,11 @@ result belongs only to the explicitly selected supported concurrent mode.
 See the [current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close)
 for identities, costs, scope and closing-review evidence.
 
-M56 generic reuse is the next language milestone, not implemented here.
+M56 explicit generic reuse passes its reviewed frozen Linux close on
+`67272d00dd7d3e6cbb3945cc5777141148ff2cc1`: exact86-source seed, both seed
+comparisons,12 proof phases/45 corpus cases, seed/release generic composition,
+owned tests, sanitizers and strict attestation. See the
+[M56 completion record](AUDIT_REMEDIATION.md#m56-generic-reuse-close).
 No stable release, publication or downstream pin change follows from this
 performance close. Earlier1055.02s/1011.04s cold and100.58s serial-warm results
 remain historical candidate-bound evidence, not the new gate's measurements.
@@ -484,7 +488,12 @@ release, or a claim of GitHub publication.
 - [x] M55 prerequisite: repair interrupted process capture/wait handling (F14), including fail-closed persistent cleanup failures
 - [x] M55: add structured process, time, timeout, and cancellation foundations after corrective closure
 - [x] M55 close: native fault/sanitizer and checked-evidence fixtures, actual seed fixed point, independent Sol max/GPT-5.5 xhigh audits, and all seven frozen milestone phases plus attestation passed in 2,504 seconds
-- [ ] M56: add explicit generic reuse without trait or method-system drift
+- [x] M56: add explicit generic reuse without trait or method-system drift
+- [x] M56 close: owned positive/negative/origin/bounds probes, checked propagation
+  repair, exact generic-capable seed, relocated-release composition, mixed
+  audits and one frozen Linux gate; see `docs/M56_CONTRACT.md`
+- [ ] Before adopting generic libraries: version source-template/instance
+  facts/review/refactor evidence; existing formats fail closed on generic graphs
 - [ ] M57: add reusable collections and deterministic general JSON
 - [ ] M58: add an auditable native library and Linux C ABI boundary
 - [ ] M59: add bounded tasks and complete daily formatter/editor/test/documentation workflows

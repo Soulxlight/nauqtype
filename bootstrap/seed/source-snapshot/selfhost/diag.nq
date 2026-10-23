@@ -163,10 +163,92 @@ fn rendered_without_source(entry: diag) -> str {
 }
 
 fn rendered_with_source(entry: diag, file: source_file) -> str {
-    let position = source_position(file.text, entry.start);
+    let origin = source_origin_at(file, entry.start, entry.end);
+    if not origin.valid { return rendered_without_source(entry); }
+    let position = source_position(file.original_text, origin.start);
     let location = str_concat(str_concat(str_concat(file.path, ":"), i32_to_str(position.line)), str_concat(":", i32_to_str(position.column)));
     let identity = str_concat(str_concat(category_text(entry.category), "["), str_concat(entry.code, "]"));
-    return str_concat(str_concat(str_concat(location, ": "), identity), str_concat(": ", entry.message));
+    let rendered = str_concat(str_concat(str_concat(location, ": "), identity), str_concat(": ", entry.message));
+    if origin.context != "" { return concat4(rendered, " [generic instance ", origin.context, "]"); }
+    return rendered;
+}
+
+fn diagnostic_note_with_origin(entry: diag, sources: ref list<source_file>) -> str {
+    match lookup_source(ref sources, entry.source_name) {
+        Some(file) => {
+            let origin = source_origin_at(file, entry.start, entry.end);
+            if origin.valid and origin.context != "" {
+                let context = str_concat("generic instance: ", origin.context);
+                if entry.note == "" { return context; }
+                return concat3(entry.note, "\n", context);
+            }
+        },
+        None => {},
+    }
+    return entry.note;
+}
+
+pub fn validate_diagnostic_origins(entries: mutref list<diag>, sources: ref list<source_file>) -> unit
+audit {
+    intent("Fail the build before output publication if any elaborated diagnostic lacks a truthful original range");
+    mutates(entries);
+    effects();
+}
+{
+    let count = list_len(ref entries);
+    let mut index = 0;
+    while index < count {
+        match list_get(ref entries, index) {
+            Some(entry) => {
+                if entry.start >= 0 {
+                    match lookup_source(ref sources, entry.source_name) {
+                        Some(file) => {
+                            if file.has_generics or file.origin_map != "" or file.text != file.original_text {
+                                let origin = source_origin_at(file, entry.start, entry.end);
+                                if not origin.valid {
+                                    list_push(mutref entries, make_error("NQ-GENERIC-009", diag_internal, file.name, -1, -1, "diagnostic range has no valid original source origin"));
+                                }
+                            }
+                        },
+                        None => {
+                            if source_graph_has_generics(ref sources) {
+                                list_push(mutref entries, make_error("NQ-GENERIC-009", diag_internal, entry.source_name, -1, -1, "located diagnostic has no source in the captured generic graph"));
+                            }
+                        },
+                    }
+                }
+            },
+            None => {},
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+pub fn diagnostic_origin_cases() -> bool
+audit {
+    intent("Check that an unprojectable warning becomes a real build failure instead of silently losing its span");
+    mutates();
+    effects();
+}
+{
+    let mut file = make_source_file("probe", "abcde");
+    file.text = "x y";
+    file.has_generics = true;
+    file.origin_map = "0:1:4:5:A;2:3:0:1:B;3:3:5:5:;";
+    let sources = [file];
+    let mut entries = [make_warning("NQ-TEST-001", diag_contract, "probe", 0, 3, "test warning")];
+    if diagnostics_have_errors(ref entries) { return false; }
+    validate_diagnostic_origins(mutref entries, ref sources);
+    if list_len(ref entries) != 2 or not diagnostics_have_errors(ref entries) { return false; }
+    match list_get(ref entries, 1) { Some(value) => { if value.code != "NQ-GENERIC-009" { return false; } }, None => { return false; }, }
+    let mut missing = [make_warning("NQ-TEST-001", diag_contract, "missing", 0, 1, "unknown located warning")];
+    validate_diagnostic_origins(mutref missing, ref sources);
+    if list_len(ref missing) != 2 or not diagnostics_have_errors(ref missing) { return false; }
+    match list_get(ref missing, 1) { Some(value) => { if value.code != "NQ-GENERIC-009" { return false; } }, None => { return false; }, }
+    let mut locationless = [make_warning("NQ-TEST-001", diag_contract, "missing", -1, -1, "intentional locationless warning")];
+    validate_diagnostic_origins(mutref locationless, ref sources);
+    return list_len(ref locationless) == 1 and not diagnostics_have_errors(ref locationless);
 }
 
 fn rendered_diag(entry: diag, sources: ref list<source_file>) -> str {
@@ -242,8 +324,10 @@ fn emit_span_json(entry: diag, sources: ref list<source_file>) -> unit {
         let found = lookup_source(ref sources, entry.source_name);
         match found {
             Some(file) => {
-                let start = source_position(file.text, entry.start);
-                let end = source_position(file.text, entry.end);
+                let origin = source_origin_at(file, entry.start, entry.end);
+                if not origin.valid { print_line("      \"span\": null,"); return; }
+                let start = source_position(file.original_text, origin.start);
+                let end = source_position(file.original_text, origin.end);
                 print_line("      \"span\": {");
                 print_line(str_concat(str_concat("        \"path\": ", json_quote(file.path)), ","));
                 emit_position_json("        \"start\": ", start, ",");
@@ -286,10 +370,11 @@ audit {
                 print_line(str_concat(str_concat("      \"severity\": ", json_quote(severity_text(value.severity))), ","));
                 print_line(str_concat(str_concat("      \"message\": ", json_quote(value.message)), ","));
                 emit_span_json(value, ref sources);
-                if value.note == "" {
+                let note = diagnostic_note_with_origin(value, ref sources);
+                if note == "" {
                     print_line("      \"notes\": [],");
                 } else {
-                    print_line(str_concat(str_concat("      \"notes\": [", json_quote(value.note)), "],"));
+                    print_line(str_concat(str_concat("      \"notes\": [", json_quote(note)), "],"));
                 }
                 if value.help == "" {
                     print_line("      \"help\": null,");

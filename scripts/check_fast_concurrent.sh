@@ -572,12 +572,44 @@ p1c_status_cases() (
     done
 )
 
+p1c_publish_populated() {
+    (( $# == 2 )) || return 1
+    local p1c_dir=$1 p1c_value=$2 p1c_stage
+    [[ "$p1c_value" == 0 || "$p1c_value" == 1 ]] || return 1
+    p1c_stage="$(/usr/bin/mktemp -- "$p1c_dir/.populated.XXXXXX")" || return 1
+    if printf '%s\n' "$p1c_value" > "$p1c_stage" &&
+       /usr/bin/mv -fT -- "$p1c_stage" "$p1c_dir/populated"; then
+        return 0
+    fi
+    /usr/bin/rm -f -- "$p1c_stage" || return 1
+    return 1
+}
+
+p1c_populated_publication_case() (
+    local p1c_model="$p1c_scratch/populated-publication" p1c_fd
+    local _nqfc_text='' _nqfc_populated='' _nqfc_frozen=''
+    mkdir "$p1c_model" || return 1
+    p1c_publish_populated "$p1c_model" 1 || return 1
+    exec {p1c_fd}< "$p1c_model/populated" || return 1
+    p1c_publish_populated "$p1c_model" 0 || return 1
+    _nqfc_capture 8 /usr/bin/cat <&"$p1c_fd" || return 1
+    exec {p1c_fd}<&- || return 1
+    [[ "$_nqfc_text" == $'1\n' ]] || return 1
+    _nqfc_capture 8 /usr/bin/cat -- "$p1c_model/populated" || return 1
+    [[ "$_nqfc_text" == $'0\n' ]] || return 1
+    _nqfc_parse_events "populated $_nqfc_text"$'frozen 0\n' || return 1
+    [[ "$_nqfc_populated" == 0 && "$_nqfc_frozen" == 0 ]] || return 1
+    if p1c_publish_populated "$p1c_model" 00; then return 1; fi
+    _nqfc_capture 8 /usr/bin/cat -- "$p1c_model/populated" || return 1
+    [[ "$_nqfc_text" == $'0\n' ]]
+)
+
 # An explicit protocol peer models only the manager/kernel boundary. Its jobs,
 # logger, status parser, waiter, freeze transaction, replay and cleanup use core.
 p1c_run_model() (
     local p1c_fault=$1 p1c_root=$2 p1c_model="$2/.p1c-state/model" p1c_fd p1c_key p1c_stage=0
     mkdir -p "$p1c_model" "$p1c_root/build/verification/.check-fast-lock"
-    printf '1\n' > "$p1c_model/populated"
+    p1c_publish_populated "$p1c_model" 1 || return 1
     printf '0\n' > "$p1c_model/frozen"
     : > "$p1c_model/operations"
     _nqfc_prepare() {
@@ -623,7 +655,7 @@ p1c_run_model() (
         printf '%s %s\n' "$1" "$2" >> "$p1c_model/operations"
         case "$1" in
             "${_nqfc_fds[freeze]}") printf '%s\n' "$2" > "$p1c_model/frozen" ;;
-            "${_nqfc_fds[kill]}") printf '0\n' > "$p1c_model/populated" ;;
+            "${_nqfc_fds[kill]}") p1c_publish_populated "$p1c_model" 0 ;;
             *) return 1 ;;
         esac
     }
@@ -631,7 +663,7 @@ p1c_run_model() (
         local _nqfc_root=$1 _nqfc_run=$2 _nqfc_unit=$3 _nqfc_nonce=$4
         local _nqfc_index _nqfc_wait_status=0 _nqfc_signal_epoch=0 p1c_peer_code=0 p1c_go
         local -a p1c_jobs=() p1c_codes=(0 0 0 0)
-        trap 'printf "0\n" > "$p1c_model/populated"' EXIT
+        trap 'p1c_publish_populated "$p1c_model" 0 || exit 125' EXIT
         [[ "$p1c_fault" != launch ]] || exit 7
         printf 'READY %s %s %s /unit-model/%s 1 1\n' "$_nqfc_nonce" "$_nqfc_nonce" "$BASHPID" "$_nqfc_unit"
         IFS= read -r -t 5 p1c_go || exit 125
@@ -1207,6 +1239,8 @@ p1c_pass 'UNIT actual generic-file FD remains on old object; unpinned write refu
 p1c_group_cases
 p1c_freeze_cases
 p1c_drain_cases
+p1c_populated_publication_case || p1c_fail 'atomic synthetic populated publication'
+p1c_pass 'UNIT atomic synthetic populated publication: retained FD/fresh parser/invalid value (not kernel evidence)'
 p1c_model_cases
 if [[ "$p1c_native" == true ]]; then
     p1c_write_native_waiter

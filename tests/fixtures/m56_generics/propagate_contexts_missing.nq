@@ -1,0 +1,31 @@
+enum LocalErr {
+    Failed,
+}
+
+fn relay_caught(value: result<i32, str>) -> result<i32, str> {
+    return value;
+}
+
+fn forward(value: result<i32, LocalErr>, caught: result<i32, str>) -> result<i32, LocalErr>
+audit {
+    intent("Separate a nominal function error from a string error caught by a local try");
+    mutates();
+    effects();
+}
+{
+    let handled: result<i32, str> = try {
+        relay_caught(caught)?
+    };
+    match handled {
+        Ok(_) => {
+        },
+        Err(_) => {
+        },
+    }
+    let item: i32 = value?;
+    return Ok(item);
+}
+
+fn main() -> i32 {
+    return 0;
+}

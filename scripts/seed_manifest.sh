@@ -209,11 +209,14 @@ seed_flags_verify() (
     scratch=$(mktemp) || exit 1
     trap 'rm -f -- "$scratch"' EXIT
     while IFS= read -r -d '' arg; do args+=("$arg"); done < "$file"
-    [[ ${#args[@]} == 8 ]] || exit 1
+    [[ ${#args[@]} == 8 || ${#args[@]} == 10 ]] || exit 1
     [[ "${args[0]}" == -std=c11 && "${args[1]}" == -O2 && "${args[2]}" == -D_POSIX_C_SOURCE=200809L && "${args[3]}" == -Istdlib ]] || exit 1
     prov_safe_relative "${args[4]}" && [[ "${args[4]}" == *.c ]] || exit 1
     [[ "${args[5]}" == stdlib/runtime.c && "${args[6]}" == -o ]] || exit 1
     prov_safe_relative "${args[7]}" || exit 1
+    if (( ${#args[@]} == 10 )); then
+        [[ "${args[8]}" == --param=ggc-min-expand=20 && "${args[9]}" == --param=ggc-min-heapsize=32768 ]] || exit 1
+    fi
     printf '%s\0' "${args[@]}" > "$scratch" || exit 1
     cmp -s "$file" "$scratch"
 )

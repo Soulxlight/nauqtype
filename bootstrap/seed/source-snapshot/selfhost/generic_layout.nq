@@ -1,0 +1,98 @@
+use diag;
+use handoff;
+use text;
+
+type generic_layout_edge {
+    parent: i32,
+    child: i32,
+}
+
+fn generic_layout_has_type(shapes: ref list<checked_type_shape>, id: i32) -> bool {
+    for shape in shapes { if shape.id == id { return true; } }
+    return false;
+}
+
+fn generic_layout_error(diags: mutref list<diag>, code: str, module: str, at: i32, message: str) -> bool {
+    let mut end = at;
+    if at >= 0 { end = at + 1; }
+    list_push(mutref diags, make_error(code, diag_type, module, at, end, message));
+    return false;
+}
+
+pub fn check_generic_layouts(shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, enums: ref list<checked_enum_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>, diags: mutref list<diag>) -> bool
+audit {
+    intent("Reject cyclic concrete generic data layouts using checked type identities, including nongeneric and container bridges");
+    mutates(diags);
+    effects();
+}
+{
+    let mut edges: list<generic_layout_edge> = list();
+    for shape in shapes {
+        match shape.kind {
+            checked_type_named => {
+                let mut declared = false;
+                for value in types { if value.module_name == shape.origin_module and value.name == shape.name { declared = true; } }
+                for value in enums { if value.module_name == shape.origin_module and value.name == shape.name { declared = true; } }
+                if not declared { return generic_layout_error(mutref diags, "NQ-GENERIC-009", shape.origin_module, -1, "missing checked nominal layout declaration"); }
+                for field in fields {
+                    if field.module_name == shape.origin_module and field.type_name == shape.name {
+                        list_push(mutref edges, generic_layout_edge { parent: shape.id, child: field.field_type_id });
+                    }
+                }
+                for variant in variants {
+                    if variant.module_name == shape.origin_module and variant.enum_name == shape.name {
+                        for payload in payloads {
+                            if payload.variant_id == variant.id { list_push(mutref edges, generic_layout_edge { parent: shape.id, child: payload.type_id }); }
+                        }
+                    }
+                }
+            },
+            checked_type_list => { list_push(mutref edges, generic_layout_edge { parent: shape.id, child: shape.arg1_id }); },
+            checked_type_option => { list_push(mutref edges, generic_layout_edge { parent: shape.id, child: shape.arg1_id }); },
+            checked_type_result => {
+                list_push(mutref edges, generic_layout_edge { parent: shape.id, child: shape.arg1_id });
+                list_push(mutref edges, generic_layout_edge { parent: shape.id, child: shape.arg2_id });
+            },
+            checked_type_ref => {
+                if not generic_layout_has_type(ref shapes, shape.arg1_id) { return generic_layout_error(mutref diags, "NQ-GENERIC-009", "", -1, "missing checked borrow pointee type"); }
+            },
+            _ => {},
+        }
+    }
+    for edge in edges {
+        if not generic_layout_has_type(ref shapes, edge.child) { return generic_layout_error(mutref diags, "NQ-GENERIC-009", "", -1, "missing checked layout child type"); }
+    }
+    // A finite elimination is independent of instance discovery order. Unlike
+    // specialization recursion, layout edges include substituted payload types.
+    let mut ready: list<i32> = list();
+    let mut progress = true;
+    while progress {
+        progress = false;
+        for shape in shapes {
+            if not list_contains_i32(ref ready, shape.id) {
+                let mut children_ready = true;
+                for edge in edges {
+                    if edge.parent == shape.id and not list_contains_i32(ref ready, edge.child) { children_ready = false; }
+                }
+                if children_ready { list_push(mutref ready, shape.id); progress = true; }
+            }
+        }
+    }
+    if list_len(ref ready) == list_len(ref shapes) { return true; }
+    for shape in shapes {
+        if not list_contains_i32(ref ready, shape.id) {
+            match shape.kind {
+                checked_type_named => {
+                    for value in types {
+                        if value.module_name == shape.origin_module and value.name == shape.name { return generic_layout_error(mutref diags, "NQ-GENERIC-005", value.module_name, value.at, "recursive concrete data layouts are not supported, including through containers"); }
+                    }
+                    for value in enums {
+                        if value.module_name == shape.origin_module and value.name == shape.name { return generic_layout_error(mutref diags, "NQ-GENERIC-005", value.module_name, value.at, "recursive concrete data layouts are not supported, including through containers"); }
+                    }
+                },
+                _ => {},
+            }
+        }
+    }
+    return generic_layout_error(mutref diags, "NQ-GENERIC-009", "", -1, "invalid cyclic checked type metadata");
+}

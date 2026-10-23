@@ -18,6 +18,12 @@ These examples introduce the core structure, syntax, and flow control of Nauqtyp
 
 These examples cover specific semantic features of Nauqtype.
 
+- [generic_reuse.nq](examples/generic_reuse.nq): Explicit imported function,
+  product/enum specializations, n-ary/nested arguments, named call labels and
+  borrowed lists. [generic_values.nq](examples/generic_values.nq) supplies the
+  templates; no inference, traits, or hidden ownership rules. Legacy evidence
+  commands deliberately reject generic graphs until a versioned export exists.
+
 - [string_join.nq](examples/string_join.nq): Pure ordered byte assembly with an
   explicit borrowed `list<str>`, a named argument, and unchanged input ownership.
   PRE-M56 E1 acceptance is tracked in `PERFORMANCE_ENABLEMENT.md`.
@@ -71,6 +77,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `fibonacci.nq`
 - `field_assignment.nq`
 - `for_list.nq`
+- `generic_reuse.nq`
 - `hello.nq`
 - `import_aliases.nq`
 - `list_literals.nq`
@@ -103,6 +110,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 These examples provide imported definitions for the runnable examples above. They are not directly runnable entrypoints, but they are guaranteed to pass `fmt --check` formatting checks via the `prove` gate to remain canonically structured:
 
 - [batch_b_helper.nq](examples/batch_b_helper.nq)
+- [generic_values.nq](examples/generic_values.nq)
 - [multi_file_helper.nq](examples/multi_file_helper.nq)
 - [qualified_call_chain_math.nq](examples/qualified_call_chain_math.nq)
 - [qualified_call_chain_mid.nq](examples/qualified_call_chain_mid.nq)
@@ -121,3 +129,8 @@ To teach supervised failure to a model:
 5. **Refined Pattern Fallback:** Remove the `_` arm from `examples/nested_patterns.nq` to see refined patterns rejected until their fallback path is explicit.
 6. **Ambiguous Try Boundary:** Remove the `result<i32, io_err>` annotation from `measured` in `examples/try_expression.nq` to see `NQ-TRY-001` require explicit boundary truth.
 7. **Unsafe Try Control Flow:** Put a propagated call on the right side of `and` inside `try` to see `NQ-TRY-004` preserve short-circuit semantics rather than hoisting the call.
+8. **Explicit Generic Arguments:** The owned `tests/fixtures/m56_generics/`
+   probes pair valid values with arity, visibility, parameter-capture,
+   ownership, recursion/bounds and original-source diagnostic failures. Use
+   `identity::<i32>(7)`, not inferred `identity(7)`. An unused template is not a
+   universal proof that its operations work for every possible type.

@@ -7,9 +7,10 @@ compiler evidence, and changes that people can review.
 ## Current Status
 
 Nauqtype is an organizational Linux alpha, not a stable, feature-complete
-language or a distro package. M55 is complete in recorded Linux evidence.
-PRE-M56 iteration and gate efficiency work is the current priority; M56 generic
-reuse and later stable-release milestones are not complete.
+language or a distro package. M55 and the required PRE-M56 efficiency goals
+have recorded Linux acceptance. M56's explicit generic reuse is implemented;
+its closing evidence belongs in the checkout roadmap. Later
+stable-release milestones are not complete.
 
 The active compiler, tests, and proof runner are written in Nauqtype. A
 checked-in C seed and narrow C runtime remain part of the intentional
@@ -209,19 +210,21 @@ execution, release readiness, stability, or performance.
 
 ## Current Work And Limits
 
-The PRE-M56 campaign prioritizes faster focused iteration and a cheaper
-complete milestone gate without weakening seed, proof, or release evidence.
-Its targets are at most 10 seconds for focused feedback, at most 60 seconds
-for a warm complete fixture tier, and at least a 50% reduction in cold-gate
-time against the same-host baseline (10 minutes is the working target). These
-are goals, not achieved results. E1/P2 candidate measurements and their
-limitations are recorded in checkout-only performance documents; inner-loop
-speedups do not prove whole-gate improvement. The broader P1-P4 campaign
-remains open.
+The PRE-M56 checkpoint met focused10s, explicit opt-in warm60s, and at least
+50% cold-gate reduction targets without weakening proof or resource ceilings.
+The10-minute cold working target remains unmet; default and release gates stay
+serial. Those measurements are not timing promises for later compiler changes.
 
-The next language sequence begins with M56 generic reuse after PRE-M56
-acceptance; later milestones address data facilities, FFI, bounded tasks, and
-stable Linux packaging. These are roadmap items, not current capabilities.
+The M56 foundation adds explicit function/product/enum generics, for example
+`identity::<i32>(7)` and `Parcel<i32>`. Concrete instances keep existing type,
+ownership, audit and backend checks. No inference, traits, methods, overloads,
+stored references or implicit conversion accompanies this foundation.
+Legacy facts/review/diff/change/policy/rename commands reject generic graphs
+with `NQ-GENERIC-008` rather than invent source evidence for generated names;
+generic-aware evidence needs a separate versioned contract. Formatter-lite
+remains output-only. Examples `generic_reuse.nq` and `generic_values.nq` teach
+the explicit form. Collections/data, FFI, bounded tasks and stable Linux
+packaging remain roadmap work, not current capabilities.
 The optional authoring-kit work is staged and unvalidated, not integrated
 tooling or canonical teaching content. No paid model service is required for
 ordinary compiler development.

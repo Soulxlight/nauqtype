@@ -1,0 +1,172 @@
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+fn twice<T>(value: T) -> T {
+    let first = value;
+    let second = value;
+    return first;
+}
+
+fn down<T>(value: T, remaining: i32) -> T {
+    if remaining == 0 {
+        return value;
+    }
+    return down::<T>(value, remaining - 1);
+}
+
+fn borrowed<T>(value: ref T) -> T {
+    return value;
+}
+
+fn ordered<T>(first: T, second: T) -> T {
+    return first;
+}
+
+fn append<T>(values: mutref list<T>, item: T) -> unit
+audit {
+    intent("Keep generic list mutation explicit at the borrowed parameter");
+    mutates(values);
+    effects();
+}
+{
+    list_push(mutref values, item);
+}
+
+fn third<A, B, C>(first: A, second: B, last: C) -> C {
+    return last;
+}
+
+fn forward<T, E>(value: result<T, E>) -> result<T, E>
+audit {
+    intent("Keep explicit generic propagation tied to the concrete error type");
+    mutates();
+    effects();
+    propagates(E);
+}
+{
+    let item = value?;
+    return Ok(item);
+}
+
+type Parcel<T> {
+    value: T,
+}
+
+type Trio<A, B, C> {
+    first: A,
+    second: B,
+    third: C,
+}
+
+type Label<T> {
+    T: T,
+}
+
+enum Choice<T, E> {
+    Value(T),
+    Failure(E),
+    Empty,
+}
+
+enum Triple<A, B, C> {
+    One(A),
+    Two(B),
+    Three(C),
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise explicit generic values without changing ownership or label meaning");
+    mutates();
+    effects(print);
+}
+{
+    let number = identity::<i32>(7);
+    let text = twice::<str>(identity::<str>("typed"));
+    let mut extra = [3];
+    append::<i32>(mutref extra, 4);
+    if list_len(ref extra) != 2 {
+        return 16;
+    }
+    let literal = "__nqg_not_an_identifier";
+    if literal != "__nqg_not_an_identifier" {
+        return 10;
+    }
+    let nested: Parcel<Parcel<i32>> = Parcel::<Parcel<i32>> {
+        value: Parcel::<i32> { value: down::<i32>(number, 3) },
+    };
+    let triple: Trio<i32, str, bool> = Trio::<i32, str, bool> {
+        first: nested.value.value,
+        second: text,
+        third: third::<i32, str, bool>(0, "not a binder substitution", true),
+    };
+    let label: Label<i32> = Label::<i32> { T: ordered::<i32>(second: 99, first: triple.first) };
+    if borrowed::<i32>(ref label.T) != 7 or triple.second != "typed" or not triple.third {
+        return 1;
+    }
+    let values = identity::<list<i32>>([2, 3]);
+    let carried: option<Parcel<list<i32>>> = Some(Parcel::<list<i32>> { value: values });
+    match carried {
+        Some(item) => {
+            if list_len(ref item.value) != 2 {
+                return 2;
+            }
+        },
+        None => {
+            return 3;
+        },
+    }
+    let selected: Choice<i32, str> = Value::<i32, str>(7);
+    match selected {
+        Value::<i32, str>(value) => {
+            if value != 7 {
+                return 4;
+            }
+        },
+        Failure::<i32, str>(_) => {
+            return 5;
+        },
+        Empty::<i32, str> => {
+            return 6;
+        },
+    }
+    let empty: Choice<i32, str> = Empty::<i32, str>;
+    match empty {
+        Empty::<i32, str> => {
+        },
+        Value::<i32, str>(_) => {
+            return 7;
+        },
+        Failure::<i32, str>(_) => {
+            return 8;
+        },
+    }
+    let three: Triple<i32, str, bool> = Three::<i32, str, bool>(true);
+    match three {
+        One::<i32, str, bool>(_) => {
+            return 11;
+        },
+        Two::<i32, str, bool>(_) => {
+            return 12;
+        },
+        Three::<i32, str, bool>(value) => {
+            if not value {
+                return 13;
+            }
+        },
+    }
+    let fallible: result<i32, str> = forward::<i32, str>(Ok(11));
+    match fallible {
+        Ok(value) => {
+            if value != 11 {
+                return 14;
+            }
+        },
+        Err(_) => {
+            return 15;
+        },
+    }
+    print_line("M56 generic runtime");
+    return 0;
+}

@@ -1,7 +1,32 @@
+use lexer;
+use text;
+use token;
+
 pub type source_file {
     name: str,
     path: str,
     text: str,
+    original_text: str,
+    origin_map: str,
+    generated_names: str,
+    generic_origins: str,
+    has_generics: bool,
+}
+
+pub type source_origin {
+    valid: bool,
+    start: i32,
+    end: i32,
+    context: str,
+}
+
+type source_origin_row {
+    valid: bool,
+    generated_start: i32,
+    generated_end: i32,
+    original_start: i32,
+    original_end: i32,
+    context: str,
 }
 
 pub fn make_source_file(name: str, text: str) -> source_file
@@ -15,6 +40,11 @@ audit {
         name: name,
         path: name,
         text: text,
+        original_text: text,
+        origin_map: "",
+        generated_names: "",
+        generic_origins: "",
+        has_generics: false,
     };
 }
 
@@ -29,5 +59,183 @@ audit {
         name: name,
         path: path,
         text: text,
+        original_text: text,
+        origin_map: "",
+        generated_names: "",
+        generic_origins: "",
+        has_generics: false,
     };
+}
+
+fn source_map_number(value: str, cursor: mutref i32) -> i32 {
+    let start = cursor;
+    let mut number = 0;
+    while cursor < str_len(value) {
+        let ch = char_at(value, cursor);
+        if ch == 58 {
+            cursor = cursor + 1;
+            if cursor == start + 1 { return -1; }
+            return number;
+        }
+        if ch < 48 or ch > 57 { return -1; }
+        let digit = ch - 48;
+        if number > 214748364 or (number == 214748364 and digit > 7) { return -1; }
+        number = number * 10 + digit;
+        cursor = cursor + 1;
+    }
+    return -1;
+}
+
+fn source_read_origin_row(value: str, cursor: mutref i32) -> source_origin_row {
+    let gs = source_map_number(value, mutref cursor);
+    let ge = source_map_number(value, mutref cursor);
+    let os = source_map_number(value, mutref cursor);
+    let oe = source_map_number(value, mutref cursor);
+    let start = cursor;
+    while cursor < str_len(value) and char_at(value, cursor) != 59 {
+        cursor = cursor + 1;
+    }
+    let context = slice_text(value, start, cursor);
+    let valid = gs >= 0 and ge >= gs and os >= 0 and oe >= os and cursor < str_len(value);
+    if cursor < str_len(value) { cursor = cursor + 1; }
+    return source_origin_row { valid: valid, generated_start: gs, generated_end: ge, original_start: os, original_end: oe, context: context };
+}
+
+pub fn source_map_valid(file: source_file) -> bool
+audit {
+    intent("Validate the complete compiler-owned elaborated token origin map including EOF");
+    mutates();
+    effects();
+}
+{
+    if file.origin_map == "" {
+        return not file.has_generics and file.generated_names == "" and file.generic_origins == "" and file.text == file.original_text;
+    }
+    if not file.has_generics { return false; }
+    let tokens = lex(file.text);
+    let mut cursor = 0;
+    let mut previous_end = 0;
+    for current in tokens {
+        let row = source_read_origin_row(file.origin_map, mutref cursor);
+        if not row.valid or row.generated_start != current.start or row.generated_end != current.end or row.generated_start < previous_end or row.original_end > str_len(file.original_text) { return false; }
+        match current.kind {
+            tk_eof => {
+                if row.original_start != str_len(file.original_text) or row.original_end != row.original_start { return false; }
+            },
+            _ => {},
+        }
+        previous_end = row.generated_end;
+    }
+    return cursor == str_len(file.origin_map);
+}
+
+pub fn source_generated_name(file: source_file, name: str) -> bool
+audit {
+    intent("Authenticate a generated declaration against its exact elaborator-owned registry");
+    mutates();
+    effects();
+}
+{
+    return file.has_generics and text_contains(file.generated_names, concat3("\n", name, "\n"));
+}
+
+pub fn source_graph_has_generics(sources: ref list<source_file>) -> bool
+audit {
+    intent("Read the elaborator's graph marker without lexing source again");
+    mutates();
+    effects();
+}
+{
+    for file in sources { if file.has_generics { return true; } }
+    return false;
+}
+
+pub fn source_origin_at(file: source_file, start: i32, end: i32) -> source_origin
+audit {
+    intent("Project one elaborated diagnostic range to immutable source bytes and its concrete instance context");
+    mutates();
+    effects();
+}
+{
+    if file.origin_map == "" {
+        return source_origin { valid: not file.has_generics and file.text == file.original_text, start: start, end: end, context: "" };
+    }
+    if start < 0 or end < start or end > str_len(file.text) { return source_origin { valid: false, start: -1, end: -1, context: "" }; }
+    let mut cursor = 0;
+    let mut found = false;
+    let mut mapped_start = -1;
+    let mut mapped_end = -1;
+    let mut anchor_start = -1;
+    let mut context = "";
+    while cursor < str_len(file.origin_map) {
+        let row = source_read_origin_row(file.origin_map, mutref cursor);
+        if not row.valid { return source_origin { valid: false, start: -1, end: -1, context: "" }; }
+        if not found and start >= row.generated_start and (start < row.generated_end or (start == row.generated_start and row.generated_end == row.generated_start)) {
+            found = true;
+            anchor_start = row.original_start;
+            mapped_start = row.original_start;
+            if row.generated_end - row.generated_start == row.original_end - row.original_start {
+                mapped_start = row.original_start + start - row.generated_start;
+            }
+            mapped_end = mapped_start;
+            context = row.context;
+        }
+        if found {
+            if end <= row.generated_start and start < row.generated_start {
+                return source_origin { valid: true, start: mapped_start, end: mapped_end, context: context };
+            }
+            if row.context != context or row.original_start < anchor_start or row.original_end < mapped_start {
+                return source_origin { valid: false, start: -1, end: -1, context: "" };
+            }
+            if end <= row.generated_end {
+                let mut finish = row.original_end;
+                if row.generated_end - row.generated_start == row.original_end - row.original_start {
+                    finish = row.original_start + end - row.generated_start;
+                }
+                if finish > mapped_end { mapped_end = finish; }
+                return source_origin { valid: true, start: mapped_start, end: mapped_end, context: context };
+            }
+            if row.original_end > mapped_end { mapped_end = row.original_end; }
+        }
+    }
+    return source_origin { valid: false, start: -1, end: -1, context: "" };
+}
+
+pub fn source_origin_cases() -> bool
+audit {
+    intent("Check complete origin coverage, exact source ranges, EOF, malformed metadata, and registry authentication");
+    mutates();
+    effects();
+}
+{
+    let original = make_source_file("probe", "thing");
+    if not source_map_valid(original) { return false; }
+    let mut file = original;
+    file.text = "x";
+    file.has_generics = true;
+    file.origin_map = "0:1:0:5:instance;1:1:5:5:;";
+    if not source_map_valid(file) { return false; }
+    let origin = source_origin_at(file, 0, 1);
+    if not origin.valid or origin.start != 0 or origin.end != 5 or origin.context != "instance" { return false; }
+    let eof = source_origin_at(file, 1, 1);
+    if not eof.valid or eof.start != 5 or eof.end != 5 { return false; }
+    let invalid = ["", "0:1:0:6:;1:1:5:5:;", "0:1:0:5:;", "0:1:0:5:;1:1:4:4:;", "0:1:0:5:;0:0:5:5:;", "0:1:0:5:;1:1:5:5:;extra", "0:2147483648:0:5:;1:1:5:5:;"];
+    for value in invalid {
+        let mut malformed = file;
+        malformed.origin_map = value;
+        if source_map_valid(malformed) { return false; }
+    }
+    if source_generated_name(file, "__nqg_fake") { return false; }
+    file.generated_names = "\n__nqg_real\n";
+    if not source_generated_name(file, "__nqg_real") or source_generated_name(file, "__nqg_rea") { return false; }
+    file.text = "x y";
+    file.origin_map = "0:1:4:5:A;2:3:0:1:B;3:3:5:5:;";
+    if not source_map_valid(file) or source_origin_at(file, 0, 3).valid or source_origin_at(file, -1, 1).valid or source_origin_at(file, 0, 4).valid or source_origin_at(file, 2, 1).valid { return false; }
+    let first = source_origin_at(file, 0, 2);
+    if not first.valid or first.start != 4 or first.end != 5 or first.context != "A" { return false; }
+    file.text = "thing";
+    file.origin_map = "0:5:0:5:instance;5:5:5:5:;";
+    let partial = source_origin_at(file, 1, 2);
+    if not partial.valid or partial.start != 1 or partial.end != 2 { return false; }
+    return true;
 }

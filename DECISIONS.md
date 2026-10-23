@@ -614,3 +614,24 @@ Full user generics and broader mutable-string/library growth remain deferred.
 - Exact signatures, races, terminal failures, and excluded guarantees are in
   `M55_CONTRACTS.md`. Legacy run_process remains compatible. General helpers,
   generics, tasks, FFI, and richer ownership analysis remain outside M55.
+
+## D065: Explicit Generic Reuse And Truthful Evidence Boundary
+
+- M56 supersedes D009's blanket deferral for explicit function/product/enum
+  templates only. Declaration-owned n-ary arguments and deterministic concrete
+  instances preserve definition scopes, nominal origins and source diagnostics.
+  Existing checked handoff/borrow/IR/C consume concrete truth, not templates.
+- Unused templates receive structural/name checks, not universal operation or
+  ownership claims. Same-instance recursion is allowed; polymorphic recursion,
+  cyclic data layouts and bounded expansion overflow fail closed. No inference,
+  defaults, traits, methods, constraints or implicit conversion is admitted.
+- Original bytes and validated instance-origin maps remain distinct from
+  unique elaborated coordinates. Exact internal registries authenticate names;
+  reserved spelling is not source authority.
+- Legacy machine-readable evidence describes source identities. Reject generic
+  graphs with NQ-GENERIC-008 until a separately versioned source/instance export
+  exists; do not fabricate source facts or rename generated identifiers.
+- `docs/M56_CONTRACT.md` owns precise semantics/limits; ROADMAP/TODO own
+  acceptance. The bounded host-GCC memory profile has its separate provenance
+  contract, unchanged O2, fixed flags and unchanged release ceilings. M57 data,
+  FFI, task and release growth are not part of this decision.

@@ -72,18 +72,19 @@ module_path   = IDENT { "::" IDENT } ;
 ## Declarations
 
 ```ebnf
-function_decl = "fn" IDENT "(" param_list? ")" "->" type_expr [ audit_block ] block ;
+function_decl = "fn" IDENT [ type_parameters ] "(" param_list? ")" "->" type_expr [ audit_block ] block ;
+type_parameters = "<" IDENT { "," IDENT } ">" ;
 
 const_decl    = "const" IDENT ":" type_expr "=" const_expr ";" ;
 
 param_list    = param { "," param } [ "," ] ;
 param         = IDENT ":" type_expr ;
 
-type_decl     = "type" IDENT "{" field_decl_list? "}" ;
+type_decl     = "type" IDENT [ type_parameters ] "{" field_decl_list? "}" ;
 field_decl_list = field_decl { "," field_decl } [ "," ] ;
 field_decl    = IDENT ":" type_expr ;
 
-enum_decl     = "enum" IDENT "{" variant_decl_list? "}" ;
+enum_decl     = "enum" IDENT [ type_parameters ] "{" variant_decl_list? "}" ;
 variant_decl_list = variant_decl { "," variant_decl } [ "," ] ;
 variant_decl  = IDENT [ "(" type_list? ")" ] ;
 
@@ -124,10 +125,28 @@ named_type    = IDENT [ generic_args ]
               | "str"
               | "unit" ;
 
-generic_args  = "<" type_expr { "," type_expr } [ "," ] ">" ;
+generic_args  = "<" generic_type_arg { "," generic_type_arg } ">" ;
+generic_type_arg = type_expr | qualified_name [ generic_args ] ;
 ```
 
-In the current bootstrap compiler, generic arguments are semantically valid only for built-in `option<T>`, `result<T, E>`, and `list<T>`.
+The archived bootstrap supports generic arguments only for builtin utility
+types. The M56 active-stage1 extension admits explicit user function/product/
+enum parameters and n-ary arguments under `docs/M56_CONTRACT.md`. Canonical
+generic declaration/application vectors are nonempty and have no trailing
+comma. All arguments are explicit; no inference or defaults.
+
+```ebnf
+explicit_type_arg = qualified_name_or_ident [ "<" explicit_type_arg { "," explicit_type_arg } ">" ] ;
+value_application = qualified_name_or_ident "::" "<" explicit_type_arg { "," explicit_type_arg } ">" ;
+qualified_name_or_ident = IDENT { "::" IDENT } ;
+```
+
+`value_application` can be a direct function/variant call target, a product
+literal head, or an enum pattern head. An enum variant uses the full enclosing
+enum vector, even a zero-payload variant (without `()`). Qualified nominal
+type arguments require a directly imported module/alias. General qualified
+annotation heads remain excluded. References remain parameter syntax, never
+stored generic arguments; `propagates(E)` remains a single error-name atom.
 
 ## Block And Statement Grammar
 
@@ -205,6 +224,7 @@ named_argument = IDENT ":" expr ;
 primary       = literal
               | IDENT
               | qualified_name
+              | value_application
               | struct_literal
               | list_literal
               | match_expr
@@ -215,7 +235,7 @@ try_expr      = "try" "{" expr "}" ;
 
 qualified_name = IDENT "::" IDENT ;
 
-struct_literal = IDENT "{" [ field_init_list | record_update_init ] "}" ;
+struct_literal = ( qualified_name_or_ident | value_application ) "{" [ field_init_list | record_update_init ] "}" ;
 field_init_list = field_init { "," field_init } [ "," ] ;
 field_init    = IDENT ":" expr ;
 record_update_init = "from" IDENT "," field_init_list ;
@@ -244,7 +264,7 @@ Parser note:
 pattern       = "_"
               | INT
               | "-" INT
-              | IDENT [ "(" pattern_list? ")" ] ;
+              | ( qualified_name_or_ident | value_application ) [ "(" pattern_list? ")" ] ;
 
 pattern_list  = pattern { "," pattern } [ "," ] ;
 ```
@@ -276,4 +296,4 @@ Pattern meaning is resolved semantically:
 - No general block expressions
 - No loop grammar beyond `while`, list-only `for`, and nearest-loop `break;` / `continue;`
 - AI Contracts use a fixed clause order instead of free-form annotations
-- No generic parameter declarations in v0.1
+- Explicit M56 generic parameters only; no inference, constraints or generic constants

@@ -646,3 +646,92 @@ focused10/warm60/cold>=50% goals pass, while the10min cold working target
 remains unmet and separately tracked. This unblocks M56 planning only: no
 language/runtime widening, M56 implementation, stable-release certification,
 publication or downstream consumer pin change is claimed.
+
+## M56 Generic Reuse Close
+
+M56's explicit function/product/enum foundation passes on frozen candidate
+tree `67272d00dd7d3e6cbb3945cc5777141148ff2cc1`,2026-10-23, based on
+`2ddd097f9c233bf407830227639a2b95c60b419c`. Native Ubuntu24.04/ext4 WSL2,
+GCC13.3.0 and unchanged serial milestone budgets are the acceptance boundary.
+Independent `gpt-5.6-sol` xhigh and `gpt-6-astra` xhigh source/seed readiness
+and repair reviews pass; the unavailable-GPT-5.5 fallback remains explicit.
+Closing review checks only these receipts and the allowlisted completion docs.
+
+`docs/M56_CONTRACT.md` records explicit n-ary applications, deterministic
+definition-owned monomorphization, concrete checked ownership/type/audit
+validation, authenticated generated identities, bounded expansion and original
+source diagnostics. No traits, methods, inferred constraints, implicit
+conversion, runtime helper, public command or active Python work was added.
+Unused templates receive structural/name checks, not a universal type proof.
+Legacy facts/review/diff/change/policy/rename reject generic graphs with
+NQ-GENERIC-008; versioned source/instance evidence must precede generic library
+adoption. This is a foundation close, not complete generic evidence parity.
+
+Proof-driven repairs cover exact declaration-local binding/type identity,
+checked operand propagation evidence, token-kind-aware generic syntax and
+existing negative integer patterns. Owned probes cover positive runtime,
+negative diagnostic families, original/UTF-8/two-instance spans, expansion
+limits, import provenance, formatter stability and no source/output mutation.
+The existing change-report-v4 error output now matches its schema's requested
+format enum; no JSON version or failure-envelope shape changed.
+
+The host-GCC profile retains O2 and the512MiB construction ceiling. Its fixed
+two GC flags are capability/identity checked, stream bounded independently of
+Bash POSIX limit units, invocation frozen and bound to executed argv before
+publication. Portable and historical eight-argument recipes remain valid.
+Synthetic checks cover20 compiler-profile,7 relocated-input,177 provenance,
+153 attestation and14 budget-runner assertions/cases; they are not relabeled
+as real compiler proof. The concurrent fixture's synthetic-state publication
+is atomic; production containment and cleanup rules are unchanged.
+
+| Fresh Gate Phase | Seconds | Peak RSS,KiB |
+| --- | ---: | ---: |
+| Stage1 driver |250.62|387048|
+| Seed bootstrap |157.36|141012|
+| Proof |524.13|610596|
+| Linux alpha |8.74|63516|
+| Stress leg |2.23|63436|
+| Owned tests |177.11|141576|
+| Ownership sanitizers |5.40|57664|
+
+`scripts/check_milestone.sh` exits0 with empty stderr. GNU time records1137.41s
+including gate/attestation overhead (the whole-second summary records1138).
+All7 phases, both direct seed comparisons, all12 proof phases/45 corpus cases
+and9 ownership sanitizer fixtures pass. Actual imported generic composition
+compiles/runs through both the seed-rebuilt compiler and the physically
+relocated release launcher. Original/copied example bytes, modes and loading
+boundaries are checked before/after; metadata insertion invalidates success.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `1f1e76606c1be58fc42cb237ef0b333ffe38ed0d3663270796ed619f2b70da69` |
+| Performance summary | `cb48c3e6f4ec2a81a1d664d8825a03c299673457d42e4a2083a6d3d956c917ae` |
+| Proof summary | `d775dd8d5d383344702252b5ebc0e1bde9203fec96d80e8d4ac41119e3705c9a` |
+| Seed manifest | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Seed, current emitted C and both copied-selfhost C artifacts agree at
+`93551f6ab88fe64cd3acc51e541c74616110797e7b7b1b81b3aafe611b0e19d2`;
+driver SHA is`ab94e17afd64a450119aa59f8f59dd33a76ccac8c4415f3d0c0ee31ded929549`.
+The strict86-source inventory binds construction tree
+`21f9f83b5972d417591ba9833705dab72f9c8ee0`, predecessor C`44c6a2f6...`,
+generator/runtime/toolchain/flags and exact full-byte self-emission. Generated
+C was never hand edited. The compact receipt capsule is
+`build/verification/m56-20261023/final-evidence-v1/`; native
+`build/verification/m56/` retains component receipts and rollback material.
+
+The first full close failed at synthetic attestation setup: its metadata-only
+CC stub returned99 for the new query rather than modeling unsupported exit1.
+Its failed summaries remain triage-only under `attestation-repair-v1/failed-gate/`.
+The two-file fixture repair, focused153-assertion/sanitizer checks and mixed
+repair audits precede the fresh accepted `final-gate-v2/`. The owned empty
+serial lock was manually inspected/recovered after jobs ended; no automatic
+stale-lock recovery or weakened production probe was introduced.
+
+Historical Python reference tests were not run; they are not active acceptance
+gates. Active compiler, fixture, teaching and proof changes remain Nauqtype-owned.
+
+No warm timing, generic speedup, ten-minute cold pass, M57 implementation,
+stable release, publication or downstream pin/API freeze is claimed. Prior
+P1-P4 measurements and sealed evidence remain unchanged. The tested tree is
+retained for strict verification; only allowlisted completion documentation
+changes afterward, bound to the final commit by `close`/`verify-close`.

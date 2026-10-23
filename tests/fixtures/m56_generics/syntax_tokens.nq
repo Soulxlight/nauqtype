@@ -1,0 +1,109 @@
+fn id<T>(value: T) -> T {
+    return value;
+}
+
+type TokenShape {
+    round: str,
+    square: str,
+    curly: str,
+}
+
+type Marked<T> {
+    value: T,
+    tag: i32,
+}
+
+fn plain_statement(value: i32) -> i32 {
+    match value {
+        -1 => { return 1; },
+        _ => { return 0; },
+    }
+}
+
+fn plain_expression(value: i32) -> i32 {
+    let tag = match value {
+        -1 => 1,
+        _ => 0,
+    };
+    return tag;
+}
+
+fn generic_statement<T>(value: T, number: i32) -> Marked<T> {
+    match number {
+        -1 => { return Marked::<T> { value: value, tag: 1 }; },
+        _ => { return Marked::<T> { value: value, tag: 0 }; },
+    }
+}
+
+fn generic_expression<T>(value: T, number: i32) -> Marked<T> {
+    let tag = match number {
+        -1 => 1,
+        _ => 0,
+    };
+    return Marked::<T> { value: value, tag: tag };
+}
+
+fn generic_tokens<T>(value: T) -> Marked<T> {
+    let round = id::<str>(")");
+    let square = id::<str>("]");
+    let curly = id::<str>("}");
+    let parts = ["(", ")", "[", "]", "{", "}"];
+    let shape = TokenShape { round: ")", square: "]", curly: "}" };
+    let words = ["fn", "let", "if", "else", "match", "return", "audit", "true", "false", "and", "or", "not"];
+    let operators = ["=>", "::", "<", ">", "?", "-", "="];
+    let escapes = ["\"", "\\", "\n", "\t"];
+    if round != ")" or square != "]" or curly != "}" or str_join(ref parts) != "()[]{}" {
+        return Marked::<T> { value: value, tag: 2 };
+    }
+    if shape.round != ")" or shape.square != "]" or shape.curly != "}" {
+        return Marked::<T> { value: value, tag: 3 };
+    }
+    if str_join(ref words) != "fnletifelsematchreturnaudittruefalseandornot" {
+        return Marked::<T> { value: value, tag: 4 };
+    }
+    let decoded = str_join(ref escapes);
+    if str_join(ref operators) != "=>::<>?-=" or decoded != "\"\\\n\t" or str_len(decoded) != 4 {
+        return Marked::<T> { value: value, tag: 5 };
+    }
+    let Some(quote) = str_get(decoded, 0) else { return Marked::<T> { value: value, tag: 6 }; };
+    let Some(slash) = str_get(decoded, 1) else { return Marked::<T> { value: value, tag: 6 }; };
+    let Some(newline) = str_get(decoded, 2) else { return Marked::<T> { value: value, tag: 6 }; };
+    let Some(tab) = str_get(decoded, 3) else { return Marked::<T> { value: value, tag: 6 }; };
+    if quote != 34 or slash != 92 or newline != 10 or tab != 9 {
+        return Marked::<T> { value: value, tag: 6 };
+    }
+    return Marked::<T> { value: id::<T>(value), tag: 0 };
+}
+
+fn main() -> i32
+audit {
+    intent("Keep token-like string contents and negative patterns distinct from generic syntax");
+    mutates();
+    effects(print);
+}
+{
+    let plain = [id::<str>(")"), id::<str>("]"), id::<str>("}")];
+    let shape = TokenShape { round: ")", square: "]", curly: "}" };
+    if str_join(ref plain) != ")]}" or shape.round != ")" or shape.square != "]" or shape.curly != "}" {
+        return 1;
+    }
+    let checked = generic_tokens::<str>(id::<str>(")"));
+    if checked.tag != 0 or checked.value != ")" {
+        return 2;
+    }
+    if plain_statement(-1) != 1 or plain_statement(0) != 0 or plain_expression(-1) != 1 or plain_expression(0) != 0 {
+        return 3;
+    }
+    let statement = generic_statement::<str>("]", -1);
+    let statement_fallback = generic_statement::<str>("}", 0);
+    let expression = generic_expression::<str>("}", -1);
+    let expression_fallback = generic_expression::<str>("]", 0);
+    if statement.tag != 1 or statement_fallback.tag != 0 or expression.tag != 1 or expression_fallback.tag != 0 {
+        return 4;
+    }
+    if statement.value != "]" or statement_fallback.value != "}" or expression.value != "}" or expression_fallback.value != "]" {
+        return 5;
+    }
+    print_line("M56 syntax tokens");
+    return 0;
+}

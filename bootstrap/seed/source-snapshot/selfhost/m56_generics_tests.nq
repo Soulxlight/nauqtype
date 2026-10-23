@@ -1,0 +1,515 @@
+use ast;
+use diag;
+use files;
+use fmt;
+use generic;
+use generic_auth;
+use generic_names;
+use host_c;
+use propagation_truth;
+use resolve;
+use schema_profile;
+use source;
+use text;
+
+fn m56_path(name: str) -> str {
+    return str_concat("tests/fixtures/m56_generics/", name);
+}
+
+fn m56_command(driver: str, command: str, path: str, second: str, format: str, output: str) -> result<process_result, io_err> {
+    let mut args = [command, path];
+    if second != "" { list_push(mutref args, second); }
+    if command == "refactor-rename" { list_push(mutref args, "m56_renamed"); }
+    if format != "" {
+        if command == "check" { list_push(mutref args, "--diagnostics"); }
+        else { list_push(mutref args, "--format"); }
+        list_push(mutref args, format);
+    }
+    if output != "" { list_push(mutref args, "-o"); list_push(mutref args, output); }
+    return run_process(driver, ref args, ".");
+}
+
+fn m56_report(label: str, status: process_result) -> bool {
+    eprint_line(str_concat("M56 fixture failed: ", label));
+    let mut out_end = str_len(status.stdout);
+    let mut err_end = str_len(status.stderr);
+    if out_end > 1024 { out_end = 1024; }
+    if err_end > 1024 { err_end = 1024; }
+    if out_end > 0 { eprint_line(slice_text(status.stdout, 0, out_end)); }
+    if err_end > 0 { eprint_line(slice_text(status.stderr, 0, err_end)); }
+    return false;
+}
+
+fn m56_quiet(label: str, outcome: result<process_result, io_err>) -> bool {
+    match outcome {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+            return m56_report(label, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_count(value: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut at = 0;
+    while at + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, at, needle) { count = count + 1; }
+        at = at + 1;
+    }
+    return count;
+}
+
+fn m56_find(value: str, needle: str) -> i32 {
+    let mut at = 0;
+    while at + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, at, needle) { return at; }
+        at = at + 1;
+    }
+    return -1;
+}
+
+fn m56_name_edges() -> bool {
+    let mut parts: list<str> = list();
+    let mut at = 0;
+    while at < 16384 { list_push(mutref parts, "a"); at = at + 1; }
+    let exact = str_join(ref parts);
+    let name = generic_name_from_key(exact);
+    if name == "" or generic_key_from_name(name) != exact { return false; }
+    if generic_name_from_key(str_concat(exact, "a")) != "" { return false; }
+    let registry = concat3("\n", name, "\n");
+    if not generic_registry_contains(registry, name) { return false; }
+    if generic_registry_contains(concat3("\n", name, "a\n"), name) { return false; }
+    return generic_key_from_name("__nqg_0") == "" and generic_key_from_name("__nqg_6A") == "";
+}
+
+fn m56_unauthenticated_nominal() -> bool {
+    let name = generic_name_from_key("t|origin|Tag");
+    if name == "" { return false; }
+    let item = make_top_item("origin", name, item_type, true, 0);
+    if item.is_generated { return false; }
+    let items = [item];
+    let uses = [make_module_use("caller", "origin", "", 0)];
+    if generated_nominal_origin(ref items, name) != "" { return false; }
+    let refs = [make_type_ref("origin", "probe", name, 0, type_local_annotation), make_type_ref("caller", "probe", name, 0, type_local_annotation)];
+    let mut entries: list<diag> = list();
+    let summary = resolve_types(ref refs, ref uses, ref items, mutref entries);
+    if summary.ref_count != 2 or summary.diag_count != 2 or list_len(ref entries) != 2 { return false; }
+    for entry in entries {
+        if entry.code != "NQ-RESOLVE-010" { return false; }
+        match entry.severity { diag_error => {}, _ => { return false; }, }
+    }
+    return true;
+}
+
+fn m56_repeat(letter: str, count: i32) -> str {
+    let mut parts: list<str> = list();
+    let mut at = 0;
+    while at < count { list_push(mutref parts, letter); at = at + 1; }
+    return str_join(ref parts);
+}
+
+fn m56_negative(driver: str, path: str, code: str, schema: str) -> bool {
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stderr == "" and
+                schema_profile_accepts(schema, status.stdout) and
+                text_contains(status.stdout, concat3("\"code\": ", json_quote(code), ",")) and
+                text_contains(status.stdout, "\"ok\": false") and
+                m56_count(status.stdout, "\"severity\": \"error\"") == 1 and
+                not text_contains(status.stdout, "NQ-INTERNAL-") and
+                not text_contains(status.stdout, "stage1 limitation") { return true; }
+            return m56_report(path, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_mixed_diagnostics(driver: str, schema: str) -> bool {
+    let path = m56_path("mixed_missing_parse.nq");
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
+                text_contains(status.stdout, "\"ok\": false") and
+                text_contains(status.stdout, "\"code\": \"NQ-IO-001\"") and
+                text_contains(status.stdout, "\"code\": \"NQ-PARSE-") and
+                m56_find(status.stdout, "\"code\": \"NQ-IO-001\"") < m56_find(status.stdout, "\"code\": \"NQ-PARSE-") and
+                m56_count(status.stdout, "\"severity\": \"error\"") >= 2 and
+                not text_contains(status.stdout, "NQ-GENERIC-") and not text_contains(status.stdout, "NQ-INTERNAL-") { return true; }
+            return m56_report("ordinary missing import retains parse diagnostics", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_import_parse_order(driver: str, schema: str) -> bool {
+    let path = m56_path("import_parse_order.nq");
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            let parsed = m56_find(status.stdout, "\"code\": \"NQ-PARSE-003\"");
+            let missing = m56_find(status.stdout, "\"code\": \"NQ-IO-001\"");
+            let resolved = m56_find(status.stdout, "\"code\": \"NQ-RESOLVE-010\"");
+            if status.exit_code == 1 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
+                text_contains(status.stdout, "\"ok\": false") and parsed >= 0 and missing > parsed and
+                m56_count(status.stdout, "\"code\":") == 6 and m56_count(status.stdout, "\"severity\": \"error\"") == 6 and resolved > missing and
+                m56_count(status.stdout, "\"code\": \"NQ-IO-001\"") == 1 and
+                m56_count(slice_text(status.stdout, 0, missing), "\"code\": \"NQ-PARSE-003\"") == 4 { return true; }
+            return m56_report("first imported parse error precedes later missing import", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_missing_audit_warning(driver: str, schema: str) -> bool {
+    let path = m56_path("propagate_no_audit_public.nq");
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
+                text_contains(status.stdout, "\"ok\": true") and
+                text_contains(status.stdout, "\"code\": \"NQ-CONTRACT-001\"") and
+                m56_count(status.stdout, "\"code\":") == 1 and
+                m56_count(status.stdout, "\"severity\": \"warning\"") == 1 and
+                m56_count(status.stdout, "\"severity\": \"error\"") == 0 { return true; }
+            return m56_report("unaudited public value propagation preserves its missing-audit warning", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_write(path: str, value: str) -> bool {
+    match write_file(path, value) {
+        Ok(_) => { return true; },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_generated(driver: str, directory: str, name: str, value: str, code: str, schema: str) -> bool {
+    let path = join_path(directory, str_concat(name, ".nq"));
+    if not m56_write(path, value) { return false; }
+    if code != "" { return m56_negative(driver, path, code, schema); }
+    return m56_quiet(name, m56_command(driver, "check", path, "", "", ""));
+}
+
+fn m56_runtime(driver: str, path: str, directory: str, name: str, expected: str) -> bool {
+    let first = join_path(directory, str_concat(name, "-first.c"));
+    let second = join_path(directory, str_concat(name, "-second.c"));
+    let executable = join_path(directory, name);
+    if not m56_quiet("first deterministic emission", m56_command(driver, "emit-c", path, "", "", first)) { return false; }
+    if not m56_quiet("second deterministic emission", m56_command(driver, "emit-c", path, "", "", second)) { return false; }
+    let Ok(left) = read_file(first) else { return false; };
+    let Ok(right) = read_file(second) else { return false; };
+    if left == "" or left != right { eprint_line("M56 identical-input C changed"); return false; }
+    if not m56_quiet("compile emitted generic fixture", compile_host_c_program(first, executable)) { return false; }
+    let args: list<str> = list();
+    match run_process(executable, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stdout == expected and status.stderr == "" { return true; }
+            return m56_report(path, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_depth_source(depth: i32) -> str {
+    let mut argument = "i32";
+    let mut at = 0;
+    while at < depth { argument = concat3("list<", argument, ">"); at = at + 1; }
+    return concat3("fn keep<T>() -> unit { return; }\nfn main() -> i32 { keep::<", argument, ">(); return 0; }\n");
+}
+
+fn m56_instance_source(count: i32) -> str {
+    let mut declarations = ["use bound_other;\nfn keep<T>() -> unit { return; }\n"];
+    let mut calls = ["fn main() -> i32 {\n"];
+    let mut at = 0;
+    while at < count {
+        let name = str_concat("Atom", i32_to_str(at));
+        list_push(mutref declarations, concat3("type ", name, " { value: i32, }\n"));
+        let mut callee = "keep";
+        if at >= 128 { callee = "bound_other::keep_other"; }
+        list_push(mutref calls, concat5("    ", callee, "::<", name, ">();\n"));
+        at = at + 1;
+    }
+    list_push(mutref calls, "    return 0;\n}\n");
+    return str_concat(str_join(ref declarations), str_join(ref calls));
+}
+
+fn m56_width_source(count: i32) -> str {
+    let mut lines: list<str> = list();
+    let mut at = 0;
+    while at <= count {
+        list_push(mutref lines, concat3("fn wide", i32_to_str(at), "<T>() -> unit {\n"));
+        if at < count { list_push(mutref lines, concat3("    wide", i32_to_str(at + 1), "::<result<T, T>>();\n")); }
+        list_push(mutref lines, "    return;\n}\n");
+        at = at + 1;
+    }
+    list_push(mutref lines, "fn main() -> i32 { wide0::<i32>(); return 0; }\n");
+    return str_join(ref lines);
+}
+
+fn m56_canonical_source(module: str, width: i32) -> str {
+    // The production canonical nominal atom is t|module|declaration.
+    let prefix = concat3("t|", module, "|");
+    let name = m56_repeat("A", width - str_len(prefix));
+    return concat6("type ", name, " { value: i32, }\nfn keep<T>() -> unit { return; }\nfn main() -> i32 { keep::<", name, ">(); return 0; }\n", "");
+}
+
+fn m56_key_source(module: str, width: i32) -> str {
+    // Four arguments exercise the vector rather than legacy two-slot fields.
+    let atom_prefix = concat3("t|", module, "|");
+    let first = m56_repeat("A", 4096 - str_len(atom_prefix));
+    let key_prefix = concat3("f|", module, "|keep<");
+    let last_width = width - str_len(key_prefix) - 1 - 3 - 3 * 4096;
+    let last = m56_repeat("B", last_width - str_len(atom_prefix));
+    let declarations = concat5("type ", first, " { value: i32, }\ntype ", last, " { value: i32, }\n");
+    let call = concat6(first, ", ", first, ", ", first, str_concat(", ", last));
+    return concat5(declarations, "fn keep<A, B, C, D>() -> unit { return; }\nfn main() -> i32 { keep::<", call, ">(); return 0; }\n", "");
+}
+
+fn m56_bounds(driver: str, directory: str, schema: str) -> bool {
+    let helper = "pub fn keep_other<T>() -> unit\naudit {\n    intent(\"Count cross-module concrete instances\");\n    mutates();\n    effects();\n}\n{ return; }\n";
+    if not m56_write(join_path(directory, "bound_other.nq"), helper) { return false; }
+    if not m56_generated(driver, directory, "depth32", m56_depth_source(32), "", schema) { return false; }
+    if not m56_generated(driver, directory, "depth33", m56_depth_source(33), "NQ-GENERIC-005", schema) { return false; }
+    if not m56_generated(driver, directory, "instances256", m56_instance_source(256), "", schema) { return false; }
+    if not m56_generated(driver, directory, "instances257", m56_instance_source(257), "NQ-GENERIC-005", schema) { return false; }
+    if not m56_generated(driver, directory, "canonical4096", m56_canonical_source("canonical4096", 4096), "", schema) { return false; }
+    if not m56_generated(driver, directory, "canonical4097", m56_canonical_source("canonical4097", 4097), "NQ-GENERIC-005", schema) { return false; }
+    if not m56_generated(driver, directory, "key16384", m56_key_source("key16384", 16384), "", schema) { return false; }
+    if not m56_generated(driver, directory, "key16385", m56_key_source("key16385", 16385), "NQ-GENERIC-005", schema) { return false; }
+    // Distinct templates avoid a recursion cycle; shallow depth/count cannot
+    // substitute for the serialized-width guard on this doubling chain.
+    if not m56_generated(driver, directory, "width_small", m56_width_source(5), "", schema) { return false; }
+    return m56_generated(driver, directory, "width_explosive", m56_width_source(14), "NQ-GENERIC-005", schema);
+}
+
+fn m56_position(value: str, offset: i32) -> str {
+    let mut line = 1;
+    let mut column = 1;
+    let mut at = 0;
+    while at < offset {
+        if char_at(value, at) == 10 { line = line + 1; column = 1; }
+        else { column = column + 1; }
+        at = at + 1;
+    }
+    return concat6("{ \"offset\": ", i32_to_str(offset), ", \"line\": ", i32_to_str(line), ", \"column\": ", str_concat(i32_to_str(column), " }"));
+}
+
+fn m56_original_span(driver: str, schema: str, name: str, marker: str, prefix: str, width: i32, code: str, context_name: str, argument: str) -> bool {
+    let path = m56_path(name);
+    let Ok(original) = read_file(path) else { return false; };
+    let mut at = 0;
+    while at < str_len(original) and not starts_with_at(original, at, marker) { at = at + 1; }
+    if at == str_len(original) { return false; }
+    let start = at + str_len(prefix);
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
+                m56_count(status.stdout, "\"severity\": \"error\"") == 1 and
+                text_contains(status.stdout, str_concat("\"code\": ", json_quote(code))) and
+                text_contains(status.stdout, str_concat("\"path\": ", json_quote(path))) and
+                text_contains(status.stdout, str_concat("\"start\": ", m56_position(original, start))) and
+                text_contains(status.stdout, str_concat("\"end\": ", m56_position(original, start + width))) and
+                text_contains(status.stdout, "generic instance: ") and
+                text_contains(status.stdout, "[generic instance ") and
+                text_contains(status.stdout, context_name) and text_contains(status.stdout, argument) { return true; }
+            return m56_report("original diagnostic bytes and concrete context", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_two_instance_spans(driver: str, directory: str, schema: str) -> bool {
+    let Ok(sample) = read_file("tests/fixtures/m53_values/diagnostics_type_utf8.nq") else { return false; };
+    let quote = m56_find(sample, "\"");
+    if quote < 0 or quote + 3 >= str_len(sample) or char_at(sample, quote + 3) != 34 { return false; }
+    let utf8 = slice_text(sample, quote + 1, quote + 3);
+    if char_at(utf8, 0) != 207 or char_at(utf8, 1) != 128 { return false; }
+    let Ok(body) = read_file(m56_path("two_instances.nq")) else { return false; };
+    let original = concat4("// ", utf8, "\n", body);
+    let path = join_path(directory, "two_instances.nq");
+    if not m56_write(path, original) { return false; }
+    let at = m56_find(original, "let invalid: bool = value;");
+    if at < 0 { return false; }
+    let start = at + str_len("let invalid: bool = ");
+    let first = "f|two_instances|span_pair<i32>";
+    let second = "f|two_instances|span_pair<list<i32>>";
+    if str_len(generic_name_from_key(first)) == str_len(generic_name_from_key(second)) { return false; }
+    match m56_command(driver, "check", path, "", "json", "") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
+                text_contains(status.stdout, "\"ok\": false") and m56_count(status.stdout, "\"code\":") == 2 and
+                m56_count(status.stdout, "\"code\": \"NQ-TYPE-042\"") == 2 and
+                m56_count(status.stdout, "\"severity\": \"error\"") == 2 and
+                m56_count(status.stdout, str_concat("\"path\": ", json_quote(path))) == 2 and
+                m56_count(status.stdout, str_concat("\"start\": ", m56_position(original, start))) == 2 and
+                m56_count(status.stdout, str_concat("\"end\": ", m56_position(original, start + 5))) == 2 and
+                m56_count(status.stdout, str_concat("generic instance: ", first)) == 1 and
+                m56_count(status.stdout, str_concat("generic instance: ", second)) == 1 and
+                m56_count(status.stdout, "[generic instance ") == 2 { return true; }
+            return m56_report("two unequal generated names retain exact UTF8-prefixed template spans", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_legacy_result(command: str, outcome: result<process_result, io_err>, envelope: str, stage: str) -> bool {
+    match outcome {
+        Ok(status) => {
+            let output = str_concat(status.stdout, status.stderr);
+            let common = status.exit_code == 1 and text_contains(output, "NQ-GENERIC-008") and
+                not text_contains(output, "NQ-INTERNAL-") and not text_contains(output, "\"ok\": true");
+            if common {
+                if stage == "" and status.stdout == "" { return true; }
+                if stage != "" and schema_profile_accepts(envelope, status.stdout) and
+                    text_contains(status.stdout, str_concat("\"stage\": ", json_quote(stage))) { return true; }
+            }
+            return m56_report(str_concat("legacy generic refusal: ", command), status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m56_legacy(driver: str) -> bool {
+    let generic = m56_path("legacy_import.nq");
+    let plain = m56_path("plain.nq");
+    let policy = m56_path("policy.json");
+    let watched = [generic, plain, policy, m56_path("legacy_templates.nq"), m56_path("unused_bad_type_allowed.nq")];
+    let mut originals: list<str> = list();
+    for path in watched {
+        let Ok(value) = read_file(path) else { return false; };
+        list_push(mutref originals, value);
+    }
+    let Ok(envelope) = read_file("schemas/evidence-error-v1.schema.json") else { return false; };
+    let formats = ["v1", "v2", "v3", "v4"];
+    for version in formats {
+        for command in ["facts", "review"] {
+            if not m56_legacy_result(command, m56_command(driver, command, generic, "", version, ""), envelope, "") { return false; }
+        }
+        if not m56_legacy_result("change-report before", m56_command(driver, "change-report", generic, plain, version, ""), envelope, "before_check") { return false; }
+        if not m56_legacy_result("change-report after", m56_command(driver, "change-report", plain, generic, version, ""), envelope, "after_check") { return false; }
+    }
+    for version in ["", "v1", "v2"] {
+        if not m56_legacy_result("review-diff before", m56_command(driver, "review-diff", generic, plain, version, ""), envelope, "before_check") { return false; }
+        if not m56_legacy_result("review-diff after", m56_command(driver, "review-diff", plain, generic, version, ""), envelope, "after_check") { return false; }
+    }
+    for command in ["facts", "review"] {
+        if not m56_legacy_result(command, m56_command(driver, command, generic, "", "", ""), envelope, "") { return false; }
+    }
+    if not m56_legacy_result("policy-check", m56_command(driver, "policy-check", generic, policy, "", ""), envelope, "") { return false; }
+    if not m56_legacy_result("refactor-rename", m56_command(driver, "refactor-rename", generic, "fn:legacy_import::ordinary", "", ""), envelope, "") { return false; }
+    if not m56_legacy_result("unused entry template", m56_command(driver, "facts", m56_path("unused_bad_type_allowed.nq"), "", "v1", ""), envelope, "") { return false; }
+    let mut index = 0;
+    for path in watched {
+        let Ok(after) = read_file(path) else { return false; };
+        match list_get(ref originals, index) {
+            Some(before) => { if before != after { eprint_line("M56 legacy command mutated fixture input"); return false; } },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn m56_no_output(driver: str, directory: str) -> bool {
+    let sentinel = "M56 existing output must survive rejected source\n";
+    let input = join_path(directory, "rejected.nq");
+    let Ok(original) = read_file(m56_path("body_type.nq")) else { return false; };
+    let Ok(_) = create_dir_all(join_path(directory, "build")) else { return false; };
+    if not m56_write(input, original) { return false; }
+    for command in ["emit-c", "build", "run"] {
+        let output = join_path(directory, str_concat(command, "-output"));
+        let mut c_path = output;
+        if command != "emit-c" { c_path = join_path(directory, "build/rejected.c"); }
+        if not m56_write(output, sentinel) or not m56_write(c_path, sentinel) { return false; }
+        match m56_command(driver, command, input, "", "", output) {
+            Ok(status) => {
+                if status.exit_code != 1 or status.stdout != "" or not text_contains(status.stderr, "NQ-TYPE-042") or
+                    text_contains(status.stderr, "M56_SHOULD_NOT_RUN") { return m56_report("rejected output/run guard", status); }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+        let Ok(after) = read_file(output) else { return false; };
+        let Ok(after_c) = read_file(c_path) else { return false; };
+        if after != sentinel or after_c != sentinel { eprint_line("M56 rejected source replaced output"); return false; }
+    }
+    return true;
+}
+
+pub fn run_m56_generics_gate(driver_path: str) -> bool
+audit {
+    intent("Check explicit generic specialization, ownership, source origins, and conservative legacy tooling boundaries");
+    mutates();
+    effects(print, io);
+}
+{
+    if not source_origin_cases() { eprint_line("M56 source origin oracle failed"); return false; }
+    if not diagnostic_origin_cases() { eprint_line("M56 diagnostic origin oracle failed"); return false; }
+    if not generic_auth_cases() { eprint_line("M56 generated declaration authentication oracle failed"); return false; }
+    if not generic_expansion_bound_cases() { eprint_line("M56 production expansion counter-edge oracle failed"); return false; }
+    if not propagation_truth_cases() { eprint_line("M56 checked propagation truth oracle failed"); return false; }
+    if not m56_name_edges() { eprint_line("M56 key byte/registry edge oracle failed"); return false; }
+    if not m56_unauthenticated_nominal() { eprint_line("M56 unauthenticated nominal lookup oracle failed"); return false; }
+    let Ok(_) = create_dir_all("build") else { return false; };
+    let Ok(directory) = create_temp_dir("build", "m56-generics-") else { return false; };
+    let Ok(schema) = read_file("schemas/diagnostics-v1.schema.json") else { return false; };
+    if not m56_mixed_diagnostics(driver_path, schema) { return false; }
+    if not m56_import_parse_order(driver_path, schema) { return false; }
+    // Import/body resolution keeps its existing authority; applying type
+    // arguments to a nongeneric function is an arity error, not a new family.
+    let names = ["duplicate_binders", "empty_binders", "wrong_arity", "product_arity", "variant_arity", "missing_args", "missing_product_args", "unknown_type", "private_target", "private_argument", "ambiguous_argument", "parameter_value", "parameter_constructor", "captured_parameter", "builtin_parameter", "alias_parameter", "stored_reference", "generic_main", "unused_unknown", "unused_private", "unused_type", "polyrecursion", "mutual_polyrecursion", "data_cycle", "data_plain_bridge", "mutual_data_cycle", "reserved_name", "unsupported_application", "caller_move", "body_move", "borrow_move", "unreachable_root", "propagate_value_missing", "propagate_field_missing", "propagate_parens_missing", "propagate_shadow_missing", "propagate_contexts_missing"];
+    let codes = ["001", "001", "002", "002", "002", "002", "002", "003", "003", "003", "NQ-RESOLVE-010", "004", "004", "004", "004", "004", "004", "004", "NQ-RESOLVE-010", "NQ-RESOLVE-010", "003", "005", "005", "005", "005", "005", "006", "002", "NQ-BORROW-003", "NQ-BORROW-001", "NQ-BORROW-009", "NQ-TYPE-042", "NQ-PROPAGATE-004", "NQ-PROPAGATE-004", "NQ-PROPAGATE-004", "NQ-PROPAGATE-004", "NQ-PROPAGATE-004"];
+    let mut index = 0;
+    for name in names {
+        match list_get(ref codes, index) {
+            Some(value) => {
+                let mut code = value;
+                if not str_starts_with(code, "NQ-") { code = str_concat("NQ-GENERIC-", code); }
+                if not m56_negative(driver_path, m56_path(str_concat(name, ".nq")), code, schema) { return false; }
+            },
+            None => { return false; },
+        }
+        index = index + 1;
+    }
+    if not m56_original_span(driver_path, schema, "body_type.nq", "let invalid: bool = value;", "let invalid: bool = ", 5, "NQ-TYPE-042", "m56_wrong_body", "i32") { return false; }
+    // Borrow diagnostics retain the existing statement-point convention.
+    if not m56_original_span(driver_path, schema, "body_move.nq", "let second = value;", "", 1, "NQ-BORROW-001", "twice", "list") { return false; }
+    if not m56_two_instance_spans(driver_path, directory, schema) { return false; }
+    if not m56_no_output(driver_path, directory) { return false; }
+    for name in ["annotation_only_three", "annotation_only_alias", "variant_let_plain", "variant_let_generic"] {
+        if not m56_quiet(name, m56_command(driver_path, "check", m56_path(str_concat(name, ".nq")), "", "", "")) { return false; }
+    }
+    if not m56_quiet("unused concrete compatibility is not universally proved", m56_command(driver_path, "check", m56_path("unused_bad_type_allowed.nq"), "", "", "")) { return false; }
+    for name in ["propagate_value_ok", "propagate_field_ok", "propagate_parens_ok", "propagate_shadow_ok", "propagate_contexts_ok", "propagate_no_audit_private"] {
+        if not m56_quiet(name, m56_command(driver_path, "check", m56_path(str_concat(name, ".nq")), "", "", "")) { return false; }
+    }
+    if not m56_missing_audit_warning(driver_path, schema) { return false; }
+    if not m56_bounds(driver_path, directory, schema) or not m56_legacy(driver_path) { return false; }
+    let positive = m56_path("values.nq");
+    let syntax_tokens = m56_path("syntax_tokens.nq");
+    for path in [positive, syntax_tokens] {
+        let Ok(original) = read_file(path) else { return false; };
+        let formatted = format_text(original);
+        if not formatted.ok or formatted.text != original { eprint_line("M56 fixture is not formatter canonical"); return false; }
+        let again = format_text(formatted.text);
+        if not again.ok or again.text != formatted.text { return false; }
+    }
+    if not m56_runtime(driver_path, positive, directory, "values", "M56 generic runtime\n") { return false; }
+    if not m56_runtime(driver_path, syntax_tokens, directory, "syntax-tokens", "M56 syntax tokens\n") { return false; }
+    if not m56_runtime(driver_path, m56_path("workspace/src/main.nq"), directory, "imports", "") { return false; }
+    if not m56_runtime(driver_path, m56_path("qualified_parameter_call.nq"), directory, "qualified-parameter", "") { return false; }
+    if not m56_runtime(driver_path, m56_path("namespace_shadow.nq"), directory, "namespace-shadow", "") { return false; }
+    return true;
+}
+
+fn main() -> i32
+audit {
+    intent("Run only the M56 owned fixture gate against an explicitly supplied active driver");
+    mutates();
+    effects(print, io);
+}
+{
+    if arg_count() != 2 { return 64; }
+    let Some(driver) = arg_get(1) else { return 64; };
+    if run_m56_generics_gate(driver) { print_line("M56 generics gate ok"); return 0; }
+    return 1;
+}

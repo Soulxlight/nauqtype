@@ -73,6 +73,27 @@ The older pending statuses above are dated planning context, not current
 compiler acceptance. Downstream needs, missing workspaces, library evidence
 and consumer pins are not refreshed by this compiler-only close.
 
+M56 compiler-owned candidate,2026-10-23: explicit function/product/enum reuse
+is implemented for focused validation under `docs/M56_CONTRACT.md`. Workers
+own the bounded elaborator, owned fixtures, checked propagation repair and
+host compiler memory-profile slices; the lead owns integration and Linux
+verification. Mixed Gate A reviews pass. Generic-aware legacy evidence export
+is not implemented: these commands fail closed with NQ-GENERIC-008. Closing
+audits, exact seed/release composition and the final gate are still required.
+No library/AI-ML pin, API freeze or consumer adoption changes in this pass.
+
+M56 compiler close,2026-10-23: reviewed frozen tree
+`67272d00dd7d3e6cbb3945cc5777141148ff2cc1` passes the fresh seven-phase native
+Linux gate and strict attestation in1137.41s. Both seed comparisons,12 proof
+phases/45 corpus cases, actual generic composition through seed and relocated
+release, owned tests and sanitizers pass. Exact86-source seed and independent
+mixed source/repair audits are retained. This supersedes the pending M56
+candidate note above, not the older candidate-bound performance figures.
+Legacy evidence commands still reject generic graphs with NQ-GENERIC-008;
+versioned source/instance evidence is required before generic library adoption.
+M57 is not started. No consumer pin, library API freeze or stable release is
+implied. See [closing evidence](AUDIT_REMEDIATION.md#m56-generic-reuse-close).
+
 This is the canonical cross-repository ledger for active NauqType work. It
 records coordination state, not aspirational completion. Every Codex working
 on NauqType must load the `$nauqtype-work` skill and read this file before
@@ -128,7 +149,7 @@ repository owner's sources and compiler/dependency pins explicit.
 
 | Codex | Owns | Current mode | Boundaries |
 | --- | --- | --- | --- |
-| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55 and required P1-P4 performance goals complete; new frozen `42999a5` gate/attestation1055.50s with mixed source audits | Focused0.85s, complete opt-in warm49.46s/46.82s, observed cold reduction58.13%. The10min working target remains unmet; default/full/proof/release stay serial. M56 planning is next, not implemented. No stable release, publication or consumer pin change is claimed. |
+| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55, required P1-P4 goals and M56 explicit generic foundation complete; M56 frozen gate/attestation1137.41s | Prior performance figures remain tied to `42999a5`. M56 legacy evidence rejects generic graphs until a separately versioned export exists; complete that contract before library adoption, then plan M57. No stable release, publication or consumer pin change is claimed. |
 | Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
 
 ## Contract Ledger
@@ -251,14 +272,11 @@ P2 scan/mapping attribution and optimization, not full generics.
 
 ### NauqType Compiler/Runtime
 
-- Immediate work is the pre-M56 performance checkpoint. The director owns
-  acceptance and integration; scoped workers own bounded implementation and
-  documentation. The Ubuntu/GCC/ext4 runner has now passed the reviewed,
-  indexed P0 candidate's complete gate and repeatable checks. M55 remains
-  complete; broader P1-P4 remain open. P2 mapping closure is recorded above,
-  separately from P0's baseline and E1's assembly-only gain. Seed-phase
-  instrumentation passed repair audits, focused checks, and its candidate's
-  gate; later changes do not inherit an earlier candidate's attestation.
+- M56's compiler-owned explicit generic reuse foundation passes its own frozen
+  close, including exact seed/release composition. Required P1-P4 performance
+  goals remain bound to their earlier candidate. The next compiler contract is
+  versioned generic-aware evidence before library adoption, then M57 planning.
+  Later changes never inherit an earlier attestation.
 - M54.10 migration notice: the completed compiler rejects old dependency locks and
   requires explicit `workspace-lock/v2` path/content framing. Published
   Libraries revision `bed7bf6` and provisional AIML source are not changed.
@@ -283,7 +301,7 @@ P2 scan/mapping attribution and optimization, not full generics.
   and the unchanged seven-phase milestone gate plus attestation all passed.
   See [M55_CONTRACTS.md](M55_CONTRACTS.md) for exact signatures and lifecycle
   limits; `AUDIT_REMEDIATION.md` records the 2,504-second gate and identities.
-  The next compiler milestone is M56, not started. M54.8-M54.10 are closed;
+  M56 is complete as recorded above. M54.8-M54.10 are closed;
   the following intermediate notes are historical, not open corrective work.
 - M54.8a now shares strict source-contract validity across compilation and
   evidence commands, with contract diagnostics emitted once per analyzed input
@@ -331,7 +349,8 @@ P2 scan/mapping attribution and optimization, not full generics.
 - A pilot needs separate data/spend authorization and isolated execution of
   all generated programs, independent of their declared effects. No live
   model call enters mandatory tests or replaces an audit.
-- M56 remains the next compiler milestone. M59 is the conditional integration
+- M56's foundation is complete; generic-aware evidence precedes library adoption.
+  M59 is the conditional integration
   home for authoring components with measured benefit; a failed experiment
   does not block the stable Linux program.
 

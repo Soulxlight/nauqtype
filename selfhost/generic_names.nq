@@ -1,0 +1,84 @@
+use text;
+
+// Canonical keys use the printable ASCII source-identifier/type grammar.
+// Hex every byte, including separators and underscores: encoding is injective.
+pub fn generic_name_from_key(key: str) -> str
+audit { intent("Encode a bounded canonical generic identity injectively"); mutates(); effects(); }
+{
+    if str_len(key) == 0 or str_len(key) > 16384 { return ""; }
+    let digits = "0123456789abcdef";
+    let mut pieces: list<str> = list();
+    list_push(mutref pieces, "__nqg_");
+    let mut index = 0;
+    while index < str_len(key) {
+        let value = char_at(key, index);
+        if value < 32 or value > 126 or value == 59 { return ""; }
+        list_push(mutref pieces, slice_text(digits, value / 16, value / 16 + 1));
+        let low = value - value / 16 * 16;
+        list_push(mutref pieces, slice_text(digits, low, low + 1));
+        index = index + 1;
+    }
+    return str_join(ref pieces);
+}
+
+fn generic_hex_digit(value: i32) -> i32 {
+    if value >= 48 and value <= 57 { return value - 48; }
+    if value >= 97 and value <= 102 { return value - 97 + 10; }
+    return -1;
+}
+
+pub fn generic_key_from_name(name: str) -> str
+audit { intent("Decode only the canonical lowercase hexadecimal identity codec"); mutates(); effects(); }
+{
+    if not str_starts_with(name, "__nqg_") or str_len(name) <= 6 or str_len(name) > 32774 { return ""; }
+    if (str_len(name) - 6) / 2 * 2 != str_len(name) - 6 { return ""; }
+    let alphabet = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+    let mut parts: list<str> = list();
+    let mut index = 6;
+    while index < str_len(name) {
+        let high = generic_hex_digit(char_at(name, index));
+        let low = generic_hex_digit(char_at(name, index + 1));
+        if high < 0 or low < 0 { return ""; }
+        let value = high * 16 + low;
+        if value < 32 or value > 126 or value == 59 { return ""; }
+        list_push(mutref parts, slice_text(alphabet, value - 32, value - 31));
+        index = index + 2;
+    }
+    return str_join(ref parts);
+}
+
+pub fn generic_registry_contains(registry: str, name: str) -> bool
+audit { intent("Check exact newline-delimited generated-name registry membership"); mutates(); effects(); }
+{
+    if generic_key_from_name(name) == "" { return false; }
+    return text_contains(registry, concat3("\n", name, "\n"));
+}
+
+pub fn generic_key_module(key: str) -> str
+audit { intent("Read the declaration module from a canonical generic identity"); mutates(); effects(); }
+{
+    if str_len(key) < 4 or char_at(key, 1) != 124 { return ""; }
+    let mut end = 2;
+    while end < str_len(key) and char_at(key, end) != 124 { end = end + 1; }
+    if end == str_len(key) { return ""; }
+    return slice_text(key, 2, end);
+}
+
+pub fn generic_name_module(name: str) -> str
+audit { intent("Decode the declaration-owned module of an internal generated name"); mutates(); effects(); }
+{
+    return generic_key_module(generic_key_from_name(name));
+}
+
+pub fn generic_name_is_nominal(name: str) -> bool
+audit { intent("Distinguish nominal generated identities from functions and variants"); mutates(); effects(); }
+{
+    let key = generic_key_from_name(name);
+    return str_starts_with(key, "t|") and generic_key_module(key) != "";
+}
+
+pub fn generic_pack_field(value: str) -> str
+audit { intent("Frame a private origin field by its exact byte length"); mutates(); effects(); }
+{
+    return concat3(i32_to_str(str_len(value)), ":", value);
+}

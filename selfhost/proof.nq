@@ -13,6 +13,7 @@ use allocation_policy_tests;
 use str_join_tests;
 use builtin_evidence_tests;
 use process_tests;
+use m56_generics_tests;
 use text;
 use proof_artifacts;
 use proof_artifact_tests;
@@ -1146,6 +1147,12 @@ fn push_selfhost_modules(modules: mutref list<str>) -> unit {
     list_push(mutref modules, "facts");
     list_push(mutref modules, "files");
     list_push(mutref modules, "fmt");
+    list_push(mutref modules, "generic");
+    list_push(mutref modules, "generic_auth");
+    list_push(mutref modules, "generic_layout");
+    list_push(mutref modules, "generic_names");
+    list_push(mutref modules, "propagation_truth");
+    list_push(mutref modules, "m56_generics_tests");
     list_push(mutref modules, "handoff");
     list_push(mutref modules, "host_c");
     list_push(mutref modules, "ir");
@@ -1593,6 +1600,7 @@ fn push_locked_example_corpus(cases: mutref list<corpus_case>) -> unit {
     list_push(mutref cases, make_corpus_case("fibonacci", "examples/fibonacci.nq", 55, ""));
     list_push(mutref cases, make_corpus_case("field_assignment", "examples/field_assignment.nq", 42, ""));
     list_push(mutref cases, make_corpus_case("for_list", "examples/for_list.nq", 35, ""));
+    list_push(mutref cases, make_corpus_case("generic_reuse", "examples/generic_reuse.nq", 0, "generic reuse: ready\n"));
     list_push(mutref cases, make_corpus_case("hello", "examples/hello.nq", 0, "Hello, Nauqtype!\n"));
     list_push(mutref cases, make_corpus_case("process-deadline", "examples/process_deadline.nq", 0, "Nauqtype process example\n"));
     list_push(mutref cases, make_corpus_case("import_aliases", "examples/import_aliases.nq", 7, ""));
@@ -1642,6 +1650,8 @@ fn push_locked_formatter_examples(paths: mutref list<str>) -> unit {
     list_push(mutref paths, "examples/fibonacci.nq");
     list_push(mutref paths, "examples/field_assignment.nq");
     list_push(mutref paths, "examples/for_list.nq");
+    list_push(mutref paths, "examples/generic_reuse.nq");
+    list_push(mutref paths, "examples/generic_values.nq");
     list_push(mutref paths, "examples/hello.nq");
     list_push(mutref paths, "examples/process_deadline.nq");
     list_push(mutref paths, "examples/import_aliases.nq");
@@ -3274,6 +3284,7 @@ audit {
     }
     let mut failed_phase = "";
     if suite == "" or suite == "driver-fixtures" {
+    if not run_m56_generics_gate(driver_path) { return 1; }
     if not run_quiet_result("fixture check hello", run_driver_check(driver_path, "examples/hello.nq")) {
         return 1;
     }

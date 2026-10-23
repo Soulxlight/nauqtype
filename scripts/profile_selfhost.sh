@@ -65,6 +65,49 @@ profile_read_cache_records() {
         cc_path:path cc_sha256:hash cc_version_sha256:hash cc_target:atom flags_sha256:hash
 }
 profile_record_value() { sed -n "s/^$2=//p" "$1"; }
+profile_cc_profile_dir=''
+profile_freeze_cc_profile() {
+    local target=$1 profile
+    mkdir -p -- "$target" || return 1
+    prov_cc_identity "${CC:-cc}" "$target/cc-identity" || return 1
+    prov_cc_gc_profile_select "${CC:-cc}" "$target/cc-identity" "$target/cc-profile" || return 1
+    profile=$(< "$target/cc-profile")
+    prov_bootstrap_args_materialize "$profile" "$target"
+}
+profile_flags_sha256_from_dir() {
+    local target=$1 profile
+    profile=$(< "$target/cc-profile") || return 1
+    prov_bootstrap_flags_sha256_from_files "$profile" "$target/seed-args" "$target/stage1-args"
+}
+profile_frozen_flags_sha256() {
+    local scratch status had_errexit=false
+    if [[ -n "$profile_cc_profile_dir" ]]; then
+        profile_flags_sha256_from_dir "$profile_cc_profile_dir"
+        return
+    fi
+    scratch=$(mktemp -d) || return 1
+    profile_freeze_cc_profile "$scratch" || { rm -rf -- "$scratch"; return 1; }
+    [[ $- == *e* ]] && had_errexit=true
+    set +e
+    profile_flags_sha256_from_dir "$scratch"
+    status=$?
+    [[ "$had_errexit" == false ]] || set -e
+    rm -rf -- "$scratch"
+    return "$status"
+}
+profile_cc_profile_unchanged() {
+    local scratch status had_errexit=false
+    [[ -n "$profile_cc_profile_dir" ]] || return 1
+    scratch=$(mktemp -d) || return 1
+    prov_cc_gc_profile_select "${CC:-cc}" "$profile_cc_profile_dir/cc-identity" "$scratch/current" || { rm -rf -- "$scratch"; return 1; }
+    [[ $- == *e* ]] && had_errexit=true
+    set +e
+    cmp -s "$profile_cc_profile_dir/cc-profile" "$scratch/current"
+    status=$?
+    [[ "$had_errexit" == false ]] || set -e
+    rm -rf -- "$scratch"
+    return "$status"
+}
 profile_cache_matches() (
     local pin=$1 cache="$1/cache.txt" receipt="$1/receipt.txt" scratch key expected actual
     scratch=$(mktemp -d) || exit 1
@@ -91,7 +134,7 @@ profile_cache_matches() (
         [[ "$actual" == "$(profile_record_value "$receipt" "$key")" ]] || exit 1
     done
     [[ -x "$repo_root/build/seed/nauqc-seed" && -x "$repo_root/selfhost/build/nauqc" ]] || exit 1
-    actual=$(prov_bootstrap_flags_sha256) || exit 1
+    actual=$(profile_frozen_flags_sha256) || exit 1
     prov_hex "$actual" && [[ "$actual" == "$(profile_record_value "$receipt" flags_sha256)" ]] || exit 1
     prov_cc_identity "${CC:-cc}" "$scratch/cc" || exit 1
     for key in cc_path cc_sha256 cc_version_sha256 cc_target; do
@@ -238,7 +281,7 @@ profile_write_identity() (
     seed_exe=$(profile_require_digest "$repo_root/build/seed/nauqc-seed") || exit 1
     stage1_c=$(profile_require_digest "$repo_root/build/seed/stage1.c") || exit 1
     driver=$(profile_require_digest "$repo_root/selfhost/build/nauqc") || exit 1
-    flags=$(prov_bootstrap_flags_sha256) || exit 1; prov_hex "$flags" || exit 1
+    flags=$(profile_frozen_flags_sha256) || exit 1; prov_hex "$flags" || exit 1
     derivation=$(profile_require_digest "$repo_root/build/seed/stage1-derivation-v1.txt") || exit 1
     copied_runner_record=$(profile_runner_identity_record "$copied_runner" "$expected_runner_hash") || exit 1
     copied_runner_hash=${copied_runner_record#copied_runner_sha256=}
@@ -280,17 +323,37 @@ profile_spread() { awk -v a="$1" -v b="$2" 'BEGIN { low=(a < b ? a : b); high=(a
 profile_write_command() { local output=$1; shift; printf '%q ' "$@" > "$output"; printf '\n' >> "$output"; }
 profile_record_host() { { printf 'host-profile/v1\n'; uname -a; if command -v lscpu >/dev/null 2>&1; then lscpu || cat /proc/cpuinfo; else cat /proc/cpuinfo; fi; } > "$1"; }
 profile_write_stage1_flags() (
-    local output=$1 arg flags scratch
-    flags=$(prov_bootstrap_flags_sha256) || exit 1
+    local output=$1 arg flags scratch profile count active_profile profile_bytes seed_args_hash stage1_args_hash
+    local -a stage1_args=()
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    active_profile=$profile_cc_profile_dir
+    if [[ -z "$active_profile" ]]; then
+        active_profile="$scratch/profile"
+        profile_freeze_cc_profile "$active_profile" || exit 1
+    fi
+    profile=$(< "$active_profile/cc-profile") || exit 1
+    profile_bytes=$(prov_sha256 "$active_profile/cc-profile") || exit 1
+    count=$(prov_cc_args_count "$profile") || exit 1
+    seed_args_hash=$(prov_sha256 "$active_profile/seed-args") || exit 1
+    stage1_args_hash=$(prov_sha256 "$active_profile/stage1-args") || exit 1
+    flags=$(profile_flags_sha256_from_dir "$active_profile") || exit 1
     prov_hex "$flags" || exit 1
-    scratch=$(mktemp) || exit 1
-    trap 'rm -f -- "$scratch"' EXIT
-    prov_stage1_args > "$scratch" || exit 1
+    prov_argv_file_validate "$active_profile/stage1-args" "$count" || exit 1
+    prov_argv_load "$active_profile/stage1-args" "$count" stage1_args "$stage1_args_hash" || exit 1
+    [[ "$(prov_sha256 "$active_profile/cc-profile")" == "$profile_bytes" &&
+       "$(prov_sha256 "$active_profile/seed-args")" == "$seed_args_hash" &&
+       "$(prov_sha256 "$active_profile/stage1-args")" == "$stage1_args_hash" ]] || exit 1
     {
         printf 'profile-selfhost-stage1-flags/v1\n'
-        while IFS= read -r -d '' arg; do printf '%q\n' "$arg"; done < "$scratch"
+        printf 'cc_gc_profile=%s\n' "$profile"
+        for arg in "${stage1_args[@]}"; do printf '%q\n' "$arg"; done
         printf 'bootstrap_flags_sha256=%s\n' "$flags"
     } > "$output"
+    [[ "$(prov_sha256 "$active_profile/cc-profile")" == "$profile_bytes" &&
+       "$(prov_sha256 "$active_profile/seed-args")" == "$seed_args_hash" &&
+       "$(prov_sha256 "$active_profile/stage1-args")" == "$stage1_args_hash" &&
+       "$(profile_flags_sha256_from_dir "$active_profile")" == "$flags" ]] || exit 1
 )
 profile_verify_snapshot() {
     local root=$1 inputs_hash=$2 driver_hash=$3 current
@@ -328,6 +391,8 @@ profile_baseline() {
     setup_start_ns=$profile_workflow_start_ns
     profile_pin_dir=$(mktemp -d) || return 1
     trap profile_on_exit EXIT
+    profile_cc_profile_dir="$profile_pin_dir/cc-profile"
+    profile_freeze_cc_profile "$profile_cc_profile_dir" || return 1
     profile_preflight "$profile_pin_dir" || return 1
     budget=$(performance_budget_for stage1.driver) || return 1
     read -r wall_limit rss_limit <<< "$budget"
@@ -413,6 +478,7 @@ profile_baseline() {
     wall_spread=$(profile_spread "$wall_one" "$wall_two"); rss_spread=$(profile_spread "$rss_one" "$rss_two")
     profile_active=summary; summary_tmp=$(mktemp "$profile_result_dir/.summary.XXXXXX")
     profile_cache_matches "$profile_pin_dir" && profile_verify_snapshot "$snapshot" "$input_hash" "$driver_hash" || { profile_error 'checked inputs changed before summary publication'; return 1; }
+    profile_cc_profile_unchanged || { profile_error 'host compiler capability profile changed before summary publication'; return 1; }
     [[ "$(profile_require_digest "$profile_result_dir/stage1-cc-flags.txt")" == "$flags_record_hash" ]] || { profile_error 'recorded flags changed before summary publication'; return 1; }
     {
         printf '{\n  "version": 2,\n  "kind": "performance-baseline",\n  "mode": "baseline",\n  "instrumented": false,\n  "budget_source_phase": "stage1.driver",\n'
@@ -427,7 +493,24 @@ profile_baseline() {
 }
 
 main() {
+    local preflight_profile status had_errexit=false
     cd "$repo_root"
-    case "${1:-}" in '') profile_baseline;; --preflight) (( $# == 1 )) || { usage >&2; return 2; }; profile_preflight;; --help|-h) (( $# == 1 )) || { usage >&2; return 2; }; usage;; *) profile_error "unknown option $1"; usage >&2; return 2;; esac
+    case "${1:-}" in
+        '') profile_baseline;;
+        --preflight)
+            (( $# == 1 )) || { usage >&2; return 2; }
+            preflight_profile=$(mktemp -d) || return 1
+            profile_cc_profile_dir="$preflight_profile"
+            profile_freeze_cc_profile "$profile_cc_profile_dir" || { rm -rf -- "$preflight_profile"; return 1; }
+            [[ $- == *e* ]] && had_errexit=true
+            set +e
+            profile_preflight
+            status=$?
+            [[ "$had_errexit" == false ]] || set -e
+            rm -rf -- "$preflight_profile"
+            return "$status";;
+        --help|-h) (( $# == 1 )) || { usage >&2; return 2; }; usage;;
+        *) profile_error "unknown option $1"; usage >&2; return 2;;
+    esac
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

@@ -2,11 +2,12 @@
 
 ## Current Position And Resumption
 
-M55 and the required PRE-M56 P1-P4 efficiency goals are complete in recorded
-Linux evidence. The next language milestone is M56 generic reuse; it is not
-implemented by this performance pass. The project remains an organizational
+M55, the required PRE-M56 P1-P4 efficiency goals, and M56 explicit generic
+reuse have recorded Linux acceptance. M56's reviewed frozen tree
+`67272d00dd7d3e6cbb3945cc5777141148ff2cc1` passes all seven milestone phases
+and strict attestation in1137.41s. The project remains an organizational
 alpha, not a v1.0 stable or feature-complete terminal/application language.
-M56-M61 below remain the release sequence; earlier sections retain milestone
+M57-M61 below remain the release sequence; earlier sections retain milestone
 history. Use the [documentation guide](docs/README.md) for authoritative
 contracts rather than treating historical steps as current instructions.
 
@@ -1107,6 +1108,21 @@ Status: complete.
   monomorphization
 - keep traits, overloads, implicit constraints, and method dispatch out of the
   first form
+- Complete on reviewed frozen tree `67272d00dd7d3e6cbb3945cc5777141148ff2cc1`;
+  [closing evidence](AUDIT_REMEDIATION.md#m56-generic-reuse-close) records the
+  seven-phase Linux gate and attestation. Execution contract: [M56](docs/M56_CONTRACT.md).
+  Explicit n-ary function/product/enum
+  specializations preserve definition origins, concrete ownership checks and
+  original diagnostic spans. No inference or stored references.
+- Legacy facts/review/diff/change/policy/rename reject generic graphs rather
+  than invent source identities; versioned generic-aware export is required
+  before generic library adoption can claim evidence parity.
+- Owned generic diagnostics/runtime/origin/bounds probes, genuine generic
+  composition through seed and relocated release, independent mixed source
+  audits and the unchanged seven-phase Linux gate pass. The measured host-GCC
+  memory-profile repair has a [separate contract](docs/M56_GCC_MEMORY_CONTRACT.md).
+- Next: version generic-aware source/instance evidence before adopting generic
+  libraries, then plan M57. No M57 implementation or new warm-speedup claim.
 
 ### M57: Collections And Data Interchange
 

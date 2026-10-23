@@ -2,6 +2,7 @@ use ast;
 use diag;
 use lexer;
 use source;
+use text;
 use token;
 use type_text;
 use typecheck;
@@ -2372,6 +2373,29 @@ fn scope_is_visible_by_function(scopes: ref list<scope_lookup>, function_id: i32
     return false;
 }
 
+fn local_declaration_name_at(statement: stmt_fact, tokens: ref list<token>) -> i32 {
+    let mut has_let_head = false;
+    match statement.kind { stmt_local => { has_let_head = true; }, stmt_propagate => { has_let_head = true; }, _ => {}, }
+    if not has_let_head { return statement.at; }
+    // Statement ranges are token indexes; declaration identities are byte
+    // offsets. Find the let head once, then use its actual name token.
+    let mut lower = 0;
+    let mut upper = list_len(ref tokens);
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if token_at(ref tokens, middle).start < statement.at { lower = middle + 1; }
+        else { upper = middle; }
+    }
+    let head = token_at(ref tokens, lower);
+    if head.start != statement.at { return -1; }
+    match head.kind { tk_kw_let => {}, _ => { return -1; }, }
+    let mut name_index = lower + 1;
+    match token_at(ref tokens, name_index).kind { tk_kw_mut => { name_index = name_index + 1; }, _ => {}, }
+    let name = token_at(ref tokens, name_index);
+    match name.kind { tk_ident => { if name.text == statement.name { return name.start; } }, _ => {}, }
+    return -1;
+}
+
 fn empty_resolved_binding_snapshot() -> resolved_binding_snapshot {
     return resolved_binding_snapshot {
         found: false,
@@ -3013,6 +3037,7 @@ fn push_type_shape(type_shapes: mutref list<checked_type_shape>, kind: checked_t
 }
 
 fn canonical_type_origin_module(visibility: ref visibility_index, uses: ref list<module_use>, items: ref list<top_item>, module_name: str, type_name: str) -> str {
+    if str_starts_with(type_name, "__nqg_") { return generated_nominal_origin(ref items, type_name); }
     if type_name == "duration" or type_name == "instant" or type_name == "process" or type_name == "process_outcome" {
         return "";
     }
@@ -3137,7 +3162,12 @@ fn intern_checked_type_id(visibility: ref visibility_index, type_name: str, type
         }
         return push_type_shape(mutref type_shapes, checked_type_result, "", "", arg1_id, arg2_id, false);
     }
-    return push_type_shape(mutref type_shapes, checked_type_named, type_name, canonical_type_origin_module(ref visibility, ref uses, ref items, module_name, type_name), -1, -1, false);
+    let origin = canonical_type_origin_module(ref visibility, ref uses, ref items, module_name, type_name);
+    if str_starts_with(type_name, "__nqg_") and (origin == "" or type_arg1_name != "" or type_arg2_name != "") {
+        list_push(mutref diags, make_error("NQ-GENERIC-009", diag_handoff, module_name, at, at + 1, "missing authenticated concrete generic type identity"));
+        return -1;
+    }
+    return push_type_shape(mutref type_shapes, checked_type_named, type_name, origin, -1, -1, false);
 }
 
 fn lookup_binding_type_id(bindings: ref list<checked_binding>, binding_id: i32) -> i32 {
@@ -4731,12 +4761,11 @@ fn lookup_predicted_arm_id(lookups: ref list<predicted_arm_lookup>, function_id:
     return -1;
 }
 
-fn append_bindings(base_visibility: ref visibility_index, function_params: ref list<function_param_fact>, stmt_facts: ref list<stmt_fact>, pattern_binding_facts: ref list<pattern_binding_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, predicted_stmt_ids: ref list<predicted_stmt_id>, predicted_arm_ids: ref list<predicted_arm_id>, functions: ref list<checked_function>, uses: ref list<module_use>, items: ref list<top_item>, type_shapes: mutref list<checked_type_shape>, bindings: mutref list<checked_binding>, diags: mutref list<diag>) -> unit {
+fn append_bindings(base_visibility: ref visibility_index, function_params: ref list<function_param_fact>, stmt_facts: ref list<stmt_fact>, pattern_binding_facts: ref list<pattern_binding_fact>, scopes: ref list<body_scope>, resolved_bindings: ref list<typed_binding_fact>, predicted_stmt_ids: ref list<predicted_stmt_id>, predicted_arm_ids: ref list<predicted_arm_id>, functions: ref list<checked_function>, uses: ref list<module_use>, items: ref list<top_item>, sources: ref list<source_file>, type_shapes: mutref list<checked_type_shape>, bindings: mutref list<checked_binding>, diags: mutref list<diag>) -> unit {
     let empty_function_facts: list<function_fact> = list();
     let visibility = extend_visibility_index_with_functions(ref base_visibility, ref empty_function_facts, ref function_params);
     let function_lookups = build_checked_function_lookups(ref functions);
     let resolved_lookups = build_resolved_binding_lookups(ref resolved_bindings, ref functions);
-    let scope_lookups = build_scope_lookups(ref scopes, ref functions);
     let predicted_stmt_lookups = build_predicted_stmt_lookups(ref predicted_stmt_ids, ref functions);
     let predicted_arm_lookups = build_predicted_arm_lookups(ref predicted_arm_ids, ref functions);
     let mut param_cached_module = "";
@@ -4786,6 +4815,8 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
     let mut stmt_cached_module = "";
     let mut stmt_cached_function = "";
     let mut stmt_cached_function_id = -1;
+    let mut binding_token_module = "";
+    let mut binding_tokens: list<token> = list();
     let mut stmt_index = 0;
     while stmt_index < list_len(ref stmt_facts) {
         let stmt_entry = list_get(ref stmt_facts, stmt_index);
@@ -4823,24 +4854,24 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
                             _ => {
                             },
                         }
-                        let mut snapshot = visible_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, ref scope_lookups, stmt_cached_function_id, binding_scope_id, current.name, current.expr_end + 1);
-                        if not snapshot.found and current.name != "" {
-                            snapshot = visible_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, ref scope_lookups, stmt_cached_function_id, binding_scope_id, current.name, 2147483647);
+                        if current.module != binding_token_module {
+                            binding_token_module = current.module;
+                            binding_tokens = list();
+                            let mut source_count = 0;
+                            for file in sources {
+                                if file.name == current.module { binding_tokens = lex(file.text); source_count = source_count + 1; }
+                            }
+                            if source_count != 1 { push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing unique source for checked declaration identity"); return; }
                         }
+                        let declaration_at = local_declaration_name_at(current, ref binding_tokens);
+                        if declaration_at < 0 { push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing exact local declaration name span"); return; }
+                        let snapshot = exact_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, stmt_cached_function_id, binding_scope_id, current.name, declaration_at);
                         if not snapshot.found {
                             push_handoff_limitation_detail(mutref diags, current.module, current.at, str_concat("missing resolved local binding type for checked handoff: ", current.name));
+                            return;
                         }
-                        let exact_snapshot = exact_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, stmt_cached_function_id, binding_scope_id, current.name, current.at);
-                        let mut binding_is_borrow = exact_snapshot.is_borrow;
-                        if not binding_is_borrow and current.name != "" {
-                            let visible_snapshot = visible_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, ref scope_lookups, stmt_cached_function_id, binding_scope_id, current.name, 2147483647);
-                            binding_is_borrow = visible_snapshot.is_borrow;
-                        }
-                        let mut binding_borrow_mutable = exact_snapshot.borrow_mutable;
-                        if not binding_borrow_mutable and current.name != "" {
-                            let visible_snapshot = visible_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, ref scope_lookups, stmt_cached_function_id, binding_scope_id, current.name, 2147483647);
-                            binding_borrow_mutable = visible_snapshot.borrow_mutable;
-                        }
+                        let binding_is_borrow = snapshot.is_borrow;
+                        let binding_borrow_mutable = snapshot.borrow_mutable;
                         let type_id = intern_checked_type_id(ref visibility, snapshot.type_name, snapshot.type_arg1_name, snapshot.type_arg2_name, binding_is_borrow, binding_borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.at);
                         list_push(mutref bindings, checked_binding {
                             id: list_len(ref bindings) + 1,
@@ -6616,7 +6647,7 @@ audit {
     append_blocks(ref scopes, ref functions_out, mutref blocks_out);
     let predicted_stmt_ids = build_predicted_stmt_ids(ref stmt_facts, ref sources, ref functions_out);
     let predicted_arm_ids = build_predicted_arm_ids(ref match_arms, ref sources);
-    append_bindings(ref visibility, ref function_params, ref stmt_facts, ref pattern_bindings, ref scopes, ref resolved_bindings, ref predicted_stmt_ids, ref predicted_arm_ids, ref functions_out, ref uses, ref items, mutref type_shapes_out, mutref bindings_out, mutref diags);
+    append_bindings(ref visibility, ref function_params, ref stmt_facts, ref pattern_bindings, ref scopes, ref resolved_bindings, ref predicted_stmt_ids, ref predicted_arm_ids, ref functions_out, ref uses, ref items, ref sources, mutref type_shapes_out, mutref bindings_out, mutref diags);
     append_params(ref function_params, ref functions_out, ref bindings_out, mutref params_out, mutref diags);
     append_const_decls(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings_out, ref resolved_bindings, ref field_facts, ref uses, ref items, ref sources, ref modules_out, mutref type_shapes_out, mutref consts_out, mutref expressions_out, mutref expr_children_out, mutref struct_fields_out, mutref diags);
 

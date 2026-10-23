@@ -480,21 +480,195 @@ prov_cc_identity() (
         "$cc" "$hash" "$version_hash" "$target" > "$output"
 )
 
+prov_cc_gc_profile_valid() {
+    [[ "$1" == portable || "$1" == gcc-20-32768 ]]
+}
+
+# Probe only an already identity-checked compiler. Exit 1/2 and clean,
+# unsupported output select the portable recipe; capture/timeout/identity
+# failures remain hard errors.
+prov_cc_gc_profile_select() (
+    local requested=$1 expected_identity=$2 output=$3 scratch cc metadata size status file_limit=68 had_errexit=false
+    local LC_ALL=C
+    prov_regular "$expected_identity" || exit 1
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    prov_cc_identity "$requested" "$scratch/cc-before" || exit 1
+    cmp -s "$expected_identity" "$scratch/cc-before" || exit 1
+    cc=$(sed -n 's/^cc_path=//p' "$scratch/cc-before")
+    prov_absolute "$cc" || exit 1
+    command -v timeout >/dev/null 2>&1 || exit 1
+    [[ "$(timeout --version 2>/dev/null | sed -n '1p')" == 'timeout (GNU coreutils) '* ]] || exit 1
+    : > "$scratch/stdout" || exit 1
+    : > "$scratch/stderr" || exit 1
+    exec 3> "$scratch/stdout" || exit 1
+    exec 4> "$scratch/stderr" || exit 1
+    [[ $- == *e* ]] && had_errexit=true
+    set +e
+    # Bash uses 512-byte file-limit units in POSIX mode, 1024 otherwise.
+    if [[ -o posix ]]; then file_limit=136; fi
+    # Leave physical headroom above the accepted 64 KiB so EFBIG/SIGXFSZ
+    # cannot turn a truncated capture plus exit 1/2 into portable fallback.
+    ( ulimit -f "$file_limit" || exit 125; timeout --signal=TERM --kill-after=1s 3s "$cc" -Q --help=params ) >&3 2>&4
+    status=$?
+    [[ "$had_errexit" == false ]] || set -e
+    exec 3>&- 4>&-
+    prov_cc_identity "$requested" "$scratch/cc-after" || exit 1
+    cmp -s "$expected_identity" "$scratch/cc-after" || exit 1
+    for cc in stdout stderr; do
+        metadata=$(prov_file_metadata "$scratch/$cc") || exit 1
+        size=${metadata#* }
+        [[ "$size" =~ ^(0|[1-9][0-9]*)$ ]] && (( size <= 65536 )) || exit 1
+    done
+    if (( status == 1 || status == 2 )); then
+        printf 'portable\n' > "$output" || exit 1
+        exit 0
+    fi
+    (( status == 0 )) || exit 1
+    if [[ -s "$scratch/stderr" ]]; then
+        printf 'portable\n' > "$output" || exit 1
+        exit 0
+    fi
+    set +e
+    awk '
+        index($0, "--param=ggc-min-expand=") {
+            expand++
+            if ($0 !~ /^[[:space:]]*--param=ggc-min-expand=[[:space:]]+[0-9]+[[:space:]]*$/) bad=1
+        }
+        index($0, "--param=ggc-min-heapsize=") {
+            heapsize++
+            if ($0 !~ /^[[:space:]]*--param=ggc-min-heapsize=[[:space:]]+[0-9]+[[:space:]]*$/) bad=1
+        }
+        END { exit (expand == 1 && heapsize == 1 && !bad) ? 0 : 1 }
+    ' "$scratch/stdout"
+    status=$?
+    [[ "$had_errexit" == false ]] || set -e
+    case "$status" in
+        0) printf 'gcc-20-32768\n' > "$output" || exit 1;;
+        1) printf 'portable\n' > "$output" || exit 1;;
+        *) exit 1;;
+    esac
+)
+
+# The transport can confirm a parent's frozen choice, never choose one.
+prov_cc_gc_profile_transport_validate() {
+    local selected=$1
+    prov_cc_gc_profile_valid "$selected" || return 1
+    if [[ -v NQ_BOOTSTRAP_CC_GC_PROFILE ]]; then
+        prov_cc_gc_profile_valid "$NQ_BOOTSTRAP_CC_GC_PROFILE" || return 1
+        [[ "$NQ_BOOTSTRAP_CC_GC_PROFILE" == "$selected" ]] || return 1
+    fi
+}
+
+prov_cc_gc_profile_freeze() (
+    local requested=$1 expected_identity=$2 output=$3 scratch selected
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    prov_cc_gc_profile_select "$requested" "$expected_identity" "$scratch/selected" || exit 1
+    selected=$(< "$scratch/selected")
+    prov_cc_gc_profile_valid "$selected" || exit 1
+    prov_cc_gc_profile_transport_validate "$selected" || exit 1
+    printf '%s\n' "$selected" > "$output"
+)
+
 prov_seed_args() {
+    local profile=$1
+    prov_cc_gc_profile_valid "$profile" || return 1
     printf '%s\0' -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -Ibootstrap/seed \
-        bootstrap/seed/nauqc-seed.c bootstrap/seed/runtime.c -o build/seed/nauqc-seed
+        bootstrap/seed/nauqc-seed.c bootstrap/seed/runtime.c -o build/seed/nauqc-seed || return 1
+    [[ "$profile" == portable ]] || printf '%s\0' --param=ggc-min-expand=20 --param=ggc-min-heapsize=32768
 }
 
 prov_stage1_args() {
+    local profile=$1
+    prov_cc_gc_profile_valid "$profile" || return 1
     printf '%s\0' -std=c11 -O2 -D_POSIX_C_SOURCE=200809L -Istdlib \
-        build/seed/stage1.c stdlib/runtime.c -o selfhost/build/nauqc
+        build/seed/stage1.c stdlib/runtime.c -o selfhost/build/nauqc || return 1
+    [[ "$profile" == portable ]] || printf '%s\0' --param=ggc-min-expand=20 --param=ggc-min-heapsize=32768
 }
 
 prov_seed_emit_args() { printf '%s\0' emit-c selfhost/main.nq -o build/seed/stage1.c; }
 
-prov_bootstrap_flags_sha256() (
+prov_cc_args_count() {
+    prov_cc_gc_profile_valid "$1" || return 1
+    if [[ "$1" == portable ]]; then printf '8\n'; else printf '10\n'; fi
+}
+
+prov_argv_file_validate() (
+    local file=$1 expected_count=$2 scratch metadata size arg
+    local -a args=()
+    [[ "$expected_count" =~ ^[1-9][0-9]*$ ]] || exit 1
+    metadata=$(prov_file_metadata "$file") || exit 1
+    size=${metadata#* }
+    (( size > 0 && size <= 4096 )) || exit 1
+    scratch=$(mktemp) || exit 1
+    trap 'rm -f -- "$scratch"' EXIT
+    while IFS= read -r -d '' arg; do args+=("$arg"); done < "$file"
+    (( ${#args[@]} == expected_count )) || exit 1
+    printf '%s\0' "${args[@]}" > "$scratch" || exit 1
+    cmp -s "$file" "$scratch"
+)
+
+# Capture status explicitly: process substitution and conditional contexts can
+# otherwise turn a producer's partial output into apparently valid argv.
+prov_argv_materialize() (
+    local output=$1 expected_count=$2 producer=$3 scratch status had_errexit=false
+    shift 3
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    [[ $- == *e* ]] && had_errexit=true
+    set +e
+    "$producer" "$@" > "$scratch/argv"
+    status=$?
+    [[ "$had_errexit" == false ]] || set -e
+    (( status == 0 )) || exit "$status"
+    prov_argv_file_validate "$scratch/argv" "$expected_count" || exit 1
+    cp -- "$scratch/argv" "$output" || exit 1
+    prov_argv_file_validate "$output" "$expected_count"
+)
+
+prov_argv_load() {
+    local file=$1 expected_count=$2 target_name=$3 expected_hash=${4:-} loaded_hash
+    local -n target=$target_name
+    prov_argv_file_validate "$file" "$expected_count" || return 1
+    target=()
+    mapfile -d '' -t target < "$file" || return 1
+    (( ${#target[@]} == expected_count )) || return 1
+    if [[ -n "$expected_hash" ]]; then
+        prov_hex "$expected_hash" || return 1
+        loaded_hash=$(set -o pipefail; printf '%s\0' "${target[@]}" | prov_hash_stream) || return 1
+        [[ "$loaded_hash" == "$expected_hash" ]] || return 1
+    fi
+}
+
+prov_bootstrap_args_materialize() {
+    local profile=$1 directory=$2 count
+    count=$(prov_cc_args_count "$profile") || return 1
+    prov_directory "$directory" || return 1
+    prov_argv_materialize "$directory/seed-args" "$count" prov_seed_args "$profile" || return 1
+    prov_argv_materialize "$directory/stage1-args" "$count" prov_stage1_args "$profile"
+}
+
+prov_bootstrap_flags_sha256_from_files() (
     set -o pipefail
-    { printf '%s\0' nauqtype-bootstrap-flags/v1 seed || exit 1; prov_seed_args || exit 1; printf 'stage1\0' || exit 1; prov_stage1_args || exit 1; } | prov_hash_stream
+    local profile=$1 seed_args=$2 stage1_args=$3 count
+    count=$(prov_cc_args_count "$profile") || exit 1
+    prov_argv_file_validate "$seed_args" "$count" || exit 1
+    prov_argv_file_validate "$stage1_args" "$count" || exit 1
+    { printf '%s\0' nauqtype-bootstrap-flags/v1 seed || exit 1; cat -- "$seed_args" || exit 1; printf 'stage1\0' || exit 1; cat -- "$stage1_args" || exit 1; } | prov_hash_stream
+)
+
+# Compatibility entrypoint for attestation and other read-only consumers.
+# It always ignores private transport and freshly selects the current profile.
+prov_bootstrap_flags_sha256() (
+    local scratch profile
+    scratch=$(mktemp -d) || exit 1
+    trap 'rm -rf -- "$scratch"' EXIT
+    prov_cc_identity "${CC:-cc}" "$scratch/cc" || exit 1
+    prov_cc_gc_profile_select "${CC:-cc}" "$scratch/cc" "$scratch/profile" || exit 1
+    profile=$(< "$scratch/profile")
+    prov_bootstrap_args_materialize "$profile" "$scratch" || exit 1
+    prov_bootstrap_flags_sha256_from_files "$profile" "$scratch/seed-args" "$scratch/stage1-args"
 )
 
 prov_proof_flags_sha256() (

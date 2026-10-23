@@ -5,11 +5,11 @@ not repeat the same expensive selfhost and release proof several times.
 
 ## Gate Selection Before Each Run
 
-The immediate priority is the
-[PRE-M56 efficiency campaign](PERFORMANCE_CHECKPOINT.md). Choose the smallest
-relevant feedback check before starting work, and record elapsed time including
-any compiler construction. The broader fixture tier and final close have
-separate jobs:
+The [PRE-M56 efficiency campaign](PERFORMANCE_CHECKPOINT.md) records the prior
+required performance goals and the remaining cold-time stretch target. Choose
+the smallest relevant feedback check before starting work, and record elapsed
+time including any compiler construction. The broader fixture tier and final
+close have separate jobs:
 
 | Change or purpose | Iteration feedback | Acceptance boundary |
 | --- | --- | --- |
@@ -32,6 +32,12 @@ the wrapper validates/rebuilds the checked stage1 cache before dispatch.
 the selected synthetic host-unit group, explicitly without compiler/cache
 validation. Choose exactly one route; do not write the pipe-separated choices
 literally as a shell command. No-argument `check_fast.sh` keeps all coverage.
+
+Host-compiler capability or bootstrap-argv changes require both focused host
+routes before freezing: run `--host-suite provenance` and then
+`--host-suite attestation`. Metadata-only compiler stubs must model the probe's
+actual exit/status contract without pretending to compile. These cheap checks
+do not replace the final real compiler, seed, or attestation gate.
 
 The campaign aims for <=10-second focused feedback, <=60-second warm full
 fixtures, and at least a 50% reduction in the new same-host cold gate, with

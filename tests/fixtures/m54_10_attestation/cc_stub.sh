@@ -4,6 +4,12 @@ set -euo pipefail
 role=proof
 [[ "${0##*/}" != bootstrap* ]] || role=bootstrap
 case "${1:-}" in
+    -Q)
+        # Model an unsupported metadata probe, not a compilation failure.
+        if (( $# == 2 )) && [[ "$2" == --help=params ]]; then exit 1; fi
+        printf 'attestation CC stub refuses unknown metadata request\n' >&2
+        exit 99
+        ;;
     --version)
         [[ "${NQ_ATTEST_CC_FAIL:-}" != version ]] || exit 17
         if [[ "$role" == bootstrap ]]; then

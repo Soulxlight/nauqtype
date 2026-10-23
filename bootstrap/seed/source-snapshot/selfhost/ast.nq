@@ -1,3 +1,5 @@
+use text;
+
 pub enum top_item_kind {
     item_fn,
     item_type,
@@ -11,6 +13,7 @@ pub type top_item {
     name: str,
     kind: top_item_kind,
     is_public: bool,
+    is_generated: bool,
     at: i32,
 }
 
@@ -26,8 +29,31 @@ audit {
         name: name,
         kind: kind,
         is_public: is_public,
+        is_generated: false,
         at: at,
     };
+}
+
+pub fn generated_nominal_origin(items: ref list<top_item>, name: str) -> str
+audit {
+    intent("Resolve only an exact registry-authenticated generated nominal declaration, never a prefix or short-name guess");
+    mutates();
+    effects();
+}
+{
+    if not str_starts_with(name, "__nqg_") { return ""; }
+    let mut origin = "";
+    for item in items {
+        if item.is_generated and item.name == name {
+            let mut nominal = false;
+            match item.kind { item_type => { nominal = true; }, item_enum => { nominal = true; }, _ => {}, }
+            if nominal {
+                if origin != "" and origin != item.module { return ""; }
+                origin = item.module;
+            }
+        }
+    }
+    return origin;
 }
 
 pub type module_use {
@@ -754,6 +780,7 @@ pub type local_init_fact {
     expr_name: str,
     expr_member_name: str,
     propagation_label: str,
+    checked_error_name: str,
 }
 
 pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, is_mutable: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, propagation_label: str) -> local_init_fact
@@ -778,6 +805,7 @@ audit {
         expr_name: expr_name,
         expr_member_name: expr_member_name,
         propagation_label: propagation_label,
+        checked_error_name: "",
     };
 }
 

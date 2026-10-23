@@ -1626,6 +1626,8 @@ fn lookup_function_result_error(function_facts: ref list<function_fact>, module:
 }
 
 fn propagation_error_name(calls: ref list<call_fact>, local: local_init_fact) -> str {
+    if local.expr_member_name == "propagate" { return local.checked_error_name; }
+    // Expression-level try propagation keeps its existing call-site model.
     let mut error_name = "";
     let mut width = -1;
     for call in calls {
@@ -3275,6 +3277,16 @@ audit {
 {
     if diagnostics_have_errors(ref diags) {
         return make_review_summary(0, 0, 0, 1);
+    }
+    for local in locals {
+        if local.expr_member_name == "propagate" and local.checked_error_name == "" {
+            let mut start = local.at;
+            if start < 0 { start = 0; }
+            let mut end = start;
+            if end < 2147483647 { end = end + 1; }
+            list_push(mutref diags, make_error("NQ-INTERNAL-012", diag_internal, local.module, start, end, "stage1 internal error: ordinary propagation lacks checked operand error evidence"));
+            return make_review_summary(0, 0, 0, 1);
+        }
     }
     let mut declarations: list<review_decl_entry> = list();
     let mut source_functions: list<review_function_fact> = list();

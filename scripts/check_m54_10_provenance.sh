@@ -11,6 +11,10 @@ case "${1:-}" in
     --seed-publication-only) (( $# == 1 )) || exit 2; publication_only=true;;
     *) printf 'Usage: scripts/check_m54_10_provenance.sh [--seed-phases-only|--seed-publication-only]\n' >&2; exit 2;;
 esac
+if [[ "$phase_only" == false && "$publication_only" == false ]]; then
+    bash "$script_dir/check_cc_gc_profile.sh"
+    bash "$script_dir/check_release_generic_smoke.sh"
+fi
 source "$script_dir/provenance.sh"
 source "$script_dir/seed_manifest.sh"
 scratch=$(mktemp -d -t nauqtype-provenance-tests-XXXXXX)
@@ -46,7 +50,8 @@ seal_checksums() {
 
 make_fixture() {
     local root=$1 path key value scalar comma hash inventory_hash tree_hash flags_hash
-    mkdir -p "$root/scripts" "$root/selfhost" "$root/stdlib" "$root/bootstrap/seed/source-snapshot/selfhost"
+    mkdir -p "$root/scripts" "$root/selfhost" "$root/stdlib" "$root/examples" "$root/bootstrap/seed/source-snapshot/selfhost"
+    cp --preserve=mode -- "$repo_root/examples/generic_reuse.nq" "$repo_root/examples/generic_values.nq" "$root/examples/"
     prov_producer_scripts > "$scratch/scripts"
     printf 'scripts/check_seed_bootstrap.sh\n' >> "$scratch/scripts"
     while IFS= read -r path; do cp --preserve=mode "$repo_root/$path" "$root/$path"; done < "$scratch/scripts"
@@ -286,11 +291,31 @@ check_seed_phases() {
     assert_overall ok complete 0
     for phase in historical_compare stage2_emit current_compare; do assert_phase "$phase" ok 0; done
     assert_equal "$(grep -c '^compare$' "$NQ_TEST_LOG")" 2 'timed direct comparison edges'
+    assert_equal "$(grep -c '^generic-smoke$' "$NQ_TEST_LOG")" 1 'seed-rebuilt generic smoke executes once'
     grep -qx 'historical_c_equal=true' "$root/build/seed/seed-bootstrap-proof-v1.txt"
     grep -qx 'current_c_equal=true' "$root/build/seed/seed-bootstrap-proof-v1.txt"
     grep -Fqx '  "wall_seconds_resolution": 1,' "$evidence"
     grep -Eq '^  "inputs_sha256": "[0-9a-f]{64}",$' "$evidence"
     printf 'PASS seed phase success and original proof receipt\n'
+
+    if NQ_TEST_PHASE=generic_composition NQ_TEST_PHASE_ACTION=fail bash "$root/scripts/check_seed_bootstrap.sh" --reuse-stage1 > "$log" 2>&1; then code=0; else code=$?; fi
+    assert_equal "$code" 7 'generic smoke failure is preserved'
+    assert_overall failed generic_composition 7
+    [[ ! -e "$root/build/seed/seed-bootstrap-proof-v1.txt" ]]
+    if NQ_TEST_PHASE=generic_composition NQ_TEST_PHASE_ACTION=mutate-generic bash "$root/scripts/check_seed_bootstrap.sh" --reuse-stage1 > "$log" 2>&1; then code=0; else code=$?; fi
+    assert_equal "$code" 1 'captured generic input mutation is rejected'
+    assert_overall failed generic_composition 1
+    [[ ! -e "$root/build/seed/seed-bootstrap-proof-v1.txt" ]]
+    printf 'PASS generic smoke failure and captured-input mutation invalidate receipt\n'
+
+    for pattern in generic-manifest generic-lock original-generic-manifest original-generic-lock; do
+        if NQ_TEST_PHASE=generic_composition NQ_TEST_PHASE_ACTION="$pattern" bash "$root/scripts/check_seed_bootstrap.sh" --reuse-stage1 > "$log" 2>&1; then code=0; else code=$?; fi
+        assert_equal "$code" 1 "generic loading metadata rejected: $pattern"
+        assert_overall failed generic_composition 1
+        [[ ! -e "$root/build/seed/seed-bootstrap-proof-v1.txt" ]]
+        rm -f -- "$root/examples/nauqtype.workspace.json" "$root/examples/nauqtype.workspace.lock.json"
+    done
+    printf 'PASS original and captured generic loading metadata invalidate receipt\n'
 
     for index in 0 1 2; do
         phase=(historical_compare stage2_emit current_compare)
@@ -373,7 +398,12 @@ bash "$script_dir/check_fast_concurrent.sh"
 make_fixture "$fixture"
 export NQ_TEST_ROOT="$fixture"
 seed_verify "$fixture"
-printf 'PASS canonical synthetic seed v2\n'
+prov_cc_identity "$CC" "$scratch/current-cc"
+prov_cc_gc_profile_select "$CC" "$scratch/current-cc" "$scratch/current-profile"
+assert_equal "$(< "$scratch/current-profile")" gcc-20-32768 'current synthetic compiler profile'
+prov_argv_materialize "$scratch/current-stage1-args" 10 prov_stage1_args gcc-20-32768
+seed_flags_verify "$scratch/current-stage1-args"
+printf 'PASS canonical synthetic seed v2 keeps historical eight flags while current producer selects ten\n'
 
 # Canonical bytes, not a permissive JSON extractor or checksum-line consumer.
 cp "$fixture/bootstrap/seed/manifest.json" "$scratch/manifest-good"
@@ -469,6 +499,13 @@ cmp -s "$scratch/host-options" "$scratch/expected-options"
 printf 'PASS exact binary file framing and host_c proof option policy\n'
 
 : > "$NQ_TEST_LOG"
+reject 'parent child profile mismatch' env NQ_BOOTSTRAP_CC_GC_PROFILE=portable bash "$fixture/scripts/bootstrap_seed.sh"
+reject 'inherited stage1 profile mismatch' env NQ_BOOTSTRAP_CC_GC_PROFILE=portable bash "$fixture/scripts/build_stage1_from_seed.sh"
+[[ ! -s "$NQ_TEST_LOG" ]]
+reject 'seed argv persistent mutation prevents output publication' env NQ_TEST_MUTATION=argv-seed \
+    bash "$fixture/scripts/bootstrap_seed.sh" "$scratch/mutated-seed"
+[[ ! -e "$scratch/mutated-seed" ]]
+: > "$NQ_TEST_LOG"
 bash "$fixture/scripts/build_stage1_from_seed.sh" >/dev/null
 bash "$fixture/scripts/stage1_cache.sh" require
 cmp -s "$fixture/selfhost/main.nq" "$fixture/build/seed/stage1.c"
@@ -482,6 +519,7 @@ for path in build/seed/stage1.c selfhost/build/nauqc build/seed/nauqc-seed build
 done
 reject 'CC target changed' env NQ_TEST_TARGET=other-linux bash "$fixture/scripts/stage1_cache.sh" check
 reject 'invalid CC target' env NQ_TEST_TARGET=$'bad\ntarget' bash "$fixture/scripts/stage1_cache.sh" check
+reject 'CC capability profile changed' env NQ_TEST_CC_PROFILE=portable bash "$fixture/scripts/stage1_cache.sh" check
 cp "$CC" "$scratch/cc-other"
 chmod +x "$scratch/cc-other"
 reject 'CC path changed' env CC="$scratch/cc-other" bash "$fixture/scripts/stage1_cache.sh" check
@@ -489,6 +527,16 @@ printf '\n# changed CC bytes\n' >> "$CC"
 reject 'CC bytes changed' bash "$fixture/scripts/stage1_cache.sh" check
 cp "$repo_root/tests/fixtures/m54_10_provenance/cc.sh" "$CC"
 chmod +x "$CC"
+bash "$fixture/scripts/stage1_cache.sh" require
+
+stage1_before=$(prov_sha256 "$fixture/build/seed/stage1.c")
+driver_before=$(prov_sha256 "$fixture/selfhost/build/nauqc")
+reject 'stage1 argv persistent mutation prevents blessed publication' env NQ_TEST_MUTATION=argv-stage1 \
+    bash "$fixture/scripts/build_stage1_from_seed.sh"
+[[ ! -e "$fixture/build/seed/stage1-cache-v2.txt" ]]
+assert_equal "$(prov_sha256 "$fixture/build/seed/stage1.c")" "$stage1_before" 'argv mutation keeps prior stage1 C'
+assert_equal "$(prov_sha256 "$fixture/selfhost/build/nauqc")" "$driver_before" 'argv mutation keeps prior driver'
+bash "$fixture/scripts/build_stage1_from_seed.sh" >/dev/null
 bash "$fixture/scripts/stage1_cache.sh" require
 
 # Rebind the outer receipt hash: strict shape and recomputation must still win.

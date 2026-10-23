@@ -1,0 +1,17 @@
+// The concrete name is longer than T; reporting must use these original bytes.
+fn m56_wrong_body<T>(value: T) -> i32 {
+    let padding = "do not report elaborated offsets";
+    let invalid: bool = value;
+    return str_len(padding);
+}
+
+fn main() -> i32
+audit {
+    intent("Never execute an invalid concrete generic body");
+    mutates();
+    effects(print);
+}
+{
+    print_line("M56_SHOULD_NOT_RUN");
+    return m56_wrong_body::<i32>(7);
+}

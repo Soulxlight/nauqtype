@@ -1,0 +1,26 @@
+fn forward(value: result<i32, str>) -> result<i32, str>
+audit {
+    intent("Forward a result value with a concrete string error");
+    mutates();
+    effects();
+    propagates(str);
+}
+{
+    let item = value?;
+    return Ok(item);
+}
+
+fn main() -> i32 {
+    let value = forward(Ok(7));
+    match value {
+        Ok(item) => {
+            if item != 7 {
+                return 1;
+            }
+        },
+        Err(_) => {
+            return 2;
+        },
+    }
+    return 0;
+}

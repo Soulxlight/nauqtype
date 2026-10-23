@@ -1,0 +1,53 @@
+type Tag {
+    value: bool,
+}
+
+pub type Envelope<T> {
+    value: T,
+}
+
+pub enum Imported<T> {
+    Loaded(T),
+    Vacant,
+}
+
+pub fn echo<T>(value: T) -> T
+audit {
+    intent("Return the caller-owned concrete nominal value");
+    mutates();
+    effects();
+}
+{
+    return value;
+}
+
+pub fn pack<T>(value: T) -> Envelope<T>
+audit {
+    intent("Retain the caller nominal origin inside a definition-owned product");
+    mutates();
+    effects();
+}
+{
+    return Envelope::<T> { value: value };
+}
+
+pub fn select<T>(value: T) -> Imported<T>
+audit {
+    intent("Retain the caller nominal origin inside a definition-owned enum");
+    mutates();
+    effects();
+}
+{
+    return Loaded::<T>(value);
+}
+
+pub fn local_unchanged() -> bool
+audit {
+    intent("Keep unrelated definition-module name lookup unchanged");
+    mutates();
+    effects();
+}
+{
+    let local = Tag { value: true };
+    return local.value;
+}

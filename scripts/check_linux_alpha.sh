@@ -4,6 +4,8 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 cd "$repo_root"
+source "$script_dir/provenance.sh"
+source "$script_dir/release_generic_smoke.sh"
 
 usage() {
     cat <<'EOF'
@@ -63,6 +65,9 @@ trap 'rm -rf "$smoke_root"' EXIT
 cp -R build/linux-release/nauqtype "$smoke_root/nauqtype"
 mkdir -p "$smoke_root/project"
 cp examples/hello.nq "$smoke_root/project/hello.nq"
+release_generic_smoke_pin "$repo_root" "$smoke_root/generic-paths" "$smoke_root/generic-digest"
+generic_digest=$(< "$smoke_root/generic-digest")
+release_generic_smoke_copy "$repo_root" "$smoke_root/project" "$smoke_root/generic-paths" "$generic_digest"
 cp tests/fixtures/m54_runtime.nq "$smoke_root/project/m54_runtime.nq"
 cp tests/fixtures/m55_process/runtime.nq "$smoke_root/project/m55_process.nq"
 cp -R tests/fixtures/m54_library_dependency "$smoke_root/library-project"
@@ -75,6 +80,13 @@ rm -rf "$smoke_root/library-project/src/app/build"
     "$smoke_root/nauqtype/bin/nauqc" run m54_runtime.nq
     "$smoke_root/nauqtype/bin/nauqc" check m55_process.nq
     "$smoke_root/nauqtype/bin/nauqc" run m55_process.nq
+    release_generic_smoke_check "$repo_root" "$smoke_root/project" "$smoke_root/generic-paths" "$generic_digest"
+    "$smoke_root/nauqtype/bin/nauqc" check examples/generic_reuse.nq
+    "$smoke_root/nauqtype/bin/nauqc" run examples/generic_reuse.nq > generic.stdout 2> generic.stderr
+    printf 'generic reuse: ready\n' > generic.expected
+    cmp -s generic.expected generic.stdout
+    test ! -s generic.stderr
+    release_generic_smoke_check "$repo_root" "$smoke_root/project" "$smoke_root/generic-paths" "$generic_digest"
 )
 (
     cd "$smoke_root/library-project"
@@ -85,3 +97,4 @@ rm -rf "$smoke_root/library-project/src/app/build"
     "$smoke_root/nauqtype/bin/nauqc" build src/app/main.nq -o build/m54-library
     test "$("$smoke_root/nauqtype/bin/nauqc" run src/app/main.nq)" = "m54 library ready"
 )
+release_generic_smoke_check "$repo_root" "$smoke_root/project" "$smoke_root/generic-paths" "$generic_digest"

@@ -13,6 +13,7 @@ or a copied-release manifest.
 | Change the compiler | [AGENTS](../AGENTS.md), [coordination](../NAUQTYPE_COORDINATION.md) | [architecture](../ARCHITECTURE.md), [compiler map](COMPILER_MAP.md), [refactor plan](REFACTOR_PLAN.md) |
 | Work on R2/R3 | [Execution contract](R2_R3_CONTRACT.md), [measurements](R2_R3_RESULTS.md) | [Performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [verification tiers](../VERIFICATION.md) |
 | Work on R4-R6 | [Execution contract](R4_R6_CONTRACT.md), [compatibility matrix](R4_R6_MATRIX.txt) | [Focused results](R4_R6_RESULTS.md), [refactor scope/retention decisions](REFACTOR_PLAN.md), [verification tiers](../VERIFICATION.md) |
+| Work on M56 | [Explicit reuse contract](M56_CONTRACT.md), [host memory boundary](M56_GCC_MEMORY_CONTRACT.md) | [Spec](../SPEC.md), [teaching corpus](../TEACHING_CORPUS.md), [roadmap acceptance](../ROADMAP.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |
@@ -25,15 +26,18 @@ The active compiler, test runner, and proof runner are Nauqtype-owned. The
 host-C seed, narrow native runtime, and shell build/release integration remain
 intentional. Python is archived reference code, not the active path.
 
-M55 is complete in recorded Linux evidence. PRE-M56 iteration/gate efficiency
-is still first priority; M56-M61 are not complete. This is an organizational
+M55 and required PRE-M56 efficiency goals have recorded Linux acceptance. M56
+explicit generic reuse is the current candidate, not a stable-release claim.
+Generic-aware evidence export remains a versioned follow-up; legacy formats
+reject generic graphs. M57-M61 are not complete. This is an organizational
 alpha, not a stable or feature-complete application language. Current sequencing
 lives in [ROADMAP](../ROADMAP.md#current-position-and-resumption); open actions
 live in [TODO](../TODO.md#current-refactor-checkpoint).
 
-E1 and P2 mapping have candidate-specific executable evidence. P2's measured
+Historical E1 and P2 mapping have candidate-specific executable evidence. P2's measured
 comparisons improve about 25-26x, but its one cold complete gate was only
-1.40% faster than P0. The broader >=50% goal is open. See
+1.40% faster than P0. The subsequent P1-P4 checkpoint met its required goals;
+the10-minute cold working target remains unmet. See
 [Performance Mapping](../PERFORMANCE_MAPPING.md); this documentation refactor
 alone added no performance result. R2/R3's subsequent scan/table implementation
 has a separate [execution contract](R2_R3_CONTRACT.md); current acceptance

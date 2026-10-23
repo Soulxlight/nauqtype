@@ -8,6 +8,44 @@ The frozen stage0 reference includes statement-form `while`. The active stage1 c
 
 The live-in-the-language loop surface now includes statement-form `while`, list-only `for name in list_expr { ... }`, and minimal nearest-loop `break;` / `continue;`.
 
+The M56 active-stage1 candidate extends this historical surface with explicit
+function/product/enum generics. Its exact contract is
+`docs/M56_CONTRACT.md`; current acceptance is recorded in ROADMAP/TODO, not
+implied by this specification. No source-generics support is added to the
+archived Python bootstrap.
+
+## Explicit Generic Reuse
+
+Declare ordered distinct type parameters with `fn identity<T>(value: T) -> T`,
+`type Parcel<T> { value: T, }`, or `enum Choice<T, E> { Value(T), Failure(E), }`.
+Every use supplies the complete argument vector: `identity::<i32>(7)`,
+`Parcel<i32>` in annotations, `Parcel::<i32> { value: 7 }` in values, and
+`Value::<i32, str>(7)` in constructor calls and patterns. Zero-payload variants
+use `Empty::<i32>` without parentheses. Direct imported aliases still identify
+the declaration origin; `alias::Tag` is allowed inside explicit type arguments,
+not as a new general qualified annotation head.
+
+Type parameters are not values. No defaults, inference, traits, methods,
+constraints, generic constants or coercions are introduced. Borrow arguments
+remain explicit (`ref value` / `mutref value`), and references cannot be stored
+or supplied as generic type arguments. Generic `main` is rejected. All
+templates receive structural/name checks, including unused ones; operation and
+ownership compatibility are checked for demanded concrete instances only.
+
+Instances are deterministic and declaration-owned. Same-instance recursion is
+allowed; polymorphic recursion and recursive data layouts, including container
+and nongeneric bridges, are rejected. Depth32,256 distinct instances, and
+serialized-width/token/text/map bounds fail closed as detailed in the contract.
+Existing concrete type/borrow/audit diagnostics retain their families and map
+back to original source with instance context. `propagates(E)` substitutes only
+when E fits the existing concrete error-name atom; no audit grammar is widened.
+
+`check`, `emit-c`, `build`, and `run` use concrete specializations. Existing
+facts/review/diff/change/policy/rename formats reject a graph containing generics,
+even unused templates (`NQ-GENERIC-008`), until a versioned source/instance
+evidence contract is implemented. This is foundation support, not generic
+evidence parity or a stable generic library promise.
+
 ## Language Philosophy
 
 Nauqtype is designed for AI-authored code under human supervision.
@@ -762,7 +800,7 @@ These are warnings, not hard errors.
 - traits
 - loop families beyond bootstrap `while` and list-only `for`
 - labeled or valued `break` / `continue`
-- user-defined generics
+- inference, constraints and other generic facilities beyond explicit M56 reuse
 - broader constant expressions beyond the v1 pure literal/operator subset
 - exceptions
 - async

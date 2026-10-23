@@ -140,6 +140,13 @@ make_fixture() {
 }
 
 printf 'M54.10 attestation UNIT/STUB gate: no compiler, seed, cache derivation, or release proof is run\n'
+portable_probe() {
+    local tool=$1 code=0
+    "$tool" -Q --help=params > "$scratch/probe.stdout" 2> "$scratch/probe.stderr" || code=$?
+    [[ "$code" == 1 && ! -s "$scratch/probe.stdout" && ! -s "$scratch/probe.stderr" ]]
+}
+check accept 'bootstrap stub models clean unsupported capability exit 1' portable_probe "$CC"
+check accept 'proof stub models clean unsupported capability exit 1' portable_probe "$scratch/tools/cc"
 base="$scratch/committed"
 make_fixture "$base" commit
 at exercise "$base" > "$scratch/setup.log" 2>&1
