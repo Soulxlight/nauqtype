@@ -1090,6 +1090,12 @@ planning bullets as scheduled:
 
 ### M57: Collections And Data Interchange
 
+Planned 2026-10-31 as four sub-milestones in the [M57 plan](docs/M57_PLAN.md):
+M57.1 library-enabling core (field places, list replace/pop, integer
+conversions, comparison and assignment repairs), M57.2 in-repo standard
+library layout, M57.3 key-specialized maps and sets, M57.4 arena JSON. The
+scope as scheduled:
+
 - build reusable map/set facilities with an explicit checked key strategy,
   using M56 generics and reported through M56.1 evidence
 - reusable modules (collections, JSON, and later ones) live in an in-repo

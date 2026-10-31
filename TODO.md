@@ -10,18 +10,27 @@
   [contract](docs/M56_2_CONTRACT.md) (approved 2026-10-31, revision 3)
 - [x] M56.2: implementation, focused checks, trailing audit, milestone gate
   (2026-10-31; [evidence](AUDIT_REMEDIATION.md#m562-scalar-f64-close))
-- [ ] M57 planning, including the in-repo standard library layout
+- [x] M57 planning: [plan](docs/M57_PLAN.md) splits M57 into M57.1-M57.4
+  (2026-10-31)
+- [x] M57.1 library-enabling core: Gate A review of the
+  [contract](docs/M57_1_CONTRACT.md) (approved 2026-10-31, revision 4)
+- [ ] M57.1: implementation, focused checks, ownership-class trailing
+  audits, milestone gate
 - [ ] Triage correctness defects found while writing the verified tutorial
-  (2026-10-31; each is pinned by a tutorial snippet). These contradict SPEC:
+  (2026-10-31; each is pinned by a tutorial snippet). These contradict SPEC
+  and are scheduled in M57.1:
   - assignment to a plain `let` binding is accepted;
   - a statement `match` missing a variant compiles and falls off the end of
     the function;
-  - `str` `<` passes `check` and then fails in C compilation.
+  - `str` `<` passes `check` and then fails in C compilation; enum `==`
+    does the same (found in M57 planning).
 
   Also: parse errors are printed four times; `try { f()? + g()? }` reports
   NQ-TYPE-042 instead of an NQ-TRY code; a missing workspace lock reports
   NQ-IO-001 without a location; `nauqc run <src> -o <relative>` builds but
-  fails to start the program.
+  fails to start the program; non-canonical float literals (`.5`, `1.`,
+  `1e5`) report a generic stage1-limitation message instead of a focused
+  diagnostic; `help` hints appear only with `--diagnostics json`.
 
 ## Current Performance Checkpoint
 
