@@ -8,8 +8,8 @@ that have since shipped are historical, not current limitations.
 - Generic inference/defaults/constraints, generic constants, higher-kinded
   parameters, and generic-aware `review-diff`/`change-report`/`policy-check`/
   refactor exports. M56's explicit function/product/enum foundation is
-  specified in `docs/M56_CONTRACT.md`; generic-aware `facts`/`review` are
-  scheduled as M56.1.
+  specified in `docs/M56_CONTRACT.md`; generic-aware `facts`/`review` v5 are
+  specified in `docs/M56_1_CONTRACT.md`.
 - Numeric types beyond `i32`/`i64`: scalar `f64` is scheduled as M56.2;
   `f32`, unsigned integers, and `char` remain deferred.
 - Methods and `impl` blocks

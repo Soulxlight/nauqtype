@@ -1,0 +1,225 @@
+pub type Assoc<K, V> {
+    keys: list<K>,
+    values: list<V>,
+}
+
+pub type Bag<T> {
+    items: list<T>,
+}
+
+pub enum Maybe<T> {
+    Found(T),
+    Missing,
+}
+
+pub type Failure<T> {
+    reason: T,
+}
+
+pub type Entry {
+    name: str,
+    count: i32,
+}
+
+pub enum Mode {
+    Fast,
+    Slow,
+}
+
+fn note<T>(value: T) -> T {
+    return value;
+}
+
+fn index_of<K>(keys: ref list<K>, key: K) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref keys) {
+        match list_get(ref keys, index) {
+            Some(candidate) => {
+                if candidate == key {
+                    return index;
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+pub fn count<T>(items: ref list<T>) -> i32
+audit {
+    intent("Count the items of any checked list instance");
+    mutates();
+    effects();
+}
+{
+    return list_len(ref items);
+}
+
+pub fn assoc_new<K, V>() -> Assoc<K, V>
+audit {
+    intent("Build an empty association list");
+    mutates();
+    effects();
+}
+{
+    let keys: list<K> = list();
+    let values: list<V> = list();
+    return Assoc::<K, V> { keys: keys, values: values };
+}
+
+fn copy_all<T>(items: ref list<T>) -> list<T> {
+    let mut copied: list<T> = list();
+    let mut index = 0;
+    while index < list_len(ref items) {
+        match list_get(ref items, index) {
+            Some(item) => {
+                list_push(mutref copied, item);
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return copied;
+}
+
+pub fn put<K, V>(assoc: mutref Assoc<K, V>, key: K, value: V) -> unit
+audit {
+    intent("Append one key and value to an association list");
+    mutates(assoc);
+    effects();
+}
+{
+    let before = note::<i32>(list_len(ref assoc.keys));
+    let mut keys = copy_all::<K>(ref assoc.keys);
+    let mut values = copy_all::<V>(ref assoc.values);
+    list_push(mutref keys, key);
+    list_push(mutref values, value);
+    assoc = Assoc::<K, V> { keys: keys, values: values };
+}
+
+pub fn get<K, V>(assoc: ref Assoc<K, V>, key: K) -> Maybe<V>
+audit {
+    intent("Look up the value stored for one key");
+    mutates();
+    effects();
+}
+{
+    let index = index_of::<K>(ref assoc.keys, key);
+    if index < 0 {
+        return Missing::<V>;
+    }
+    match list_get(ref assoc.values, index) {
+        Some(value) => {
+            return Found::<V>(value);
+        },
+        None => {
+            return Missing::<V>;
+        },
+    }
+}
+
+pub fn assoc_len<K, V>(assoc: ref Assoc<K, V>) -> i32
+audit {
+    intent("Count the keys of an association list");
+    mutates();
+    effects();
+}
+{
+    return count::<K>(ref assoc.keys);
+}
+
+pub fn bag_new<T>() -> Bag<T>
+audit {
+    intent("Build an empty bag");
+    mutates();
+    effects();
+}
+{
+    let items: list<T> = list();
+    return Bag::<T> { items: items };
+}
+
+pub fn bag_of<T>(item: T) -> Bag<T>
+audit {
+    intent("Build a bag holding one item");
+    mutates();
+    effects();
+}
+{
+    let mut items: list<T> = list();
+    list_push(mutref items, item);
+    return Bag::<T> { items: items };
+}
+
+pub fn bag_clear<T>(bag: mutref Bag<T>) -> unit
+audit {
+    intent("Replace a borrowed bag with an empty one");
+    mutates(bag);
+    effects();
+}
+{
+    let items: list<T> = list();
+    bag = Bag::<T> { items: items };
+}
+
+pub fn bag_len<T>(bag: ref Bag<T>) -> i32
+audit {
+    intent("Count the items of a bag");
+    mutates();
+    effects();
+}
+{
+    return count::<T>(ref bag.items);
+}
+
+pub fn pair<A, B>(first: ref A, second: ref B) -> i32
+audit {
+    intent("Accept two borrowed values of possibly equal instance types");
+    mutates();
+    effects();
+}
+{
+    return 2;
+}
+
+pub fn forward<T, E>(value: result<T, E>) -> result<T, E>
+audit {
+    intent("Forward a result and propagate its concrete error type");
+    mutates();
+    effects();
+    propagates(E);
+}
+{
+    let item = value?;
+    return Ok(item);
+}
+
+pub fn unused_identity<T>(value: T) -> T
+audit {
+    intent("Remain a declared but never instantiated public template");
+    mutates();
+    effects();
+}
+{
+    return value;
+}
+
+pub fn mode_weight(mode: Mode) -> i32
+audit {
+    intent("Map a nongeneric enum in a generic graph");
+    mutates();
+    effects();
+}
+{
+    match mode {
+        Fast => {
+            return 1;
+        },
+        Slow => {
+            return 2;
+        },
+    }
+}

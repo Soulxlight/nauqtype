@@ -735,3 +735,64 @@ stable release, publication or downstream pin/API freeze is claimed. Prior
 P1-P4 measurements and sealed evidence remain unchanged. The tested tree is
 retained for strict verification; only allowlisted completion documentation
 changes afterward, bound to the final commit by `close`/`verify-close`.
+
+## M56.1 Generic-Aware Evidence Close
+
+M56.1's `facts --format v5` and `review --format v5` pass on frozen candidate
+tree `b11e264fb67b24806bbac5ecf08881a586bc7052`, 2026-10-31, based on
+`bc0d0b4b38af463404f4434cbd4336c5149da87b`. Native Ubuntu 24.04/ext4 WSL2,
+GCC 13.3.0 and unchanged serial milestone budgets are the acceptance
+boundary. Compiler lead: Claude Code; implementation by lead-directed
+workers in three slices (metadata/renderer, CLI/schemas, emitters/fixture).
+
+`docs/M56_1_CONTRACT.md` (Gate A revision 3, `gpt-5.6-sol` xhigh) and D066
+record the formats. Templates are reported once as declared; checked
+instances carry rendered type arguments, template identity and
+original-source application sites; generated names never appear. Facts and
+review v1-v4, review-diff, change-report, policy-check and refactor-rename
+still reject generic graphs with NQ-GENERIC-008. The nongeneric bytewise
+oracle covers every input with a facts v4 or review v4 golden. NQ-GENERIC-005
+is exercised through the CLI; 009 and 010 are reachable only in-process and
+are tested there.
+
+One routine trailing audit (`gpt-5.6-sol` xhigh, static review of the frozen
+tree) first failed: template records were shape-checked but not
+authenticated, so a missing or altered record for an unused template would
+not fail. The repair re-runs the elaborator's declaration scan over the
+original text and requires exactly one matching template record per generic
+declaration (NQ-GENERIC-009 otherwise), with five corruption negatives. It
+also fixed stale schema-profile wording and a vacuous-pass path in the
+oracle. The re-review passed with no findings. The check shares the
+elaborator's scanner, so it authenticates records against source, not the
+scanner against itself.
+
+The bootstrap seed was not promoted: no compiler-source language feature
+changed. The seed gate therefore re-emits the unchanged M56 seed through its
+historical-snapshot path, which is the main reason the seed phase took
+longer than at M56.
+
+| Fresh Gate Phase | Seconds |
+| --- | ---: |
+| Stage1 driver | 291 |
+| Seed bootstrap | 329 |
+| Proof | 620 |
+| Linux alpha | 9 |
+| Stress leg | 3 |
+| Owned tests | 224 |
+| Ownership sanitizers | 6 |
+
+`scripts/check_milestone.sh` exits 0 with empty stderr. GNU time records
+1497 s wall, 714300 KiB peak RSS, within the checked-in ceilings.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `52646fd1b9bb538f8c0bca4caa8187b8061032190a18b3db1d3e7c0b65cc1eab` |
+| Performance summary | `aa390e936edd293fc192f95f96a219bdd8df6127a7736e873cfbfae90f029da7` |
+| Proof summary | `fe4b243d4b71942742f0febf18c1241431323ec88fb2b7c4b64b9b15df330644` |
+| Seed manifest (unchanged) | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Receipts are retained in the native gate clone
+(`~/nauqtype-work/m56-1-gate/build/verification/`). Only these allowlisted
+completion documents changed after the gate, bound to the final commit by
+`close`/`verify-close`. No generic-aware diff/change/policy/rename, M56.2 or
+M57 work, stable release or publication is claimed.

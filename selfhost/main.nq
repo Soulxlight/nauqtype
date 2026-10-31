@@ -37,10 +37,12 @@ enum driver_mode {
     driver_facts_v2,
     driver_facts_v3,
     driver_facts_v4,
+    driver_facts_v5,
     driver_review,
     driver_review_v2,
     driver_review_v3,
     driver_review_v4,
+    driver_review_v5,
     driver_review_diff,
     driver_review_diff_v2,
     driver_change_report,
@@ -423,7 +425,7 @@ fn slice_text_without_trailing_cr(text: str, start: i32, end: i32) -> str {
 }
 
 fn usage_text() -> str {
-    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3|v4] | nauqc review <source> [--format v1|v2|v3|v4] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2|v3|v4 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test [--suite <compiler-index|proof-artifacts|workspace-capture|workspace-evidence|integer-policy|allocation-policy|str-join|process-time|schema-profile|driver-fixtures|formatter>] | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
+    return "usage: nauqc check <source> [--diagnostics text|json] | nauqc emit-c <source> [-o <output>] | nauqc facts <source> [--format v1|v2|v3|v4|v5] | nauqc review <source> [--format v1|v2|v3|v4|v5] | nauqc review-diff <before> <after> [--format v1|v2] | nauqc change-report <before> <after> [--policy <policy>] --format v1|v2|v3|v4 | nauqc refactor-rename <source> <stable-id> <new-name> | nauqc policy-check <source> <policy-path> | nauqc fmt [--check] <source> | nauqc build <source> [-o <output>] | nauqc run <source> [-o <output>] | nauqc test [--suite <compiler-index|proof-artifacts|workspace-capture|workspace-evidence|integer-policy|allocation-policy|str-join|process-time|schema-profile|driver-fixtures|formatter>] | nauqc prove | nauqc prove-seed <stage1-c> <stage2-c> | nauqc prove-selfhost | nauqc prove-corpus";
 }
 
 fn build_emit_output_path(source_path: str, explicit_output: str) -> str {
@@ -560,7 +562,10 @@ fn parse_driver_request() -> driver_request {
             if format == "v4" {
                 return make_driver_request(driver_facts_v4, source_path, entry_module, path_dir(source_path), "", "", "");
             }
-            return invalid_request("expected facts format `v1`, `v2`, `v3`, or `v4`");
+            if format == "v5" {
+                return make_driver_request(driver_facts_v5, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            return invalid_request("expected facts format `v1`, `v2`, `v3`, `v4`, or `v5`");
         }
         return make_driver_request(driver_facts, source_path, entry_module, path_dir(source_path), "", "", "");
     }
@@ -592,7 +597,10 @@ fn parse_driver_request() -> driver_request {
             if format == "v4" {
                 return make_driver_request(driver_review_v4, source_path, entry_module, path_dir(source_path), "", "", "");
             }
-            return invalid_request("expected review format `v1`, `v2`, `v3`, or `v4`");
+            if format == "v5" {
+                return make_driver_request(driver_review_v5, source_path, entry_module, path_dir(source_path), "", "", "");
+            }
+            return invalid_request("expected review format `v1`, `v2`, `v3`, `v4`, or `v5`");
         }
         return make_driver_request(driver_review, source_path, entry_module, path_dir(source_path), "", "", "");
     }
@@ -1163,7 +1171,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
 
     let mut contract_functions: list<review_function_fact> = list();
     let mut contract_decls: list<review_decl_entry> = list();
-    if not prepare_loaded_sources(false, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, ref provisional_diags, mutref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
+    if not prepare_loaded_sources(format_version == 5, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, ref provisional_diags, mutref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     assemble_frontend(ref loaded, ref uses, ref items, ref type_refs, ref scopes, ref bindings, ref refs, ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref call_facts, ref pattern_facts, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref sources, entry_module, false, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     if diagnostics_have_errors(ref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
@@ -1182,6 +1190,22 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     if borrow_summary.function_count < checked_summary.function_count {
         eprint_line("stage1 internal error: facts safety pass skipped checked functions");
         return 1;
+    }
+
+    if format_version == 5 {
+        // M56.1: the emitter validates generic metadata, identities, offsets
+        // and bounds before printing; any NQ-GENERIC-005/009/010 leaves stdout empty.
+        let mut v5_diags: list<diag> = list();
+        let v5_summary = emit_workspace_facts_v5(capture, ref dependencies, entry_module, ref loaded, ref sources, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, ref call_facts, mutref v5_diags);
+        if diagnostics_have_errors(ref v5_diags) {
+            emit_all_with_sources(ref v5_diags, ref sources);
+            return 1;
+        }
+        if v5_summary.module_count < 1 {
+            eprint_line("stage1 internal error: facts output has no modules");
+            return 1;
+        }
+        return 0;
     }
 
     let mut summary = make_facts_summary(0, 0, 0, 0);
@@ -1313,7 +1337,7 @@ fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, pol
     return emit_policy_check(capture, ref dependencies, entry_module, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
 }
 
-fn collect_review_ready_project(capture: workspace_capture, captured_sources: ref list<workspace_captured_source>, dependencies: ref list<workspace_locked_dependency>, workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, mutation_mode: i32, direct_mutations: mutref list<review_direct_mutation>, coverage_out: mutref list<review_mutation_coverage>) -> review_summary {
+fn collect_review_ready_project(allow_generics: bool, capture: workspace_capture, captured_sources: ref list<workspace_captured_source>, dependencies: ref list<workspace_locked_dependency>, workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, mutation_mode: i32, direct_mutations: mutref list<review_direct_mutation>, coverage_out: mutref list<review_mutation_coverage>) -> review_summary {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
     let mut scopes: list<body_scope> = list();
@@ -1355,7 +1379,7 @@ fn collect_review_ready_project(capture: workspace_capture, captured_sources: re
     let mut provisional_diags: list<i32> = list();
     load_module_graph(entry_module, capture, ref captured_sources, ref dependencies, entry_module, entry_path, "", mutref seen, mutref loaded, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, mutref provisional_diags, mutref diags);
 
-    if not prepare_loaded_sources(false, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, ref provisional_diags, mutref diags) { return make_review_summary(0, 0, 0, 1); }
+    if not prepare_loaded_sources(allow_generics, mutref sources, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref stmt_facts, ref provisional_diags, mutref diags) { return make_review_summary(0, 0, 0, 1); }
     assemble_frontend(ref loaded, ref uses, ref items, ref type_refs, ref scopes, ref bindings, ref refs, ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref call_facts, ref pattern_facts, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref sources, entry_module, false, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     if diagnostics_have_errors(ref diags) { return make_review_summary(0, 0, 0, 1); }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
@@ -1377,7 +1401,7 @@ fn collect_review_ready_project(capture: workspace_capture, captured_sources: re
     if mutation_mode == 3 {
         collect_review_direct_mutations(ref checked_bindings, ref checked_params, ref checked_statements, mutref direct_mutations, mutref diags);
     }
-    if mutation_mode == 4 { direct_mutations = contract_mutations; }
+    if mutation_mode == 4 or mutation_mode == 5 { direct_mutations = contract_mutations; }
     coverage_out = contract_coverage;
     return checked_contract_summary;
 }
@@ -1400,10 +1424,19 @@ fn run_review(workspace_root: str, entry_module: str, entry_path: str, format_ve
     let mut diags: list<diag> = list();
     let mut direct_mutations: list<review_direct_mutation> = list();
     let mut mutation_coverage: list<review_mutation_coverage> = list();
-    let contracts = collect_review_ready_project(capture, ref captured_sources, ref dependencies, workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags, format_version, mutref direct_mutations, mutref mutation_coverage);
+    let contracts = collect_review_ready_project(format_version == 5, capture, ref captured_sources, ref dependencies, workspace_root, entry_module, entry_path, mutref sources, mutref uses, mutref items, mutref functions, mutref variants, mutref params, mutref assignments, mutref calls, mutref locals, mutref contract_functions, mutref contract_decls, mutref diags, format_version, mutref direct_mutations, mutref mutation_coverage);
     emit_all_with_sources(ref diags, ref sources);
     if diagnostics_have_errors(ref diags) or contracts.error_count > 0 {
         return 1;
+    }
+    if format_version == 5 {
+        let mut v5_diags: list<diag> = list();
+        let v5_summary = emit_review_v5(entry_module, ref sources, ref contract_functions, ref contract_decls, contracts, ref uses, ref items, ref variants, ref functions, ref params, ref assignments, ref calls, ref locals, ref direct_mutations, ref mutation_coverage, mutref v5_diags);
+        if diagnostics_have_errors(ref v5_diags) or v5_summary.error_count > 0 {
+            emit_all_with_sources(ref v5_diags, ref sources);
+            return 1;
+        }
+        return 0;
     }
     let mut summary = make_review_summary(0, 0, 0, 1);
     if format_version == 4 {
@@ -1476,8 +1509,8 @@ fn run_review_diff(before_path: str, after_path: str, use_v2: bool) -> i32 {
     let mut after_captured_sources: list<workspace_captured_source> = list();
     let mut after_dependencies: list<workspace_locked_dependency> = list();
     let after_capture = capture_driver_workspace(after_workspace, after_module, after_path, mutref after_captured_sources, mutref after_dependencies);
-    let before_ok = collect_review_ready_project(before_capture, ref before_captured_sources, ref before_dependencies, before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
-    let after_ok = collect_review_ready_project(after_capture, ref after_captured_sources, ref after_dependencies, after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let before_ok = collect_review_ready_project(false, before_capture, ref before_captured_sources, ref before_dependencies, before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let after_ok = collect_review_ready_project(false, after_capture, ref after_captured_sources, ref after_dependencies, after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
     if before_ok.error_count > 0 { return emit_checked_evidence_error("review-diff", format_version, "before", ref before_diags); }
@@ -1537,8 +1570,8 @@ fn run_change_report(before_path: str, after_path: str, policy_path: str, format
     let mut after_captured_sources: list<workspace_captured_source> = list();
     let mut after_dependencies: list<workspace_locked_dependency> = list();
     let after_capture = capture_driver_workspace(after_workspace, after_module, after_path, mutref after_captured_sources, mutref after_dependencies);
-    let before_ok = collect_review_ready_project(before_capture, ref before_captured_sources, ref before_dependencies, before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
-    let after_ok = collect_review_ready_project(after_capture, ref after_captured_sources, ref after_dependencies, after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let before_ok = collect_review_ready_project(false, before_capture, ref before_captured_sources, ref before_dependencies, before_workspace, before_module, before_path, mutref before_sources, mutref before_uses, mutref before_items, mutref before_functions, mutref before_variants, mutref before_params, mutref before_assignments, mutref before_calls, mutref before_locals, mutref before_contract_functions, mutref before_contract_decls, mutref before_diags, 0, mutref unused_mutations, mutref unused_coverage);
+    let after_ok = collect_review_ready_project(false, after_capture, ref after_captured_sources, ref after_dependencies, after_workspace, after_module, after_path, mutref after_sources, mutref after_uses, mutref after_items, mutref after_functions, mutref after_variants, mutref after_params, mutref after_assignments, mutref after_calls, mutref after_locals, mutref after_contract_functions, mutref after_contract_decls, mutref after_diags, 0, mutref unused_mutations, mutref unused_coverage);
     emit_all_with_sources(ref before_diags, ref before_sources);
     emit_all_with_sources(ref after_diags, ref after_sources);
     if before_ok.error_count > 0 { return emit_checked_evidence_error("change-report", format_version, "before", ref before_diags); }
@@ -1727,6 +1760,9 @@ fn dispatch_driver_request(request: driver_request) -> i32 {
         driver_facts_v4 => {
             return run_facts(request.workspace_root, request.entry_module, request.entry_path, 4);
         },
+        driver_facts_v5 => {
+            return run_facts(request.workspace_root, request.entry_module, request.entry_path, 5);
+        },
         driver_review => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, 1);
         },
@@ -1738,6 +1774,9 @@ fn dispatch_driver_request(request: driver_request) -> i32 {
         },
         driver_review_v4 => {
             return run_review(request.workspace_root, request.entry_module, request.entry_path, 4);
+        },
+        driver_review_v5 => {
+            return run_review(request.workspace_root, request.entry_module, request.entry_path, 5);
         },
         driver_review_diff => {
             return run_review_diff(request.entry_path, request.output_path, false);

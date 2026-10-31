@@ -3,14 +3,13 @@
 ## Current Position And Resumption
 
 Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
-complete. Published `main` is `e34d459`. Complete through M56 explicit
-generic reuse, including the PRE-M56 P1-P4 performance checkpoint (full
-milestone gate about 19 minutes; the 10-minute cold working target remains
-unmet and open). Evidence for each milestone is in
+complete. Complete through M56.1 generic-aware facts/review v5, including
+M56 explicit generic reuse and the PRE-M56 P1-P4 performance checkpoint (full
+milestone gate about 25 minutes at M56.1; the 10-minute cold working target
+remains unmet and open). Evidence for each milestone is in
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) and its contract documents.
 
-Next: M56.1 generic-aware facts/review, then M56.2 scalar `f64`, then
-M57-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+Next: M56.2 scalar `f64`, then M57-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -1046,10 +1045,11 @@ Status: complete.
 
 ### M56.1: Generic-Aware Facts And Review
 
-Scheduled 2026-10-30 by the compiler lead with owner approval. Only the
-sequencing is approved; the bullets below are planning scope. The binding
-terms are the [contract](docs/M56_1_CONTRACT.md), which passed Gate A on
-2026-10-31.
+Complete 2026-10-31: `facts --format v5` and `review --format v5` per the
+[contract](docs/M56_1_CONTRACT.md) (Gate A 2026-10-31) and
+[D066](DECISIONS.md#d066-generic-aware-facts-and-review-v5). Evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m561-generic-aware-evidence-close).
+The scope as scheduled:
 
 - add new versioned `facts` and `review` formats that report a generic
   template once at its source identity and each concrete instance as a

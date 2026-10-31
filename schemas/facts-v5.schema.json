@@ -1,0 +1,431 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nauqtype.dev/schemas/facts-v5.schema.json",
+  "title": "Nauqtype Captured Workspace Facts v5",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "identity_scheme",
+    "generic_templates",
+    "generic_instances",
+    "workspace",
+    "summary",
+    "dependencies",
+    "modules",
+    "exports",
+    "call_graph"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 5
+    },
+    "command": {
+      "const": "facts"
+    },
+    "identity_scheme": {
+      "const": "nauqtype.workspace.v2"
+    },
+    "generic_templates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/generic_template"
+      }
+    },
+    "generic_instances": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/generic_instance"
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "required": [
+        "name",
+        "entry_module"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "entry_module": {
+          "type": "string"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "modules",
+        "exports",
+        "call_edges",
+        "dependencies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "modules": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "call_edges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependencies": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/export"
+          },
+          {
+            "$ref": "#/$defs/export_template"
+          }
+        ]
+      }
+    },
+    "call_graph": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/call_edge"
+      }
+    }
+  },
+  "$defs": {
+    "dependency": {
+      "type": "object",
+      "required": [
+        "alias",
+        "workspace",
+        "path",
+        "lock_version",
+        "manifest_sha256",
+        "legacy_source_sha256",
+        "source_tree_format",
+        "source_tree_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "lock_version": {
+          "const": "workspace-lock/v2"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "legacy_source_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "source_tree_format": {
+          "const": "nauqtype-source-tree/v2"
+        },
+        "source_tree_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "required": [
+        "id",
+        "workspace",
+        "module",
+        "source_module",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "source_module": {
+          "type": "string"
+        },
+        "evidence": {
+          "const": "checked"
+        }
+      }
+    },
+    "export": {
+      "type": "object",
+      "required": [
+        "id",
+        "legacy_id",
+        "kind",
+        "name",
+        "evidence",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "legacy_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "type",
+            "enum",
+            "variant",
+            "const"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "evidence": {
+          "const": "checked"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "export_template": {
+      "type": "object",
+      "required": [
+        "id",
+        "legacy_id",
+        "kind",
+        "name",
+        "type_parameters",
+        "evidence",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "legacy_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "function_template",
+            "type_template",
+            "enum_template"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "type_parameters": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "const": "declared"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "generic_template": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "module",
+        "name",
+        "public",
+        "type_parameters",
+        "span",
+        "instances",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "type",
+            "enum"
+          ]
+        },
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "type_parameters": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "instances": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "const": "declared"
+        }
+      }
+    },
+    "generic_instance": {
+      "type": "object",
+      "required": [
+        "id",
+        "instance_of",
+        "kind",
+        "type_arguments",
+        "application_sites",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "instance_of": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "type",
+            "enum"
+          ]
+        },
+        "type_arguments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "application_sites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/application_site"
+          }
+        },
+        "evidence": {
+          "const": "checked"
+        }
+      }
+    },
+    "application_site": {
+      "type": "object",
+      "required": [
+        "module",
+        "span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "enclosing_instance": {
+          "type": "string"
+        }
+      }
+    },
+    "call_edge": {
+      "type": "object",
+      "required": [
+        "caller",
+        "callee",
+        "call_site",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caller": {
+          "type": "string"
+        },
+        "callee": {
+          "type": "string"
+        },
+        "call_site": {
+          "type": "string"
+        },
+        "evidence": {
+          "enum": [
+            "checked",
+            "builtin",
+            "unresolved"
+          ]
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": [
+        "start"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

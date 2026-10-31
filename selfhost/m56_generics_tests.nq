@@ -1,5 +1,6 @@
 use ast;
 use diag;
+use facts;
 use files;
 use fmt;
 use generic;
@@ -410,6 +411,245 @@ fn m56_legacy(driver: str) -> bool {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// M56.1 generic-aware facts v5 and review v5.
+
+fn m56_evidence_path(name: str) -> str {
+    return str_concat("tests/fixtures/m56_1_evidence/", name);
+}
+
+fn m56_replace_once(value: str, old: str, replacement: str) -> str {
+    let at = m56_find(value, old);
+    if at < 0 { return value; }
+    return concat3(slice_text(value, 0, at), replacement, slice_text(value, at + str_len(old), str_len(value)));
+}
+
+fn m56_v5_stdout(label: str, outcome: result<process_result, io_err>) -> option<str> {
+    match outcome {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" and status.stdout != "" { return Some(status.stdout); }
+            let reported = m56_report(label, status);
+            return None;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+fn m56_v5_clean(label: str, output: str) -> bool {
+    // No generated name and no internal canonical key reaches public output.
+    for needle in ["__nqg_", "f|", "t|", "v|"] {
+        if text_contains(output, needle) { eprint_line(concat4("M56.1 ", label, " leaked internal text: ", needle)); return false; }
+    }
+    return true;
+}
+
+fn m56_v5_golden(driver: str, command: str, golden: str, schema_path: str) -> bool {
+    let entry = m56_evidence_path("src/app/main.nq");
+    let Some(first) = m56_v5_stdout(str_concat(command, " v5 fixture"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
+    let Some(second) = m56_v5_stdout(str_concat(command, " v5 fixture repeat"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
+    if first != second { eprint_line(str_concat("M56.1 v5 repeat is not byte-identical: ", command)); return false; }
+    let Ok(expected) = read_file(golden) else { return false; };
+    if first != expected { eprint_line(str_concat("M56.1 v5 output does not match golden: ", golden)); eprint_line(first); return false; }
+    let Ok(schema) = read_file(schema_path) else { return false; };
+    if not schema_profile_accepts(schema, first) { eprint_line(str_concat("M56.1 v5 output rejected by schema: ", schema_path)); return false; }
+    return m56_v5_clean(command, first);
+}
+
+// Bytewise nongeneric oracle: v5 minus its version, scheme, and empty generic
+// lines must equal v4 for every input with an existing v4 golden.
+fn m56_v5_oracle(driver: str, command: str, path: str) -> bool {
+    let Some(v4) = m56_v5_stdout(str_concat("oracle v4 ", path), m56_command(driver, command, path, "", "v4", "")) else { return false; };
+    let Some(v5) = m56_v5_stdout(str_concat("oracle v5 ", path), m56_command(driver, command, path, "", "v5", "")) else { return false; };
+    let mut scheme = "semantic";
+    if command == "facts" { scheme = "workspace"; }
+    let version_line = "  \"version\": 5,\n";
+    let scheme_v2 = concat3("\"identity_scheme\": \"nauqtype.", scheme, ".v2\"");
+    // Each header substitution must apply exactly once, never vacuously.
+    if m56_count(v5, version_line) != 1 or m56_count(v5, scheme_v2) != 1 { eprint_line(str_concat("M56.1 oracle: v5 lacks exactly one version 5 line and one v2 scheme: ", path)); return false; }
+    let mut converted = m56_replace_once(v5, version_line, "  \"version\": 4,\n");
+    converted = m56_replace_once(converted, scheme_v2, concat3("\"identity_scheme\": \"nauqtype.", scheme, ".v1\""));
+    let mut removed = ["  \"generic_templates\": [],\n"];
+    if command == "facts" { list_push(mutref removed, "  \"generic_instances\": [],\n"); }
+    for line in removed {
+        if m56_count(converted, line) != 1 { eprint_line(concat4("M56.1 oracle: v5 lacks exactly one empty line for ", path, ": ", line)); return false; }
+        converted = m56_replace_once(converted, line, "");
+    }
+    if converted == v4 and converted != v5 and m56_v5_clean(path, v5) { return true; }
+    eprint_line(concat4("M56.1 nongeneric oracle failed: ", command, " ", path));
+    eprint_line(v5);
+    return false;
+}
+
+fn m56_v5_expect(label: str, output: str, needle: str) -> bool {
+    if text_contains(output, needle) { return true; }
+    eprint_line(str_concat("M56.1 v5 evidence lacks ", label));
+    eprint_line(needle);
+    return false;
+}
+
+fn m56_v5_offset(text: str, marker: str, skip: i32) -> str {
+    let at = m56_find(text, marker);
+    if at < 0 { return "-1"; }
+    return i32_to_str(at + skip);
+}
+
+// Spans are original-file offsets on the expected tokens: a template's name,
+// a site inside an instance body, and an application in another module.
+fn m56_v5_spans(driver: str) -> bool {
+    let entry = m56_evidence_path("src/app/main.nq");
+    let Ok(collections) = read_file(m56_evidence_path("src/app/collections.nq")) else { return false; };
+    let Ok(main_text) = read_file(entry) else { return false; };
+    let Some(review) = m56_v5_stdout("review v5 spans", m56_command(driver, "review", entry, "", "v5", "")) else { return false; };
+    let Some(facts) = m56_v5_stdout("facts v5 spans", m56_command(driver, "facts", entry, "", "v5", "")) else { return false; };
+    let put_name = m56_v5_offset(collections, "pub fn put<", 7);
+    let note_site = m56_v5_offset(collections, "note::<i32>(list_len", 0);
+    let forward_name = m56_v5_offset(collections, "pub fn forward<", 7);
+    let propagate_site = m56_v5_offset(collections, "item = value?;", 0);
+    let first_put = m56_find(main_text, "coll::put::<str, i32>(mutref names, \"one\"");
+    let second_put = m56_find(main_text, "coll::put::<str, i32>(mutref names, \"two\"");
+    let workspace = "workspace:tests.m56_1.evidence::module:app::collections::";
+    if put_name == "-1" or note_site == "-1" or forward_name == "-1" or propagate_site == "-1" or first_put < 0 or second_put < 0 { return false; }
+    let instance_head = concat4("      \"id\": \"fn:app::collections::put<str,i32>\",\n      \"kind\": \"function_instance\",\n      \"qualified_name\": \"app::collections::put<str,i32>\",\n      \"module\": \"app::collections\",\n      \"name\": \"put\",\n      \"public\": true,\n      \"span\": { \"start\": ", put_name, " },\n", "");
+    if not m56_v5_expect("instance span on the template name", review, instance_head) { return false; }
+    if not m56_v5_expect("template span on its name", review, concat3("      \"id\": \"fn:app::collections::forward\",\n      \"kind\": \"function\",\n      \"module\": \"app::collections\",\n      \"name\": \"forward\",\n      \"public\": true,\n      \"type_parameters\": [\n        \"T\",\n        \"E\"\n      ],\n      \"span\": { \"start\": ", forward_name, " },")) { return false; }
+    if not m56_v5_expect("site inside an instance", review, concat3("\"id\": \"call:app::collections::put<str,i32>@", note_site, "\",\n          \"name\": \"note\",\n          \"target_kind\": \"function_instance\",\n          \"target_id\": \"fn:app::collections::note<i32>\",\n          \"target_instance_of\": \"fn:app::collections::note\",")) { return false; }
+    for owner in ["put<i32,bool>", "put<str,i32>"] {
+        let site = concat5("{ \"module\": \"app::collections\", \"span\": { \"start\": ", note_site, " }, \"enclosing_instance\": \"", str_concat(workspace, "fn:"), str_concat(owner, "\" }"));
+        if not m56_v5_expect("one template site under two enclosing instances", facts, site) { return false; }
+    }
+    for at in [first_put, second_put] {
+        if not m56_v5_expect("cross-module application site", review, concat3("{ \"module\": \"app::main\", \"span\": { \"start\": ", i32_to_str(at), " } }")) { return false; }
+        if not m56_v5_expect("call span on the callee name", review, concat3("\"target_instance_of\": \"fn:app::collections::put\",\n      \"evidence\": \"checked\",\n      \"span\": { \"start\": ", i32_to_str(at + 6), " }")) { return false; }
+    }
+    if not m56_v5_expect("generic nominal propagated error", review, concat3("\"id\": \"propagation:app::collections::forward<i32,type:app::collections::Failure<str>>@", propagate_site, "\",\n      \"function\": \"fn:app::collections::forward<i32,type:app::collections::Failure<str>>\",\n      \"error\": \"type:app::collections::Failure<str>\",\n      \"target_kind\": \"type_instance\",\n      \"target_id\": \"type:app::collections::Failure<str>\",\n      \"target_instance_of\": \"type:app::collections::Failure\",")) { return false; }
+    if not m56_v5_expect("template export span", facts, concat5("\"legacy_id\": \"fn:app::collections::put\",\n      \"kind\": \"function_template\",\n      \"name\": \"put\",\n      \"type_parameters\": [\n        \"K\",\n        \"V\"\n      ],\n      \"evidence\": \"declared\",\n      \"span\": { \"start\": ", put_name, " }", "", "")) { return false; }
+    return m56_v5_expect("unused public template", facts, "\"id\": \"workspace:tests.m56_1.evidence::module:app::collections::fn:unused_identity\",\n      \"kind\": \"function\",\n      \"module\": \"app::collections\",\n      \"name\": \"unused_identity\",\n      \"public\": true,\n      \"type_parameters\": [\n        \"T\"\n      ],\n      \"span\": { \"start\": ");
+}
+
+fn m56_v5_refusals(driver: str) -> bool {
+    let generic = m56_evidence_path("src/app/main.nq");
+    let plain = m56_path("plain.nq");
+    let Ok(envelope) = read_file("schemas/evidence-error-v1.schema.json") else { return false; };
+    for version in ["v1", "v2", "v3", "v4"] {
+        for command in ["facts", "review"] {
+            if not m56_legacy_result(str_concat("evidence fixture ", command), m56_command(driver, command, generic, "", version, ""), envelope, "") { return false; }
+        }
+        if not m56_legacy_result("evidence fixture change-report", m56_command(driver, "change-report", generic, plain, version, ""), envelope, "before_check") { return false; }
+    }
+    for version in ["", "v1", "v2"] {
+        if not m56_legacy_result("evidence fixture review-diff", m56_command(driver, "review-diff", generic, plain, version, ""), envelope, "before_check") { return false; }
+    }
+    if not m56_legacy_result("evidence fixture policy-check", m56_command(driver, "policy-check", generic, m56_path("policy.json"), "", ""), envelope, "") { return false; }
+    return m56_legacy_result("evidence fixture refactor-rename", m56_command(driver, "refactor-rename", generic, "fn:app::main::finish", "", ""), envelope, "");
+}
+
+fn m56_v5_bound_source(count: i32) -> str {
+    let mut parameters: list<str> = list();
+    let mut arguments: list<str> = list();
+    let mut at = 0;
+    while at < count {
+        if at > 0 { list_push(mutref parameters, ", "); list_push(mutref arguments, ", "); }
+        list_push(mutref parameters, str_concat("T", i32_to_str(at)));
+        list_push(mutref arguments, "A");
+        at = at + 1;
+    }
+    return concat5("type A {\n    value: i32,\n}\n\nfn keep<", str_join(ref parameters), ">() -> unit {\n    return;\n}\n\nfn main() -> i32 {\n    keep::<", str_join(ref arguments), ">();\n    return 0;\n}\n");
+}
+
+// A semantic instance identity fits the bound while its workspace rendering
+// does not: review v5 succeeds and facts v5 fails closed with empty stdout.
+fn m56_v5_bound(driver: str, directory: str) -> bool {
+    let path = join_path(directory, "w5.nq");
+    if not m56_write(path, m56_v5_bound_source(2000)) { return false; }
+    let Some(review) = m56_v5_stdout("bounded semantic identity", m56_command(driver, "review", path, "", "v5", "")) else { return false; };
+    if not text_contains(review, "\"fn:w5::keep<type:w5::A,type:w5::A,") { eprint_line("M56.1 bounded review identity missing"); return false; }
+    match m56_command(driver, "facts", path, "", "v5", "") {
+        Ok(status) => {
+            if status.exit_code == 1 and status.stdout == "" and m56_count(status.stderr, "NQ-GENERIC-005") == 1 and not text_contains(status.stderr, "NQ-INTERNAL-") { return true; }
+            return m56_report("facts v5 workspace identity bound", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+// NQ-GENERIC-009 and -010 need corrupted or forged metadata, which the CLI
+// cannot produce (forged `__nqg_` source fails with NQ-GENERIC-006 first), so
+// they are checked in-process against the exact gates both emitters use.
+fn m56_v5_view_cases() -> bool {
+    let Ok(text) = read_file(m56_path("values.nq")) else { return false; };
+    let sources = [make_source_file("values", text)];
+    let mut diags: list<diag> = list();
+    let elaborated = elaborate_generic_sources(ref sources, mutref diags);
+    let scopes: list<generic_module_scope> = list();
+    let view = generic_evidence_view_build(ref elaborated, false, ref scopes, mutref diags);
+    if list_len(ref diags) != 0 or not view.valid or not view.active or list_len(ref view.names) == 0 { eprint_line("M56.1 view rejected valid metadata"); return false; }
+    let plain = [make_source_file("plain", "fn main() -> i32 {\n    return 0;\n}\n")];
+    let inactive = generic_evidence_view_build(ref plain, false, ref scopes, mutref diags);
+    if list_len(ref diags) != 0 or inactive.active or not inactive.valid { return false; }
+    // 010: a well-formed generated name with no source identity.
+    let forged = generic_name_from_key("f|values|absent<i32>");
+    let mut missing: list<diag> = list();
+    let kept = generic_evidence_function_name(ref view, "values", forged, mutref missing);
+    if not m56_one_code(ref missing, "NQ-GENERIC-010") { eprint_line("M56.1 unknown generated name did not fail with NQ-GENERIC-010"); return false; }
+    // 009: malformed metadata framing fails before any identity is rendered.
+    let Some(first) = list_get(ref elaborated, 0) else { return false; };
+    let mut corrupted = first;
+    corrupted.generic_origins = str_concat(first.generic_origins, "Z1:x;");
+    let broken = [corrupted];
+    let mut malformed: list<diag> = list();
+    let rejected = generic_evidence_view_build(ref broken, false, ref scopes, mutref malformed);
+    if rejected.valid or not m56_one_code(ref malformed, "NQ-GENERIC-009") { eprint_line("M56.1 malformed metadata did not fail with NQ-GENERIC-009"); return false; }
+    // 009: a position with no valid origin fails closed.
+    let mut unmapped = first;
+    unmapped.origin_map = "";
+    let positions = [unmapped];
+    let mut origin: list<diag> = list();
+    let moved = generic_evidence_offset(ref view, ref positions, "values", 0, mutref origin);
+    if not m56_one_code(ref origin, "NQ-GENERIC-009") { eprint_line("M56.1 unmapped position did not fail with NQ-GENERIC-009"); return false; }
+    return m56_v5_template_record_cases();
+}
+
+fn m56_v5_template_rejected(label: str, file: source_file, origins: str) -> bool {
+    let mut changed = file;
+    changed.generic_origins = origins;
+    let sources = [changed];
+    let scopes: list<generic_module_scope> = list();
+    let mut diags: list<diag> = list();
+    let view = generic_evidence_view_build(ref sources, false, ref scopes, mutref diags);
+    if not view.valid and m56_one_code(ref diags, "NQ-GENERIC-009") { return true; }
+    eprint_line(str_concat("M56.1 template record negative accepted: ", label));
+    return false;
+}
+
+// Every generic declaration of the original source, used or unused, has
+// exactly one matching template record; the emitters' gate rejects anything else.
+fn m56_v5_template_record_cases() -> bool {
+    let text = "pub fn spare<T>(value: T) -> T {\n    return value;\n}\n\nfn plain(value: i32) -> i32 {\n    return value;\n}\n\nfn id<T>(value: T) -> T {\n    return value;\n}\n\nfn main() -> i32 {\n    return id::<i32>(plain(0));\n}\n";
+    let sources = [make_source_file("u", text)];
+    let mut diags: list<diag> = list();
+    let elaborated = elaborate_generic_sources(ref sources, mutref diags);
+    let Some(file) = list_get(ref elaborated, 0) else { return false; };
+    let scopes: list<generic_module_scope> = list();
+    let view = generic_evidence_view_build(ref elaborated, false, ref scopes, mutref diags);
+    if list_len(ref diags) != 0 or not view.valid { eprint_line("M56.1 unused-template source rejected"); return false; }
+    let spare_end = i32_to_str(m56_find(text, "}\n\nfn plain") + 1);
+    let spare_fields = ["f|u|spare", "1", "1", "u", "0", spare_end, "7", "12", "", "", "1", "T"];
+    let spare = m56_record("T", ref spare_fields);
+    let at = m56_find(file.generic_origins, spare);
+    if at < 0 { eprint_line("M56.1 unused public template record not retained as expected"); return false; }
+    let before = slice_text(file.generic_origins, 0, at);
+    let after = slice_text(file.generic_origins, at + str_len(spare), str_len(file.generic_origins));
+    let hidden = ["f|u|spare", "1", "0", "u", "0", spare_end, "7", "12", "", "", "1", "T"];
+    let renamed = ["f|u|spare", "1", "1", "u", "0", spare_end, "7", "12", "", "", "1", "U"];
+    let plain_at = m56_find(text, "fn plain");
+    let plain_fields = ["f|u|plain", "1", "0", "u", i32_to_str(plain_at), i32_to_str(m56_find(text, "}\n\nfn id") + 1), i32_to_str(plain_at + 3), i32_to_str(plain_at + 8), "", "", "1", "T"];
+    if not m56_v5_template_rejected("unused public template record removed", file, str_concat(before, after)) { return false; }
+    if not m56_v5_template_rejected("template visibility flipped", file, concat3(before, m56_record("T", ref hidden), after)) { return false; }
+    if not m56_v5_template_rejected("template parameter renamed", file, concat3(before, m56_record("T", ref renamed), after)) { return false; }
+    if not m56_v5_template_rejected("duplicate template record", file, str_concat(file.generic_origins, spare)) { return false; }
+    return m56_v5_template_rejected("template record without a declaration", file, str_concat(file.generic_origins, m56_record("T", ref plain_fields)));
+}
+
 fn m56_no_output(driver: str, directory: str) -> bool {
     let sentinel = "M56 existing output must survive rejected source\n";
     let input = join_path(directory, "rejected.nq");
@@ -435,6 +675,375 @@ fn m56_no_output(driver: str, directory: str) -> bool {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// M56.1 shared renderer and checked registry oracles.
+
+fn m56_render_context(workspace: bool, prefix: str) -> generic_render_context {
+    let scopes = [generic_module_scope { module: "m", prefix: prefix }, generic_module_scope { module: "lib", prefix: "workspace:dep.lib::module:lib" }];
+    let nominals = [generic_nominal_kind { key: "t|m|Plain", kind: 2, arity: 0 }, generic_nominal_kind { key: "t|m|Mode", kind: 3, arity: 0 }, generic_nominal_kind { key: "t|lib|Box", kind: 2, arity: 1 }, generic_nominal_kind { key: "t|m|Opt", kind: 3, arity: 1 }, generic_nominal_kind { key: "t|other|Lone", kind: 2, arity: 0 }];
+    return generic_render_context { workspace: workspace, scopes: scopes, nominals: nominals };
+}
+
+fn m56_render_ok(context: ref generic_render_context, key: str, argument: bool, expected: str) -> bool {
+    let mut diags: list<diag> = list();
+    let mut value = "";
+    if argument { value = generic_render_argument(ref context, key, "m", mutref diags); }
+    else { value = generic_render_identity(ref context, key, "m", mutref diags); }
+    if value != expected or list_len(ref diags) != 0 { eprint_line(concat4("M56.1 renderer mismatch for ", key, ": ", value)); return false; }
+    return true;
+}
+
+fn m56_one_code(diags: ref list<diag>, code: str) -> bool {
+    if list_len(ref diags) != 1 { return false; }
+    let Some(entry) = list_get(ref diags, 0) else { return false; };
+    if entry.code != code or entry.start != -1 { return false; }
+    match entry.severity { diag_error => { return true; }, _ => { return false; }, }
+}
+
+fn m56_render_fails(context: ref generic_render_context, key: str, argument: bool, code: str) -> bool {
+    let mut diags: list<diag> = list();
+    let mut value = "";
+    if argument { value = generic_render_argument(ref context, key, "m", mutref diags); }
+    else { value = generic_render_identity(ref context, key, "m", mutref diags); }
+    if value != "" or not m56_one_code(ref diags, code) { eprint_line(str_concat("M56.1 renderer accepted or misreported ", key)); return false; }
+    return true;
+}
+
+fn m56_renderer_cases() -> bool {
+    let semantic = m56_render_context(false, "workspace:org.tool::module:m");
+    let workspace = m56_render_context(true, "workspace:org.tool::module:m");
+    let atoms = ["bool", "i32", "i64", "str", "unit", "bytes", "io_err", "process_result", "path_metadata", "duration", "instant", "process", "process_outcome"];
+    for atom in atoms {
+        if not m56_render_ok(ref semantic, atom, true, atom) or not m56_render_ok(ref workspace, atom, true, atom) { return false; }
+    }
+    if not m56_render_ok(ref semantic, "int", true, "i32") { return false; }
+    for bad in ["u32", "char", "f64", "", "p|0|0", "list", "list<i32,i32>", "result<i32>", "i32<bool>", "list<i32", "Plain", "t|m|Missing", "t|lib|Box", "t|m|Plain<i32>", "t|lib|Box<i32,i32>", "f|m|get<str>", "list<i32>x", "list< i32>"] {
+        if not m56_render_fails(ref semantic, bad, true, "NQ-GENERIC-009") { return false; }
+    }
+    if not m56_render_ok(ref semantic, "list<option<result<int,str>>>", true, "list<option<result<i32,str>>>") { return false; }
+    if not m56_render_ok(ref semantic, "t|m|Plain", true, "type:m::Plain") or not m56_render_ok(ref semantic, "t|m|Mode", true, "enum:m::Mode") { return false; }
+    if not m56_render_ok(ref semantic, "list<t|lib|Box<t|m|Opt<int>>>", true, "list<type:lib::Box<enum:m::Opt<i32>>>") { return false; }
+    if not m56_render_ok(ref workspace, "list<t|lib|Box<t|m|Opt<int>>>", true, "list<workspace:dep.lib::module:lib::type:Box<workspace:org.tool::module:m::enum:Opt<i32>>>") { return false; }
+    if not m56_render_ok(ref semantic, "t|lib|Box<t|lib|Box<t|m|Plain>>", false, "type:lib::Box<type:lib::Box<type:m::Plain>>") { return false; }
+    if not m56_render_ok(ref workspace, "t|lib|Box<t|lib|Box<t|m|Plain>>", false, "workspace:dep.lib::module:lib::type:Box<workspace:dep.lib::module:lib::type:Box<workspace:org.tool::module:m::type:Plain>>") { return false; }
+    if not m56_render_ok(ref semantic, "f|m|get<str,int>", false, "fn:m::get<str,i32>") or not m56_render_ok(ref workspace, "f|m|get<str,int>", false, "workspace:org.tool::module:m::fn:get<str,i32>") { return false; }
+    if not m56_render_ok(ref semantic, "f|m|get", false, "fn:m::get") or not m56_render_ok(ref semantic, "t|lib|Box", false, "type:lib::Box") or not m56_render_ok(ref workspace, "t|m|Opt", false, "workspace:org.tool::module:m::enum:Opt") { return false; }
+    if not m56_render_ok(ref semantic, "t|m|Opt<t|m|Opt<t|m|Mode>>", false, "enum:m::Opt<enum:m::Opt<enum:m::Mode>>") { return false; }
+    if not m56_render_ok(ref semantic, "v|m|Opt<i32>|Has", false, "variant:m::Opt<i32>::Has") or not m56_render_ok(ref workspace, "v|m|Opt<i32>|Has", false, "workspace:org.tool::module:m::enum:Opt<i32>::variant:Has") { return false; }
+    if not m56_render_ok(ref semantic, "v|m|Mode|Fast", false, "variant:m::Mode::Fast") or not m56_render_ok(ref workspace, "v|m|Mode|Fast", false, "workspace:org.tool::module:m::enum:Mode::variant:Fast") { return false; }
+    if not m56_render_ok(ref semantic, "v|m|Opt|Has", false, "variant:m::Opt::Has") { return false; }
+    if not m56_render_ok(ref semantic, "t|other|Lone", false, "type:other::Lone") { return false; }
+    for bad in ["t|other|Lone", "v|m|Plain|X", "v|m|Opt<i32,i32>|Has", "v|m|Opt<i32>|", "x|m|y", "f|m|get<str>x", "f|m|get<>", "t|m|Opt<f|m|get<i32>>"] {
+        if not m56_render_fails(ref workspace, bad, false, "NQ-GENERIC-009") { return false; }
+    }
+    // Generated names decode to their source identity; spelling alone is not one.
+    let mut diags: list<diag> = list();
+    if generic_render_generated_name(ref semantic, generic_name_from_key("t|m|Plain"), "m", mutref diags) != "type:m::Plain" or list_len(ref diags) != 0 { return false; }
+    if generic_render_generated_name(ref semantic, generic_name_from_key("f|m|get<str,int>"), "m", mutref diags) != "fn:m::get<str,i32>" or list_len(ref diags) != 0 { return false; }
+    if generic_render_generated_name(ref semantic, "__nqg_zz", "m", mutref diags) != "" or not m56_one_code(ref diags, "NQ-GENERIC-010") { return false; }
+    // Exactly 32768 bytes are accepted; one more byte fails closed with 005.
+    let bound = generic_identity_bound();
+    if bound != 32768 { return false; }
+    let exact = m56_render_context(true, m56_repeat("w", bound - 11));
+    let over = m56_render_context(true, m56_repeat("w", bound - 10));
+    diags = list();
+    let fitted = generic_render_identity(ref exact, "f|m|f<str>", "m", mutref diags);
+    if str_len(fitted) != bound or list_len(ref diags) != 0 { eprint_line("M56.1 exact identity bound rejected"); return false; }
+    if not m56_render_fails(ref over, "f|m|f<str>", false, "NQ-GENERIC-005") { return false; }
+    let exact_argument = m56_render_context(true, m56_repeat("w", bound - 12));
+    let over_argument = m56_render_context(true, m56_repeat("w", bound - 11));
+    let fitted_argument = generic_render_argument(ref exact_argument, "t|m|Plain", "m", mutref diags);
+    if str_len(fitted_argument) != bound or list_len(ref diags) != 0 { eprint_line("M56.1 exact argument bound rejected"); return false; }
+    if not m56_render_fails(ref over_argument, "t|m|Plain", true, "NQ-GENERIC-005") { return false; }
+    // Identities v4 can already express are not capped.
+    let wide = m56_render_context(true, m56_repeat("w", 40000));
+    if str_len(generic_render_identity(ref wide, "t|m|Plain", "m", mutref diags)) != 40012 or list_len(ref diags) != 0 { return false; }
+    if str_len(generic_render_identity(ref wide, "v|m|Mode|Fast", "m", mutref diags)) != 40025 or list_len(ref diags) != 0 { return false; }
+    let site = [m56_repeat("c", bound - 4), "@412"];
+    if str_len(generic_identity_join(ref site, "m", mutref diags)) != bound or list_len(ref diags) != 0 { return false; }
+    let long_site = [m56_repeat("c", bound - 3), "@412"];
+    if generic_identity_join(ref long_site, "m", mutref diags) != "" or not m56_one_code(ref diags, "NQ-GENERIC-005") { return false; }
+    return generic_key_template("f|m|get<str,i32>") == "f|m|get" and generic_key_template("v|m|Opt<t|m|Plain>|Has") == "v|m|Opt|Has" and generic_key_template("t|m|Plain") == "t|m|Plain" and generic_key_template("v|m|Mode|Fast") == "v|m|Mode|Fast";
+}
+
+fn m56_record(tag: str, fields: ref list<str>) -> str {
+    let mut pieces = [tag];
+    for value in fields { list_push(mutref pieces, generic_pack_field(value)); }
+    list_push(mutref pieces, ";");
+    return str_join(ref pieces);
+}
+
+fn m56_meta_text() -> str {
+    return "fn id<T>(value: T) -> T { return value; }\nenum Opt<T> { Has(T), Empty, }\ntype Plain { x: i32, }\n";
+}
+
+fn m56_meta_line_end(text: str, start: i32) -> i32 {
+    let mut at = start;
+    while at < str_len(text) and char_at(text, at) != 10 { at = at + 1; }
+    return at;
+}
+
+fn m56_meta_generated(key: str, kind: i32, at: i32) -> str {
+    let fields = [generic_name_from_key(key), i32_to_str(kind), "m", i32_to_str(at)];
+    return m56_record("D", ref fields);
+}
+
+fn m56_meta_records() -> list<str> {
+    let text = m56_meta_text();
+    let e1 = m56_meta_line_end(text, 0);
+    let s2 = e1 + 1;
+    let e2 = m56_meta_line_end(text, s2);
+    let s3 = e2 + 1;
+    let e3 = m56_meta_line_end(text, s3);
+    let has = m56_find(text, "Has");
+    let empty = m56_find(text, "Empty");
+    let plain = m56_find(text, "Plain");
+    let template_id = ["f|m|id", "1", "0", "m", "0", i32_to_str(e1), "3", "5", "", "", "1", "T"];
+    let template_opt = ["t|m|Opt", "3", "0", "m", i32_to_str(s2), i32_to_str(e2), i32_to_str(s2 + 5), i32_to_str(s2 + 8), "", "", "1", "T"];
+    let instance_id = ["f|m|id<i32>", "f|m|id", "m", "0", i32_to_str(e1), "1", "i32"];
+    let instance_nested = ["f|m|id<t|m|Opt<i32>>", "f|m|id", "m", "0", i32_to_str(e1), "1", "t|m|Opt<i32>"];
+    let instance_opt = ["t|m|Opt<i32>", "t|m|Opt", "m", i32_to_str(s2), i32_to_str(e2), "1", "i32"];
+    let variant_has = ["v|m|Opt<i32>|Has", "t|m|Opt<i32>", "m", i32_to_str(has), i32_to_str(has + 6)];
+    let variant_empty = ["v|m|Opt<i32>|Empty", "t|m|Opt<i32>", "m", i32_to_str(empty), i32_to_str(empty + 5)];
+    let nominal = ["t|m|Plain", "t|m|Plain", "m", i32_to_str(s3), i32_to_str(e3), "0"];
+    let first = ["f|m|id<i32>", "m", "0", "2", ""];
+    let second = ["t|m|Opt<i32>", "m", i32_to_str(s2), i32_to_str(s2 + 3), "f|m|id<t|m|Opt<i32>>"];
+    let third = ["f|m|id<t|m|Opt<i32>>", "m", "0", "2", ""];
+    return [m56_record("T", ref template_id), m56_record("T", ref template_opt), m56_record("I", ref instance_id), m56_record("I", ref instance_nested), m56_record("I", ref instance_opt), m56_record("V", ref variant_has), m56_record("V", ref variant_empty), m56_record("N", ref nominal), m56_record("A", ref first), m56_record("A", ref second), m56_record("A", ref third), m56_meta_generated("f|m|id<i32>", 1, 3), m56_meta_generated("f|m|id<t|m|Opt<i32>>", 1, 3), m56_meta_generated("t|m|Opt<i32>", 3, s2 + 5), m56_meta_generated("v|m|Opt<i32>|Has", 5, has), m56_meta_generated("v|m|Opt<i32>|Empty", 5, empty), m56_meta_generated("t|m|Plain", 2, plain)];
+}
+
+fn m56_meta_file(records: ref list<str>, extra_names: ref list<str>) -> source_file {
+    let mut file = make_source_file("m", m56_meta_text());
+    file.has_generics = true;
+    let mut names = ["\n"];
+    for key in ["f|m|id<i32>", "f|m|id<t|m|Opt<i32>>", "t|m|Opt<i32>", "v|m|Opt<i32>|Has", "v|m|Opt<i32>|Empty", "t|m|Plain"] { list_push(mutref names, generic_name_from_key(key)); list_push(mutref names, "\n"); }
+    for key in extra_names { list_push(mutref names, generic_name_from_key(key)); list_push(mutref names, "\n"); }
+    file.generated_names = str_join(ref names);
+    file.generic_origins = str_join(ref records);
+    return file;
+}
+
+fn m56_meta_read(records: ref list<str>, extra_names: ref list<str>, diags: mutref list<diag>) -> generic_registry {
+    let sources = [m56_meta_file(ref records, ref extra_names)];
+    return generic_read_registry(ref sources, mutref diags);
+}
+
+fn m56_meta_rejects(label: str, records: list<str>, extra_names: ref list<str>) -> bool {
+    let mut diags: list<diag> = list();
+    let registry = m56_meta_read(ref records, ref extra_names, mutref diags);
+    if registry.valid or not m56_one_code(ref diags, "NQ-GENERIC-009") { eprint_line(str_concat("M56.1 metadata negative accepted: ", label)); return false; }
+    return true;
+}
+
+fn m56_meta_with(extra: str) -> list<str> {
+    let mut records = m56_meta_records();
+    list_push(mutref records, extra);
+    return records;
+}
+
+fn m56_meta_without(index: i32) -> list<str> {
+    let mut records: list<str> = list();
+    let mut at = 0;
+    let base = m56_meta_records();
+    for value in base { if at != index { list_push(mutref records, value); } at = at + 1; }
+    return records;
+}
+
+fn m56_meta_replace(index: i32, replacement: str) -> list<str> {
+    let mut records: list<str> = list();
+    let mut at = 0;
+    let base = m56_meta_records();
+    for value in base { if at == index { list_push(mutref records, replacement); } else { list_push(mutref records, value); } at = at + 1; }
+    return records;
+}
+
+fn m56_metadata_cases() -> bool {
+    let none: list<str> = list();
+    let base = m56_meta_records();
+    let mut diags: list<diag> = list();
+    let registry = m56_meta_read(ref base, ref none, mutref diags);
+    if not registry.valid or list_len(ref diags) != 0 { eprint_line("M56.1 valid metadata rejected"); return false; }
+    if list_len(ref registry.templates) != 2 or list_len(ref registry.parameters) != 2 or list_len(ref registry.instances) != 3 or list_len(ref registry.arguments) != 3 or list_len(ref registry.applications) != 3 or list_len(ref registry.generated) != 6 or list_len(ref registry.nominals) != 1 or list_len(ref registry.variants) != 2 { return false; }
+    let opt = generic_registry_identity(ref registry, generic_name_from_key("t|m|Opt<i32>"));
+    if not opt.found or opt.kind != 3 or not opt.instance or opt.module != "m" or opt.name != "Opt" or opt.template != "t|m|Opt" { return false; }
+    let has = generic_registry_identity(ref registry, generic_name_from_key("v|m|Opt<i32>|Has"));
+    if not has.found or has.kind != 5 or not has.instance or has.name != "Has" or has.enum_name != "Opt" or has.template != "t|m|Opt<i32>" { return false; }
+    let plain = generic_registry_identity(ref registry, generic_name_from_key("t|m|Plain"));
+    if not plain.found or plain.kind != 2 or plain.instance or plain.name != "Plain" { return false; }
+    let missing = generic_require_identity(ref registry, generic_name_from_key("f|m|id<i64>"), "m", mutref diags);
+    if missing.found or not m56_one_code(ref diags, "NQ-GENERIC-010") { return false; }
+    diags = list();
+    let scopes = [generic_module_scope { module: "m", prefix: "workspace:org.tool::module:m" }];
+    let semantic = generic_registry_render_context(ref registry, false, ref scopes);
+    let workspace = generic_registry_render_context(ref registry, true, ref scopes);
+    if generic_render_identity(ref semantic, "f|m|id<t|m|Opt<i32>>", "m", mutref diags) != "fn:m::id<enum:m::Opt<i32>>" { return false; }
+    if generic_render_identity(ref workspace, "v|m|Opt<i32>|Empty", "m", mutref diags) != "workspace:org.tool::module:m::enum:Opt<i32>::variant:Empty" { return false; }
+    if generic_render_identity(ref semantic, "t|m|Plain", "m", mutref diags) != "type:m::Plain" or list_len(ref diags) != 0 { return false; }
+    let parameters = generic_template_parameter_names(ref registry, "f|m|id");
+    let arguments = generic_instance_argument_keys(ref registry, "f|m|id<t|m|Opt<i32>>");
+    let sites = generic_instance_applications(ref registry, "t|m|Opt<i32>");
+    if list_len(ref parameters) != 1 or list_len(ref arguments) != 1 or list_len(ref sites) != 1 { return false; }
+    let Some(parameter) = list_get(ref parameters, 0) else { return false; };
+    let Some(argument) = list_get(ref arguments, 0) else { return false; };
+    let Some(site) = list_get(ref sites, 0) else { return false; };
+    if parameter != "T" or argument != "t|m|Opt<i32>" or site.parent != "f|m|id<t|m|Opt<i32>>" { return false; }
+    // The A relation deduplicates only complete tuples.
+    let Some(first_application) = list_get(ref base, 8) else { return false; };
+    let repeated = m56_meta_with(first_application);
+    diags = list();
+    let deduplicated = m56_meta_read(ref repeated, ref none, mutref diags);
+    if not deduplicated.valid or list_len(ref deduplicated.applications) != 3 { return false; }
+    let other_parent = ["f|m|id<i32>", "m", "0", "2", "t|m|Opt<i32>"];
+    let related = m56_meta_with(m56_record("A", ref other_parent));
+    let widened = m56_meta_read(ref related, ref none, mutref diags);
+    if not widened.valid or list_len(ref widened.applications) != 4 or list_len(ref diags) != 0 { return false; }
+    // An empty generic graph is valid and a nongeneric file cannot carry metadata.
+    let empty_sources = [make_source_file("m", "fn main() -> i32 { return 0; }\n")];
+    let empty = generic_read_registry(ref empty_sources, mutref diags);
+    if not empty.valid or list_len(ref diags) != 0 { return false; }
+    let mut stray = m56_meta_file(ref base, ref none);
+    stray.has_generics = false;
+    let stray_sources = [stray];
+    let stray_registry = generic_read_registry(ref stray_sources, mutref diags);
+    if stray_registry.valid or not m56_one_code(ref diags, "NQ-GENERIC-009") { return false; }
+
+    let text = m56_meta_text();
+    let length = str_len(text);
+    let e1 = m56_meta_line_end(text, 0);
+    let i64_key = ["f|m|id<i64>"];
+    let pair_key = ["f|m|id<i32,bool>"];
+    let type_key = ["t|m|id<i32>"];
+    let u32_key = ["f|m|id<u32>"];
+    let orphan_variant_key = ["v|m|Opt<i64>|Has"];
+    // Malformed framing.
+    if not m56_meta_rejects("unknown tag", m56_meta_with("Q;"), ref none) { return false; }
+    if not m56_meta_rejects("unterminated record", m56_meta_with("T3:abc"), ref none) { return false; }
+    if not m56_meta_rejects("short field", m56_meta_with("A9:x;"), ref none) { return false; }
+    let short_arity = ["f|m|id<i32,i32>", "f|m|id", "m", "0", i32_to_str(e1), "2", "i32"];
+    if not m56_meta_rejects("instance arity framing", m56_meta_with(m56_record("I", ref short_arity)), ref none) { return false; }
+    let leading_zero = ["f|m|id<i32>", "m", "00", "2", ""];
+    if not m56_meta_rejects("noncanonical number", m56_meta_with(m56_record("A", ref leading_zero)), ref none) { return false; }
+    // Duplicate keys within a record kind.
+    let mut index = 0;
+    while index < 8 {
+        let Some(record) = list_get(ref base, index) else { return false; };
+        if not m56_meta_rejects(str_concat("duplicate record ", i32_to_str(index)), m56_meta_with(record), ref none) { return false; }
+        index = index + 1;
+    }
+    let Some(duplicate_generated) = list_get(ref base, 11) else { return false; };
+    if not m56_meta_rejects("duplicate generated declaration", m56_meta_with(duplicate_generated), ref none) { return false; }
+    let s3 = m56_meta_line_end(text, e1 + 1) + 1;
+    let plain_at = m56_find(text, "Plain");
+    let colliding = ["t|m|Plain", "2", "0", "m", i32_to_str(s3), i32_to_str(m56_meta_line_end(text, s3)), i32_to_str(plain_at), i32_to_str(plain_at + 5), "", "", "1", "T"];
+    if not m56_meta_rejects("template collides with nominal", m56_meta_with(m56_record("T", ref colliding)), ref none) { return false; }
+    // Orphaned I, A, V and D records.
+    if not m56_meta_rejects("instance without template", m56_meta_without(0), ref none) { return false; }
+    if not m56_meta_rejects("instance without generated declaration", m56_meta_without(11), ref none) { return false; }
+    if not m56_meta_rejects("instance without application", m56_meta_without(8), ref none) { return false; }
+    if not m56_meta_rejects("variant enum removed", m56_meta_without(4), ref none) { return false; }
+    let orphan_application = ["f|m|id<i64>", "m", "0", "2", ""];
+    if not m56_meta_rejects("application without instance", m56_meta_with(m56_record("A", ref orphan_application)), ref none) { return false; }
+    let orphan_parent = ["f|m|id<i32>", "m", "0", "3", "f|m|nope<i32>"];
+    if not m56_meta_rejects("application without parent", m56_meta_with(m56_record("A", ref orphan_parent)), ref none) { return false; }
+    let has_at = m56_find(text, "Has");
+    let orphan_variant = ["v|m|Opt<i64>|Has", "t|m|Opt<i64>", "m", i32_to_str(has_at), i32_to_str(has_at + 6)];
+    let mut variant_records = m56_meta_with(m56_record("V", ref orphan_variant));
+    list_push(mutref variant_records, m56_meta_generated("v|m|Opt<i64>|Has", 5, has_at));
+    if not m56_meta_rejects("variant without enum", variant_records, ref orphan_variant_key) { return false; }
+    if not m56_meta_rejects("generated declaration without record", m56_meta_with(m56_meta_generated("f|m|id<i64>", 1, 3)), ref i64_key) { return false; }
+    if not m56_meta_rejects("generated declaration outside registry", m56_meta_with(m56_meta_generated("f|m|id<i64>", 1, 3)), ref none) { return false; }
+    // Cross-linked records: wrong arity, wrong kind, wrong template family.
+    let pair = ["f|m|id<i32,bool>", "f|m|id", "m", "0", i32_to_str(e1), "2", "i32", "bool"];
+    let pair_site = ["f|m|id<i32,bool>", "m", "0", "2", ""];
+    let mut pair_records = m56_meta_with(m56_record("I", ref pair));
+    list_push(mutref pair_records, m56_record("A", ref pair_site));
+    list_push(mutref pair_records, m56_meta_generated("f|m|id<i32,bool>", 1, 3));
+    if not m56_meta_rejects("instance arity differs from template", pair_records, ref pair_key) { return false; }
+    let s2 = e1 + 1;
+    if not m56_meta_rejects("instance kind differs from template", m56_meta_replace(13, m56_meta_generated("t|m|Opt<i32>", 2, s2 + 5)), ref none) { return false; }
+    let typed = ["t|m|id<i32>", "t|m|id", "m", "0", i32_to_str(e1), "1", "i32"];
+    let typed_site = ["t|m|id<i32>", "m", "0", "2", ""];
+    let mut typed_records = m56_meta_with(m56_record("I", ref typed));
+    list_push(mutref typed_records, m56_record("A", ref typed_site));
+    list_push(mutref typed_records, m56_meta_generated("t|m|id<i32>", 2, 3));
+    if not m56_meta_rejects("instance names a template of another kind", typed_records, ref type_key) { return false; }
+    let narrow = ["f|m|id<u32>", "f|m|id", "m", "0", i32_to_str(e1), "1", "u32"];
+    let narrow_site = ["f|m|id<u32>", "m", "0", "2", ""];
+    let mut narrow_records = m56_meta_with(m56_record("I", ref narrow));
+    list_push(mutref narrow_records, m56_record("A", ref narrow_site));
+    list_push(mutref narrow_records, m56_meta_generated("f|m|id<u32>", 1, 3));
+    if not m56_meta_rejects("noncanonical instance argument", narrow_records, ref u32_key) { return false; }
+    // Out-of-file and misplaced offsets.
+    let long_template = ["f|m|id", "1", "0", "m", "0", i32_to_str(length + 1), "3", "5", "", "", "1", "T"];
+    if not m56_meta_rejects("template past end of file", m56_meta_replace(0, m56_record("T", ref long_template)), ref none) { return false; }
+    let shifted_template = ["f|m|id", "1", "0", "m", "0", i32_to_str(e1), "4", "6", "", "", "1", "T"];
+    if not m56_meta_rejects("template name range off its token", m56_meta_replace(0, m56_record("T", ref shifted_template)), ref none) { return false; }
+    let typed_audit = ["t|m|Opt", "3", "0", "m", i32_to_str(s2), i32_to_str(m56_meta_line_end(text, s2)), i32_to_str(s2 + 5), i32_to_str(s2 + 8), i32_to_str(s2 + 9), i32_to_str(s2 + 10), "1", "T"];
+    if not m56_meta_rejects("audit range on a nominal template", m56_meta_replace(1, m56_record("T", ref typed_audit)), ref none) { return false; }
+    let far_application = ["f|m|id<i32>", "m", "0", i32_to_str(length + 1), ""];
+    if not m56_meta_rejects("application past end of file", m56_meta_replace(8, m56_record("A", ref far_application)), ref none) { return false; }
+    let foreign_application = ["f|m|id<i32>", "elsewhere", "0", "2", ""];
+    if not m56_meta_rejects("application in an unknown file", m56_meta_replace(8, m56_record("A", ref foreign_application)), ref none) { return false; }
+    if not m56_meta_rejects("generated declaration past end of file", m56_meta_replace(11, m56_meta_generated("f|m|id<i32>", 1, length)), ref none) { return false; }
+    let far_variant = ["v|m|Opt<i32>|Has", "t|m|Opt<i32>", "m", i32_to_str(length - 1), i32_to_str(length + 5)];
+    if not m56_meta_rejects("variant past end of file", m56_meta_replace(5, m56_record("V", ref far_variant)), ref none) { return false; }
+    return true;
+}
+
+fn m56_retention_source() -> str {
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "pub fn id<T>(value: T) -> T\naudit {\n    intent(\"Return the value\");\n    mutates();\n    effects();\n}\n{\n    return value;\n}\n");
+    list_push(mutref lines, "fn unused<A, B>(left: A, right: B) -> A {\n    return left;\n}\n");
+    list_push(mutref lines, "type Box<T> {\n    value: T,\n}\n");
+    list_push(mutref lines, "enum Opt<T> {\n    Has(T),\n    Empty,\n}\n");
+    list_push(mutref lines, "enum Mode {\n    Fast,\n    Slow,\n}\n");
+    list_push(mutref lines, "type Plain {\n    x: i32,\n}\n");
+    list_push(mutref lines, "fn main() -> i32 {\n    let first = id::<i32>(1);\n    let second = id::<i32>(2);\n    let boxed = Box::<i32> { value: 3 };\n    return first + second + boxed.value;\n}\n");
+    return str_join(ref lines);
+}
+
+fn m56_retention_cases() -> bool {
+    let sources = [make_source_file("retained", m56_retention_source())];
+    let mut diags: list<diag> = list();
+    let elaborated = elaborate_generic_sources(ref sources, mutref diags);
+    if list_len(ref diags) != 0 or list_len(ref elaborated) != 1 { eprint_line("M56.1 retention source failed to elaborate"); return false; }
+    let registry = generic_read_registry(ref elaborated, mutref diags);
+    if not registry.valid or list_len(ref diags) != 0 { eprint_line("M56.1 elaborator metadata failed the checked reader"); return false; }
+    if list_len(ref registry.templates) != 4 or list_len(ref registry.instances) != 2 or list_len(ref registry.nominals) != 2 or list_len(ref registry.variants) != 2 or list_len(ref registry.applications) != 3 { eprint_line("M56.1 retained record counts changed"); return false; }
+    let text = m56_retention_source();
+    let mut seen = 0;
+    for entry in registry.templates {
+        if entry.key == "f|retained|id" {
+            if not entry.is_public or entry.kind != 1 or entry.audit_start < 0 or not starts_with_at(text, entry.audit_start, "audit {") or slice_text(text, entry.audit_end - 1, entry.audit_end) != "}" or entry.name_start != m56_find(text, "id<") { return false; }
+            seen = seen + 1;
+        }
+        if entry.key == "f|retained|unused" {
+            let names = generic_template_parameter_names(ref registry, entry.key);
+            if entry.is_public or entry.audit_start != -1 or entry.arity != 2 or list_len(ref names) != 2 { return false; }
+            let Some(second) = list_get(ref names, 1) else { return false; };
+            if second != "B" { return false; }
+            seen = seen + 1;
+        }
+        if entry.key == "t|retained|Box" and entry.kind == 2 and entry.audit_start == -1 { seen = seen + 1; }
+        if entry.key == "t|retained|Opt" and entry.kind == 3 { seen = seen + 1; }
+    }
+    if seen != 4 { return false; }
+    let sites = generic_instance_applications(ref registry, "f|retained|id<i32>");
+    if list_len(ref sites) != 2 { return false; }
+    let Some(file) = list_get(ref elaborated, 0) else { return false; };
+    let template_record = concat3("T", generic_pack_field("f|retained|unused"), "");
+    if m56_count(file.generic_origins, template_record) != 1 or m56_count(file.generic_origins, concat3("A", generic_pack_field("f|retained|id<i32>"), "")) != 2 { return false; }
+    // Existing positive fixtures retain metadata the checked reader accepts.
+    for name in ["values", "syntax_tokens"] {
+        let Ok(fixture) = read_file(m56_path(str_concat(name, ".nq"))) else { return false; };
+        let fixture_sources = [make_source_file(name, fixture)];
+        let fixture_elaborated = elaborate_generic_sources(ref fixture_sources, mutref diags);
+        let fixture_registry = generic_read_registry(ref fixture_elaborated, mutref diags);
+        if list_len(ref diags) != 0 or not fixture_registry.valid or list_len(ref fixture_registry.templates) == 0 or list_len(ref fixture_registry.instances) == 0 { eprint_line(str_concat("M56.1 fixture metadata rejected: ", name)); return false; }
+    }
+    return true;
+}
+
 pub fn run_m56_generics_gate(driver_path: str) -> bool
 audit {
     intent("Check explicit generic specialization, ownership, source origins, and conservative legacy tooling boundaries");
@@ -449,6 +1058,9 @@ audit {
     if not propagation_truth_cases() { eprint_line("M56 checked propagation truth oracle failed"); return false; }
     if not m56_name_edges() { eprint_line("M56 key byte/registry edge oracle failed"); return false; }
     if not m56_unauthenticated_nominal() { eprint_line("M56 unauthenticated nominal lookup oracle failed"); return false; }
+    if not m56_renderer_cases() { eprint_line("M56.1 shared generic renderer oracle failed"); return false; }
+    if not m56_metadata_cases() { eprint_line("M56.1 checked generic metadata oracle failed"); return false; }
+    if not m56_retention_cases() { eprint_line("M56.1 template retention oracle failed"); return false; }
     let Ok(_) = create_dir_all("build") else { return false; };
     let Ok(directory) = create_temp_dir("build", "m56-generics-") else { return false; };
     let Ok(schema) = read_file("schemas/diagnostics-v1.schema.json") else { return false; };
@@ -484,6 +1096,20 @@ audit {
     }
     if not m56_missing_audit_warning(driver_path, schema) { return false; }
     if not m56_bounds(driver_path, directory, schema) or not m56_legacy(driver_path) { return false; }
+    if not m56_v5_view_cases() { eprint_line("M56.1 v5 identity view fail-closed oracle failed"); return false; }
+    if not m56_v5_golden(driver_path, "facts", "tests/golden/schema_profile/facts-v5-positive.json", "schemas/facts-v5.schema.json") { return false; }
+    if not m56_v5_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-positive.json", "schemas/review-v5.schema.json") { return false; }
+    if not m56_v5_spans(driver_path) { return false; }
+    let oracle_commands = ["review", "review", "facts", "facts"];
+    let oracle_inputs = ["tests/fixtures/m54_8_final/mutations.nq", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/organizational_tool/src/app/main.nq", "tests/fixtures/m55_process/authority.nq"];
+    let mut oracle_index = 0;
+    for oracle_command in oracle_commands {
+        let Some(oracle_input) = list_get(ref oracle_inputs, oracle_index) else { return false; };
+        if not m56_v5_oracle(driver_path, oracle_command, oracle_input) { return false; }
+        oracle_index = oracle_index + 1;
+    }
+    if not m56_v5_refusals(driver_path) or not m56_v5_bound(driver_path, directory) { return false; }
+    if not m56_runtime(driver_path, m56_evidence_path("src/app/main.nq"), directory, "evidence", "M56.1 evidence ok\n") { return false; }
     let positive = m56_path("values.nq");
     let syntax_tokens = m56_path("syntax_tokens.nq");
     for path in [positive, syntax_tokens] {

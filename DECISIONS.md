@@ -635,3 +635,33 @@ Full user generics and broader mutable-string/library growth remain deferred.
   acceptance. The bounded host-GCC memory profile has its separate provenance
   contract, unchanged O2, fixed flags and unchanged release ceilings. M57 data,
   FFI, task and release growth are not part of this decision.
+
+## D066: Generic-Aware Facts And Review v5
+
+- M56.1 is the separately versioned source/instance export that D065 required.
+  Only `facts --format v5` and `review --format v5` accept generic graphs;
+  every other evidence format keeps NQ-GENERIC-008. Generic-aware
+  review-diff, change-report, policy-check and refactor-rename stay deferred.
+- Identities use the v2 schemes. Every identity v1 can express is
+  byte-identical in v2, so for a nongeneric graph v5 equals v4 after replacing
+  the version and scheme and deleting the empty generic arrays. Only new
+  generic identities are capped (32768 bytes, NQ-GENERIC-005).
+- Templates are reported once with `evidence: "declared"` (structural checks
+  only); instances carry checked facts, never merged across instances.
+  Positions are original-file bytes through the M56 origin map; generated
+  names and internal keys never reach output. Invalid metadata (009) or a
+  generated item without source identity (010) fails closed with empty stdout.
+- Ordering: in a generic graph, identity-bearing arrays (facts `exports`,
+  `call_graph`, `generic_templates`, `generic_instances`; review `functions`,
+  `references`, `call_graph`, `propagation_sites`; each template's
+  `instances`) sort by identity bytewise, then original offset. Site records
+  sort by their owning function's identity, then offset. Nongeneric graphs
+  keep v4 order, which the oracle requires. `modules` and `dependencies` keep
+  v4 order in both cases; they contain no generic records.
+- A generic nominal error in `propagates`/propagation sites is spelled with
+  its full instance identity (e.g. `type:app::collections::Failure<str>`),
+  with `target_kind` `type_instance`/`enum_instance` and `target_instance_of`.
+- `docs/M56_1_CONTRACT.md` owns the exact field mapping. The bootstrap seed
+  was not promoted for M56.1: the change adds no language feature the
+  compiler source needs, and the seed gate checks the existing seed through
+  its historical-emission path.

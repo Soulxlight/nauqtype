@@ -145,13 +145,16 @@ bin/nauqc change-report tests/fixtures/supervised_workflow/before/main.nq tests/
 
 `facts` exports checked definitions, references, and calls; newer versions add
 semantic and captured workspace/dependency provenance. v1 is the legacy
-default, v2 adds source-level evidence, v3 adds workspace evidence, and v4
-uses captured provenance. `review` reports
+default, v2 adds source-level evidence, v3 adds workspace evidence, v4
+uses captured provenance, and v5 adds generic templates and instances.
+`review` reports
 declared contracts and compiler-inferred mutation, effect, and propagation
 facts. Review v3 is a compatibility format whose direct-write mutation
 coverage is explicitly partial and a lower bound. Review v4 adds checked,
 call-aware parameter may-write evidence; that is not a reachability, purity, or
 general safety guarantee. An unmodeled builtin can make coverage partial.
+Review v5 keeps v4's meaning and adds generic templates and per-instance
+facts.
 
 `review-diff` compares checked semantic identities. `change-report` combines
 change evidence and can include a policy sidecar; v3 makes advisory policy
@@ -219,9 +222,12 @@ The M56 foundation adds explicit function/product/enum generics, for example
 `identity::<i32>(7)` and `Parcel<i32>`. Concrete instances keep existing type,
 ownership, audit and backend checks. No inference, traits, methods, overloads,
 stored references or implicit conversion accompanies this foundation.
-Legacy facts/review/diff/change/policy/rename commands reject generic graphs
-with `NQ-GENERIC-008` rather than invent source evidence for generated names;
-generic-aware evidence needs a separate versioned contract. Formatter-lite
+M56.1 adds `facts --format v5` and `review --format v5`, which report generic
+templates and checked instances by source identity (for example
+`fn:app::get<str,i32>`). All other evidence formats (facts/review v1-v4,
+diff, change, policy, rename) still reject generic graphs with
+`NQ-GENERIC-008` rather than invent source evidence for generated names.
+Formatter-lite
 remains output-only. Examples `generic_reuse.nq` and `generic_values.nq` teach
 the explicit form. Collections/data, FFI, bounded tasks and stable Linux
 packaging remain roadmap work, not current capabilities.

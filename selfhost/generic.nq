@@ -956,10 +956,49 @@ fn generic_add_enum_names(inv: ref generic_inventory, sources: ref list<source_f
     }
 }
 
+// One T record per generic declaration, used or unused:
+// key, kind, public, module, declaration start/end, name start/end,
+// audit start/end (empty when absent), arity, ordered parameter names.
+fn generic_retain_template(inv: ref generic_inventory, sources: ref list<source_file>, owner: i32, origins: mutref list<str>, metadata_count: mutref i32, diags: mutref list<diag>) -> unit {
+    let entry = generic_declaration(ref inv, owner);
+    let file = generic_source(ref sources, entry.source_index);
+    let name_token = generic_tok(ref inv.tokens, entry.name_index);
+    let mut audit_start = "";
+    let mut audit_end = "";
+    if entry.kind == 1 {
+        let mut cursor = entry.parameter_end;
+        while cursor < entry.body_start {
+            if generic_symbol(generic_tok(ref inv.tokens, cursor), "audit") and generic_symbol(generic_tok(ref inv.tokens, cursor + 1), "{") and generic_symbol(generic_tok(ref inv.tokens, entry.body_start - 1), "}") {
+                audit_start = i32_to_str(generic_tok(ref inv.tokens, cursor).start);
+                audit_end = i32_to_str(generic_tok(ref inv.tokens, entry.body_start - 1).end);
+                cursor = entry.body_start;
+            } else { cursor = cursor + 1; }
+        }
+    }
+    let mut public = "0";
+    if entry.is_public { public = "1"; }
+    let mut fields: list<str> = list();
+    list_push(mutref fields, generic_template_key(ref inv, ref sources, owner, mutref diags)); list_push(mutref fields, i32_to_str(entry.kind));
+    list_push(mutref fields, public); list_push(mutref fields, file.name);
+    list_push(mutref fields, i32_to_str(generic_tok(ref inv.tokens, entry.start).start)); list_push(mutref fields, i32_to_str(generic_tok(ref inv.tokens, entry.end - 1).end));
+    list_push(mutref fields, i32_to_str(name_token.start)); list_push(mutref fields, i32_to_str(name_token.end));
+    list_push(mutref fields, audit_start); list_push(mutref fields, audit_end);
+    list_push(mutref fields, i32_to_str(entry.arity));
+    let mut index = 0;
+    while index < entry.arity {
+        for parameter in inv.parameters { if parameter.owner == owner and parameter.index == index { list_push(mutref fields, parameter.name); } }
+        index = index + 1;
+    }
+    generic_origin_record(mutref origins, "T", ref fields, mutref metadata_count, file.name, 0, mutref diags);
+}
+
 fn generic_file_registry(inv: ref generic_inventory, sources: ref list<source_file>, source_index: i32, instances: ref list<generic_instance>, arguments: ref list<generic_instance_arg>, nodes: ref list<generic_type_node>, applications: ref list<generic_application>, names: mutref list<str>, origins: mutref list<str>, metadata_count: mutref i32, diags: mutref list<diag>) -> unit {
     let file = generic_source(ref sources, source_index);
     let mut owner = 0;
     for declaration in inv.declarations {
+        if declaration.source_index == source_index and declaration.arity > 0 and declaration.kind >= 1 and declaration.kind <= 3 {
+            generic_retain_template(ref inv, ref sources, owner, mutref origins, mutref metadata_count, mutref diags);
+        }
         if declaration.source_index == source_index and declaration.arity == 0 and (declaration.kind == 2 or declaration.kind == 3) {
             let key = generic_plain_nominal(ref inv, ref sources, owner, mutref diags);
             generic_registry_add(mutref names, mutref origins, generic_name_from_key(key), declaration.kind, mutref metadata_count, file.name, generic_tok(ref inv.tokens, declaration.name_index).start, mutref diags);
@@ -985,13 +1024,23 @@ fn generic_file_registry(inv: ref generic_inventory, sources: ref list<source_fi
             for argument in arguments { if argument.instance == instance_index { list_push(mutref fields, generic_node(ref nodes, argument.node).canonical); } }
             generic_origin_record(mutref origins, "I", ref fields, mutref metadata_count, file.name, 0, mutref diags);
             if declaration.kind == 3 { generic_add_enum_names(ref inv, ref sources, instance.declaration, instance.key, mutref names, mutref origins, mutref metadata_count, mutref diags); }
+            // A is a relation: retain each complete (instance, module, start,
+            // end, parent) tuple once, however often the worklist reached it.
+            let mut retained: list<generic_application> = list();
             for application in applications {
                 if application.instance == instance_index {
-                    let mut relation: list<str> = list();
-                    list_push(mutref relation, instance.key); list_push(mutref relation, generic_source(ref sources, application.source_index).name);
-                    list_push(mutref relation, i32_to_str(application.start)); list_push(mutref relation, i32_to_str(application.end));
-                    list_push(mutref relation, generic_context(ref instances, application.parent));
-                    generic_origin_record(mutref origins, "A", ref relation, mutref metadata_count, file.name, application.start, mutref diags);
+                    let mut seen = false;
+                    for previous in retained {
+                        if previous.source_index == application.source_index and previous.start == application.start and previous.end == application.end and generic_context(ref instances, previous.parent) == generic_context(ref instances, application.parent) { seen = true; }
+                    }
+                    if not seen {
+                        list_push(mutref retained, application);
+                        let mut relation: list<str> = list();
+                        list_push(mutref relation, instance.key); list_push(mutref relation, generic_source(ref sources, application.source_index).name);
+                        list_push(mutref relation, i32_to_str(application.start)); list_push(mutref relation, i32_to_str(application.end));
+                        list_push(mutref relation, generic_context(ref instances, application.parent));
+                        generic_origin_record(mutref origins, "A", ref relation, mutref metadata_count, file.name, application.start, mutref diags);
+                    }
                 }
             }
         }
@@ -1525,6 +1574,73 @@ fn generic_build_inventory(sources: ref list<source_file>, diags: mutref list<di
         index = index + 1;
     }
     return generic_inventory { tokens: tokens, ranges: ranges, declarations: declarations, parameters: parameters, imports: imports, items: items };
+}
+
+// M56.1: one generic declaration as the elaborator's own declaration scan
+// sees it in the ORIGINAL source. The checked metadata reader compares every
+// retained template record against these, independently of the records.
+pub type generic_declared_template {
+    module: str,
+    kind: i32,
+    name: str,
+    is_public: bool,
+    start: i32,
+    end: i32,
+    name_start: i32,
+    name_end: i32,
+    audit_start: i32,
+    audit_end: i32,
+    arity: i32,
+    parameters: str,
+}
+
+fn generic_declared_from_inventory(inv: ref generic_inventory, originals: ref list<source_file>) -> list<generic_declared_template> {
+    let mut found: list<generic_declared_template> = list();
+    let mut owner = 0;
+    for entry in inv.declarations {
+        if entry.arity > 0 and entry.kind >= 1 and entry.kind <= 3 {
+            let file = generic_source(ref originals, entry.source_index);
+            let name_token = generic_tok(ref inv.tokens, entry.name_index);
+            let mut names: list<str> = list();
+            let mut index = 0;
+            while index < entry.arity {
+                if index > 0 { list_push(mutref names, ","); }
+                for parameter in inv.parameters { if parameter.owner == owner and parameter.index == index { list_push(mutref names, parameter.name); } }
+                index = index + 1;
+            }
+            // Same audit-range rule as template retention.
+            let mut audit_start = -1;
+            let mut audit_end = -1;
+            if entry.kind == 1 {
+                let mut cursor = entry.parameter_end;
+                while cursor < entry.body_start {
+                    if generic_symbol(generic_tok(ref inv.tokens, cursor), "audit") and generic_symbol(generic_tok(ref inv.tokens, cursor + 1), "{") and generic_symbol(generic_tok(ref inv.tokens, entry.body_start - 1), "}") {
+                        audit_start = generic_tok(ref inv.tokens, cursor).start;
+                        audit_end = generic_tok(ref inv.tokens, entry.body_start - 1).end;
+                        cursor = entry.body_start;
+                    } else { cursor = cursor + 1; }
+                }
+            }
+            list_push(mutref found, generic_declared_template { module: file.name, kind: entry.kind, name: entry.name, is_public: entry.is_public, start: generic_tok(ref inv.tokens, entry.start).start, end: generic_tok(ref inv.tokens, entry.end - 1).end, name_start: name_token.start, name_end: name_token.end, audit_start: audit_start, audit_end: audit_end, arity: entry.arity, parameters: str_join(ref names) });
+        }
+        owner = owner + 1;
+    }
+    return found;
+}
+
+pub fn generic_declared_templates(sources: ref list<source_file>, valid: mutref bool) -> list<generic_declared_template>
+audit {
+    intent("Re-derive every generic declaration from the original source text with the elaborator's declaration scan");
+    mutates(valid);
+    effects();
+}
+{
+    let mut originals: list<source_file> = list();
+    for file in sources { list_push(mutref originals, make_source_file_at(file.name, file.path, file.original_text)); }
+    let mut diags: list<diag> = list();
+    let inv = generic_build_inventory(ref originals, mutref diags);
+    valid = not diagnostics_have_errors(ref diags);
+    return generic_declared_from_inventory(ref inv, ref originals);
 }
 
 fn generic_module_for_qualifier(inv: ref generic_inventory, module: str, qualifier: str) -> str {

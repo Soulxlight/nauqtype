@@ -1,0 +1,112 @@
+use app::collections as coll;
+use codes::status as status;
+
+type Tally {
+    total: i32,
+}
+
+enum Phase {
+    Start,
+    Done,
+}
+
+fn finish(phase: Phase) -> i32 {
+    match phase {
+        Start => {
+            return 1;
+        },
+        Done => {
+            return 0;
+        },
+    }
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise generic collections, nominal arguments, and propagated errors across modules");
+    mutates();
+    effects(print);
+}
+{
+    let mut names = coll::assoc_new::<str, i32>();
+    coll::put::<str, i32>(mutref names, "one", 1);
+    coll::put::<str, i32>(mutref names, "two", 2);
+    let mut flags = coll::assoc_new::<int, bool>();
+    coll::put::<i32, bool>(mutref flags, 7, true);
+    match coll::get::<str, i32>(ref names, "two") {
+        coll::Found::<i32>(value) => {
+            if value != 2 {
+                return 1;
+            }
+        },
+        coll::Missing::<i32> => {
+            return 2;
+        },
+    }
+    match coll::get::<i32, bool>(ref flags, 8) {
+        coll::Found::<bool>(_) => {
+            return 3;
+        },
+        coll::Missing::<bool> => {
+        },
+    }
+    if coll::assoc_len::<str, i32>(ref names) != 2 or coll::assoc_len::<i32, bool>(ref flags) != 1 {
+        return 4;
+    }
+    let mut entries = coll::bag_of::<coll::Entry>(coll::Entry { name: "a", count: 1 });
+    let mut codes = coll::bag_of::<status::Code>(status::make_code(3));
+    let mut tallies = coll::bag_of::<Tally>(Tally { total: 4 });
+    let mut nested = coll::bag_of::<coll::Maybe<i32>>(coll::Found::<i32>(5));
+    if coll::bag_len::<coll::Entry>(ref entries) + coll::bag_len::<status::Code>(ref codes) + coll::bag_len::<Tally>(ref tallies) + coll::bag_len::<coll::Maybe<i32>>(ref nested) != 4 {
+        return 5;
+    }
+    coll::bag_clear::<Tally>(mutref tallies);
+    if coll::bag_len::<Tally>(ref tallies) != 0 {
+        return 13;
+    }
+    let errors: list<io_err> = list();
+    let waits: list<duration> = list();
+    if coll::count::<io_err>(ref errors) + coll::count::<duration>(ref waits) != 0 {
+        return 6;
+    }
+    let left = coll::Missing::<str>;
+    let right = coll::Found::<str>("x");
+    if coll::pair::<coll::Maybe<str>, coll::Maybe<str>>(ref left, ref right) != 2 {
+        return 7;
+    }
+    match coll::forward::<i32, str>(Ok(3)) {
+        Ok(value) => {
+            if value != 3 {
+                return 8;
+            }
+        },
+        Err(_) => {
+            return 9;
+        },
+    }
+    match coll::forward::<i32, coll::Failure<str>>(Err(coll::Failure::<str> { reason: "no" })) {
+        Ok(_) => {
+            return 10;
+        },
+        Err(failure) => {
+            if failure.reason != "no" {
+                return 11;
+            }
+        },
+    }
+    match coll::forward::<i32, Tally>(Err(Tally { total: 9 })) {
+        Ok(_) => {
+            return 14;
+        },
+        Err(tally) => {
+            if tally.total != 9 {
+                return 15;
+            }
+        },
+    }
+    if coll::mode_weight(coll::Slow) != 2 {
+        return 12;
+    }
+    print_line("M56.1 evidence ok");
+    return finish(Done);
+}

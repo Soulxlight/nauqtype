@@ -78,6 +78,7 @@ parser for proof evidence, not a general JSON API or CLI.
 - `facts-v2.schema.json` -> `tests/golden/facts/main-v2.json`
 - `facts-v3.schema.json` -> `tests/golden/organizational_tool/facts_v3.json`
 - `facts-v4.schema.json` -> `tests/golden/organizational_tool/facts_v4.json`
+- `facts-v5.schema.json` -> `tests/golden/schema_profile/facts-v5-positive.json`
 - `nauqtype.policy-v1.schema.json` ->
   `tests/fixtures/workspace_local_dependency/policy.json`
 - `nauqtype.workspace-lock-v1.schema.json` ->
@@ -100,6 +101,7 @@ parser for proof evidence, not a general JSON API or CLI.
 - `review-v2.schema.json` -> `tests/golden/review/review_v2.json`
 - `review-v3.schema.json` -> `tests/golden/review/review_v3.json`
 - `review-v4.schema.json` -> `tests/golden/review/review_v4.json`
+- `review-v5.schema.json` -> `tests/golden/schema_profile/review-v5-positive.json`
 
 If a new schema appears without a mapping, the gate fails closed.
 
@@ -119,5 +121,28 @@ The gate also includes real-schema negative coherence checks against
 `change-report-v3.schema.json` for audit/evidence mismatches, v4 mutation
 coverage contradictions, and policy branch contradictions.
 
-No full rebuild, full proof gate, existing schema/golden edits, broad JSON API,
-or CLI was added in this slice.
+M56.1 adds `facts-v5.schema.json` and `review-v5.schema.json`. Their positive
+documents are real `facts --format v5` / `review --format v5` output for the
+`tests/fixtures/m56_1_evidence` workspace, and their coherence negatives live
+beside them as
+`tests/golden/schema_profile/{facts,review}-v5-negative-*.json`. The gate
+requires each negative to parse as a JSON object (so it cannot pass by being
+malformed) and to be rejected by the real v5 schema. The v5 schemas tie
+template export kinds to `evidence: "declared"`, ordinary export kinds to
+`"checked"`, generic instances to `"checked"`, instance function entries to
+the instance-only fields, and instance target kinds to `target_instance_of`
+using separate `$defs` joined by `anyOf`.
+
+Profile limits for v5 (no `not`, no uniqueness, no ordering, no cross-record
+references): the schemas cannot say that a plain call/reference/propagation
+`target_kind` is not one of the four instance kinds without a
+`target_instance_of` (plain `target_kind` stays an open string, as in v4);
+that arrays are sorted or unique; that `instance_of`, `instances`,
+`type_arguments`, and `enclosing_instance` refer to real records; or that
+identity strings follow the rendering grammar. These are emitter tests, not
+schema claims.
+
+Schema validation stays inside the owned `test`/`prove` gates: M56.1 adds no
+schema-validation command, broad JSON API, or edit to an existing v1-v4
+schema or golden. The only new CLI surface is the `--format v5` choice for
+`facts` and `review`.

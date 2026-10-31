@@ -1,5 +1,6 @@
 use ast;
 use diag;
+use generic;
 use generic_names;
 use source;
 use text;
@@ -49,17 +50,17 @@ fn auth_registry(file: source_file, out: mutref list<generic_registered_decl>) -
     while cursor < str_len(file.generic_origins) {
         let tag = slice_text(file.generic_origins, cursor, cursor + 1);
         cursor = cursor + 1;
-        if tag != "D" and tag != "N" and tag != "I" and tag != "V" and tag != "A" { return false; }
+        if tag != "D" and tag != "N" and tag != "I" and tag != "V" and tag != "A" and tag != "T" { return false; }
         let mut fields: list<str> = list();
         let mut count = 0;
         let mut arity_text = "";
         while cursor < str_len(file.generic_origins) and char_at(file.generic_origins, cursor) != 59 {
             if count >= 131072 or (tag == "D" and count >= 4) { return false; }
-            let field = auth_field(file.generic_origins, mutref cursor, tag == "D" or (tag == "I" and count == 5));
+            let field = auth_field(file.generic_origins, mutref cursor, tag == "D" or (tag == "I" and count == 5) or (tag == "T" and count == 10));
             match field {
                 Some(value) => {
                     if tag == "D" { list_push(mutref fields, value); }
-                    if tag == "I" and count == 5 { arity_text = value; }
+                    if (tag == "I" and count == 5) or (tag == "T" and count == 10) { arity_text = value; }
                 },
                 None => { return false; },
             }
@@ -73,6 +74,13 @@ fn auth_registry(file: source_file, out: mutref list<generic_registered_decl>) -
             let mut at = 0;
             let arity = auth_number(arity_text, mutref at);
             if arity < 0 or arity > 131066 or count != arity + 6 { return false; }
+        }
+        // Template records are validated by the checked registry reader;
+        // authentication of generated declarations only frames them.
+        if tag == "T" {
+            let mut at = 0;
+            let arity = auth_number(arity_text, mutref at);
+            if arity < 0 or arity > 131061 or count != arity + 11 { return false; }
         }
         if tag == "D" {
             if count != 4 { return false; }
@@ -152,6 +160,545 @@ audit {
         }
         if count != 1 { auth_failure(mutref diags, declaration.module); }
     }
+}
+
+// ---------------------------------------------------------------------------
+// M56.1 checked registry reader. Every record kind is parsed into flat typed
+// arenas and cross-checked before any evidence emitter may consume it.
+// Kinds: 1 function, 2 product type, 3 enum, 5 variant.
+
+pub type generic_template_record {
+    key: str,
+    kind: i32,
+    is_public: bool,
+    module: str,
+    name: str,
+    start: i32,
+    end: i32,
+    name_start: i32,
+    name_end: i32,
+    audit_start: i32,
+    audit_end: i32,
+    arity: i32,
+}
+
+pub type generic_template_parameter {
+    template: str,
+    index: i32,
+    name: str,
+}
+
+pub type generic_instance_record {
+    key: str,
+    template: str,
+    kind: i32,
+    module: str,
+    name: str,
+    generated: str,
+    start: i32,
+    end: i32,
+    arity: i32,
+}
+
+pub type generic_instance_argument {
+    instance: str,
+    index: i32,
+    canonical: str,
+}
+
+pub type generic_application_record {
+    instance: str,
+    module: str,
+    start: i32,
+    end: i32,
+    parent: str,
+}
+
+pub type generic_generated_record {
+    name: str,
+    key: str,
+    kind: i32,
+    module: str,
+    original_at: i32,
+}
+
+pub type generic_nominal_record {
+    key: str,
+    kind: i32,
+    module: str,
+    name: str,
+    start: i32,
+    end: i32,
+    generated: str,
+}
+
+pub type generic_variant_record {
+    key: str,
+    enum_key: str,
+    module: str,
+    enum_name: str,
+    name: str,
+    start: i32,
+    end: i32,
+    generated: str,
+}
+
+pub type generic_registry {
+    valid: bool,
+    templates: list<generic_template_record>,
+    parameters: list<generic_template_parameter>,
+    instances: list<generic_instance_record>,
+    arguments: list<generic_instance_argument>,
+    applications: list<generic_application_record>,
+    generated: list<generic_generated_record>,
+    nominals: list<generic_nominal_record>,
+    variants: list<generic_variant_record>,
+}
+
+pub type generic_source_identity {
+    found: bool,
+    kind: i32,
+    instance: bool,
+    module: str,
+    name: str,
+    enum_name: str,
+    key: str,
+    template: str,
+}
+
+fn registry_empty(valid: bool) -> generic_registry {
+    return generic_registry { valid: valid, templates: list(), parameters: list(), instances: list(), arguments: list(), applications: list(), generated: list(), nominals: list(), variants: list() };
+}
+
+fn registry_fail(diags: mutref list<diag>, module: str, message: str) -> generic_registry {
+    list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, module, -1, -1, message));
+    return registry_empty(false);
+}
+
+fn registry_get(fields: ref list<str>, index: i32) -> str {
+    match list_get(ref fields, index) { Some(value) => { return value; }, None => { return ""; }, }
+}
+
+fn registry_number(fields: ref list<str>, index: i32) -> i32 {
+    let mut at = 0;
+    return auth_number(registry_get(ref fields, index), mutref at);
+}
+
+fn registry_identifier(name: str) -> bool {
+    if name == "" { return false; }
+    let mut index = 0;
+    while index < str_len(name) {
+        let value = char_at(name, index);
+        let letter = (value >= 65 and value <= 90) or (value >= 97 and value <= 122) or value == 95;
+        let digit = value >= 48 and value <= 57;
+        if not letter and not (digit and index > 0) { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+// The declaration name of "x|module|name<...>" or "x|module|name|...".
+fn registry_key_name(key: str) -> str {
+    let module = generic_key_module(key);
+    if module == "" { return ""; }
+    let start = 3 + str_len(module);
+    let mut end = start;
+    while end < str_len(key) and char_at(key, end) != 60 and char_at(key, end) != 124 { end = end + 1; }
+    return slice_text(key, start, end);
+}
+
+fn registry_range(file: source_file, start: i32, end: i32) -> bool {
+    return start >= 0 and end > start and end <= str_len(file.original_text);
+}
+
+fn registry_fields(value: str, cursor: mutref i32, fields: mutref list<str>) -> bool {
+    while cursor < str_len(value) and char_at(value, cursor) != 59 {
+        if list_len(ref fields) >= 131072 { return false; }
+        match auth_field(value, mutref cursor, true) {
+            Some(field_value) => { list_push(mutref fields, field_value); },
+            None => { return false; },
+        }
+    }
+    if cursor >= str_len(value) { return false; }
+    cursor = cursor + 1;
+    return true;
+}
+
+fn registry_template(file: source_file, fields: ref list<str>, templates: mutref list<generic_template_record>, parameters: mutref list<generic_template_parameter>) -> bool {
+    let key = registry_get(ref fields, 0);
+    let kind = registry_number(ref fields, 1);
+    let public = registry_get(ref fields, 2);
+    let module = registry_get(ref fields, 3);
+    let start = registry_number(ref fields, 4);
+    let end = registry_number(ref fields, 5);
+    let name_start = registry_number(ref fields, 6);
+    let name_end = registry_number(ref fields, 7);
+    let audit_start_text = registry_get(ref fields, 8);
+    let audit_end_text = registry_get(ref fields, 9);
+    let arity = registry_number(ref fields, 10);
+    if arity < 1 or list_len(ref fields) != arity + 11 { return false; }
+    if module != file.name or generic_key_module(key) != module { return false; }
+    if kind == 1 { if not str_starts_with(key, "f|") { return false; } }
+    else { if (kind != 2 and kind != 3) or not str_starts_with(key, "t|") { return false; } }
+    let name = registry_key_name(key);
+    if not registry_identifier(name) or key != concat4(slice_text(key, 0, 2), module, "|", name) { return false; }
+    if public != "0" and public != "1" { return false; }
+    if not registry_range(file, start, end) or name_start < start or name_end > end or slice_text(file.original_text, name_start, name_end) != name { return false; }
+    let mut audit_start = -1;
+    let mut audit_end = -1;
+    if audit_start_text != "" or audit_end_text != "" {
+        audit_start = registry_number(ref fields, 8);
+        audit_end = registry_number(ref fields, 9);
+        if kind != 1 or audit_start < name_end or audit_end <= audit_start or audit_end > end { return false; }
+    }
+    let mut names: list<str> = list();
+    let mut index = 0;
+    while index < arity {
+        let parameter = registry_get(ref fields, 11 + index);
+        if not registry_identifier(parameter) or list_contains_str(ref names, parameter) { return false; }
+        list_push(mutref names, parameter);
+        list_push(mutref parameters, generic_template_parameter { template: key, index: index, name: parameter });
+        index = index + 1;
+    }
+    list_push(mutref templates, generic_template_record { key: key, kind: kind, is_public: public == "1", module: module, name: name, start: start, end: end, name_start: name_start, name_end: name_end, audit_start: audit_start, audit_end: audit_end, arity: arity });
+    return true;
+}
+
+fn registry_instance(file: source_file, fields: ref list<str>, instances: mutref list<generic_instance_record>, arguments: mutref list<generic_instance_argument>) -> bool {
+    let key = registry_get(ref fields, 0);
+    let template = registry_get(ref fields, 1);
+    let module = registry_get(ref fields, 2);
+    let start = registry_number(ref fields, 3);
+    let end = registry_number(ref fields, 4);
+    let arity = registry_number(ref fields, 5);
+    if arity < 1 or list_len(ref fields) != arity + 6 { return false; }
+    if module != file.name or generic_key_module(key) != module or generic_key_module(template) != module { return false; }
+    if not str_starts_with(template, "f|") and not str_starts_with(template, "t|") { return false; }
+    let name = registry_key_name(template);
+    if not registry_identifier(name) or template != concat4(slice_text(template, 0, 2), module, "|", name) { return false; }
+    if not registry_range(file, start, end) { return false; }
+    let mut pieces: list<str> = list();
+    list_push(mutref pieces, template);
+    list_push(mutref pieces, "<");
+    let mut index = 0;
+    while index < arity {
+        let canonical = registry_get(ref fields, 6 + index);
+        if canonical == "" { return false; }
+        if index > 0 { list_push(mutref pieces, ","); }
+        list_push(mutref pieces, canonical);
+        list_push(mutref arguments, generic_instance_argument { instance: key, index: index, canonical: canonical });
+        index = index + 1;
+    }
+    list_push(mutref pieces, ">");
+    if key != str_join(ref pieces) { return false; }
+    let generated = generic_name_from_key(key);
+    if generated == "" { return false; }
+    list_push(mutref instances, generic_instance_record { key: key, template: template, kind: 0, module: module, name: name, generated: generated, start: start, end: end, arity: arity });
+    return true;
+}
+
+fn registry_source_length(sources: ref list<source_file>, module: str) -> i32 {
+    for file in sources { if file.name == module { return str_len(file.original_text); } }
+    return -1;
+}
+
+fn registry_application(sources: ref list<source_file>, fields: ref list<str>, applications: mutref list<generic_application_record>) -> bool {
+    if list_len(ref fields) != 5 { return false; }
+    let instance = registry_get(ref fields, 0);
+    let module = registry_get(ref fields, 1);
+    let start = registry_number(ref fields, 2);
+    let end = registry_number(ref fields, 3);
+    let parent = registry_get(ref fields, 4);
+    let length = registry_source_length(ref sources, module);
+    if instance == "" or length < 0 or start < 0 or end < start or end > length { return false; }
+    for previous in applications {
+        if previous.instance == instance and previous.module == module and previous.start == start and previous.end == end and previous.parent == parent { return true; }
+    }
+    list_push(mutref applications, generic_application_record { instance: instance, module: module, start: start, end: end, parent: parent });
+    return true;
+}
+
+fn registry_generated(file: source_file, fields: ref list<str>, generated: mutref list<generic_generated_record>) -> bool {
+    if list_len(ref fields) != 4 { return false; }
+    let name = registry_get(ref fields, 0);
+    let kind = registry_number(ref fields, 1);
+    let module = registry_get(ref fields, 2);
+    let at = registry_number(ref fields, 3);
+    let key = generic_key_from_name(name);
+    if key == "" or module != file.name or generic_key_module(key) != module or not source_generated_name(file, name) { return false; }
+    if at < 0 or at >= str_len(file.original_text) { return false; }
+    if kind == 1 { if not str_starts_with(key, "f|") { return false; } }
+    else {
+        if kind == 2 or kind == 3 { if not str_starts_with(key, "t|") { return false; } }
+        else { if kind != 5 or not str_starts_with(key, "v|") { return false; } }
+    }
+    list_push(mutref generated, generic_generated_record { name: name, key: key, kind: kind, module: module, original_at: at });
+    return true;
+}
+
+fn registry_nominal(file: source_file, fields: ref list<str>, nominals: mutref list<generic_nominal_record>) -> bool {
+    if list_len(ref fields) != 6 { return false; }
+    let key = registry_get(ref fields, 0);
+    let module = registry_get(ref fields, 2);
+    let start = registry_number(ref fields, 3);
+    let end = registry_number(ref fields, 4);
+    let name = registry_key_name(key);
+    if module != file.name or not registry_identifier(name) or key != concat4("t|", module, "|", name) or registry_get(ref fields, 1) != key or registry_get(ref fields, 5) != "0" { return false; }
+    if not registry_range(file, start, end) { return false; }
+    let generated = generic_name_from_key(key);
+    if generated == "" { return false; }
+    list_push(mutref nominals, generic_nominal_record { key: key, kind: 0, module: module, name: name, start: start, end: end, generated: generated });
+    return true;
+}
+
+fn registry_variant(file: source_file, fields: ref list<str>, variants: mutref list<generic_variant_record>) -> bool {
+    if list_len(ref fields) != 5 { return false; }
+    let key = registry_get(ref fields, 0);
+    let enum_key = registry_get(ref fields, 1);
+    let module = registry_get(ref fields, 2);
+    let start = registry_number(ref fields, 3);
+    let end = registry_number(ref fields, 4);
+    if module != file.name or not str_starts_with(key, "v|") or not str_starts_with(enum_key, "t|") or generic_key_module(enum_key) != module { return false; }
+    let mut last = str_len(key) - 1;
+    while last > 0 and char_at(key, last) != 124 { last = last - 1; }
+    let name = slice_text(key, last + 1, str_len(key));
+    if not registry_identifier(name) or key != concat4("v", slice_text(enum_key, 1, str_len(enum_key)), "|", name) { return false; }
+    if not registry_range(file, start, end) or str_len(name) > end - start or slice_text(file.original_text, start, start + str_len(name)) != name { return false; }
+    let generated = generic_name_from_key(key);
+    if generated == "" { return false; }
+    list_push(mutref variants, generic_variant_record { key: key, enum_key: enum_key, module: module, enum_name: registry_key_name(enum_key), name: name, start: start, end: end, generated: generated });
+    return true;
+}
+
+fn registry_find_generated(generated: ref list<generic_generated_record>, name: str) -> generic_generated_record {
+    for entry in generated { if entry.name == name { return entry; } }
+    return generic_generated_record { name: "", key: "", kind: 0, module: "", original_at: -1 };
+}
+
+fn registry_find_template(templates: ref list<generic_template_record>, key: str) -> generic_template_record {
+    for entry in templates { if entry.key == key { return entry; } }
+    return generic_template_record { key: "", kind: 0, is_public: false, module: "", name: "", start: -1, end: -1, name_start: -1, name_end: -1, audit_start: -1, audit_end: -1, arity: -1 };
+}
+
+fn registry_original(sources: ref list<source_file>, module: str) -> str {
+    for file in sources { if file.name == module { return file.original_text; } }
+    return "";
+}
+
+fn registry_unique(keys: ref list<str>) -> bool {
+    let mut seen: list<str> = list();
+    for key in keys {
+        if list_contains_str(ref seen, key) { return false; }
+        list_push(mutref seen, key);
+    }
+    return true;
+}
+
+fn registry_nominal_context(templates: ref list<generic_template_record>, nominals: ref list<generic_nominal_record>, workspace: bool, scopes: ref list<generic_module_scope>) -> generic_render_context {
+    let mut kinds: list<generic_nominal_kind> = list();
+    for entry in templates { if entry.kind == 2 or entry.kind == 3 { list_push(mutref kinds, generic_nominal_kind { key: entry.key, kind: entry.kind, arity: entry.arity }); } }
+    for entry in nominals { list_push(mutref kinds, generic_nominal_kind { key: entry.key, kind: entry.kind, arity: 0 }); }
+    let mut copied: list<generic_module_scope> = list();
+    for entry in scopes { list_push(mutref copied, entry); }
+    return generic_render_context { workspace: workspace, scopes: copied, nominals: kinds };
+}
+
+fn registry_parameter_text(parameters: ref list<generic_template_parameter>, template: str, arity: i32) -> str {
+    let mut names: list<str> = list();
+    let mut index = 0;
+    while index < arity {
+        if index > 0 { list_push(mutref names, ","); }
+        for entry in parameters { if entry.template == template and entry.index == index { list_push(mutref names, entry.name); } }
+        index = index + 1;
+    }
+    return str_join(ref names);
+}
+
+// Exactly one template record per generic declaration, used or unused: the
+// declarations come from the elaborator's declaration scan of the ORIGINAL
+// text, independently of the records being checked.
+fn registry_templates_declared(sources: ref list<source_file>, templates: ref list<generic_template_record>, parameters: ref list<generic_template_parameter>) -> bool {
+    if not source_graph_has_generics(ref sources) { return list_len(ref templates) == 0; }
+    let mut valid = true;
+    let declared = generic_declared_templates(ref sources, mutref valid);
+    if not valid or list_len(ref declared) != list_len(ref templates) { return false; }
+    for declaration in declared {
+        let mut tag = "t|";
+        if declaration.kind == 1 { tag = "f|"; }
+        let key = concat4(tag, declaration.module, "|", declaration.name);
+        let mut matches = 0;
+        for entry in templates {
+            if entry.key == key {
+                matches = matches + 1;
+                if entry.kind != declaration.kind or entry.module != declaration.module or entry.name != declaration.name or entry.is_public != declaration.is_public or entry.arity != declaration.arity { return false; }
+                if entry.start != declaration.start or entry.end != declaration.end or entry.name_start != declaration.name_start or entry.name_end != declaration.name_end { return false; }
+                if entry.audit_start != declaration.audit_start or entry.audit_end != declaration.audit_end { return false; }
+                if registry_parameter_text(ref parameters, entry.key, entry.arity) != declaration.parameters { return false; }
+            }
+        }
+        if matches != 1 { return false; }
+    }
+    return true;
+}
+
+pub fn generic_read_registry(sources: ref list<source_file>, diags: mutref list<diag>) -> generic_registry
+audit { intent("Parse every retained generic record kind into a checked registry and reject malformed or inconsistent metadata"); mutates(diags); effects(); }
+{
+    let mut templates: list<generic_template_record> = list();
+    let mut parameters: list<generic_template_parameter> = list();
+    let mut raw_instances: list<generic_instance_record> = list();
+    let mut arguments: list<generic_instance_argument> = list();
+    let mut applications: list<generic_application_record> = list();
+    let mut generated: list<generic_generated_record> = list();
+    let mut raw_nominals: list<generic_nominal_record> = list();
+    let mut variants: list<generic_variant_record> = list();
+    let mut first_module = "";
+    for file in sources {
+        if first_module == "" { first_module = file.name; }
+        let value = file.generic_origins;
+        if value != "" and not file.has_generics { return registry_fail(mutref diags, file.name, "generic origin metadata outside an elaborated generic graph"); }
+        let mut cursor = 0;
+        while cursor < str_len(value) {
+            let tag = slice_text(value, cursor, cursor + 1);
+            cursor = cursor + 1;
+            let mut fields: list<str> = list();
+            if not registry_fields(value, mutref cursor, mutref fields) { return registry_fail(mutref diags, file.name, "generic origin record framing is malformed"); }
+            let mut ok = false;
+            if tag == "T" { ok = registry_template(file, ref fields, mutref templates, mutref parameters); }
+            if tag == "I" { ok = registry_instance(file, ref fields, mutref raw_instances, mutref arguments); }
+            if tag == "A" { ok = registry_application(ref sources, ref fields, mutref applications); }
+            if tag == "D" { ok = registry_generated(file, ref fields, mutref generated); }
+            if tag == "N" { ok = registry_nominal(file, ref fields, mutref raw_nominals); }
+            if tag == "V" { ok = registry_variant(file, ref fields, mutref variants); }
+            if not ok { return registry_fail(mutref diags, file.name, concat3("generic origin record ", tag, " is malformed or lies outside its original file")); }
+        }
+    }
+    // Keys are unique within each record kind; templates and nongeneric
+    // nominals share the canonical atom space and must not collide.
+    let mut keys: list<str> = list();
+    for entry in templates { list_push(mutref keys, entry.key); }
+    for entry in raw_nominals { list_push(mutref keys, entry.key); }
+    if not registry_unique(ref keys) { return registry_fail(mutref diags, first_module, "duplicate generic template or nominal key"); }
+    keys = list();
+    for entry in raw_instances { list_push(mutref keys, entry.key); }
+    if not registry_unique(ref keys) { return registry_fail(mutref diags, first_module, "duplicate generic instance key"); }
+    keys = list();
+    for entry in generated { list_push(mutref keys, entry.name); }
+    if not registry_unique(ref keys) { return registry_fail(mutref diags, first_module, "duplicate generated declaration"); }
+    keys = list();
+    for entry in variants { list_push(mutref keys, entry.key); }
+    if not registry_unique(ref keys) { return registry_fail(mutref diags, first_module, "duplicate generic variant key"); }
+    // Every instance names an existing template of the same kind and arity
+    // and has exactly one generated declaration at the template name.
+    let mut instances: list<generic_instance_record> = list();
+    for entry in raw_instances {
+        let template = registry_find_template(ref templates, entry.template);
+        let declaration = registry_find_generated(ref generated, entry.generated);
+        if template.key == "" or template.arity != entry.arity or template.module != entry.module or template.start != entry.start or template.end != entry.end { return registry_fail(mutref diags, entry.module, "generic instance names no template of its kind and arity"); }
+        if declaration.name == "" or declaration.kind != template.kind or declaration.original_at != template.name_start { return registry_fail(mutref diags, entry.module, "generic instance has no consistent generated declaration"); }
+        let mut current = entry;
+        current.kind = template.kind;
+        list_push(mutref instances, current);
+    }
+    let mut nominals: list<generic_nominal_record> = list();
+    for entry in raw_nominals {
+        let declaration = registry_find_generated(ref generated, entry.generated);
+        if declaration.name == "" or (declaration.kind != 2 and declaration.kind != 3) or declaration.original_at < entry.start or declaration.original_at >= entry.end { return registry_fail(mutref diags, entry.module, "nongeneric nominal has no consistent generated declaration"); }
+        if slice_text(registry_original(ref sources, entry.module), declaration.original_at, declaration.original_at + str_len(entry.name)) != entry.name { return registry_fail(mutref diags, entry.module, "nongeneric nominal origin is not its name token"); }
+        let mut current = entry;
+        current.kind = declaration.kind;
+        list_push(mutref nominals, current);
+    }
+    for entry in variants {
+        let declaration = registry_find_generated(ref generated, entry.generated);
+        if declaration.name == "" or declaration.kind != 5 or declaration.original_at != entry.start { return registry_fail(mutref diags, entry.module, "generic variant has no consistent generated declaration"); }
+        let mut owner_found = false;
+        for owner in instances { if owner.key == entry.enum_key and owner.kind == 3 and owner.start <= entry.start and entry.end <= owner.end { owner_found = true; } }
+        for owner in nominals { if owner.key == entry.enum_key and owner.kind == 3 and owner.start <= entry.start and entry.end <= owner.end { owner_found = true; } }
+        if not owner_found { return registry_fail(mutref diags, entry.module, "generic variant names no existing enum"); }
+    }
+    // Every generated declaration corresponds to exactly one I, N, or V.
+    for entry in generated {
+        let mut matches = 0;
+        for owner in instances { if owner.generated == entry.name { matches = matches + 1; } }
+        for owner in nominals { if owner.generated == entry.name { matches = matches + 1; } }
+        for owner in variants { if owner.generated == entry.name { matches = matches + 1; } }
+        if matches != 1 { return registry_fail(mutref diags, entry.module, "generated declaration has no unique instance, nominal, or variant record"); }
+    }
+    for entry in applications {
+        let mut found = false;
+        let mut parent_found = entry.parent == "";
+        for owner in instances {
+            if owner.key == entry.instance { found = true; }
+            if owner.key == entry.parent { parent_found = true; }
+        }
+        if not found or not parent_found { return registry_fail(mutref diags, entry.module, "generic application names no existing instance"); }
+    }
+    let empty_scopes: list<generic_module_scope> = list();
+    let context = registry_nominal_context(ref templates, ref nominals, false, ref empty_scopes);
+    for entry in instances {
+        let mut applied = false;
+        for application in applications { if application.instance == entry.key { applied = true; } }
+        if not applied { return registry_fail(mutref diags, entry.module, "generic instance has no application"); }
+    }
+    for entry in arguments {
+        if not generic_canonical_valid(ref context, entry.canonical, true) { return registry_fail(mutref diags, first_module, "generic instance argument is not a canonical type"); }
+    }
+    if not registry_templates_declared(ref sources, ref templates, ref parameters) { return registry_fail(mutref diags, first_module, "generic template records do not match the generic declarations of the original source"); }
+    return generic_registry { valid: true, templates: templates, parameters: parameters, instances: instances, arguments: arguments, applications: applications, generated: generated, nominals: nominals, variants: variants };
+}
+
+pub fn generic_registry_render_context(registry: ref generic_registry, workspace: bool, scopes: ref list<generic_module_scope>) -> generic_render_context
+audit { intent("Build the shared renderer context from checked template and nominal kinds plus caller-owned module scopes"); mutates(); effects(); }
+{
+    return registry_nominal_context(ref registry.templates, ref registry.nominals, workspace, ref scopes);
+}
+
+pub fn generic_registry_identity(registry: ref generic_registry, name: str) -> generic_source_identity
+audit { intent("Map one generated declaration name to its checked source identity without trusting the spelling"); mutates(); effects(); }
+{
+    for entry in registry.instances {
+        if entry.generated == name { return generic_source_identity { found: true, kind: entry.kind, instance: true, module: entry.module, name: entry.name, enum_name: "", key: entry.key, template: entry.template }; }
+    }
+    for entry in registry.nominals {
+        if entry.generated == name { return generic_source_identity { found: true, kind: entry.kind, instance: false, module: entry.module, name: entry.name, enum_name: "", key: entry.key, template: entry.key }; }
+    }
+    for entry in registry.variants {
+        if entry.generated == name { return generic_source_identity { found: true, kind: 5, instance: text_contains(entry.enum_key, "<"), module: entry.module, name: entry.name, enum_name: entry.enum_name, key: entry.key, template: entry.enum_key }; }
+    }
+    return generic_source_identity { found: false, kind: 0, instance: false, module: "", name: "", enum_name: "", key: "", template: "" };
+}
+
+pub fn generic_require_identity(registry: ref generic_registry, name: str, module: str, diags: mutref list<diag>) -> generic_source_identity
+audit { intent("Resolve a generated item for an emitter and fail closed with NQ-GENERIC-010 when it has no source identity"); mutates(diags); effects(); }
+{
+    let identity = generic_registry_identity(ref registry, name);
+    if not identity.found { generic_report_missing_identity(mutref diags, module); }
+    return identity;
+}
+
+pub fn generic_template_parameter_names(registry: ref generic_registry, template: str) -> list<str>
+audit { intent("Return a template's ordered type-parameter names"); mutates(); effects(); }
+{
+    let mut names: list<str> = list();
+    for entry in registry.parameters { if entry.template == template { list_push(mutref names, entry.name); } }
+    return names;
+}
+
+pub fn generic_instance_argument_keys(registry: ref generic_registry, instance: str) -> list<str>
+audit { intent("Return an instance's ordered canonical argument keys for the shared renderer"); mutates(); effects(); }
+{
+    let mut values: list<str> = list();
+    for entry in registry.arguments { if entry.instance == instance { list_push(mutref values, entry.canonical); } }
+    return values;
+}
+
+pub fn generic_instance_applications(registry: ref generic_registry, instance: str) -> list<generic_application_record>
+audit { intent("Return the deduplicated application relation of one instance"); mutates(); effects(); }
+{
+    let mut values: list<generic_application_record> = list();
+    for entry in registry.applications { if entry.instance == instance { list_push(mutref values, entry); } }
+    return values;
 }
 
 fn auth_case(file: source_file, item: top_item, accepted: bool) -> bool {

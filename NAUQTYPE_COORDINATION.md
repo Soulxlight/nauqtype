@@ -35,12 +35,11 @@ defines its layout.
 
 ## Current Position
 
-- Published `main`: `e34d459` (M56 explicit generics), pushed 2026-10-30.
 - Organizational Linux alpha, `0.3.0-alpha.1`. Not stable or feature complete.
-- Complete through M56, including the PRE-M56 performance checkpoint. Full
-  milestone gate is about 19 minutes on the WSL2 Linux host.
-- Next: M56.1 generic-aware `facts`/`review`, then M56.2 scalar `f64`, then
-  M57-M61 toward v1.0 stable Linux. Sequence and scope:
+- Complete through M56.1 (generic-aware `facts`/`review` v5), including M56
+  and the PRE-M56 performance checkpoint. Full milestone gate is about 25
+  minutes on the WSL2 Linux host.
+- Next: M56.2 scalar `f64`, then M57-M61 toward v1.0 stable Linux. Sequence and scope:
   [ROADMAP.md](ROADMAP.md#current-position-and-resumption); open actions:
   [TODO.md](TODO.md#next-actions).
 

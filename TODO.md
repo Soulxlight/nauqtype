@@ -4,7 +4,8 @@
 
 - [x] M56.1: Gate A review of the [contract](docs/M56_1_CONTRACT.md)
   (approved 2026-10-31, revision 3)
-- [ ] M56.1: implementation, focused checks, trailing audit, milestone gate
+- [x] M56.1: implementation, focused checks, trailing audit, milestone gate
+  (2026-10-31; [evidence](AUDIT_REMEDIATION.md#m561-generic-aware-evidence-close))
 - [ ] M56.2: `f64` decision record (SYNTAX_IDENTITY SOP) and Gate A review
 - [ ] M57 planning after M56.1/M56.2 contracts are fixed, including the
   in-repo standard library layout
@@ -16,6 +17,8 @@ remains open. Evidence:
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
 M56 closing evidence:
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m56-generic-reuse-close).
+M56.1 closing evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m561-generic-aware-evidence-close).
 
 ## Current Refactor Checkpoint
 

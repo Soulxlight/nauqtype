@@ -189,6 +189,9 @@ fn spt_schema_positive_path(name: str) -> str {
     if name == "facts-v4.schema.json" {
         return "tests/golden/organizational_tool/facts_v4.json";
     }
+    if name == "facts-v5.schema.json" {
+        return "tests/golden/schema_profile/facts-v5-positive.json";
+    }
     if name == "nauqtype.policy-v1.schema.json" {
         return "tests/fixtures/workspace_local_dependency/policy.json";
     }
@@ -227,6 +230,9 @@ fn spt_schema_positive_path(name: str) -> str {
     }
     if name == "review-v4.schema.json" {
         return "tests/golden/review/review_v4.json";
+    }
+    if name == "review-v5.schema.json" {
+        return "tests/golden/schema_profile/review-v5-positive.json";
     }
     return "";
 }
@@ -300,6 +306,49 @@ audit {
     }
 }
 
+fn spt_expect_schema_golden_reject(failures: mutref list<str>, schema_path: str, label: str, document_path: str) -> unit
+audit {
+    intent("Require one real schema file to reject a well-formed negative evidence golden");
+    mutates(failures);
+    effects(io);
+}
+{
+    let mut document_text = "";
+    if not spt_read_text(document_path, str_concat("negative golden read failed for ", document_path), mutref document_text, mutref failures) {
+        return;
+    }
+    // A malformed document would be rejected for the wrong reason; require it to parse first.
+    if not schema_profile_accepts("{\"type\":\"object\"}", document_text) {
+        spt_record_failure(mutref failures, str_concat("negative golden is not a well-formed JSON object: ", document_path));
+        return;
+    }
+    spt_expect_schema_file_reject(mutref failures, schema_path, label, document_text);
+}
+
+fn spt_collect_v5_schema_negatives(failures: mutref list<str>) -> unit
+audit {
+    intent("Exercise facts v5 and review v5 coherence rules with negative evidence goldens");
+    mutates(failures);
+    effects(io);
+}
+{
+    let facts_schema = "schemas/facts-v5.schema.json";
+    let review_schema = "schemas/review-v5.schema.json";
+    let dir = "tests/golden/schema_profile/";
+    spt_expect_schema_golden_reject(mutref failures, facts_schema, "facts-v5 rejects a declared template export with checked evidence", str_concat(dir, "facts-v5-negative-template-export-checked.json"));
+    spt_expect_schema_golden_reject(mutref failures, facts_schema, "facts-v5 rejects an ordinary export with declared evidence", str_concat(dir, "facts-v5-negative-export-kind-declared.json"));
+    spt_expect_schema_golden_reject(mutref failures, facts_schema, "facts-v5 rejects a generic instance with declared evidence", str_concat(dir, "facts-v5-negative-instance-declared.json"));
+    spt_expect_schema_golden_reject(mutref failures, facts_schema, "facts-v5 rejects the v1 workspace identity scheme", str_concat(dir, "facts-v5-negative-v1-identity-scheme.json"));
+    spt_expect_schema_golden_reject(mutref failures, facts_schema, "facts-v5 rejects a template export without type parameters", str_concat(dir, "facts-v5-negative-template-export-missing-parameters.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a function instance without instance_of", str_concat(dir, "review-v5-negative-instance-missing-instance-of.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects instance fields on a plain function", str_concat(dir, "review-v5-negative-function-with-instance-fields.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a null instance audit declared as present", str_concat(dir, "review-v5-negative-instance-audit-coherence.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects target_instance_of on a plain call target kind", str_concat(dir, "review-v5-negative-call-instance-field-on-plain-kind.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a template with inferred evidence", str_concat(dir, "review-v5-negative-template-inferred-evidence.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a null template audit declared as present", str_concat(dir, "review-v5-negative-template-audit-coherence.json"));
+    spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a function instance with a non-template audit source", str_concat(dir, "review-v5-negative-instance-audit-source.json"));
+}
+
 fn spt_collect_real_schema_negatives(failures: mutref list<str>) -> unit
 audit {
     intent("Exercise real owned schema coherence rules with negative evidence documents");
@@ -307,6 +356,7 @@ audit {
     effects(io);
 }
 {
+    spt_collect_v5_schema_negatives(mutref failures);
     let audit_declared_null_v3 = spt_review_doc(3, "null", "declared", spt_v3_coverage());
     let audit_absent_object_v3 = spt_review_doc(3, spt_audit_object(), "absent", spt_v3_coverage());
     spt_expect_schema_file_reject(mutref failures, "schemas/review-v3.schema.json", "review-v3 rejects null audit declared as present", audit_declared_null_v3);
@@ -409,6 +459,7 @@ audit {
     spt_expect_schema_present(ref names, "facts-v2.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "facts-v3.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "facts-v4.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "facts-v5.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "nauqtype.policy-v1.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "nauqtype.workspace-lock-v1.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "nauqtype.workspace-lock-v2.schema.json", mutref failures);
@@ -422,6 +473,7 @@ audit {
     spt_expect_schema_present(ref names, "review-v2.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "review-v3.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "review-v4.schema.json", mutref failures);
+    spt_expect_schema_present(ref names, "review-v5.schema.json", mutref failures);
 }
 
 fn spt_emit_failures(title: str, failures: ref list<str>) -> bool

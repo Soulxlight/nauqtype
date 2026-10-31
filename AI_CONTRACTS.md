@@ -11,11 +11,20 @@ encodings and the trusted-host boundary. None of this adds audit clauses or
 hidden model decisions to compiler correctness.
 
 M56's explicit generic foundation checks concrete instances, not all possible
-types for an unused template. Existing facts/review/diff/change/policy/rename
-formats reject generic graphs with NQ-GENERIC-008, including unused templates,
-rather than present generated instances as source identities. Generic-aware
-evidence requires a separate versioned contract before library adoption can
-claim supervision parity. `check`, `emit-c`, `build` and `run` remain available.
+types for an unused template. M56.1 adds the only generic-aware evidence:
+opt-in `facts --format v5` and `review --format v5` (identity schemes
+`nauqtype.workspace.v2` / `nauqtype.semantic.v2`). They report each template
+once (`evidence: "declared"`, structurally validated only) and each checked
+concrete instance with its rendered type arguments, template identity and
+original-source application sites. Generated `__nqg_` names and internal keys
+never appear. Invalid metadata, a generated item without source identity, or
+an over-bound identity fails with NQ-GENERIC-009/010/005, empty stdout and
+exit 1. For a nongeneric graph, v5 equals v4 after the documented
+version/scheme/empty-array substitutions. Facts and review v1-v4,
+review-diff, change-report, policy-check and refactor-rename still reject
+generic graphs with NQ-GENERIC-008, including unused templates. The exact
+contract is [docs/M56_1_CONTRACT.md](docs/M56_1_CONTRACT.md). `check`,
+`emit-c`, `build` and `run` remain available.
 
 AI Contracts are Nauqtype's first explicitly AI-first language feature.
 
@@ -181,7 +190,8 @@ than applying a second acceptance policy.
 
 Legacy review v1/v2 and change-report v1/v2 success documents stay unchanged;
 in particular, v2's absent-audit and absent-policy labels must not be treated
-as stronger evidence. New consumers should use review v4 and change-report v3.
+as stronger evidence. New consumers should use review v4 (v5 for generic
+graphs) and change-report v3.
 The Nauqtype-owned `test` and `prove` gates validate every owned schema against
 mapped evidence and reject coherence-negative fixtures using
 `nauqtype.evidence-schema-profile.v1`. This is an explicitly bounded fixture

@@ -1,4 +1,28 @@
+use diag;
 use text;
+
+// Public evidence rendering (M56.1). A scope maps a declaring module to the
+// exact module identity prefix of the workspace scheme, for example
+// "workspace:org.tool::module:app"; the semantic scheme ignores scopes.
+pub type generic_module_scope {
+    module: str,
+    prefix: str,
+}
+
+// Every nominal the renderer may name: key is the argument-free canonical
+// atom "t|module|Name", kind is 2 (product) or 3 (enum), arity is 0 for a
+// nongeneric nominal and the template arity for a generic one.
+pub type generic_nominal_kind {
+    key: str,
+    kind: i32,
+    arity: i32,
+}
+
+pub type generic_render_context {
+    workspace: bool,
+    scopes: list<generic_module_scope>,
+    nominals: list<generic_nominal_kind>,
+}
 
 // Canonical keys use the printable ASCII source-identifier/type grammar.
 // Hex every byte, including separators and underscores: encoding is injective.
@@ -81,4 +105,248 @@ pub fn generic_pack_field(value: str) -> str
 audit { intent("Frame a private origin field by its exact byte length"); mutates(); effects(); }
 {
     return concat3(i32_to_str(str_len(value)), ":", value);
+}
+
+pub fn generic_identity_bound() -> i32
+audit { intent("Name the byte bound of every newly constructed public generic identity"); mutates(); effects(); }
+{
+    return 32768;
+}
+
+// Failure codes: 0 ok, 5 identity bound exceeded, 9 malformed or unknown.
+fn generic_render_add(pieces: mutref list<str>, size: mutref i32, limit: i32, piece: str, failure: mutref i32) -> unit {
+    if failure != 0 { return; }
+    // The length is charged before any piece joins the identity.
+    if str_len(piece) > limit - size { failure = 5; return; }
+    size = size + str_len(piece);
+    list_push(mutref pieces, piece);
+}
+
+fn generic_render_reject(failure: mutref i32) -> unit {
+    if failure == 0 { failure = 9; }
+}
+
+fn generic_render_segment(key: str, cursor: mutref i32, colons: bool) -> str {
+    let start = cursor;
+    while cursor < str_len(key) {
+        let value = char_at(key, cursor);
+        if value <= 32 or value > 126 or value == 124 or value == 60 or value == 62 or value == 44 or value == 59 or value == 64 { return slice_text(key, start, cursor); }
+        if value == 58 and not colons { return slice_text(key, start, cursor); }
+        cursor = cursor + 1;
+    }
+    return slice_text(key, start, cursor);
+}
+
+fn generic_render_expect(key: str, cursor: mutref i32, value: i32, failure: mutref i32) -> bool {
+    if failure != 0 { return false; }
+    if char_at(key, cursor) != value { failure = 9; return false; }
+    cursor = cursor + 1;
+    return true;
+}
+
+fn generic_render_atom(name: str) -> bool {
+    return name == "bool" or name == "i32" or name == "i64" or name == "str" or name == "unit" or name == "bytes" or name == "io_err" or name == "process_result" or name == "path_metadata" or name == "duration" or name == "instant" or name == "process" or name == "process_outcome";
+}
+
+fn generic_render_lookup(context: ref generic_render_context, key: str) -> generic_nominal_kind {
+    for entry in context.nominals { if entry.key == key { return entry; } }
+    return generic_nominal_kind { key: "", kind: 0, arity: -1 };
+}
+
+fn generic_render_owner(context: ref generic_render_context, word: str, module: str, name: str, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32) -> unit {
+    if context.workspace {
+        let mut prefix = "";
+        for entry in context.scopes { if entry.module == module { prefix = entry.prefix; } }
+        if prefix == "" { generic_render_reject(mutref failure); return; }
+        generic_render_add(mutref pieces, mutref size, limit, prefix, mutref failure);
+        generic_render_add(mutref pieces, mutref size, limit, "::", mutref failure);
+        generic_render_add(mutref pieces, mutref size, limit, word, mutref failure);
+        generic_render_add(mutref pieces, mutref size, limit, ":", mutref failure);
+        generic_render_add(mutref pieces, mutref size, limit, name, mutref failure);
+        return;
+    }
+    generic_render_add(mutref pieces, mutref size, limit, word, mutref failure);
+    generic_render_add(mutref pieces, mutref size, limit, ":", mutref failure);
+    generic_render_add(mutref pieces, mutref size, limit, module, mutref failure);
+    generic_render_add(mutref pieces, mutref size, limit, "::", mutref failure);
+    generic_render_add(mutref pieces, mutref size, limit, name, mutref failure);
+}
+
+fn generic_render_list(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32, depth: i32) -> i32 {
+    if not generic_render_expect(key, mutref cursor, 60, mutref failure) { return -1; }
+    generic_render_add(mutref pieces, mutref size, limit, "<", mutref failure);
+    let mut count = 0;
+    let mut done = false;
+    while failure == 0 and not done {
+        generic_render_arg(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, depth + 1);
+        count = count + 1;
+        if failure == 0 and char_at(key, cursor) == 44 {
+            cursor = cursor + 1;
+            generic_render_add(mutref pieces, mutref size, limit, ",", mutref failure);
+        } else {
+            if generic_render_expect(key, mutref cursor, 62, mutref failure) { generic_render_add(mutref pieces, mutref size, limit, ">", mutref failure); }
+            done = true;
+        }
+    }
+    return count;
+}
+
+fn generic_render_head(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32, depth: i32, top: bool) -> unit {
+    let start = cursor;
+    let tag = char_at(key, cursor);
+    if tag != 102 and tag != 116 { generic_render_reject(mutref failure); return; }
+    if tag == 102 and not top { generic_render_reject(mutref failure); return; }
+    cursor = cursor + 1;
+    if not generic_render_expect(key, mutref cursor, 124, mutref failure) { return; }
+    let module = generic_render_segment(key, mutref cursor, true);
+    if module == "" or not generic_render_expect(key, mutref cursor, 124, mutref failure) { generic_render_reject(mutref failure); return; }
+    let name = generic_render_segment(key, mutref cursor, false);
+    if name == "" { generic_render_reject(mutref failure); return; }
+    let mut word = "fn";
+    let mut arity = -1;
+    if tag == 116 {
+        let entry = generic_render_lookup(ref context, slice_text(key, start, cursor));
+        if entry.kind == 2 { word = "type"; } else {
+            if entry.kind == 3 { word = "enum"; } else { generic_render_reject(mutref failure); return; }
+        }
+        arity = entry.arity;
+    }
+    generic_render_owner(ref context, word, module, name, mutref pieces, mutref size, limit, mutref failure);
+    if char_at(key, cursor) == 60 {
+        let count = generic_render_list(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, depth);
+        if count < 1 or (arity >= 0 and count != arity) { generic_render_reject(mutref failure); }
+    } else {
+        // A bare generic template names its template identity only at top level.
+        if arity > 0 and not top { generic_render_reject(mutref failure); }
+    }
+}
+
+fn generic_render_variant(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32) -> unit {
+    cursor = cursor + 1;
+    if not generic_render_expect(key, mutref cursor, 124, mutref failure) { return; }
+    let module = generic_render_segment(key, mutref cursor, true);
+    if module == "" or not generic_render_expect(key, mutref cursor, 124, mutref failure) { generic_render_reject(mutref failure); return; }
+    let name = generic_render_segment(key, mutref cursor, false);
+    if name == "" { generic_render_reject(mutref failure); return; }
+    let entry = generic_render_lookup(ref context, concat4("t|", module, "|", name));
+    if entry.kind != 3 { generic_render_reject(mutref failure); return; }
+    if context.workspace { generic_render_owner(ref context, "enum", module, name, mutref pieces, mutref size, limit, mutref failure); }
+    else { generic_render_owner(ref context, "variant", module, name, mutref pieces, mutref size, limit, mutref failure); }
+    if char_at(key, cursor) == 60 {
+        let count = generic_render_list(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, 0);
+        if count != entry.arity { generic_render_reject(mutref failure); }
+    }
+    if not generic_render_expect(key, mutref cursor, 124, mutref failure) { return; }
+    let variant = generic_render_segment(key, mutref cursor, false);
+    if variant == "" { generic_render_reject(mutref failure); return; }
+    if context.workspace { generic_render_add(mutref pieces, mutref size, limit, "::variant:", mutref failure); }
+    else { generic_render_add(mutref pieces, mutref size, limit, "::", mutref failure); }
+    generic_render_add(mutref pieces, mutref size, limit, variant, mutref failure);
+}
+
+fn generic_render_arg(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32, depth: i32) -> unit {
+    if failure != 0 { return; }
+    if depth > 64 { generic_render_reject(mutref failure); return; }
+    if starts_with_at(key, cursor, "t|") { generic_render_head(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, depth, false); return; }
+    let head = generic_render_segment(key, mutref cursor, false);
+    if head == "list" or head == "option" or head == "result" {
+        generic_render_add(mutref pieces, mutref size, limit, head, mutref failure);
+        let count = generic_render_list(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, depth);
+        if (head == "result" and count != 2) or (head != "result" and count != 1) { generic_render_reject(mutref failure); }
+        return;
+    }
+    let mut atom = head;
+    if head == "int" { atom = "i32"; }
+    if not generic_render_atom(atom) { generic_render_reject(mutref failure); return; }
+    generic_render_add(mutref pieces, mutref size, limit, atom, mutref failure);
+}
+
+fn generic_render_run(context: ref generic_render_context, key: str, argument: bool, limit: i32, failure: mutref i32) -> str {
+    let mut pieces: list<str> = list();
+    let mut size = 0;
+    let mut cursor = 0;
+    if argument { generic_render_arg(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, 0); }
+    else {
+        if starts_with_at(key, 0, "v|") { generic_render_variant(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure); }
+        else { generic_render_head(ref context, key, mutref cursor, mutref pieces, mutref size, limit, mutref failure, 0, true); }
+    }
+    if failure == 0 and cursor != str_len(key) { failure = 9; }
+    if failure != 0 { return ""; }
+    return str_join(ref pieces);
+}
+
+fn generic_render_failure(failure: i32, module: str, diags: mutref list<diag>) -> unit {
+    if failure == 5 { list_push(mutref diags, make_error("NQ-GENERIC-005", diag_type, module, -1, -1, "generic evidence identity exceeds 32768 bytes")); return; }
+    list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, module, -1, -1, "generic identity metadata is malformed or names an unknown nominal"));
+}
+
+fn generic_render_limit(key: str) -> i32 {
+    // Identities v4 can already express (templates, nongeneric nominals and
+    // their variants) carry no argument list and are not capped.
+    if text_contains(key, "<") { return generic_identity_bound(); }
+    return 2147483647;
+}
+
+pub fn generic_render_identity(context: ref generic_render_context, key: str, module: str, diags: mutref list<diag>) -> str
+audit { intent("Render one canonical function, nominal, or variant key as a public identity in the selected scheme"); mutates(diags); effects(); }
+{
+    let mut failure = 0;
+    let value = generic_render_run(ref context, key, false, generic_render_limit(key), mutref failure);
+    if failure != 0 { generic_render_failure(failure, module, mutref diags); return ""; }
+    return value;
+}
+
+pub fn generic_render_argument(context: ref generic_render_context, canonical: str, module: str, diags: mutref list<diag>) -> str
+audit { intent("Render one canonical type argument through the public argument grammar under the identity bound"); mutates(diags); effects(); }
+{
+    let mut failure = 0;
+    let value = generic_render_run(ref context, canonical, true, generic_identity_bound(), mutref failure);
+    if failure != 0 { generic_render_failure(failure, module, mutref diags); return ""; }
+    return value;
+}
+
+pub fn generic_canonical_valid(context: ref generic_render_context, canonical: str, argument: bool) -> bool
+audit { intent("Check that a canonical key or argument parses against the known nominal kinds and arities"); mutates(); effects(); }
+{
+    let mut failure = 0;
+    let value = generic_render_run(ref context, canonical, argument, 2147483647, mutref failure);
+    return failure == 0;
+}
+
+pub fn generic_report_missing_identity(diags: mutref list<diag>, module: str) -> unit
+audit { intent("Fail closed when valid metadata reaches an emitter with a generated item lacking source identity"); mutates(diags); effects(); }
+{
+    list_push(mutref diags, make_error("NQ-GENERIC-010", diag_internal, module, -1, -1, "generated item reached evidence output with no source identity"));
+}
+
+pub fn generic_render_generated_name(context: ref generic_render_context, name: str, module: str, diags: mutref list<diag>) -> str
+audit { intent("Decode a generated name to its canonical key and render its public source identity"); mutates(diags); effects(); }
+{
+    let key = generic_key_from_name(name);
+    if key == "" { generic_report_missing_identity(mutref diags, module); return ""; }
+    return generic_render_identity(ref context, key, module, mutref diags);
+}
+
+pub fn generic_identity_join(parts: ref list<str>, module: str, diags: mutref list<diag>) -> str
+audit { intent("Join a new generic site identity only after its byte length passes the identity bound"); mutates(diags); effects(); }
+{
+    let mut size = 0;
+    for part in parts {
+        if str_len(part) > generic_identity_bound() - size { generic_render_failure(5, module, mutref diags); return ""; }
+        size = size + str_len(part);
+    }
+    return str_join(ref parts);
+}
+
+pub fn generic_key_template(key: str) -> str
+audit { intent("Strip the argument list from a canonical instance or variant key, keeping a variant suffix"); mutates(); effects(); }
+{
+    let mut open = 0;
+    while open < str_len(key) and char_at(key, open) != 60 { open = open + 1; }
+    if open == str_len(key) { return key; }
+    if not starts_with_at(key, 0, "v|") { return slice_text(key, 0, open); }
+    let mut last = str_len(key) - 1;
+    while last > open and char_at(key, last) != 124 { last = last - 1; }
+    if last <= open { return ""; }
+    return str_concat(slice_text(key, 0, open), slice_text(key, last, str_len(key)));
 }

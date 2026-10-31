@@ -1,6 +1,9 @@
 use ast;
 use builtin_evidence;
+use diag;
 use files;
+use generic_auth;
+use generic_names;
 use handoff;
 use source;
 use text;
@@ -2569,6 +2572,706 @@ audit {
     list_push(mutref lines, "}");
     emit_lines(ref lines);
     return make_facts_summary(list_len(ref modules), exports, 0, list_len(ref calls));
+}
+
+// ---------------------------------------------------------------------------
+// M56.1 generic-aware evidence. A view maps every generated declaration name
+// of an elaborated generic graph to its public source identity in one scheme
+// (workspace for facts v5, semantic for review v5). An inactive view, used for
+// nongeneric graphs and every pre-v5 format, leaves names and offsets exactly
+// as the v4 emitters see them, so v5 reuses the v4 code paths byte for byte.
+
+pub type generic_evidence_name {
+    generated: str,
+    key: str,
+    module: str,
+    kind: i32,
+    instance: bool,
+    source_name: str,
+    display: str,
+    enum_display: str,
+    identity: str,
+    template_identity: str,
+}
+
+pub type generic_evidence_view {
+    active: bool,
+    valid: bool,
+    workspace: bool,
+    registry: generic_registry,
+    context: generic_render_context,
+    names: list<generic_evidence_name>,
+}
+
+type facts_v5_export {
+    id: str,
+    legacy_id: str,
+    kind: str,
+    name: str,
+    evidence: str,
+    at: i32,
+    template: str,
+}
+
+fn generic_evidence_empty_name() -> generic_evidence_name {
+    return generic_evidence_name { generated: "", key: "", module: "", kind: 0, instance: false, source_name: "", display: "", enum_display: "", identity: "", template_identity: "" };
+}
+
+pub fn generic_evidence_inactive() -> generic_evidence_view
+audit {
+    intent("Build the identity view of a nongeneric graph or a pre-v5 emitter, which changes no name or offset");
+    mutates();
+    effects();
+}
+{
+    let empty_sources: list<source_file> = list();
+    let mut diags: list<diag> = list();
+    let registry = generic_read_registry(ref empty_sources, mutref diags);
+    let scopes: list<generic_module_scope> = list();
+    let context = generic_registry_render_context(ref registry, false, ref scopes);
+    return generic_evidence_view { active: false, valid: true, workspace: false, registry: registry, context: context, names: list() };
+}
+
+fn generic_evidence_suffix(full: str, base: str) -> str {
+    if str_len(full) < str_len(base) or slice_text(full, 0, str_len(base)) != base { return ""; }
+    return slice_text(full, str_len(base), str_len(full));
+}
+
+fn generic_evidence_names(registry: ref generic_registry, context: ref generic_render_context, diags: mutref list<diag>) -> list<generic_evidence_name> {
+    let mut names: list<generic_evidence_name> = list();
+    for entry in registry.instances {
+        let identity = generic_render_identity(ref context, entry.key, entry.module, mutref diags);
+        let template_identity = generic_render_identity(ref context, entry.template, entry.module, mutref diags);
+        let suffix = generic_evidence_suffix(identity, template_identity);
+        // The renderer already reported NQ-GENERIC-005 or -009 for an empty identity.
+        if identity == "" or template_identity == "" { return list(); }
+        if suffix == "" { generic_report_missing_identity(mutref diags, entry.module); return list(); }
+        let mut current = generic_evidence_empty_name();
+        current.generated = entry.generated;
+        current.key = entry.key;
+        current.module = entry.module;
+        current.kind = entry.kind;
+        current.instance = true;
+        current.source_name = entry.name;
+        current.display = str_concat(entry.name, suffix);
+        current.identity = identity;
+        current.template_identity = template_identity;
+        list_push(mutref names, current);
+    }
+    for entry in registry.nominals {
+        let identity = generic_render_identity(ref context, entry.key, entry.module, mutref diags);
+        if identity == "" { return list(); }
+        let mut current = generic_evidence_empty_name();
+        current.generated = entry.generated;
+        current.key = entry.key;
+        current.module = entry.module;
+        current.kind = entry.kind;
+        current.source_name = entry.name;
+        current.display = entry.name;
+        current.identity = identity;
+        current.template_identity = identity;
+        list_push(mutref names, current);
+    }
+    for entry in registry.variants {
+        let identity = generic_render_identity(ref context, entry.key, entry.module, mutref diags);
+        let template_identity = generic_render_identity(ref context, generic_key_template(entry.key), entry.module, mutref diags);
+        let enum_identity = generic_render_identity(ref context, entry.enum_key, entry.module, mutref diags);
+        let enum_template = generic_render_identity(ref context, generic_key_template(entry.enum_key), entry.module, mutref diags);
+        if identity == "" or template_identity == "" or enum_identity == "" or enum_template == "" { return list(); }
+        let mut current = generic_evidence_empty_name();
+        current.generated = entry.generated;
+        current.key = entry.key;
+        current.module = entry.module;
+        current.kind = 5;
+        current.instance = text_contains(entry.enum_key, "<");
+        current.source_name = entry.name;
+        current.display = entry.name;
+        current.enum_display = str_concat(entry.enum_name, generic_evidence_suffix(enum_identity, enum_template));
+        current.identity = identity;
+        current.template_identity = template_identity;
+        list_push(mutref names, current);
+    }
+    return names;
+}
+
+pub fn generic_evidence_view_build(sources: ref list<source_file>, workspace: bool, scopes: ref list<generic_module_scope>, diags: mutref list<diag>) -> generic_evidence_view
+audit {
+    intent("Validate generic metadata before any output and map every generated declaration to its public identity in one scheme");
+    mutates(diags);
+    effects();
+}
+{
+    if not source_graph_has_generics(ref sources) {
+        let mut inactive = generic_evidence_inactive();
+        inactive.workspace = workspace;
+        return inactive;
+    }
+    let registry = generic_read_registry(ref sources, mutref diags);
+    let context = generic_registry_render_context(ref registry, workspace, ref scopes);
+    let mut valid = registry.valid and not diagnostics_have_errors(ref diags);
+    let mut names: list<generic_evidence_name> = list();
+    if valid {
+        names = generic_evidence_names(ref registry, ref context, mutref diags);
+        valid = not diagnostics_have_errors(ref diags);
+    }
+    return generic_evidence_view { active: true, valid: valid, workspace: workspace, registry: registry, context: context, names: names };
+}
+
+pub fn generic_evidence_lookup(view: ref generic_evidence_view, generated: str) -> generic_evidence_name
+audit {
+    intent("Find the checked source identity of one generated declaration name");
+    mutates();
+    effects();
+}
+{
+    for entry in view.names { if entry.generated == generated { return entry; } }
+    return generic_evidence_empty_name();
+}
+
+pub fn generic_evidence_instance_key(view: ref generic_evidence_view, key: str) -> generic_evidence_name
+audit {
+    intent("Find the public identity of one checked instance by its canonical key");
+    mutates();
+    effects();
+}
+{
+    for entry in view.names { if entry.key == key and entry.kind != 5 { return entry; } }
+    return generic_evidence_empty_name();
+}
+
+pub fn generic_evidence_function(view: ref generic_evidence_view, module: str, display: str) -> generic_evidence_name
+audit {
+    intent("Find a function instance by its projected display name in its declaring module");
+    mutates();
+    effects();
+}
+{
+    if not view.active { return generic_evidence_empty_name(); }
+    for entry in view.names { if entry.kind == 1 and entry.module == module and entry.display == display { return entry; } }
+    return generic_evidence_empty_name();
+}
+
+pub fn generic_evidence_function_name(view: ref generic_evidence_view, module: str, name: str, diags: mutref list<diag>) -> str
+audit {
+    intent("Project a generated function instance name to its display name and fail closed on an unknown one");
+    mutates(diags);
+    effects();
+}
+{
+    if not view.active or not str_starts_with(name, "__nqg_") { return name; }
+    let entry = generic_evidence_lookup(ref view, name);
+    if entry.generated == "" or entry.kind != 1 {
+        generic_report_missing_identity(mutref diags, module);
+        return name;
+    }
+    return entry.display;
+}
+
+pub fn generic_evidence_offset(view: ref generic_evidence_view, sources: ref list<source_file>, module: str, at: i32, diags: mutref list<diag>) -> i32
+audit {
+    intent("Map one elaborated offset to its original source offset and fail closed on an invalid origin");
+    mutates(diags);
+    effects();
+}
+{
+    if not view.active { return at; }
+    for file in sources {
+        if file.name == module and at >= 0 and at <= str_len(file.text) {
+            let mut end = at + 1;
+            if end > str_len(file.text) { end = at; }
+            let origin = source_origin_at(file, at, end);
+            if origin.valid and origin.start >= 0 and origin.start <= str_len(file.original_text) { return origin.start; }
+        }
+    }
+    list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, module, -1, -1, "generic evidence position has no valid original source origin"));
+    return at;
+}
+
+pub fn generic_evidence_text_less(left: str, right: str) -> bool
+audit {
+    intent("Compare two identities bytewise");
+    mutates();
+    effects();
+}
+{
+    let mut index = 0;
+    while index < str_len(left) and index < str_len(right) {
+        let a = char_at(left, index);
+        let b = char_at(right, index);
+        if a < b { return true; }
+        if a > b { return false; }
+        index = index + 1;
+    }
+    return str_len(left) < str_len(right);
+}
+
+fn generic_evidence_text_at(values: ref list<str>, index: i32) -> str {
+    match list_get(ref values, index) { Some(value) => { return value; }, None => { return ""; }, }
+}
+
+fn generic_evidence_number_at(values: ref list<i32>, index: i32) -> i32 {
+    match list_get(ref values, index) { Some(value) => { return value; }, None => { return -1; }, }
+}
+
+fn generic_evidence_before(keys: ref list<str>, offsets: ref list<i32>, left: i32, right: i32) -> bool {
+    let left_key = generic_evidence_text_at(ref keys, left);
+    let right_key = generic_evidence_text_at(ref keys, right);
+    if left_key != right_key { return generic_evidence_text_less(left_key, right_key); }
+    return generic_evidence_number_at(ref offsets, left) <= generic_evidence_number_at(ref offsets, right);
+}
+
+fn generic_evidence_merge_order(keys: ref list<str>, offsets: ref list<i32>, start: i32, end: i32) -> list<i32> {
+    if end - start <= 1 {
+        let mut single: list<i32> = list();
+        if start < end { list_push(mutref single, start); }
+        return single;
+    }
+    let mut result: list<i32> = list();
+    let middle = start + (end - start) / 2;
+    let left = generic_evidence_merge_order(ref keys, ref offsets, start, middle);
+    let right = generic_evidence_merge_order(ref keys, ref offsets, middle, end);
+    let mut l = 0;
+    let mut r = 0;
+    while l < list_len(ref left) or r < list_len(ref right) {
+        let a = generic_evidence_number_at(ref left, l);
+        let b = generic_evidence_number_at(ref right, r);
+        let mut take_left = r >= list_len(ref right);
+        if l < list_len(ref left) and r < list_len(ref right) { take_left = generic_evidence_before(ref keys, ref offsets, a, b); }
+        if take_left {
+            list_push(mutref result, a);
+            l = l + 1;
+        } else {
+            list_push(mutref result, b);
+            r = r + 1;
+        }
+    }
+    return result;
+}
+
+pub fn generic_evidence_order(keys: ref list<str>, offsets: ref list<i32>) -> list<i32>
+audit {
+    intent("Return the stable permutation ordering records by identity bytewise, then original offset");
+    mutates();
+    effects();
+}
+{
+    return generic_evidence_merge_order(ref keys, ref offsets, 0, list_len(ref keys));
+}
+
+pub fn generic_evidence_string_array(lines: mutref list<str>, indent: str, name: str, values: ref list<str>, trailing_comma: bool) -> unit
+audit {
+    intent("Append one named JSON string array in the shared evidence layout");
+    mutates(lines);
+    effects();
+}
+{
+    let mut suffix = "";
+    if trailing_comma { suffix = ","; }
+    if list_len(ref values) == 0 {
+        list_push(mutref lines, concat5(indent, json_quote(name), ": []", suffix, ""));
+        return;
+    }
+    list_push(mutref lines, concat3(indent, json_quote(name), ": ["));
+    let mut index = 0;
+    for value in values {
+        let mut value_suffix = "";
+        if index + 1 < list_len(ref values) { value_suffix = ","; }
+        list_push(mutref lines, concat4(indent, "  ", json_quote(value), value_suffix));
+        index = index + 1;
+    }
+    list_push(mutref lines, concat3(indent, "]", suffix));
+}
+
+pub fn generic_evidence_kind_text(kind: i32) -> str
+audit {
+    intent("Name a generic declaration kind in evidence output");
+    mutates();
+    effects();
+}
+{
+    if kind == 1 { return "function"; }
+    if kind == 2 { return "type"; }
+    if kind == 3 { return "enum"; }
+    return "";
+}
+
+pub fn generic_evidence_type_arguments(view: ref generic_evidence_view, key: str, module: str, diags: mutref list<diag>) -> list<str>
+audit {
+    intent("Render an instance's ordered type arguments through the shared grammar and bound");
+    mutates(diags);
+    effects();
+}
+{
+    let mut values: list<str> = list();
+    let canonical = generic_instance_argument_keys(ref view.registry, key);
+    for argument in canonical {
+        list_push(mutref values, generic_render_argument(ref view.context, argument, module, mutref diags));
+    }
+    return values;
+}
+
+pub fn generic_evidence_append_sites(lines: mutref list<str>, indent: str, view: ref generic_evidence_view, key: str, trailing_comma: bool, diags: mutref list<diag>) -> unit
+audit {
+    intent("Append the sorted, deduplicated application sites of one instance");
+    mutates(lines, diags);
+    effects();
+}
+{
+    let applications = generic_instance_applications(ref view.registry, key);
+    let mut rendered: list<str> = list();
+    let mut modules: list<str> = list();
+    let mut starts: list<i32> = list();
+    let mut enclosing: list<str> = list();
+    let mut zeros: list<i32> = list();
+    for entry in applications {
+        let mut parent = "";
+        if entry.parent != "" {
+            let owner = generic_evidence_instance_key(ref view, entry.parent);
+            if owner.generated == "" { generic_report_missing_identity(mutref diags, entry.module); return; }
+            parent = owner.identity;
+        }
+        let mut text = concat5("{ \"module\": ", json_quote(entry.module), ", \"span\": { \"start\": ", i32_to_str(entry.start), " }");
+        if parent != "" { text = concat3(text, ", \"enclosing_instance\": ", json_quote(parent)); }
+        text = str_concat(text, " }");
+        if not list_contains_str(ref rendered, text) {
+            list_push(mutref rendered, text);
+            list_push(mutref modules, entry.module);
+            list_push(mutref starts, entry.start);
+            list_push(mutref enclosing, parent);
+            list_push(mutref zeros, 0);
+        }
+    }
+    // Two stable passes order sites by module, then offset, then enclosing instance.
+    let first = generic_evidence_order(ref enclosing, ref zeros);
+    let mut first_modules: list<str> = list();
+    let mut first_starts: list<i32> = list();
+    let mut first_rendered: list<str> = list();
+    for index in first {
+        list_push(mutref first_modules, generic_evidence_text_at(ref modules, index));
+        list_push(mutref first_starts, generic_evidence_number_at(ref starts, index));
+        list_push(mutref first_rendered, generic_evidence_text_at(ref rendered, index));
+    }
+    let order = generic_evidence_order(ref first_modules, ref first_starts);
+    let mut suffix = "";
+    if trailing_comma { suffix = ","; }
+    if list_len(ref order) == 0 {
+        list_push(mutref lines, concat3(indent, "\"application_sites\": []", suffix));
+        return;
+    }
+    list_push(mutref lines, concat3(indent, "\"application_sites\": [", ""));
+    let mut emitted = 0;
+    for index in order {
+        emitted = emitted + 1;
+        let mut item_suffix = "";
+        if emitted < list_len(ref order) { item_suffix = ","; }
+        list_push(mutref lines, concat4(indent, "  ", generic_evidence_text_at(ref first_rendered, index), item_suffix));
+    }
+    list_push(mutref lines, concat3(indent, "]", suffix));
+}
+
+pub fn generic_evidence_template_order(view: ref generic_evidence_view, diags: mutref list<diag>) -> list<i32>
+audit {
+    intent("Order retained templates by their public identity");
+    mutates(diags);
+    effects();
+}
+{
+    let mut keys: list<str> = list();
+    let mut offsets: list<i32> = list();
+    for template in view.registry.templates {
+        list_push(mutref keys, generic_render_identity(ref view.context, template.key, template.module, mutref diags));
+        list_push(mutref offsets, template.name_start);
+    }
+    return generic_evidence_order(ref keys, ref offsets);
+}
+
+pub fn generic_evidence_template_at(view: ref generic_evidence_view, index: i32) -> generic_template_record
+audit {
+    intent("Read one retained template record by index");
+    mutates();
+    effects();
+}
+{
+    match list_get(ref view.registry.templates, index) {
+        Some(value) => { return value; },
+        None => { return generic_template_record { key: "", kind: 0, is_public: false, module: "", name: "", start: -1, end: -1, name_start: -1, name_end: -1, audit_start: -1, audit_end: -1, arity: -1 }; },
+    }
+}
+
+pub fn generic_evidence_append_template(lines: mutref list<str>, view: ref generic_evidence_view, template: generic_template_record, more: bool, diags: mutref list<diag>) -> unit
+audit {
+    intent("Append the shared fields of one retained template entry");
+    mutates(lines, diags);
+    effects();
+}
+{
+    let identity = generic_render_identity(ref view.context, template.key, template.module, mutref diags);
+    let parameters = generic_template_parameter_names(ref view.registry, template.key);
+    let mut instances: list<str> = list();
+    let mut zeros: list<i32> = list();
+    for entry in view.names {
+        if entry.instance and entry.kind != 5 and generic_key_template(entry.key) == template.key {
+            list_push(mutref instances, entry.identity);
+            list_push(mutref zeros, 0);
+        }
+    }
+    let order = generic_evidence_order(ref instances, ref zeros);
+    let mut sorted: list<str> = list();
+    for index in order { list_push(mutref sorted, generic_evidence_text_at(ref instances, index)); }
+    list_push(mutref lines, "    {");
+    list_push(mutref lines, concat3("      \"id\": ", json_quote(identity), ","));
+    list_push(mutref lines, concat3("      \"kind\": ", json_quote(generic_evidence_kind_text(template.kind)), ","));
+    list_push(mutref lines, concat3("      \"module\": ", json_quote(template.module), ","));
+    list_push(mutref lines, concat3("      \"name\": ", json_quote(template.name), ","));
+    list_push(mutref lines, concat3("      \"public\": ", bool_text(template.is_public), ","));
+    generic_evidence_string_array(mutref lines, "      ", "type_parameters", ref parameters, true);
+    append_span(mutref lines, "      ", template.name_start, true);
+    generic_evidence_string_array(mutref lines, "      ", "instances", ref sorted, true);
+    if more { list_push(mutref lines, "      \"evidence\": \"declared\","); } else { list_push(mutref lines, "      \"evidence\": \"declared\""); }
+}
+
+fn facts_v5_append_templates(lines: mutref list<str>, view: ref generic_evidence_view, diags: mutref list<diag>) -> unit {
+    let order = generic_evidence_template_order(ref view, mutref diags);
+    if list_len(ref order) == 0 {
+        list_push(mutref lines, "  \"generic_templates\": [],");
+        return;
+    }
+    list_push(mutref lines, "  \"generic_templates\": [");
+    let mut emitted = 0;
+    for index in order {
+        emitted = emitted + 1;
+        generic_evidence_append_template(mutref lines, ref view, generic_evidence_template_at(ref view, index), false, mutref diags);
+        if emitted < list_len(ref order) { list_push(mutref lines, "    },"); } else { list_push(mutref lines, "    }"); }
+    }
+    list_push(mutref lines, "  ],");
+}
+
+fn facts_v5_append_instances(lines: mutref list<str>, view: ref generic_evidence_view, diags: mutref list<diag>) -> unit {
+    let mut keys: list<str> = list();
+    let mut offsets: list<i32> = list();
+    let mut entries: list<generic_evidence_name> = list();
+    for entry in view.names {
+        if entry.instance and entry.kind != 5 {
+            list_push(mutref keys, entry.identity);
+            list_push(mutref offsets, 0);
+            list_push(mutref entries, entry);
+        }
+    }
+    let order = generic_evidence_order(ref keys, ref offsets);
+    if list_len(ref order) == 0 {
+        list_push(mutref lines, "  \"generic_instances\": [],");
+        return;
+    }
+    list_push(mutref lines, "  \"generic_instances\": [");
+    let mut emitted = 0;
+    for index in order {
+        emitted = emitted + 1;
+        match list_get(ref entries, index) {
+            Some(entry) => {
+                let arguments = generic_evidence_type_arguments(ref view, entry.key, entry.module, mutref diags);
+                list_push(mutref lines, "    {");
+                list_push(mutref lines, concat3("      \"id\": ", json_quote(entry.identity), ","));
+                list_push(mutref lines, concat3("      \"instance_of\": ", json_quote(entry.template_identity), ","));
+                list_push(mutref lines, concat3("      \"kind\": ", json_quote(generic_evidence_kind_text(entry.kind)), ","));
+                generic_evidence_string_array(mutref lines, "      ", "type_arguments", ref arguments, true);
+                generic_evidence_append_sites(mutref lines, "      ", ref view, entry.key, true, mutref diags);
+                list_push(mutref lines, "      \"evidence\": \"checked\"");
+                if emitted < list_len(ref order) { list_push(mutref lines, "    },"); } else { list_push(mutref lines, "    }"); }
+            },
+            None => {},
+        }
+    }
+    list_push(mutref lines, "  ],");
+}
+
+fn facts_v5_export_entry(id: str, legacy_id: str, kind: str, name: str, evidence: str, at: i32, template: str) -> facts_v5_export {
+    return facts_v5_export { id: id, legacy_id: legacy_id, kind: kind, name: name, evidence: evidence, at: at, template: template };
+}
+
+fn facts_v5_collect_exports(capture: workspace_capture, dependencies: ref list<workspace_locked_dependency>, view: ref generic_evidence_view, sources: ref list<source_file>, items: ref list<top_item>, variants: ref list<variant_fact>, diags: mutref list<diag>) -> list<facts_v5_export> {
+    let mut exports: list<facts_v5_export> = list();
+    for item in items {
+        if item.is_public {
+            let at = generic_evidence_offset(ref view, ref sources, item.module, item.at, mutref diags);
+            if view.active and str_starts_with(item.name, "__nqg_") {
+                let entry = generic_evidence_lookup(ref view, item.name);
+                if entry.generated == "" {
+                    generic_report_missing_identity(mutref diags, item.module);
+                } else {
+                    // Instances and their variants are never exports.
+                    if not entry.instance {
+                        let mut legacy = type_identity(item.module, entry.source_name);
+                        if entry.kind == 3 { legacy = enum_identity(item.module, entry.source_name); }
+                        if entry.kind == 5 { legacy = variant_identity(item.module, entry.enum_display, entry.source_name); }
+                        if entry.kind == 1 { generic_report_missing_identity(mutref diags, item.module); }
+                        list_push(mutref exports, facts_v5_export_entry(entry.identity, legacy, item_kind_text(item.kind), entry.source_name, "checked", at, ""));
+                    }
+                }
+            } else {
+                list_push(mutref exports, facts_v5_export_entry(workspace_item_identity(capture, ref dependencies, item, ref variants), item_identity(item, ref variants), item_kind_text(item.kind), item.name, "checked", at, ""));
+            }
+        }
+    }
+    for template in view.registry.templates {
+        if template.is_public {
+            let mut id = workspace_function_identity(capture, ref dependencies, template.module, template.name);
+            let mut legacy = function_identity(template.module, template.name);
+            let mut kind = "function_template";
+            if template.kind == 2 {
+                id = workspace_type_identity(capture, ref dependencies, template.module, template.name);
+                legacy = type_identity(template.module, template.name);
+                kind = "type_template";
+            }
+            if template.kind == 3 {
+                id = workspace_enum_identity(capture, ref dependencies, template.module, template.name);
+                legacy = enum_identity(template.module, template.name);
+                kind = "enum_template";
+            }
+            list_push(mutref exports, facts_v5_export_entry(id, legacy, kind, template.name, "declared", template.name_start, template.key));
+        }
+    }
+    let mut keys: list<str> = list();
+    let mut offsets: list<i32> = list();
+    let mut order: list<i32> = list();
+    for entry in exports {
+        list_push(mutref order, list_len(ref keys));
+        list_push(mutref keys, entry.id);
+        list_push(mutref offsets, entry.at);
+    }
+    if view.active { order = generic_evidence_order(ref keys, ref offsets); }
+    let mut sorted: list<facts_v5_export> = list();
+    for index in order {
+        match list_get(ref exports, index) { Some(value) => { list_push(mutref sorted, value); }, None => {}, }
+    }
+    return sorted;
+}
+
+fn facts_v5_append_exports(lines: mutref list<str>, view: ref generic_evidence_view, exports: ref list<facts_v5_export>) -> unit {
+    list_push(mutref lines, "  \"exports\": [");
+    let mut emitted = 0;
+    for value in exports {
+        emitted = emitted + 1;
+        list_push(mutref lines, "    {");
+        list_push(mutref lines, concat5("      \"id\": ", json_quote(value.id), ",", "", ""));
+        list_push(mutref lines, concat5("      \"legacy_id\": ", json_quote(value.legacy_id), ",", "", ""));
+        list_push(mutref lines, concat5("      \"kind\": ", json_quote(value.kind), ",", "", ""));
+        list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
+        if value.template != "" {
+            let parameters = generic_template_parameter_names(ref view.registry, value.template);
+            generic_evidence_string_array(mutref lines, "      ", "type_parameters", ref parameters, true);
+        }
+        list_push(mutref lines, concat3("      \"evidence\": ", json_quote(value.evidence), ","));
+        append_span(mutref lines, "      ", value.at, false);
+        if emitted < list_len(ref exports) {
+            list_push(mutref lines, "    },");
+        } else {
+            list_push(mutref lines, "    }");
+        }
+    }
+    list_push(mutref lines, "  ],");
+}
+
+fn facts_v5_append_call_graph(lines: mutref list<str>, capture: workspace_capture, dependencies: ref list<workspace_locked_dependency>, view: ref generic_evidence_view, sources: ref list<source_file>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>, diags: mutref list<diag>) -> unit {
+    let mut callers: list<str> = list();
+    let mut callees: list<str> = list();
+    let mut sites: list<str> = list();
+    let mut evidences: list<str> = list();
+    let mut offsets: list<i32> = list();
+    for call in calls {
+        let function_name = generic_evidence_function_name(ref view, call.module, call.function_name, mutref diags);
+        let at = generic_evidence_offset(ref view, ref sources, call.module, call.at, mutref diags);
+        let caller = workspace_function_identity(capture, ref dependencies, call.module, function_name);
+        let target = call_target(ref items, ref uses, ref variants, call);
+        let mut callee = "";
+        if view.active and str_starts_with(call.name, "__nqg_") {
+            let entry = generic_evidence_lookup(ref view, call.name);
+            if entry.generated == "" or (entry.kind != 1 and entry.kind != 5) { generic_report_missing_identity(mutref diags, call.module); }
+            callee = entry.identity;
+        } else {
+            callee = workspace_canonical_id_for_legacy(capture, ref dependencies, ref items, ref uses, ref variants, ref fields, ref bindings, target.id);
+        }
+        let mut site = concat3(caller, "@", i32_to_str(at));
+        if function_name != call.function_name {
+            // A site inside an instance is a new generic identity: bound it before use.
+            let parts = [caller, "@", i32_to_str(at)];
+            site = generic_identity_join(ref parts, call.module, mutref diags);
+        }
+        list_push(mutref callers, caller);
+        list_push(mutref callees, callee);
+        list_push(mutref sites, site);
+        list_push(mutref evidences, target.evidence);
+        list_push(mutref offsets, at);
+    }
+    let mut order: list<i32> = list();
+    if view.active {
+        order = generic_evidence_order(ref callers, ref offsets);
+    } else {
+        let mut index = 0;
+        while index < list_len(ref callers) { list_push(mutref order, index); index = index + 1; }
+    }
+    list_push(mutref lines, "  \"call_graph\": [");
+    let mut emitted = 0;
+    for index in order {
+        emitted = emitted + 1;
+        list_push(mutref lines, "    {");
+        list_push(mutref lines, concat5("      \"caller\": ", json_quote(generic_evidence_text_at(ref callers, index)), ",", "", ""));
+        list_push(mutref lines, concat5("      \"callee\": ", json_quote(generic_evidence_text_at(ref callees, index)), ",", "", ""));
+        list_push(mutref lines, concat5("      \"call_site\": ", json_quote(generic_evidence_text_at(ref sites, index)), ",", "", ""));
+        list_push(mutref lines, concat5("      \"evidence\": ", json_quote(generic_evidence_text_at(ref evidences, index)), "", "", ""));
+        if emitted < list_len(ref order) {
+            list_push(mutref lines, "    },");
+        } else {
+            list_push(mutref lines, "    }");
+        }
+    }
+    list_push(mutref lines, "  ]");
+}
+
+pub fn emit_workspace_facts_v5(capture: workspace_capture, dependencies: ref list<workspace_locked_dependency>, entry_module: str, modules: ref list<str>, sources: ref list<source_file>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>, diags: mutref list<diag>) -> facts_summary
+audit {
+    intent("Emit workspace facts describing generic templates and checked instances with public source identities, or nothing");
+    mutates(diags);
+    effects(print);
+}
+{
+    let entry_identity = resolve_captured_workspace_identity(capture, ref dependencies, entry_module);
+    if not capture.valid or not entry_identity.valid {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    let mut scopes: list<generic_module_scope> = list();
+    for module in modules {
+        list_push(mutref scopes, generic_module_scope { module: module, prefix: workspace_module_key(capture, ref dependencies, module) });
+    }
+    let view = generic_evidence_view_build(ref sources, true, ref scopes, mutref diags);
+    if not view.valid or diagnostics_have_errors(ref diags) {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    let exports = facts_v5_collect_exports(capture, ref dependencies, ref view, ref sources, ref items, ref variants, mutref diags);
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "{");
+    list_push(mutref lines, "  \"version\": 5,");
+    list_push(mutref lines, "  \"command\": \"facts\",");
+    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.workspace.v2\",");
+    facts_v5_append_templates(mutref lines, ref view, mutref diags);
+    facts_v5_append_instances(mutref lines, ref view, mutref diags);
+    list_push(mutref lines, concat5("  \"workspace\": { \"name\": ", json_quote(entry_identity.workspace_name), ", \"entry_module\": ", json_quote(workspace_module_key(capture, ref dependencies, entry_module)), " },"));
+    list_push(mutref lines, "  \"summary\": {");
+    list_push(mutref lines, concat3("    \"modules\": ", i32_to_str(list_len(ref modules)), ","));
+    list_push(mutref lines, concat3("    \"exports\": ", i32_to_str(list_len(ref exports)), ","));
+    list_push(mutref lines, concat3("    \"call_edges\": ", i32_to_str(list_len(ref calls)), ","));
+    list_push(mutref lines, concat3("    \"dependencies\": ", i32_to_str(list_len(ref dependencies)), ""));
+    list_push(mutref lines, "  },");
+    append_workspace_dependencies(mutref lines, ref dependencies, 4, true);
+    append_workspace_modules(mutref lines, capture, ref dependencies, ref modules);
+    facts_v5_append_exports(mutref lines, ref view, ref exports);
+    facts_v5_append_call_graph(mutref lines, capture, ref dependencies, ref view, ref sources, ref items, ref uses, ref variants, ref fields, ref bindings, ref calls, mutref diags);
+    list_push(mutref lines, "}");
+    // No partial output: every identity, offset, and bound is checked first.
+    if diagnostics_have_errors(ref diags) {
+        return make_facts_summary(0, 0, 0, 0);
+    }
+    emit_lines(ref lines);
+    return make_facts_summary(list_len(ref modules), list_len(ref exports), 0, list_len(ref calls));
 }
 
 fn workspace_dependency_id(value: workspace_locked_dependency) -> str {

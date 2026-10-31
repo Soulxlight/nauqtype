@@ -1,6 +1,9 @@
 use ast;
 use builtin_evidence;
 use diag;
+use facts;
+use generic_auth;
+use generic_names;
 use handoff;
 use lexer;
 use source;
@@ -42,6 +45,213 @@ audit {
     if summary.error_count > 0 { return summary; }
     let mut lines: list<str> = list();
     append_review_v2_json(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, 4);
+    emit_lines(ref lines);
+    return summary;
+}
+
+// ---------------------------------------------------------------------------
+// M56.1 review v5. The checked project is projected into source space (display
+// names for function instances, original offsets) and, in a generic graph,
+// ordered by identity then offset; the v4 code path then renders it. A
+// nongeneric graph projects to itself, so v5 differs from v4 only in header.
+
+fn review_v5_require(view: ref generic_evidence_view, name: str, module: str, diags: mutref list<diag>) -> unit {
+    if not view.active or not str_starts_with(name, "__nqg_") { return; }
+    if generic_evidence_lookup(ref view, name).generated == "" { generic_report_missing_identity(mutref diags, module); }
+}
+
+fn review_v5_site_bound(view: ref generic_evidence_view, prefix: str, module: str, projected: str, original: str, at: i32, diags: mutref list<diag>) -> unit {
+    // Sites inside an instance are new generic identities: check the bound
+    // before the emitter builds them.
+    if not view.active or projected == original { return; }
+    let parts = [prefix, module, "::", projected, "@", i32_to_str(at)];
+    let joined = generic_identity_join(ref parts, module, mutref diags);
+}
+
+fn review_v5_template_audit(lines: mutref list<str>, sources: ref list<source_file>, template: generic_template_record, diags: mutref list<diag>) -> unit {
+    if template.kind != 1 or template.audit_start < 0 {
+        list_push(mutref lines, "      \"audit\": null,");
+        list_push(mutref lines, "      \"audit_evidence\": \"absent\"");
+        return;
+    }
+    let mut original = "";
+    for file in sources { if file.name == template.module { original = file.original_text; } }
+    let tokens = lex(slice_text(original, template.audit_start, template.audit_end));
+    let mut cursor = 0;
+    let mut decls: list<review_decl_entry> = list();
+    let mut audit_diags: list<diag> = list();
+    let parsed = parse_audit_block(ref tokens, mutref cursor, template.module, template.name, mutref decls, mutref audit_diags);
+    let mut intent = "";
+    let mut ok = not diagnostics_have_errors(ref audit_diags);
+    match parsed {
+        Some(value) => { intent = value; },
+        None => { ok = false; },
+    }
+    if not ok {
+        list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, template.module, -1, -1, "retained template audit range is not a declared audit block"));
+        return;
+    }
+    let mutates = decl_entries_for_function(ref decls, template.module, template.name, review_decl_mutates);
+    let effects = decl_entries_for_function(ref decls, template.module, template.name, review_decl_effects);
+    let propagates = decl_entries_for_function(ref decls, template.module, template.name, review_decl_propagates);
+    list_push(mutref lines, "      \"audit\": {");
+    list_push(mutref lines, concat3("        \"intent\": ", json_quote(intent), ","));
+    append_named_string_array(mutref lines, "        ", "mutates", ref mutates, true);
+    append_named_string_array(mutref lines, "        ", "effects", ref effects, true);
+    append_named_string_array(mutref lines, "        ", "propagates", ref propagates, false);
+    list_push(mutref lines, "      },");
+    list_push(mutref lines, "      \"audit_evidence\": \"declared\"");
+}
+
+fn review_v5_template_lines(view: ref generic_evidence_view, sources: ref list<source_file>, diags: mutref list<diag>) -> list<str> {
+    let order = generic_evidence_template_order(ref view, mutref diags);
+    if list_len(ref order) == 0 {
+        return ["  \"generic_templates\": [],"];
+    }
+    let mut lines: list<str> = list();
+    list_push(mutref lines, "  \"generic_templates\": [");
+    let mut emitted = 0;
+    for index in order {
+        emitted = emitted + 1;
+        let template = generic_evidence_template_at(ref view, index);
+        generic_evidence_append_template(mutref lines, ref view, template, true, mutref diags);
+        review_v5_template_audit(mutref lines, ref sources, template, mutref diags);
+        if emitted < list_len(ref order) { list_push(mutref lines, "    },"); } else { list_push(mutref lines, "    }"); }
+    }
+    list_push(mutref lines, "  ],");
+    return lines;
+}
+
+fn review_v5_identity_order(view: ref generic_evidence_view, keys: ref list<str>, offsets: ref list<i32>) -> list<i32> {
+    if view.active { return generic_evidence_order(ref keys, ref offsets); }
+    let mut order: list<i32> = list();
+    let mut index = 0;
+    while index < list_len(ref keys) { list_push(mutref order, index); index = index + 1; }
+    return order;
+}
+
+pub fn emit_review_v5(entry_module: str, sources: ref list<source_file>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, summary: review_summary, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, diags: mutref list<diag>) -> review_summary
+audit {
+    intent("Emit review evidence for generic templates and checked instances with public semantic identities, or nothing");
+    mutates(diags);
+    effects(print);
+}
+{
+    if summary.error_count > 0 { return summary; }
+    let failed = make_review_summary(summary.function_count, summary.declaration_count, summary.warning_count, summary.error_count + 1);
+    let scopes: list<generic_module_scope> = list();
+    let view = generic_evidence_view_build(ref sources, false, ref scopes, mutref diags);
+    if not view.valid or diagnostics_have_errors(ref diags) { return failed; }
+
+    let mut keys: list<str> = list();
+    let mut offsets: list<i32> = list();
+    let mut projected_functions: list<review_function_fact> = list();
+    for value in functions {
+        let mut current = value;
+        current.name = generic_evidence_function_name(ref view, value.module, value.name, mutref diags);
+        current.at = generic_evidence_offset(ref view, ref sources, value.module, value.at, mutref diags);
+        list_push(mutref keys, function_identity(current.module, current.name));
+        list_push(mutref offsets, current.at);
+        list_push(mutref projected_functions, current);
+    }
+    let mut ordered_functions: list<review_function_fact> = list();
+    let function_order = review_v5_identity_order(ref view, ref keys, ref offsets);
+    for index in function_order {
+        match list_get(ref projected_functions, index) { Some(value) => { list_push(mutref ordered_functions, value); }, None => {}, }
+    }
+
+    let mut projected_decls: list<review_decl_entry> = list();
+    for value in decls {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        review_v5_require(ref view, value.name, value.module, mutref diags);
+        list_push(mutref projected_decls, current);
+    }
+    let mut projected_facts: list<function_fact> = list();
+    for value in function_facts {
+        let mut current = value;
+        current.name = generic_evidence_function_name(ref view, value.module, value.name, mutref diags);
+        list_push(mutref projected_facts, current);
+    }
+    let mut projected_params: list<function_param_fact> = list();
+    for value in function_params {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        list_push(mutref projected_params, current);
+    }
+    let mut projected_assignments: list<assignment_fact> = list();
+    for value in assignments {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        list_push(mutref projected_assignments, current);
+    }
+    let mut projected_writes: list<review_direct_mutation> = list();
+    for value in writes {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        list_push(mutref projected_writes, current);
+    }
+    let mut projected_coverage: list<review_mutation_coverage> = list();
+    for value in coverage {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        list_push(mutref projected_coverage, current);
+    }
+
+    keys = list();
+    offsets = list();
+    let mut projected_calls: list<call_fact> = list();
+    for value in calls {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        current.at = generic_evidence_offset(ref view, ref sources, value.module, value.at, mutref diags);
+        if view.active and str_starts_with(value.name, "__nqg_") {
+            // Function instance callees take their display name so effect and
+            // identity joins stay consistent; generated variants are decoded
+            // when rendered.
+            let entry = generic_evidence_lookup(ref view, value.name);
+            if entry.generated == "" or (entry.kind != 1 and entry.kind != 5) { generic_report_missing_identity(mutref diags, value.module); }
+            if entry.kind == 1 { current.name = entry.display; }
+        }
+        review_v5_require(ref view, value.checked_error_name, value.module, mutref diags);
+        review_v5_site_bound(ref view, "call:", value.module, current.function_name, value.function_name, current.at, mutref diags);
+        list_push(mutref keys, function_identity(current.module, current.function_name));
+        list_push(mutref offsets, current.at);
+        list_push(mutref projected_calls, current);
+    }
+    let mut ordered_calls: list<call_fact> = list();
+    let call_order = review_v5_identity_order(ref view, ref keys, ref offsets);
+    for index in call_order {
+        match list_get(ref projected_calls, index) { Some(value) => { list_push(mutref ordered_calls, value); }, None => {}, }
+    }
+
+    keys = list();
+    offsets = list();
+    let mut projected_locals: list<local_init_fact> = list();
+    for value in locals {
+        let mut current = value;
+        current.function_name = generic_evidence_function_name(ref view, value.module, value.function_name, mutref diags);
+        current.at = generic_evidence_offset(ref view, ref sources, value.module, value.at, mutref diags);
+        review_v5_require(ref view, value.checked_error_name, value.module, mutref diags);
+        if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
+            review_v5_site_bound(ref view, "propagation:", value.module, current.function_name, value.function_name, current.at, mutref diags);
+        }
+        list_push(mutref keys, function_identity(current.module, current.function_name));
+        list_push(mutref offsets, current.at);
+        list_push(mutref projected_locals, current);
+    }
+    let mut ordered_locals: list<local_init_fact> = list();
+    let local_order = review_v5_identity_order(ref view, ref keys, ref offsets);
+    for index in local_order {
+        match list_get(ref projected_locals, index) { Some(value) => { list_push(mutref ordered_locals, value); }, None => {}, }
+    }
+    if diagnostics_have_errors(ref diags) { return failed; }
+
+    let template_lines = review_v5_template_lines(ref view, ref sources, mutref diags);
+    let mut lines: list<str> = list();
+    append_review_json_with_view(mutref lines, entry_module, ref ordered_functions, ref projected_decls, ref projected_facts, ref projected_params, ref projected_assignments, ref ordered_calls, ref uses, ref items, ref variants, ref ordered_locals, ref projected_writes, ref projected_coverage, 5, ref view, ref template_lines, mutref diags);
+    // No partial output: every identity, offset, and bound is checked first.
+    if diagnostics_have_errors(ref diags) { return failed; }
     emit_lines(ref lines);
     return summary;
 }
@@ -2736,7 +2946,70 @@ fn append_review_json(lines: mutref list<str>, entry_module: str, functions: ref
     return;
 }
 
-fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, trailing_comma: bool) -> unit {
+// M56.1: the public target of one call. With an inactive generic view this is
+// exactly the v2-v4 computation; an active view decodes generated variants and
+// marks function and variant instances with their template identity.
+type review_target_view {
+    name: str,
+    kind: str,
+    id: str,
+    instance_of: str,
+    module: str,
+    evidence: str,
+}
+
+fn review_call_target_view(view: ref generic_evidence_view, variants: ref list<variant_fact>, call: call_fact) -> review_target_view {
+    let mut target = review_target_view { name: call.name, kind: call_target_kind(call), id: call_target_id(ref variants, call), instance_of: "", module: call_target_module(call), evidence: call_target_evidence(call) };
+    if not view.active { return target; }
+    if str_starts_with(call.name, "__nqg_") {
+        // An unknown generated callee was already reported (NQ-GENERIC-010).
+        let entry = generic_evidence_lookup(ref view, call.name);
+        if entry.generated != "" and entry.kind == 5 {
+            target.name = entry.source_name;
+            target.id = entry.identity;
+            if entry.instance {
+                target.kind = "variant_instance";
+                target.instance_of = entry.template_identity;
+            }
+        }
+        return target;
+    }
+    if call.checked_kind == "function" {
+        let entry = generic_evidence_function(ref view, call.checked_origin, call.name);
+        if entry.generated != "" {
+            target.name = entry.source_name;
+            target.kind = "function_instance";
+            target.id = entry.identity;
+            target.instance_of = entry.template_identity;
+        }
+    }
+    return target;
+}
+
+// The spelling and target of one propagated error. A generic nominal instance
+// error is spelled with its public instance identity.
+fn review_error_target_view(view: ref generic_evidence_view, items: ref list<top_item>, uses: ref list<module_use>, module: str, error_name: str) -> review_target_view {
+    if view.active and str_starts_with(error_name, "__nqg_") {
+        let entry = generic_evidence_lookup(ref view, error_name);
+        let mut kind = "type";
+        if entry.kind == 3 { kind = "enum"; }
+        if entry.instance {
+            return review_target_view { name: entry.identity, kind: str_concat(kind, "_instance"), id: entry.identity, instance_of: entry.template_identity, module: entry.module, evidence: "checked" };
+        }
+        return review_target_view { name: entry.source_name, kind: kind, id: entry.identity, instance_of: "", module: entry.module, evidence: "checked" };
+    }
+    return review_target_view { name: error_name, kind: propagation_target_kind(ref items, ref uses, module, error_name), id: propagation_target_id(ref items, ref uses, module, error_name), instance_of: "", module: "", evidence: propagation_target_evidence(ref items, ref uses, module, error_name) };
+}
+
+fn review_error_spellings(view: ref generic_evidence_view, items: ref list<top_item>, uses: ref list<module_use>, module: str, names: ref list<str>) -> list<str> {
+    let mut spelled: list<str> = list();
+    for name in names {
+        if view.active { list_push(mutref spelled, review_error_target_view(ref view, ref items, ref uses, module, name).name); } else { list_push(mutref spelled, name); }
+    }
+    return spelled;
+}
+
+fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, module: str, function_name: str, trailing_comma: bool, view: ref generic_evidence_view) -> unit {
     let total_calls = function_call_count(ref calls, module, function_name);
     let mut suffix = "";
     if trailing_comma {
@@ -2755,16 +3028,18 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
         match entry {
             Some(value) => {
                 if value.module == module and value.function_name == function_name {
-                    let origin = call_target_module(value);
-                    let target_kind = call_target_kind(value);
-                    let target_id = call_target_id(ref variants, value);
-                    let evidence = call_target_evidence(value);
+                    let target = review_call_target_view(ref view, ref variants, value);
+                    let origin = target.module;
+                    let evidence = target.evidence;
                     let io_kind = io_kind_for_call(value);
                     list_push(mutref lines, concat3(indent, "  {", ""));
                     list_push(mutref lines, concat5(indent, "    \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", ""));
-                    list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(value.name), ",", ""));
-                    list_push(mutref lines, concat5(indent, "    \"target_kind\": ", json_quote(target_kind), ",", ""));
-                    list_push(mutref lines, concat5(indent, "    \"target_id\": ", json_quote(target_id), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"name\": ", json_quote(target.name), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"target_kind\": ", json_quote(target.kind), ",", ""));
+                    list_push(mutref lines, concat5(indent, "    \"target_id\": ", json_quote(target.id), ",", ""));
+                    if target.instance_of != "" {
+                        list_push(mutref lines, concat5(indent, "    \"target_instance_of\": ", json_quote(target.instance_of), ",", ""));
+                    }
                     list_push(mutref lines, concat5(indent, "    \"target_module\": ", json_quote(origin), ",", ""));
                     if io_kind != "" {
                         list_push(mutref lines, concat5(indent, "    \"evidence\": ", json_quote(evidence), ",", ""));
@@ -2790,7 +3065,7 @@ fn append_review_v2_calls(lines: mutref list<str>, indent: str, functions: ref l
     return;
 }
 
-fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32) -> unit {
+fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32, view: ref generic_evidence_view, diags: mutref list<diag>) -> unit {
     let use_v3 = format_version >= 3;
     let call_owners = build_review_call_owners(ref calls);
     let print_effects = build_print_effects(ref functions, ref calls, ref uses, ref call_owners, true);
@@ -2805,14 +3080,24 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
             Some(value) => {
                 let declared_mutates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_mutates);
                 let declared_effects = decl_entries_for_function(ref decls, value.module, value.name, review_decl_effects);
-                let declared_propagates = decl_entries_for_function(ref decls, value.module, value.name, review_decl_propagates);
+                let declared_errors = decl_entries_for_function(ref decls, value.module, value.name, review_decl_propagates);
+                let declared_propagates = review_error_spellings(ref view, ref items, ref uses, value.module, ref declared_errors);
                 let mut inferred_mutate_names: list<str> = list();
                 if use_v3 {
                     inferred_mutate_names = inferred_checked_mutates(ref writes, value.module, value.name);
                 } else {
                     inferred_mutate_names = inferred_mutates(ref function_params, ref assignments, value.module, value.name);
                 }
-                let inferred_propagate_names = inferred_propagates(ref calls, ref locals, value.module, value.name);
+                let inferred_errors = inferred_propagates(ref calls, ref locals, value.module, value.name);
+                let inferred_propagate_names = review_error_spellings(ref view, ref items, ref uses, value.module, ref inferred_errors);
+                let instance = generic_evidence_function(ref view, value.module, value.name);
+                let is_instance = instance.generated != "";
+                let mut function_kind = "function";
+                let mut source_name = value.name;
+                if is_instance {
+                    function_kind = "function_instance";
+                    source_name = instance.source_name;
+                }
                 let inferred_io_kinds = io_kinds_for_function(ref io_kind_effects, value.module, value.name);
                 let mut inferred_effect_names: list<str> = list();
                 if list_contains(ref print_effects, function_internal_name(value.module, value.name)) {
@@ -2824,10 +3109,10 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
 
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(function_identity(value.module, value.name)), ",", "", ""));
-                list_push(mutref lines, concat5("      \"kind\": ", json_quote("function"), ",", "", ""));
+                list_push(mutref lines, concat5("      \"kind\": ", json_quote(function_kind), ",", "", ""));
                 list_push(mutref lines, concat5("      \"qualified_name\": ", json_quote(function_internal_name(value.module, value.name)), ",", "", ""));
                 list_push(mutref lines, concat5("      \"module\": ", json_quote(value.module), ",", "", ""));
-                list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"name\": ", json_quote(source_name), ",", "", ""));
                 list_push(mutref lines, concat3("      \"public\": ", bool_text(value.is_public), ","));
                 append_span(mutref lines, "      ", value.at, true);
                 if value.has_audit {
@@ -2859,7 +3144,7 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                 if use_v3 {
                     list_push(mutref lines, "        \"inferred\": \"checked\",");
                     list_push(mutref lines, "        \"mutation_coverage\": {");
-                    if format_version == 4 {
+                    if format_version >= 4 {
                         list_push(mutref lines, "          \"interpretation\": \"syntactic_may_write\",");
                         list_push(mutref lines, "          \"scope\": \"checked_mutref_parameters\",");
                         if review_mutation_partial(ref coverage, value.module, value.name) {
@@ -2880,7 +3165,14 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
                     list_push(mutref lines, "        \"inferred\": \"checked\"");
                 }
                 list_push(mutref lines, "      },");
-                append_review_v2_calls(mutref lines, "      ", ref functions, ref items, ref variants, ref calls, ref uses, value.module, value.name, false);
+                append_review_v2_calls(mutref lines, "      ", ref functions, ref items, ref variants, ref calls, ref uses, value.module, value.name, is_instance, ref view);
+                if is_instance {
+                    let arguments = generic_evidence_type_arguments(ref view, instance.key, value.module, mutref diags);
+                    list_push(mutref lines, concat3("      \"instance_of\": ", json_quote(instance.template_identity), ","));
+                    append_named_string_array(mutref lines, "      ", "type_arguments", ref arguments, true);
+                    generic_evidence_append_sites(mutref lines, "      ", ref view, instance.key, true, mutref diags);
+                    list_push(mutref lines, "      \"audit_source\": \"template\"");
+                }
                 if index + 1 < total_functions {
                     list_push(mutref lines, "    },");
                 } else {
@@ -2896,7 +3188,7 @@ fn append_review_v2_functions(lines: mutref list<str>, functions: ref list<revie
     return;
 }
 
-fn append_review_v2_references(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>) -> unit {
+fn append_review_v2_references(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, view: ref generic_evidence_view) -> unit {
     let total_calls = list_len(ref calls);
     if total_calls == 0 {
         list_push(mutref lines, "  \"references\": [],");
@@ -2908,17 +3200,19 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let target_kind = call_target_kind(value);
-                let target_id = call_target_id(ref variants, value);
-                let evidence = call_target_evidence(value);
+                let target = review_call_target_view(ref view, ref variants, value);
+                let evidence = target.evidence;
                 let io_kind = io_kind_for_call(value);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"id\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 list_push(mutref lines, "      \"kind\": \"call\",");
                 list_push(mutref lines, concat5("      \"from\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
-                list_push(mutref lines, concat5("      \"name\": ", json_quote(value.name), ",", "", ""));
-                list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
-                list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
+                list_push(mutref lines, concat5("      \"name\": ", json_quote(target.name), ",", "", ""));
+                list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target.kind), ",", "", ""));
+                list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target.id), ",", "", ""));
+                if target.instance_of != "" {
+                    list_push(mutref lines, concat3("      \"target_instance_of\": ", json_quote(target.instance_of), ","));
+                }
                 if io_kind != "" {
                     list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
                     list_push(mutref lines, concat5("      \"io_kind\": ", json_quote(io_kind), ",", "", ""));
@@ -2941,7 +3235,7 @@ fn append_review_v2_references(lines: mutref list<str>, functions: ref list<revi
     return;
 }
 
-fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, trailing_comma: bool) -> unit {
+fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<review_function_fact>, items: ref list<top_item>, variants: ref list<variant_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, trailing_comma: bool, view: ref generic_evidence_view) -> unit {
     let mut suffix = "";
     if trailing_comma {
         suffix = ",";
@@ -2957,12 +3251,12 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
         let entry = list_get(ref calls, index);
         match entry {
             Some(value) => {
-                let target_id = call_target_id(ref variants, value);
-                let evidence = call_target_evidence(value);
+                let target = review_call_target_view(ref view, ref variants, value);
+                let evidence = target.evidence;
                 let io_kind = io_kind_for_call(value);
                 list_push(mutref lines, "    {");
                 list_push(mutref lines, concat5("      \"caller\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
-                list_push(mutref lines, concat5("      \"callee\": ", json_quote(target_id), ",", "", ""));
+                list_push(mutref lines, concat5("      \"callee\": ", json_quote(target.id), ",", "", ""));
                 list_push(mutref lines, concat5("      \"call_site\": ", json_quote(call_identity(value.module, value.function_name, value.at)), ",", "", ""));
                 if io_kind != "" {
                     list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
@@ -2985,7 +3279,7 @@ fn append_review_v2_call_graph(lines: mutref list<str>, functions: ref list<revi
     return;
 }
 
-fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, calls: ref list<call_fact>, locals: ref list<local_init_fact>) -> unit {
+fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: ref list<function_fact>, functions: ref list<review_function_fact>, items: ref list<top_item>, uses: ref list<module_use>, calls: ref list<call_fact>, locals: ref list<local_init_fact>, view: ref generic_evidence_view) -> unit {
     let total_sites = propagation_site_count(ref locals);
     if total_sites == 0 {
         list_push(mutref lines, "  \"propagation_sites\": []");
@@ -2999,17 +3293,17 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
         match entry {
             Some(value) => {
                 if value.expr_member_name == "propagate" or value.expr_member_name == "try_propagate" {
-                    let error_name = propagation_error_name(ref calls, value);
-                    let target_kind = propagation_target_kind(ref items, ref uses, value.module, error_name);
-                    let target_id = propagation_target_id(ref items, ref uses, value.module, error_name);
-                    let evidence = propagation_target_evidence(ref items, ref uses, value.module, error_name);
+                    let target = review_error_target_view(ref view, ref items, ref uses, value.module, propagation_error_name(ref calls, value));
                     list_push(mutref lines, "    {");
                     list_push(mutref lines, concat5("      \"id\": ", json_quote(propagation_identity(value.module, value.function_name, value.at)), ",", "", ""));
                     list_push(mutref lines, concat5("      \"function\": ", json_quote(function_identity(value.module, value.function_name)), ",", "", ""));
-                    list_push(mutref lines, concat5("      \"error\": ", json_quote(error_name), ",", "", ""));
-                    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target_kind), ",", "", ""));
-                    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target_id), ",", "", ""));
-                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(evidence), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"error\": ", json_quote(target.name), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"target_kind\": ", json_quote(target.kind), ",", "", ""));
+                    list_push(mutref lines, concat5("      \"target_id\": ", json_quote(target.id), ",", "", ""));
+                    if target.instance_of != "" {
+                        list_push(mutref lines, concat3("      \"target_instance_of\": ", json_quote(target.instance_of), ","));
+                    }
+                    list_push(mutref lines, concat5("      \"evidence\": ", json_quote(target.evidence), ",", "", ""));
                     if value.propagation_label != "" {
                         list_push(mutref lines, concat5("      \"context\": ", json_quote(value.propagation_label), ",", "", ""));
                     }
@@ -3032,16 +3326,30 @@ fn append_review_v2_propagation_sites(lines: mutref list<str>, function_facts: r
 }
 
 fn append_review_v2_json(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32) -> unit {
-    let use_v3 = format_version >= 3;
+    let view = generic_evidence_inactive();
+    let generic_lines: list<str> = list();
+    let mut diags: list<diag> = list();
+    append_review_json_with_view(mutref lines, entry_module, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, format_version, ref view, ref generic_lines, mutref diags);
+    return;
+}
+
+// One review JSON code path for v2-v5. Pre-v5 formats pass an inactive view
+// and no generic lines, so their bytes are unchanged.
+fn append_review_json_with_view(lines: mutref list<str>, entry_module: str, functions: ref list<review_function_fact>, decls: ref list<review_decl_entry>, function_facts: ref list<function_fact>, function_params: ref list<function_param_fact>, assignments: ref list<assignment_fact>, calls: ref list<call_fact>, uses: ref list<module_use>, items: ref list<top_item>, variants: ref list<variant_fact>, locals: ref list<local_init_fact>, writes: ref list<review_direct_mutation>, coverage: ref list<review_mutation_coverage>, format_version: i32, view: ref generic_evidence_view, generic_lines: ref list<str>, diags: mutref list<diag>) -> unit {
     list_push(mutref lines, "{");
     list_push(mutref lines, concat3("  \"version\": ", i32_to_str(format_version), ","));
     list_push(mutref lines, "  \"command\": \"review\",");
     list_push(mutref lines, concat3("  \"module\": ", json_quote(entry_module), ","));
-    list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
-    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, format_version);
-    append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses);
-    append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true);
-    append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref calls, ref locals);
+    if format_version >= 5 {
+        list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v2\",");
+    } else {
+        list_push(mutref lines, "  \"identity_scheme\": \"nauqtype.semantic.v1\",");
+    }
+    for line in generic_lines { list_push(mutref lines, line); }
+    append_review_v2_functions(mutref lines, ref functions, ref decls, ref function_facts, ref function_params, ref assignments, ref calls, ref uses, ref items, ref variants, ref locals, ref writes, ref coverage, format_version, ref view, mutref diags);
+    append_review_v2_references(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, ref view);
+    append_review_v2_call_graph(mutref lines, ref functions, ref items, ref variants, ref calls, ref uses, true, ref view);
+    append_review_v2_propagation_sites(mutref lines, ref function_facts, ref functions, ref items, ref uses, ref calls, ref locals, ref view);
     list_push(mutref lines, "}");
     return;
 }

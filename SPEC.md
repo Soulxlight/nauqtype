@@ -40,11 +40,13 @@ Existing concrete type/borrow/audit diagnostics retain their families and map
 back to original source with instance context. `propagates(E)` substitutes only
 when E fits the existing concrete error-name atom; no audit grammar is widened.
 
-`check`, `emit-c`, `build`, and `run` use concrete specializations. Existing
-facts/review/diff/change/policy/rename formats reject a graph containing generics,
-even unused templates (`NQ-GENERIC-008`), until a versioned source/instance
-evidence contract is implemented. This is foundation support, not generic
-evidence parity or a stable generic library promise.
+`check`, `emit-c`, `build`, and `run` use concrete specializations. Only
+`facts --format v5` and `review --format v5` accept generic graphs; they
+report templates and checked instances by source identity as specified in
+`docs/M56_1_CONTRACT.md`. All other facts/review/diff/change/policy/rename
+formats reject a graph containing generics, even unused templates
+(`NQ-GENERIC-008`). Generic-aware diff, change, policy and rename remain
+deferred. This is not a stable generic library promise.
 
 ## Language Philosophy
 

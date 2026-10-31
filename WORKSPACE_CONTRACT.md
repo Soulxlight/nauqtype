@@ -64,6 +64,8 @@ This makes migration visible in facts and diffs instead of silently changing an 
   content-only hash remains a compatibility value; use change-report v4 for
   framed dependency-change evidence. See the explicit lock v2 migration in
   [WORKSPACE_LOCK.md](WORKSPACE_LOCK.md).
+- Facts v5 keeps v4's provenance and uses `nauqtype.workspace.v2`, which adds
+  generic template and instance identities (`docs/M56_1_CONTRACT.md`).
 - Review, review-diff, change-report, policy-check, and refactor plans use the
   shipped M45 cross-package canonical-ID behavior; no filesystem-text fallback
   is permitted.
