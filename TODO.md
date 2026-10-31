@@ -2,8 +2,9 @@
 
 ## Next Actions
 
-- [ ] M56.1: Gate A review of the draft
-  [contract](docs/M56_1_CONTRACT.md), then implementation
+- [x] M56.1: Gate A review of the [contract](docs/M56_1_CONTRACT.md)
+  (approved 2026-10-31, revision 3)
+- [ ] M56.1: implementation, focused checks, trailing audit, milestone gate
 - [ ] M56.2: `f64` decision record (SYNTAX_IDENTITY SOP) and Gate A review
 - [ ] M57 planning after M56.1/M56.2 contracts are fixed, including the
   in-repo standard library layout

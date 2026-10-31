@@ -14,7 +14,7 @@ or a copied-release manifest.
 | Work on R2/R3 | [Execution contract](R2_R3_CONTRACT.md), [measurements](R2_R3_RESULTS.md) | [Performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [verification tiers](../VERIFICATION.md) |
 | Work on R4-R6 | [Execution contract](R4_R6_CONTRACT.md), [compatibility matrix](R4_R6_MATRIX.txt) | [Focused results](R4_R6_RESULTS.md), [refactor scope/retention decisions](REFACTOR_PLAN.md), [verification tiers](../VERIFICATION.md) |
 | Work on M56 | [Explicit reuse contract](M56_CONTRACT.md), [host memory boundary](M56_GCC_MEMORY_CONTRACT.md) | [Spec](../SPEC.md), [teaching corpus](../TEACHING_CORPUS.md), [roadmap acceptance](../ROADMAP.md) |
-| Work on M56.1 | [Draft generic-aware evidence contract](M56_1_CONTRACT.md) (Gate A pending) | [M56 contract](M56_CONTRACT.md), [AI Contracts](../AI_CONTRACTS.md), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md) |
+| Work on M56.1 | [Generic-aware evidence contract](M56_1_CONTRACT.md) (Gate A passed) | [M56 contract](M56_CONTRACT.md), [AI Contracts](../AI_CONTRACTS.md), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |

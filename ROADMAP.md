@@ -1047,8 +1047,9 @@ Status: complete.
 ### M56.1: Generic-Aware Facts And Review
 
 Scheduled 2026-10-30 by the compiler lead with owner approval. Only the
-sequencing is approved; the bullets below are planning scope, and the binding
-terms are the [draft contract](docs/M56_1_CONTRACT.md) once it passes Gate A.
+sequencing is approved; the bullets below are planning scope. The binding
+terms are the [contract](docs/M56_1_CONTRACT.md), which passed Gate A on
+2026-10-31.
 
 - add new versioned `facts` and `review` formats that report a generic
   template once at its source identity and each concrete instance as a
