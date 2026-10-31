@@ -229,6 +229,166 @@ fn scan_digit_end(text: str, start: i32, length: i32) -> i32 {
     return length;
 }
 
+fn lexer_byte_at(text: str, index: i32, length: i32) -> i32 {
+    if index < 0 or index >= length {
+        return -1;
+    }
+    let value = str_get(text, index);
+    match value {
+        Some(ch) => {
+            return ch;
+        },
+        None => {
+            return -1;
+        },
+    }
+}
+
+type scanned_number {
+    kind: token_kind,
+    end: i32,
+}
+
+// FLOAT_LIT = DIGITS "." DIGITS [ "e" [ "-" ] DIGITS ]. After the fraction,
+// an `e`/`E`, at most one sign byte, and the maximal digit run are consumed;
+// anything but `e`, an absent or `-` sign, and one or more digits makes the
+// whole consumed span one malformed-float token (reported as NQ-PARSE-004).
+fn scan_number(text: str, start: i32, length: i32) -> scanned_number {
+    let int_end = scan_digit_end(text, start, length);
+    if lexer_byte_at(text, int_end, length) != 46 or not is_digit(lexer_byte_at(text, int_end + 1, length)) {
+        return scanned_number { kind: tk_int_lit, end: int_end };
+    }
+    let fraction_end = scan_digit_end(text, int_end + 1, length);
+    let marker = lexer_byte_at(text, fraction_end, length);
+    if marker != 101 and marker != 69 {
+        return scanned_number { kind: tk_float_lit, end: fraction_end };
+    }
+    let mut cursor = fraction_end + 1;
+    let mut valid = marker == 101;
+    let sign = lexer_byte_at(text, cursor, length);
+    if sign == 43 or sign == 45 {
+        if sign == 43 {
+            valid = false;
+        }
+        cursor = cursor + 1;
+    }
+    if is_digit(lexer_byte_at(text, cursor, length)) {
+        cursor = scan_digit_end(text, cursor, length);
+    } else {
+        valid = false;
+    }
+    if valid {
+        return scanned_number { kind: tk_float_lit, end: cursor };
+    }
+    return scanned_number { kind: tk_malformed_float_lit, end: cursor };
+}
+
+// Digit `ordinal` of DIGITS "." DIGITS (point skipped), or '0' past the mantissa.
+fn float_mantissa_digit(text: str, point: i32, exponent_at: i32, ordinal: i32) -> i32 {
+    let mut index = ordinal;
+    if ordinal >= point {
+        index = ordinal + 1;
+    }
+    if index >= exponent_at {
+        return 48;
+    }
+    return lexer_byte_at(text, index, exponent_at);
+}
+
+pub fn float_literal_magnitude_order(text: str, bound_digits: str, bound_adjusted: i32) -> i32
+audit {
+    intent("Compare a FLOAT_LIT's exact decimal magnitude with 0.bound_digits x 10^bound_adjusted, textually and without floating-point arithmetic");
+    mutates();
+    effects();
+}
+{
+    // Returns -1, 0, or 1. The literal's value is 0.D x 10^adjusted, where D
+    // starts at its first nonzero digit. Exponent digit runs longer than nine
+    // (after leading zeros) are unbounded in their sign's direction.
+    let length = str_len(text);
+    let mut point = -1;
+    let mut exponent_at = length;
+    let mut index = 0;
+    while index < length {
+        let ch = lexer_byte_at(text, index, length);
+        if ch == 46 and point < 0 {
+            point = index;
+        }
+        if (ch == 101 or ch == 69) and exponent_at == length {
+            exponent_at = index;
+        }
+        index = index + 1;
+    }
+    if point < 0 or point > exponent_at {
+        return -1;
+    }
+    let mantissa_count = exponent_at - 1;
+    let mut first_nonzero = -1;
+    let mut ordinal = 0;
+    while ordinal < mantissa_count and first_nonzero < 0 {
+        if float_mantissa_digit(text, point, exponent_at, ordinal) != 48 {
+            first_nonzero = ordinal;
+        }
+        ordinal = ordinal + 1;
+    }
+    if first_nonzero < 0 {
+        return -1;
+    }
+    let mut exponent_negative = false;
+    let mut exponent_value = 0;
+    if exponent_at < length {
+        let mut cursor = exponent_at + 1;
+        if lexer_byte_at(text, cursor, length) == 45 {
+            exponent_negative = true;
+            cursor = cursor + 1;
+        }
+        while cursor < length and lexer_byte_at(text, cursor, length) == 48 {
+            cursor = cursor + 1;
+        }
+        if length - cursor > 9 {
+            if exponent_negative {
+                return -1;
+            }
+            return 1;
+        }
+        while cursor < length {
+            exponent_value = exponent_value * 10 + (lexer_byte_at(text, cursor, length) - 48);
+            cursor = cursor + 1;
+        }
+    }
+    if exponent_negative {
+        exponent_value = 0 - exponent_value;
+    }
+    let adjusted = point - first_nonzero + exponent_value;
+    if adjusted > bound_adjusted {
+        return 1;
+    }
+    if adjusted < bound_adjusted {
+        return -1;
+    }
+    let bound_len = str_len(bound_digits);
+    let mut offset = 0;
+    while offset < bound_len {
+        let actual = float_mantissa_digit(text, point, exponent_at, first_nonzero + offset);
+        let allowed = lexer_byte_at(bound_digits, offset, bound_len);
+        if actual > allowed {
+            return 1;
+        }
+        if actual < allowed {
+            return -1;
+        }
+        offset = offset + 1;
+    }
+    let mut rest = first_nonzero + bound_len;
+    while rest < mantissa_count {
+        if float_mantissa_digit(text, point, exponent_at, rest) != 48 {
+            return 1;
+        }
+        rest = rest + 1;
+    }
+    return 0;
+}
+
 fn scan_ident_end(text: str, start: i32, length: i32) -> i32 {
     let mut index = start + 1;
     while index < length {
@@ -459,10 +619,10 @@ audit {
                                     index = string_value.end;
                                 } else {
                                     if is_digit(ch) {
-                                        let end = scan_digit_end(text, index, length);
-                                        let value = slice_text(text, index, end);
-                                        push_token(mutref tokens, tk_int_lit, value, index, end);
-                                        index = end;
+                                        let number = scan_number(text, index, length);
+                                        let value = slice_text(text, index, number.end);
+                                        push_token(mutref tokens, number.kind, value, index, number.end);
+                                        index = number.end;
                                     } else {
                                         if is_alpha(ch) {
                                             let end = scan_ident_end(text, index, length);

@@ -87,9 +87,11 @@ validate every README link or prove a stable release.
 Source files use `.nq`. A file is a module. Projects may use a manifest-backed
 workspace or legacy flat-root layout. The supported surface includes:
 
-- `bool`, `i32`, `i64`, `str`, and `unit`; unsuffixed integer literals default
-  to `i32` unless an expected `i64` type selects `i64`. Numeric widths do not
-  convert implicitly.
+- `bool`, `i32`, `i64`, `f64`, `str`, and `unit`; unsuffixed integer literals
+  default to `i32` unless an expected `i64` type selects `i64`. `f64` is IEEE
+  754 binary64 with one literal form (`1.0`, `2.5e-3`) and six explicit
+  conversion/text builtins (`f64_from_i64`, `f64_trunc_i64`, `str_from_f64`,
+  `f64_from_str`, ...). Numbers never convert implicitly.
 - Nominal `type` and `enum`, top-level `const`, functions with explicit
   parameter and return types, named function arguments, and explicit module
   imports, aliases, and qualified function/data names.
@@ -108,9 +110,9 @@ workspace or legacy flat-root layout. The supported surface includes:
 - A compile-to-C backend, narrow runtime, explicit Linux I/O, and M55 process
   and time facilities with bounded, documented contracts.
 
-This is a summary, not the language specification. Generics, floats, methods,
-implicit conversions, user-defined effect taxonomies, and numerous other
-features remain deferred. Exact syntax and restrictions are specified in the
+This is a summary, not the language specification. Generic inference and
+constraints, float types beyond `f64`, methods, implicit conversions,
+user-defined effect taxonomies, and numerous other features remain deferred. Exact syntax and restrictions are specified in the
 source checkout's `SPEC.md` and `GRAMMAR.md`; those files are not packaged.
 
 ## Workspaces And Dependencies
@@ -227,7 +229,9 @@ templates and checked instances by source identity (for example
 `fn:app::get<str,i32>`). All other evidence formats (facts/review v1-v4,
 diff, change, policy, rename) still reject generic graphs with
 `NQ-GENERIC-008` rather than invent source evidence for generated names.
-Formatter-lite
+M56.2 adds scalar `f64` (`examples/f64_basics.nq`); `f32`, unsigned integers
+and `char` are reserved names, and math functions and fixed-precision
+rendering remain library work. Formatter-lite
 remains output-only. Examples `generic_reuse.nq` and `generic_values.nq` teach
 the explicit form. Collections/data, FFI, bounded tasks and stable Linux
 packaging remain roadmap work, not current capabilities.

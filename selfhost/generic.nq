@@ -631,7 +631,7 @@ fn generic_binary_precedence(value: token) -> i32 {
 }
 
 fn generic_symbol(value: token, expected: str) -> bool {
-    match value.kind { tk_string_lit => { return false; }, tk_int_lit => { return false; }, _ => { return value.text == expected; }, }
+    match value.kind { tk_string_lit => { return false; }, tk_int_lit => { return false; }, tk_float_lit => { return false; }, tk_malformed_float_lit => { return false; }, _ => { return value.text == expected; }, }
 }
 
 fn generic_syntax_take(tokens: ref list<token>, cursor: mutref i32, end: i32, expected: str) -> bool {
@@ -670,10 +670,13 @@ fn generic_syntax_pattern(tokens: ref list<token>, cursor: mutref i32, end: i32)
             if cursor + 1 >= end { return false; }
             match generic_tok(ref tokens, cursor + 1).kind {
                 tk_int_lit => { cursor = cursor + 2; return true; },
+                tk_float_lit => { cursor = cursor + 2; return true; },
+                tk_malformed_float_lit => { cursor = cursor + 2; return true; },
                 _ => { return false; },
             }
         },
         tk_int_lit => { scalar = true; }, tk_string_lit => { scalar = true; },
+        tk_float_lit => { scalar = true; }, tk_malformed_float_lit => { scalar = true; },
         tk_kw_true => { scalar = true; }, tk_kw_false => { scalar = true; }, _ => {},
     }
     if scalar { cursor = cursor + 1; return true; }
@@ -735,6 +738,7 @@ fn generic_syntax_atom(tokens: ref list<token>, cursor: mutref i32, end: i32) ->
     let current = generic_tok(ref tokens, cursor);
     match current.kind {
         tk_int_lit => { cursor = cursor + 1; return true; }, tk_string_lit => { cursor = cursor + 1; return true; },
+        tk_float_lit => { cursor = cursor + 1; return true; }, tk_malformed_float_lit => { cursor = cursor + 1; return true; },
         tk_kw_true => { cursor = cursor + 1; return true; }, tk_kw_false => { cursor = cursor + 1; return true; },
         _ => {},
     }
@@ -1193,6 +1197,12 @@ fn generic_parse_type(inv: ref generic_inventory, sources: ref list<source_file>
     }
     let mut builtin = -1;
     if qualifier == "" { builtin = generic_builtin_arity(name); }
+    if qualifier == "" and (name == "f32" or name == "u32" or name == "u64" or name == "char") {
+        // M56.2 (D067): reserved numeric names fail in every type position,
+        // including explicit generic arguments, before any instance exists.
+        generic_error(mutref diags, "NQ-TYPE-049", file.name, start.start, start.end, concat3("`", name, "` is reserved and not yet supported"));
+        return -1;
+    }
     let mut target = -1;
     let mut arity = builtin;
     if builtin < 0 {
@@ -1399,8 +1409,8 @@ fn generic_ident(value: token) -> bool {
 fn generic_builtin_arity(name: str) -> i32 {
     if name == "list" or name == "option" { return 1; }
     if name == "result" { return 2; }
-    if name == "int" or name == "u32" or name == "u64" or name == "f32" or name == "f64" or name == "char" { return 0; }
-    if name == "i32" or name == "i64" or name == "bool" or name == "str" or name == "unit" or name == "bytes" or name == "io_err" or name == "process_result" or name == "path_metadata" or name == "duration" or name == "instant" or name == "process" or name == "process_outcome" { return 0; }
+    if name == "int" or name == "u32" or name == "u64" or name == "f32" or name == "char" { return 0; }
+    if name == "i32" or name == "i64" or name == "f64" or name == "bool" or name == "str" or name == "unit" or name == "bytes" or name == "io_err" or name == "process_result" or name == "path_metadata" or name == "duration" or name == "instant" or name == "process" or name == "process_outcome" { return 0; }
     return -1;
 }
 

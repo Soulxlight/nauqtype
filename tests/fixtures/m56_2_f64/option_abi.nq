@@ -1,0 +1,45 @@
+fn describe(value: option<i64>) -> str {
+    match value {
+        Some(found) => {
+            if found == 9007199254740993 {
+                return "direct";
+            }
+            if found == -42 {
+                return "truncated";
+            }
+            return "other";
+        },
+        None => {
+            return "none";
+        },
+    }
+}
+
+fn main() -> i32
+audit {
+    intent("Use option<i64> directly beside the runtime-declared f64 option carriers");
+    mutates();
+    effects(print);
+}
+{
+    let direct: option<i64> = Some(9007199254740993);
+    let mut values: list<option<i64>> = [direct, None];
+    list_push(mutref values, f64_trunc_i64(-42.9));
+    for value in values {
+        print_line(describe(value));
+    }
+    let Some(parsed) = f64_from_str("-42.5") else {
+        return 1;
+    };
+    print_line(describe(f64_trunc_i64(parsed)));
+    print_line(describe(f64_trunc_i64(parsed / 0.0)));
+    match f64_from_str("1.0e5") {
+        Some(found) => {
+            print_line(str_from_f64(found));
+        },
+        None => {
+            return 2;
+        },
+    }
+    return 0;
+}

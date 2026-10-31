@@ -2,6 +2,7 @@ use diag;
 use handoff;
 use ir;
 use c_emit_index;
+use lexer;
 use text;
 use value_plan;
 use const_word;
@@ -610,6 +611,9 @@ fn type_mangle(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 checked_type_i64 => {
                     return "i64";
                 },
+                checked_type_f64 => {
+                    return "f64";
+                },
                 checked_type_str => {
                     return "str";
                 },
@@ -671,6 +675,9 @@ fn c_type(type_shapes: ref list<ir_type_shape>, type_id: i32) -> str {
                 },
                 checked_type_i64 => {
                     return "int64_t";
+                },
+                checked_type_f64 => {
+                    return "double";
                 },
                 checked_type_str => {
                     return "NQStr";
@@ -768,6 +775,9 @@ fn is_runtime_native_option(type_shapes: ref list<ir_type_shape>, payload_type_i
                 checked_type_i32 => {
                     return true;
                 },
+                // M56.2: runtime.h declares these carriers (the f64 builtins return them).
+                checked_type_i64 => { return true; },
+                checked_type_f64 => { return true; },
                 checked_type_str => {
                     return true;
                 },
@@ -1820,6 +1830,9 @@ fn expr_result_needs_discard_drop(type_shapes: ref list<ir_type_shape>, expressi
                 ir_expr_i64 => {
                     return false;
                 },
+                ir_expr_f64 => {
+                    return false;
+                },
                 _ => {
                     return true;
                 },
@@ -2328,6 +2341,19 @@ fn integer_operator_suffix(kind: ir_expr_kind, constant: bool) -> str {
 }
 
 fn integer_operation_text(type_shapes: ref list<ir_type_shape>, type_id: i32, kind: ir_expr_kind, left: str, right: str, constant: bool, at: i32, diags: mutref list<diag>) -> str {
+    if type_id_is_f64(ref type_shapes, type_id) and not constant {
+        // M56.2: IEEE binary64 arithmetic is plain C `double` arithmetic; no
+        // integer helper, no trap. Operands are already ordered by the caller.
+        match kind {
+            ir_expr_neg => { return concat3("(-(", left, "))"); },
+            _ => {
+                let operator = binary_operator_text(kind);
+                if operator != "" { return concat5("((", left, ") ", operator, str_concat(" (", str_concat(right, "))"))); }
+            },
+        }
+        push_c_error(mutref diags, "", at, "missing f64 operation truth");
+        return "0";
+    }
     let mut prefix = "";
     match lookup_type_shape(ref type_shapes, type_id) {
         Some(shape) => {
@@ -2523,7 +2549,71 @@ audit {
     return borrowed == "0" and list_len(ref diags) == 1;
 }
 
+// 2^-1075 exactly (752 digits, 0.D x 10^-323): every nonnegative decimal at or
+// below it rounds to +0.0 under ties-to-even.
+fn f64_zero_rounding_bound_digits() -> str {
+    return "24703282292062327208828439643411068618252990130716238221279284125033775363510437593264991818081799618989828234772285886546332835517796989819938739800539093906315035659515570226392290858392449105184435931802849936536152500319370457678249219365623669863658480757001585769269903706311928279558551332927834338409351978015531246597263579574622766465272827220056374006485499977096599470454020828166226237857393450736339007967761930577506740176324673600968951340535537458516661134223766678604162159680461914467291840300530057530849048765391711386591646239524912623653881879636239373280423891018672348497668235089863388587925628302755995657524455507255189313690836254779186948667994968324049705821028513185451396213837722826145437693412532098591327667236328125";
+}
+
+// A float literal is emitted as its source text, which C converts with correct
+// rounding. The one exception is a nonzero literal that rounds to zero: GCC
+// warns about it (-Woverflow, on by default), so it is emitted as the same
+// value, `0.0`. Negation stays outside the literal, so `-1.0e-400` is -0.0.
+fn f64_literal_c_text(text: str) -> str {
+    if float_literal_magnitude_order(text, f64_zero_rounding_bound_digits(), -323) <= 0 {
+        return "0.0";
+    }
+    return text;
+}
+
+fn type_id_is_f64(type_shapes: ref list<ir_type_shape>, type_id: i32) -> bool {
+    match lookup_type_shape(ref type_shapes, type_id) {
+        Some(shape) => { match shape.kind { checked_type_f64 => { return true; }, _ => {}, } },
+        None => {},
+    }
+    return false;
+}
+
+// M56.2: an f64 constant is exactly FLOAT_LIT or "-" FLOAT_LIT (the type
+// checker enforces the grammar). There is no folding: the C compiler converts
+// the source literal text with correct rounding.
+fn emit_f64_const_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr: ir_expr, diags: mutref list<diag>) -> str {
+    let child_ids = lookup_expr_child_ids(ref membership, ref children, expr.id);
+    match expr.kind {
+        ir_expr_f64 => {
+            if list_len(ref child_ids) == 0 { return f64_literal_c_text(expr.name); }
+        },
+        ir_expr_neg => {
+            if list_len(ref child_ids) == 1 {
+                match lookup_expression(ref expressions, lookup_expr_child_id(ref membership, ref children, expr.id, 0)) {
+                    Some(child) => {
+                        let grandchildren = lookup_expr_child_ids(ref membership, ref children, child.id);
+                        match child.kind {
+                            ir_expr_f64 => {
+                                if list_len(ref grandchildren) == 0 and type_id_is_f64(ref type_shapes, child.type_id) { return str_concat("-", f64_literal_c_text(child.name)); }
+                            },
+                            _ => {},
+                        }
+                    },
+                    None => {},
+                }
+            }
+        },
+        _ => {},
+    }
+    push_c_error(mutref diags, "", expr.at, "invalid f64 constant IR during C emission");
+    return "0";
+}
+
 fn emit_const_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_type_shape>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, diags: mutref list<diag>) -> str {
+    match lookup_expression(ref expressions, expr_id) {
+        Some(root) => {
+            if type_id_is_f64(ref type_shapes, root.type_id) {
+                return emit_f64_const_expr(ref membership, ref type_shapes, ref expressions, ref children, root, mutref diags);
+            }
+        },
+        None => {},
+    }
     let value = fold_c_const(ref membership, ref type_shapes, ref expressions, ref children, expr_id, true, mutref diags);
     if not value.valid { return "0"; }
     let width = const_integer_width(ref type_shapes, value.type_id);
@@ -2710,6 +2800,9 @@ fn builtin_call_name(name: str, origin_module: str) -> str {
     }
     if name == "bytes_get" {
         return "nq_bytes_get";
+    }
+    if name == "f64_from_i32" or name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "str_from_f64" or name == "f64_from_str" {
+        return str_concat("nq_", name);
     }
     return "";
 }
@@ -2916,6 +3009,9 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                 },
                 ir_expr_i64 => {
                     return concat3("INT64_C(", normalize_decimal_literal(expr.name), ")");
+                },
+                ir_expr_f64 => {
+                    return f64_literal_c_text(expr.name);
                 },
                 ir_expr_str => {
                     return concat3("nq_str(\"", concat3(escape_c_string(expr.name), "\")", ""), "");
@@ -3589,6 +3685,7 @@ fn lower_expr_value(membership: ref c_emit_membership_index, lines: mutref list<
                 ir_expr_unit => { return "NQ_UNIT"; },
                 ir_expr_i32 => { return normalize_decimal_literal(expr.name); },
                 ir_expr_i64 => { return concat3("INT64_C(", normalize_decimal_literal(expr.name), ")"); },
+                ir_expr_f64 => { return f64_literal_c_text(expr.name); },
                 ir_expr_str => { return concat3("nq_str(\"", concat3(escape_c_string(expr.name), "\")", ""), ""); },
                 ir_expr_bool => { if expr.name == "true" { return "true"; } return "false"; },
                 ir_expr_name => {

@@ -1,0 +1,357 @@
+const HALF: f64 = 0.5;
+const NEGATIVE_TWO: f64 = -2.0;
+const SMALLEST: f64 = 5.0e-324;
+const LARGEST: f64 = 1.7976931348623157e308;
+
+type Sample {
+    label: str,
+    value: f64,
+}
+
+enum Reading {
+    Exact(f64),
+    Missing,
+}
+
+type Bag<T> {
+    item: T,
+}
+
+fn bag_item<T>(bag: Bag<T>) -> T
+audit {
+    intent("Return the explicitly selected bag item");
+    mutates();
+    effects();
+}
+{
+    return bag.item;
+}
+
+fn show(label: str, value: f64) -> unit
+audit {
+    intent("Print one labeled f64 rendering");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), str_from_f64(value)));
+    return;
+}
+
+fn show_text(label: str, value: str) -> unit
+audit {
+    intent("Print one labeled text value");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), value));
+    return;
+}
+
+fn flag(value: bool) -> str {
+    if value {
+        return "T";
+    }
+    return "F";
+}
+
+fn optional(value: option<f64>) -> str {
+    match value {
+        Some(found) => {
+            return str_from_f64(found);
+        },
+        None => {
+            return "none";
+        },
+    }
+}
+
+fn optional_i32(value: option<i32>) -> str {
+    match value {
+        Some(found) => {
+            return str_from_f64(f64_from_i32(found));
+        },
+        None => {
+            return "none";
+        },
+    }
+}
+
+fn optional_i64(value: option<i64>) -> str {
+    match value {
+        Some(found) => {
+            return optional(f64_from_i64(found));
+        },
+        None => {
+            return "none";
+        },
+    }
+}
+
+fn exact_i64(value: option<i64>, expected: i64) -> str {
+    match value {
+        Some(found) => {
+            if found == expected {
+                return "exact";
+            }
+            return "mismatch";
+        },
+        None => {
+            return "none";
+        },
+    }
+}
+
+fn compare(label: str, a: f64, b: f64) -> unit
+audit {
+    intent("Print the IEEE comparison truth table row for two values");
+    mutates();
+    effects(print);
+}
+{
+    let row = str_concat(str_concat(str_concat(flag(a == b), flag(a != b)), str_concat(flag(a < b), flag(a <= b))), str_concat(flag(a > b), flag(a >= b)));
+    show_text(label, row);
+    return;
+}
+
+fn divide(numerator: f64, denominator: f64) -> result<f64, str> {
+    if denominator == 0.0 {
+        return Err("zero denominator");
+    }
+    return Ok(numerator / denominator);
+}
+
+fn arithmetic() -> unit
+audit {
+    intent("Print IEEE arithmetic edge results");
+    mutates();
+    effects(print);
+}
+{
+    let zero = 0.0;
+    let one = 1.0;
+    let nan = zero / zero;
+    let infinity = one / zero;
+    show("add", 0.1 + 0.2);
+    show("sub", 0.5 - 0.25);
+    show("mul", 1.5 * -4.0);
+    show("div", 1.0 / 3.0);
+    show("neg-zero", -0.0);
+    show("neg-of-zero", -zero);
+    show("zero-times-negative", zero * -1.0);
+    show("negative-zero-plus-zero", -0.0 + 0.0);
+    show("overflow", 1.0e308 * 10.0);
+    show("negative-overflow", -1.0e308 * 10.0);
+    show("nan-propagation", nan + 1.0);
+    show("inf-minus-inf", infinity - infinity);
+    show("inf-times-zero", infinity * zero);
+    show("div-by-zero", 1.0 / 0.0);
+    show("negative-div-by-zero", -1.0 / 0.0);
+    show("div-by-negative-zero", 1.0 / -0.0);
+    show("zero-div-zero", 0.0 / 0.0);
+    show("smallest", SMALLEST);
+    show("smallest-halved", SMALLEST / 2.0);
+    show("largest", LARGEST);
+    show("constants", HALF * NEGATIVE_TWO);
+    return;
+}
+
+fn comparisons() -> unit
+audit {
+    intent("Print the comparison truth table with NaN and signed zero");
+    mutates();
+    effects(print);
+}
+{
+    let zero = 0.0;
+    let nan = zero / zero;
+    let infinity = 1.0 / zero;
+    compare("1<2", 1.0, 2.0);
+    compare("2>1", 2.0, 1.0);
+    compare("1=1", 1.0, 1.0);
+    compare("nan-1", nan, 1.0);
+    compare("1-nan", 1.0, nan);
+    compare("nan-nan", nan, nan);
+    compare("zero-negzero", 0.0, -0.0);
+    compare("negzero-zero", -0.0, 0.0);
+    compare("inf-inf", infinity, infinity);
+    compare("neginf-inf", -infinity, infinity);
+    show_text("nan-idiom", str_concat(flag(nan != nan), flag(one_value() != one_value())));
+    show_text("finite-idiom", str_concat(str_concat(flag(1.5 - 1.5 == 0.0), flag(infinity - infinity == 0.0)), flag(nan - nan == 0.0)));
+    return;
+}
+
+fn one_value() -> f64 {
+    return 1.0;
+}
+
+fn conversions() -> unit
+audit {
+    intent("Print every conversion builtin at its boundaries");
+    mutates();
+    effects(print);
+}
+{
+    let int_min = f64_from_i32(-2147483647 - 1);
+    show_text("from_i32-min", str_concat(str_concat(str_from_f64(int_min), " "), optional_i32(f64_trunc_i32(int_min))));
+    show_text("from_i32-minus-one", str_concat(str_concat(str_from_f64(f64_from_i32(-1)), " "), optional_i32(f64_trunc_i32(f64_from_i32(-1)))));
+    show_text("from_i32-zero", str_concat(str_concat(str_from_f64(f64_from_i32(0)), " "), optional_i32(f64_trunc_i32(f64_from_i32(0)))));
+    show_text("from_i32-max", str_concat(str_concat(str_from_f64(f64_from_i32(2147483647)), " "), optional_i32(f64_trunc_i32(f64_from_i32(2147483647)))));
+    let two53: i64 = 9007199254740992;
+    show_text("from_i64-2^53", optional(f64_from_i64(two53)));
+    show_text("from_i64-2^53+1", optional(f64_from_i64(two53 + 1)));
+    show_text("from_i64-2^53+2", optional(f64_from_i64(two53 + 2)));
+    show_text("from_i64-max", optional(f64_from_i64(9223372036854775807)));
+    let int64_min: i64 = -9223372036854775807 - 1;
+    show_text("from_i64-min", optional(f64_from_i64(int64_min)));
+    let zero = 0.0;
+    let nan = zero / zero;
+    let infinity = 1.0 / zero;
+    show_text("trunc_i64-2^63", optional_i64(f64_trunc_i64(9223372036854775808.0)));
+    show_text("trunc_i64-below-2^63", exact_i64(f64_trunc_i64(9223372036854774784.0), 9223372036854774784));
+    show_text("trunc_i64-minus-2^63", exact_i64(f64_trunc_i64(-9223372036854775808.0), int64_min));
+    let Some(widened_min) = f64_from_i64(int64_min) else {
+        return;
+    };
+    show_text("trunc_i64-from_i64-min", exact_i64(f64_trunc_i64(widened_min), int64_min));
+    show_text("trunc_i64-below-minus-2^63", optional_i64(f64_trunc_i64(-9223372036854777856.0)));
+    show_text("trunc_i64-nan", optional_i64(f64_trunc_i64(nan)));
+    show_text("trunc_i64-inf", optional_i64(f64_trunc_i64(infinity)));
+    show_text("trunc_i64-neginf", optional_i64(f64_trunc_i64(-infinity)));
+    show_text("trunc_i64-fraction", exact_i64(f64_trunc_i64(-2.75), -2));
+    show_text("trunc_i32-2147483647.9", optional_i32(f64_trunc_i32(2147483647.9)));
+    show_text("trunc_i32-2147483648.0", optional_i32(f64_trunc_i32(2147483648.0)));
+    show_text("trunc_i32-minus-2147483648.9", optional_i32(f64_trunc_i32(-2147483648.9)));
+    show_text("trunc_i32-minus-2147483649.0", optional_i32(f64_trunc_i32(-2147483649.0)));
+    show_text("trunc_i32-minus-0.5", optional_i32(f64_trunc_i32(-0.5)));
+    show_text("trunc_i32-nan", optional_i32(f64_trunc_i32(nan)));
+    return;
+}
+
+fn long_input() -> str {
+    let mut text = "1.";
+    let mut count = 0;
+    while count < 598 {
+        text = str_concat(text, "0");
+        count = count + 1;
+    }
+    return text;
+}
+
+fn slice_parse(text: str, start: i32, end: i32) -> str {
+    let Some(view) = str_slice(text, start, end) else {
+        return "bad slice";
+    };
+    return optional(f64_from_str(view));
+}
+
+fn text_builtins() -> unit
+audit {
+    intent("Print rendering and strict parsing results, including unterminated slices");
+    mutates();
+    effects(print);
+}
+{
+    show("render-tenth", 0.1);
+    show("render-hundred", 100.0);
+    show("render-1e21", 1.0e21);
+    show("render-1e20", 1.0e20);
+    show("render-1e-6", 1.0e-6);
+    show("render-1e-7", 1.0e-7);
+    show("render-above-2^53", 18014398509481988.0);
+    show_text("slice-1.259", slice_parse("1.259", 0, 4));
+    show_text("slice-12x", slice_parse("12x", 0, 2));
+    show_text("slice-exponent", slice_parse("1.0e5", 0, 4));
+    let long = long_input();
+    show_text("heap-length", str_from_f64(f64_from_i32(str_len(long))));
+    show_text("heap-parse", optional(f64_from_str(long)));
+    show_text("parse-negative-zero", optional(f64_from_str("-0")));
+    show_text("parse-underflow", optional(f64_from_str("1e-400")));
+    show_text("parse-largest", optional(f64_from_str("1.7976931348623158e308")));
+    show_text("parse-overflow", optional(f64_from_str("1.7976931348623159e308")));
+    show_text("parse-exponent", optional(f64_from_str("2.5E+3")));
+    let rejects = ["+1", "1.", ".5", " 1", "1 ", "01", "1e", "inf", "NaN", "Infinity", ""];
+    let mut rejected = "";
+    for candidate in rejects {
+        rejected = str_concat(rejected, optional(f64_from_str(candidate)));
+        rejected = str_concat(rejected, ";");
+    }
+    show_text("rejects", rejected);
+    show_text("round-trip", optional(f64_from_str(str_from_f64(0.1 + 0.2))));
+    return;
+}
+
+fn values() -> unit
+audit {
+    intent("Carry f64 values through products, enums, containers, results, and a generic instance");
+    mutates();
+    effects(print);
+}
+{
+    let mut sample = Sample { label: "ratio", value: 0.25 };
+    sample.value = sample.value * 3.0;
+    show(sample.label, sample.value);
+    let readings = [Exact(2.5), Missing];
+    for reading in readings {
+        match reading {
+            Exact(value) => {
+                show("reading", value);
+            },
+            Missing => {
+                show_text("reading", "missing");
+            },
+        }
+    }
+    let mut series: list<f64> = [1.5, -0.25];
+    list_push(mutref series, 4.0);
+    let mut total = 0.0;
+    for value in series {
+        total = total + value;
+    }
+    show("list-total", total);
+    show_text("list-third", optional(list_get(ref series, 2)));
+    show_text("list-missing", optional(list_get(ref series, 3)));
+    let maybe: option<f64> = Some(-1.5);
+    show_text("option", optional(maybe));
+    match divide(1.0, 4.0) {
+        Ok(value) => {
+            show("result-ok", value);
+        },
+        Err(message) => {
+            show_text("result-err", message);
+        },
+    }
+    match divide(1.0, -0.0) {
+        Ok(value) => {
+            show("result-ok", value);
+        },
+        Err(message) => {
+            show_text("result-err", message);
+        },
+    }
+    let bag = Bag::<f64> { item: 6.02e23 };
+    show("bag", bag_item::<f64>(bag));
+    // Literals at or below 2^-1075 are emitted as 0.0; negation stays outside.
+    show("tiny", 1.0e-400);
+    show("tiny-neg", -1.0e-400);
+    show("tiny-neg-sign", 1.0 / -1.0e-400);
+    show("tiny-below-half", 2.4703282292062327e-324);
+    show("tiny-above-half", 2.4703282292062328e-324);
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise scalar f64 arithmetic, comparisons, builtins, and value positions end to end");
+    mutates();
+    effects(print);
+}
+{
+    arithmetic();
+    comparisons();
+    conversions();
+    text_builtins();
+    values();
+    return 0;
+}

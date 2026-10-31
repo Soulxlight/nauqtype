@@ -3,13 +3,15 @@
 ## Current Position And Resumption
 
 Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
-complete. Complete through M56.1 generic-aware facts/review v5, including
-M56 explicit generic reuse and the PRE-M56 P1-P4 performance checkpoint (full
-milestone gate about 25 minutes at M56.1; the 10-minute cold working target
-remains unmet and open). Evidence for each milestone is in
-[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) and its contract documents.
+complete. Complete through M56.2 scalar `f64`, including M56.1
+generic-aware facts/review v5, M56 explicit generic reuse and the PRE-M56
+P1-P4 performance checkpoint (full milestone gate about 26 minutes at M56.2;
+the 10-minute cold working target remains unmet and open). Evidence for each
+milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) and its contract
+documents.
 
-Next: M56.2 scalar `f64`, then M57-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+Next: M57 collections and data interchange (planning first, including the
+in-repo standard library layout), then M58-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -1066,10 +1068,12 @@ The scope as scheduled:
 
 ### M56.2: Scalar `f64`
 
-Scheduled 2026-10-30 by the compiler lead with owner approval. Gate A passed
-2026-10-31 on revision 3 of the [M56.2 contract](docs/M56_2_CONTRACT.md),
-which is also the `SYNTAX_IDENTITY.md` decision record and supersedes the
-planning bullets below.
+Complete 2026-10-31 per revision 3 of the
+[M56.2 contract](docs/M56_2_CONTRACT.md) (Gate A 2026-10-31; also the
+`SYNTAX_IDENTITY.md` decision record) and
+[D067](DECISIONS.md#d067-scalar-f64). Evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m562-scalar-f64-close). The
+planning bullets as scheduled:
 
 - pressure: M57 JSON numbers and terminal tools (ratios, durations,
   measurements) need a floating-point value; no later milestone schedules one

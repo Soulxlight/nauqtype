@@ -25,6 +25,22 @@ fn push_diag(diags: mutref list<diag>, file: str, tok: token, message: str) -> u
     return;
 }
 
+// The lexer cannot report diagnostics, so a float literal with a malformed
+// exponent arrives as one full-span token. Only parse_file reports it, once per
+// token; the later fact collectors read the same token stream without repeating it.
+fn push_malformed_float_diags(tokens: ref list<token>, diags: mutref list<diag>, file: str) -> unit {
+    for current in tokens {
+        match current.kind {
+            tk_malformed_float_lit => {
+                list_push(mutref diags, make_diagnostic("NQ-PARSE-004", diag_parse, diag_error, file, current.start, current.end, "malformed float literal", "", "write the exponent as lowercase `e` with an optional `-` and digits, as in `1.0e5` or `1.0e-5`"));
+            },
+            _ => {
+            },
+        }
+    }
+    return;
+}
+
 fn advance(cursor: mutref i32) -> unit {
     cursor = cursor + 1;
     return;
@@ -1773,6 +1789,7 @@ audit {
     let mut item_count = 0;
     let mut use_count = 0;
     let mut scanning_uses = true;
+    push_malformed_float_diags(ref tokens, mutref diags, file);
 
     while scanning_uses {
         let current = token_at(ref tokens, cursor);
@@ -3124,6 +3141,11 @@ fn classify_expr_kind(tokens: ref list<token>, start: i32, end: i32) -> expr_fac
         },
         tk_int_lit => {
             return expr_i32;
+        },
+        tk_float_lit => {
+            if expr_start + 1 == end {
+                return expr_f64;
+            }
         },
         tk_string_lit => {
             return expr_str;

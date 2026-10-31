@@ -3,6 +3,7 @@
 #endif
 #include "runtime.h"
 
+#include <locale.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <limits.h>
@@ -3310,5 +3311,313 @@ NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end) {
         .data.Some = {
             ._0 = nq_str_clone(slice),
         },
+    };
+}
+
+/* ---- Scalar f64 builtins (M56.2) ----------------------------------------
+ * No <math.h>/libm: every conversion is a bound check followed by a C
+ * conversion that C11 defines. Text conversions use only snprintf/strtod
+ * under a per-call "C" locale and never copy the library decimal point. */
+
+double nq_f64_from_i32(int32_t value) {
+    return (double)value;
+}
+
+NQ_Option__f64 nq_f64_from_i64(int64_t value) {
+    double rounded = (double)value;
+    /* Only values near INT64_MAX round up to 2^63; (int64_t)rounded would be
+     * undefined there, so it is never evaluated. */
+    if (!(rounded >= 0x1p63) && (int64_t)rounded == value) {
+        return (NQ_Option__f64){
+            .tag = NQ_Option__f64_Tag_Some,
+            .data.Some = { ._0 = rounded },
+        };
+    }
+    return (NQ_Option__f64){
+        .tag = NQ_Option__f64_Tag_None,
+        .data.None = NQ_UNIT,
+    };
+}
+
+NQ_Option__i32 nq_f64_trunc_i32(double value) {
+    if (value > -2147483649.0 && value < 2147483648.0) {
+        return (NQ_Option__i32){
+            .tag = NQ_Option__i32_Tag_Some,
+            .data.Some = { ._0 = (int32_t)value },
+        };
+    }
+    return (NQ_Option__i32){
+        .tag = NQ_Option__i32_Tag_None,
+        .data.None = NQ_UNIT,
+    };
+}
+
+NQ_Option__i64 nq_f64_trunc_i64(double value) {
+    if (value >= -0x1p63 && value < 0x1p63) {
+        return (NQ_Option__i64){
+            .tag = NQ_Option__i64_Tag_Some,
+            .data.Some = { ._0 = (int64_t)value },
+        };
+    }
+    return (NQ_Option__i64){
+        .tag = NQ_Option__i64_Tag_None,
+        .data.None = NQ_UNIT,
+    };
+}
+
+#ifdef _WIN32
+/* The per-call POSIX locale construction does not exist here, so the text
+ * builtins fail closed instead of depending on the process locale. */
+typedef struct { int unused; } NQNumericLocale;
+
+static bool nq_numeric_locale_enter(NQNumericLocale* scope) {
+    (void)scope;
+    return false;
+}
+
+static void nq_numeric_locale_leave(NQNumericLocale scope) {
+    (void)scope;
+}
+#else
+typedef struct {
+    locale_t active;
+    locale_t previous;
+} NQNumericLocale;
+
+/* Each call owns its locale object; there is no shared lazily initialized
+ * state. glibc returns its static C locale for "C", so this does not
+ * allocate there. */
+static bool nq_numeric_locale_enter(NQNumericLocale* scope) {
+    locale_t active = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+    locale_t previous;
+    if (active == (locale_t)0) return false;
+    previous = uselocale(active);
+    if (previous == (locale_t)0) {
+        freelocale(active);
+        return false;
+    }
+    scope->active = active;
+    scope->previous = previous;
+    return true;
+}
+
+static void nq_numeric_locale_leave(NQNumericLocale scope) {
+    (void)uselocale(scope.previous);
+    freelocale(scope.active);
+}
+#endif
+
+static _Noreturn void nq_numeric_locale_fail(void) {
+    fputs("nauqtype runtime: numeric locale unavailable\n", stderr);
+    exit(1);
+}
+
+static _Noreturn void nq_float_internal_fail(const char* what) {
+    fputs("nauqtype runtime: internal float ", stderr);
+    fputs(what, stderr);
+    fputs(" mismatch\n", stderr);
+    exit(1);
+}
+
+/* True when the decimal mant * 10^q converts back to exactly target. The
+ * candidate text has no decimal point, so strtod cannot depend on the
+ * locale's decimal-point character. */
+static bool nq_f64_decimal_roundtrips(unsigned long long mant, int q, double target) {
+    char text[48];
+    (void)snprintf(text, sizeof text, "%llue%d", mant, q);
+    return strtod(text, NULL) == target;
+}
+
+/* Shortest digit string d1..dk (no trailing zeros) and n with
+ * value = 0.d1...dk * 10^n that round-trips a, for finite a > 0. Among the
+ * shortest candidates the one closest to a is chosen. The correctly rounded
+ * %.*e value is the closest p-digit decimal, but near a power of two the
+ * round-trip interval is asymmetric, so a neighbouring p-digit decimal can
+ * round-trip when the closest one does not. The interval is narrower on the
+ * low side, so the closest decimal can only fail by being too far below a:
+ * if any p-digit decimal round-trips, then the closest one or the next one up
+ * (closest + 1 in the last place) does. */
+static void nq_f64_shortest(double a, char digits[24], int* count, int* n) {
+    for (int precision = 1; precision <= 17; precision += 1) {
+        char text[48];
+        unsigned long long mant = 0;
+        int seen = 0, exponent = 0, sign = 1;
+        const char* c;
+        (void)snprintf(text, sizeof text, "%.*e", precision - 1, a);
+        for (c = text; *c != '\0' && *c != 'e'; c += 1) {
+            if (*c >= '0' && *c <= '9') {
+                mant = mant * 10u + (unsigned long long)(*c - '0');
+                seen += 1;
+            }
+        }
+        if (*c != 'e' || seen != precision) nq_float_internal_fail("format");
+        c += 1;
+        if (*c == '+' || *c == '-') {
+            if (*c == '-') sign = -1;
+            c += 1;
+        }
+        if (*c < '0' || *c > '9') nq_float_internal_fail("format");
+        while (*c >= '0' && *c <= '9') {
+            exponent = exponent * 10 + (*c - '0');
+            c += 1;
+        }
+        exponent *= sign;
+        {
+            int q = exponent - (precision - 1);
+            for (int step = 0; step < 2; step += 1) {
+                unsigned long long value = mant + (unsigned long long)step;
+                if (!nq_f64_decimal_roundtrips(value, q, a)) continue;
+                {
+                    char reversed[24];
+                    int length = 0, k;
+                    while (value != 0) {
+                        reversed[length++] = (char)('0' + (int)(value % 10u));
+                        value /= 10u;
+                    }
+                    /* The decimal is (digits) * 10^q, so 0.d1...dk * 10^n has n = q + length. */
+                    *n = q + length;
+                    for (int j = 0; j < length; j += 1) digits[j] = reversed[length - 1 - j];
+                    k = length;
+                    while (k > 1 && digits[k - 1] == '0') k -= 1;
+                    *count = k;
+                }
+                return;
+            }
+        }
+    }
+    nq_float_internal_fail("render");
+}
+
+/* ECMAScript Number::toString digit placement for k digits and point n. */
+static size_t nq_f64_place(char* out, bool negative, const char* d, int k, int n) {
+    size_t at = 0;
+    if (negative) out[at++] = '-';
+    if (k <= n && n <= 21) {
+        for (int i = 0; i < k; i += 1) out[at++] = d[i];
+        for (int i = k; i < n; i += 1) out[at++] = '0';
+    } else if (0 < n && n <= 21) {
+        for (int i = 0; i < n; i += 1) out[at++] = d[i];
+        out[at++] = '.';
+        for (int i = n; i < k; i += 1) out[at++] = d[i];
+    } else if (-6 < n && n <= 0) {
+        out[at++] = '0';
+        out[at++] = '.';
+        for (int i = n; i < 0; i += 1) out[at++] = '0';
+        for (int i = 0; i < k; i += 1) out[at++] = d[i];
+    } else {
+        int e = n - 1;
+        char reversed[8];
+        int length = 0;
+        out[at++] = d[0];
+        if (k > 1) {
+            out[at++] = '.';
+            for (int i = 1; i < k; i += 1) out[at++] = d[i];
+        }
+        out[at++] = 'e';
+        out[at++] = e < 0 ? '-' : '+';
+        if (e < 0) e = -e;
+        do {
+            reversed[length++] = (char)('0' + e % 10);
+            e /= 10;
+        } while (e != 0);
+        while (length > 0) out[at++] = reversed[--length];
+    }
+    return at;
+}
+
+NQStr nq_str_from_f64(double value) {
+    char out[40];
+    char digits[24];
+    uint64_t bits;
+    bool negative;
+    double magnitude;
+    int count = 0, point = 0;
+    size_t len;
+    NQNumericLocale scope;
+    memcpy(&bits, &value, sizeof bits);
+    negative = (bits >> 63) != 0;
+    if (value != value) return nq_owned_str_copy("NaN", 3);
+    if (value > DBL_MAX) return nq_owned_str_copy("Infinity", 8);
+    if (value < -DBL_MAX) return nq_owned_str_copy("-Infinity", 9);
+    if (value == 0.0) return negative ? nq_owned_str_copy("-0", 2) : nq_owned_str_copy("0", 1);
+    magnitude = negative ? -value : value;
+    if (!nq_numeric_locale_enter(&scope)) nq_numeric_locale_fail();
+    nq_f64_shortest(magnitude, digits, &count, &point);
+    nq_numeric_locale_leave(scope);
+    len = nq_f64_place(out, negative, digits, count, point);
+    return nq_owned_str_copy(out, (intptr_t)len);
+}
+
+static bool nq_f64_is_digit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+/* RFC 8259 section 6 over exactly (data, len); never reads at or past len:
+ * -? (0 | [1-9][0-9]*) (\.[0-9]+)? ([eE][+-]?[0-9]+)? */
+static bool nq_f64_grammar(const char* data, size_t len) {
+    size_t i = 0;
+    if (i < len && data[i] == '-') i += 1;
+    if (i >= len) return false;
+    if (data[i] == '0') {
+        i += 1;
+    } else if (data[i] >= '1' && data[i] <= '9') {
+        i += 1;
+        while (i < len && nq_f64_is_digit(data[i])) i += 1;
+    } else {
+        return false;
+    }
+    if (i < len && data[i] == '.') {
+        i += 1;
+        if (i >= len || !nq_f64_is_digit(data[i])) return false;
+        while (i < len && nq_f64_is_digit(data[i])) i += 1;
+    }
+    if (i < len && (data[i] == 'e' || data[i] == 'E')) {
+        i += 1;
+        if (i < len && (data[i] == '+' || data[i] == '-')) i += 1;
+        if (i >= len || !nq_f64_is_digit(data[i])) return false;
+        while (i < len && nq_f64_is_digit(data[i])) i += 1;
+    }
+    return i == len;
+}
+
+NQ_Option__f64 nq_f64_from_str(NQStr text) {
+    char stack[512];
+    char* heap = NULL;
+    char* buffer;
+    char* end = NULL;
+    size_t len;
+    double result;
+    NQNumericLocale scope;
+    NQ_Option__f64 none = {
+        .tag = NQ_Option__f64_Tag_None,
+        .data.None = NQ_UNIT,
+    };
+    if (!nq_str_size(text.len) || (text.len != 0 && text.data == NULL)) nq_size_fail();
+    len = (size_t)text.len;
+    if (!nq_f64_grammar(text.data, len)) return none;
+    if (len < sizeof stack) {
+        memcpy(stack, text.data, len);
+        stack[len] = '\0';
+        buffer = stack;
+    } else {
+        NQAllocStatus status = nq_try_cstr_copy(text.data, len, &heap);
+        if (status != NQ_ALLOC_OK) nq_alloc_fail(status);
+        buffer = heap;
+    }
+    if (!nq_numeric_locale_enter(&scope)) {
+        free(heap);
+        nq_numeric_locale_fail();
+    }
+    result = strtod(buffer, &end);
+    nq_numeric_locale_leave(scope);
+    if (end != buffer + len) {
+        free(heap);
+        nq_float_internal_fail("parse");
+    }
+    free(heap);
+    if (result > DBL_MAX || result < -DBL_MAX) return none;
+    return (NQ_Option__f64){
+        .tag = NQ_Option__f64_Tag_Some,
+        .data.Some = { ._0 = result },
     };
 }

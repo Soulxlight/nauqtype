@@ -36,10 +36,11 @@ defines its layout.
 ## Current Position
 
 - Organizational Linux alpha, `0.3.0-alpha.1`. Not stable or feature complete.
-- Complete through M56.1 (generic-aware `facts`/`review` v5), including M56
-  and the PRE-M56 performance checkpoint. Full milestone gate is about 25
-  minutes on the WSL2 Linux host.
-- Next: M56.2 scalar `f64`, then M57-M61 toward v1.0 stable Linux. Sequence and scope:
+- Complete through M56.2 (scalar `f64`), including M56.1, M56 and the
+  PRE-M56 performance checkpoint. Full milestone gate is about 26 minutes on
+  the WSL2 Linux host.
+- Next: M57 collections/JSON and the in-repo standard library, then M58-M61
+  toward v1.0 stable Linux. Sequence and scope:
   [ROADMAP.md](ROADMAP.md#current-position-and-resumption); open actions:
   [TODO.md](TODO.md#next-actions).
 

@@ -297,7 +297,7 @@ fn fixture_c_include_tail(value: str) -> bool {
 
 fn fixture_c_directives_modeled(value: str, quoted: str) -> bool {
     if fixture_c_contains(value, "??") or fixture_c_contains(value, "%:") or fixture_c_contains(value, "_Pragma") or fixture_c_contains(value, "__has_include") { return false; }
-    let headers = ["assert.h", "direct.h", "dirent.h", "errno.h", "fcntl.h", "limits.h", "poll.h", "signal.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "sys/ioctl.h", "sys/prctl.h", "sys/stat.h", "sys/time.h", "sys/types.h", "sys/wait.h", "time.h", "unistd.h", "windows.h"];
+    let headers = ["assert.h", "direct.h", "dirent.h", "errno.h", "fcntl.h", "float.h", "limits.h", "locale.h", "poll.h", "signal.h", "stdarg.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h", "string.h", "sys/ioctl.h", "sys/prctl.h", "sys/stat.h", "sys/time.h", "sys/types.h", "sys/wait.h", "time.h", "unistd.h", "windows.h"];
     let directives = ["define", "undef", "if", "ifdef", "ifndef", "elif", "else", "endif", "error"];
     let mut line_start = 0;
     let mut at = 0;
@@ -328,7 +328,12 @@ fn fixture_c_directives_modeled(value: str, quoted: str) -> bool {
                         if close == str_len(include) or not list_contains_str(ref headers, slice_text(include, 1, close)) or not fixture_c_include_tail(slice_text(include, close + 1, str_len(include))) { return false; }
                     }
                 } else {
-                    if not list_contains_str(ref directives, directive) { return false; }
+                    if directive == "pragma" {
+                        // M56.2: only the runtime.h Clang contraction pragma is modeled.
+                        if slice_text(value, body, at) != "STDC FP_CONTRACT OFF" { return false; }
+                    } else {
+                        if not list_contains_str(ref directives, directive) { return false; }
+                    }
                 }
             }
             line_start = at + 1;
@@ -772,9 +777,10 @@ fn fixture_c_probe_pure_cases(nul: str, carriage: str) -> bool {
     if fixture_c_image_identity_available("/repo/nauqc", false, image_digest) or fixture_c_image_identity_available("/repo/nauqc", true, "") { return false; }
     if not fixture_c_image_identity_available("/repo/nauqc", true, image_digest) { return false; }
     if not fixture_c_probe_identity_fields() { return false; }
-    let rejected_directives = ["# include \"extra.h\"\n", "#include HEADER\n", "#/**/include \"extra.h\"\n", "/* lead */ #include \"extra.h\"\n", "??=include \"extra.h\"\n", "%:include \"extra.h\"\n", "#inc\\\nlude \"extra.h\"\n", "#include </tmp/extra.h>\n", "#include <../extra.h>\n"];
+    let rejected_directives = ["# include \"extra.h\"\n", "#include HEADER\n", "#/**/include \"extra.h\"\n", "/* lead */ #include \"extra.h\"\n", "??=include \"extra.h\"\n", "%:include \"extra.h\"\n", "#inc\\\nlude \"extra.h\"\n", "#include </tmp/extra.h>\n", "#include <../extra.h>\n", "#pragma once\n", "#pragma GCC optimize (\"fast-math\")\n", "#pragma STDC FP_CONTRACT ON\n", "#pragma STDC FP_CONTRACT OFF /* tail */\n", "_Pragma(\"STDC FP_CONTRACT OFF\")\n"];
     for value in rejected_directives { if fixture_c_directives_modeled(value, "\"runtime.h\"") { return false; } }
     if not fixture_c_directives_modeled("#include \"runtime.c\" /* modeled quote include */\n#include <assert.h>\n", "\"runtime.c\"") { return false; }
+    if not fixture_c_directives_modeled("#include <float.h>\n#include <locale.h>\n#if defined(__clang__)\n#pragma STDC FP_CONTRACT OFF\n#endif\n", "\"runtime.h\"") { return false; }
     let good = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "probe.c", "stdlib/runtime.c", "-o", "probe"];
     if not fixture_c_argv_valid(ref good, "probe.c", "probe") { return false; }
     let prefixes = ["-DNQ_TEST_MAX_ALLOCATION_BYTES=", "-DNQ_TEST_ALLOC_FAIL_AFTER="];

@@ -1,0 +1,94 @@
+use app::bags as bags;
+use measure::units as units;
+
+const SCALE: f64 = 0.5;
+
+type Sample {
+    label: str,
+    value: f64,
+}
+
+enum Reading {
+    Exact(f64),
+    Missing,
+}
+
+fn parse_or(text: str) -> result<f64, str>
+audit {
+    intent("Parse strict decimal text into an f64 or report the rejected text");
+    mutates();
+    effects();
+}
+{
+    match f64_from_str(text) {
+        Some(value) => {
+            return Ok(value);
+        },
+        None => {
+            return Err(str_concat("rejected: ", text));
+        },
+    }
+}
+
+fn total(values: ref list<f64>) -> f64
+audit {
+    intent("Sum a borrowed list of f64 values");
+    mutates();
+    effects();
+}
+{
+    let mut sum = 0.0;
+    for value in values {
+        sum = sum + value;
+    }
+    return sum;
+}
+
+fn main() -> i32
+audit {
+    intent("Carry f64 values through fields, payloads, containers, a generic instance, and a dependency");
+    mutates();
+    effects(print);
+}
+{
+    let sample = Sample { label: "half", value: SCALE };
+    let reading = Exact(f64_from_i32(3));
+    let mut values: list<f64> = [sample.value, 1.5];
+    match reading {
+        Exact(value) => {
+            list_push(mutref values, value);
+        },
+        Missing => {
+            return 1;
+        },
+    }
+    let measured = units::Measurement { value: total(ref values) };
+    let bag = bags::Bag::<f64> { item: measured.value };
+    let share: option<f64> = units::ratio(bags::bag_item::<f64>(bag), 10.0);
+    match share {
+        Some(value) => {
+            print_line(units::percent(value));
+        },
+        None => {
+            return 2;
+        },
+    }
+    match parse_or("2.5") {
+        Ok(value) => {
+            match f64_trunc_i64(value) {
+                Some(whole) => {
+                    if whole != 2 {
+                        return 3;
+                    }
+                },
+                None => {
+                    return 4;
+                },
+            }
+        },
+        Err(_) => {
+            return 5;
+        },
+    }
+    return 0;
+}

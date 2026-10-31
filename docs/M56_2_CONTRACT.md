@@ -345,8 +345,11 @@ Probes for the two `host_c.nq` compiler paths:
   the zig path on a host that has it is an explicit M60 packaging input,
   not an M56.2 claim.
 
-An explicit user `-ffp-contract=fast` cannot be detected by macro. That is
-documented as unsupported, and the runtime fixture includes a contraction
+An explicit user `-ffp-contract=fast` is documented as unsupported. On the
+WSL host it is in fact detected: GCC 13.3 clears `__GCC_IEC_559` under that
+flag, so glibc's `<stdc-predef.h>` leaves `__STDC_IEC_559__` undefined and
+the guard rejects the build (see Implementation Notes). Other compilers may
+not signal it, so the runtime fixture also includes a contraction
 probe (a product-plus-sum whose fused and unfused results differ) so the
 gate proves the shipped flags. If any existing script compiles
 `runtime.h` in a GNU dialect, the guard surfaces it during implementation.
@@ -754,6 +757,52 @@ Nauqtype-owned checks (run by `nauqc test` or the focused suites):
 Close: Gate A on this revision → implementation with focused checks → one
 independent trailing audit → one full `scripts/check_milestone.sh` on the
 frozen candidate → commit, then attestation close.
+
+## Implementation Notes
+
+Deviations from this contract that the compiler lead accepted during
+implementation (also recorded in D067):
+
+1. NQ-PARSE-004 is reported once per malformed float token and parsing
+   continues, instead of stopping like NQ-PARSE-003. No cascade
+   diagnostics result.
+2. C emission writes any float literal whose value is at most 2^-1075
+   (decided by exact textual comparison) as `0.0`, the value C rounds it
+   to, to avoid GCC's default `-Woverflow` "truncated to zero" warning.
+   Negation stays outside, so `-1.0e-400` is still negative zero.
+3. `-ffp-contract=fast` is detected on GCC 13.3 (it clears
+   `__GCC_IEC_559`, so `__STDC_IEC_559__` is undefined and the guard
+   rejects it). The guard is stricter than specified above.
+4. `selfhost/c_emit.nq` gained `use lexer;` for the shared
+   literal-magnitude helper: an import edge, not a new module.
+5. NQ-TYPE-049 is also reported for explicit generic arguments in
+   `generic.nq` `generic_parse_type`.
+6. The fixture-C warm-reuse scanner (`selfhost/fixture_c.nq`
+   `fixture_c_directives_modeled`) now models `<float.h>` and
+   `<locale.h>` and exactly one pragma line, `#pragma STDC FP_CONTRACT OFF`.
+   Every other `#pragma`, and `_Pragma`, is still rejected, and unit cases
+   pin both sides. Without this change the new runtime text made every
+   owned fixture group compile cold (correct but slower). The compiler
+   argument allowlist is unchanged.
+
+Also as shipped: on Windows builds the runtime has no per-call locale
+construction, so the two text builtins take the
+`numeric locale unavailable` failure path instead of depending on the
+process locale. The runtime's internal-invariant failures are
+`nauqtype runtime: internal float parse mismatch` (named above) and the
+analogous `internal float format mismatch` / `internal float render
+mismatch` in rendering; none is reachable with a conforming C library.
+
+Where the tests live: the end-to-end fixtures `tests/fixtures/m56_2_f64/`
+`runtime.nq` and `option_abi.nq` (exact `.expected` output, run through
+`nauqc run` with the `host_c.nq` arguments and again from the emitted C under
+ASan/UBSan), `runtime_unit.c` (plain; ASan/UBSan with
+`float-cast-overflow`; `-DNQ_TEST_ALLOC_FAIL_AFTER=0/2/3`), and the
+`runtime.h` guard negatives all run in the `integer-policy` suite
+(`selfhost/integer_policy_tests.nq`). The v5 evidence goldens
+`tests/golden/schema_profile/facts-v5-f64.json` and `review-v5-f64.json`
+(workspace `tests/fixtures/m56_2_f64/workspace/`) run in `driver-fixtures`
+beside the M56.1 goldens. `examples/f64_basics.nq` is a locked corpus case.
 
 ## Acceptance Gate
 

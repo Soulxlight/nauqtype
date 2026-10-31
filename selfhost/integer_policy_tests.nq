@@ -1,6 +1,8 @@
 use text;
 use c_emit;
 use fixture_c;
+use lexer;
+use token;
 
 fn integer_policy_path(name: str) -> str {
     return str_concat("tests/fixtures/m54_9_arithmetic/", name);
@@ -254,6 +256,641 @@ fn integer_policy_runtime(executable: str) -> bool {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// M56.2 scalar f64 front end: lexer shapes, NQ-PARSE-004, operators, builtins,
+// NQ-TYPE-046..049, the constant grammar, and the pinned non-float forms.
+// Sources are generated into a temporary build directory; spans are derived
+// from marker offsets in each generated source.
+// ---------------------------------------------------------------------------
+
+fn f64_kind_code(kind: token_kind) -> str {
+    match kind {
+        tk_int_lit => { return "int"; },
+        tk_float_lit => { return "float"; },
+        tk_malformed_float_lit => { return "malformed"; },
+        tk_ident => { return "ident"; },
+        tk_minus => { return "minus"; },
+        tk_dot => { return "dot"; },
+        _ => { return "other"; },
+    }
+}
+
+fn f64_lex_render(text_value: str) -> str {
+    let tokens = lex(text_value);
+    let mut parts: list<str> = list();
+    for current in tokens {
+        match current.kind {
+            tk_eof => {},
+            _ => {
+                list_push(mutref parts, concat6(f64_kind_code(current.kind), ":", current.text, ":", i32_to_str(current.start), str_concat(":", str_concat(i32_to_str(current.end), ";"))));
+            },
+        }
+    }
+    return str_join(ref parts);
+}
+
+fn f64_lex_case(text_value: str, expected: str) -> bool {
+    let actual = f64_lex_render(text_value);
+    if actual == expected { return true; }
+    eprint_line(concat4("f64 lexer mismatch for ", text_value, ": ", actual));
+    return false;
+}
+
+fn f64_repeat(piece: str, count: i32) -> str {
+    let mut parts: list<str> = list();
+    let mut index = 0;
+    while index < count { list_push(mutref parts, piece); index = index + 1; }
+    return str_join(ref parts);
+}
+
+// B = 2^1024 - 2^970 (309 digits), the smallest magnitude that rounds to infinity.
+fn f64_bound() -> str {
+    return "179769313486231580793728971405303415079934132710037826936173778980444968292764750946649017977587207096330286416692887910946555547851940402630657488671505820681908902000708383676273854845817711531764475730270069855571366959622842914819860834936475292719074168444365510704342711559699508093042880177904174497792";
+}
+
+fn f64_bound_minus_one() -> str {
+    let bound = f64_bound();
+    return str_concat(slice_text(bound, 0, str_len(bound) - 1), "1");
+}
+
+fn f64_lexer_cases() -> bool {
+    let ok = f64_lex_case("0.5", "float:0.5:0:3;") and f64_lex_case("1.0", "float:1.0:0:3;") and f64_lex_case("2.5e-3", "float:2.5e-3:0:6;")
+        and f64_lex_case("6.02e23", "float:6.02e23:0:7;") and f64_lex_case("007.5", "float:007.5:0:5;") and f64_lex_case("1.0e0", "float:1.0e0:0:5;")
+        and f64_lex_case("-1.5", "minus:-:0:1;float:1.5:1:4;") and f64_lex_case("1.5e3x", "float:1.5e3:0:5;ident:x:5:6;")
+        and f64_lex_case("1.0E5", "malformed:1.0E5:0:5;") and f64_lex_case("1.0e+5", "malformed:1.0e+5:0:6;")
+        and f64_lex_case("1.0e", "malformed:1.0e:0:4;") and f64_lex_case("1.0e-", "malformed:1.0e-:0:5;")
+        and f64_lex_case("1.0e--5", "malformed:1.0e-:0:5;minus:-:5:6;int:5:6:7;") and f64_lex_case("1.0ex", "malformed:1.0e:0:4;ident:x:4:5;")
+        and f64_lex_case("1.0E+", "malformed:1.0E+:0:5;")
+        and f64_lex_case("1.", "int:1:0:1;dot:.:1:2;") and f64_lex_case("1.e5", "int:1:0:1;dot:.:1:2;ident:e5:2:4;")
+        and f64_lex_case(".5", "dot:.:0:1;int:5:1:2;") and f64_lex_case("1e5", "int:1:0:1;ident:e5:1:3;")
+        and f64_lex_case("1.foo", "int:1:0:1;dot:.:1:2;ident:foo:2:5;") and f64_lex_case("x.field", "ident:x:0:1;dot:.:1:2;ident:field:2:7;")
+        and f64_lex_case("42", "int:42:0:2;") and f64_lex_case("2147483648", "int:2147483648:0:10;");
+    if not ok { return false; }
+    // Exact textual magnitude order against B (no floating-point arithmetic).
+    let bound = f64_bound();
+    if float_literal_magnitude_order("1.7976931348623157e308", bound, 309) != -1 { return false; }
+    if float_literal_magnitude_order("1.7976931348623158e308", bound, 309) != -1 { return false; }
+    if float_literal_magnitude_order("1.7976931348623159e308", bound, 309) != 1 { return false; }
+    if float_literal_magnitude_order(str_concat(bound, ".0"), bound, 309) != 0 { return false; }
+    if float_literal_magnitude_order(str_concat(bound, ".01"), bound, 309) != 1 { return false; }
+    if float_literal_magnitude_order(str_concat(f64_bound_minus_one(), ".0"), bound, 309) != -1 { return false; }
+    if float_literal_magnitude_order(str_concat("0.", str_concat(bound, "e309")), bound, 309) != 0 { return false; }
+    if float_literal_magnitude_order(str_concat("0000.", str_concat(bound, "e00309")), bound, 309) != 0 { return false; }
+    if float_literal_magnitude_order("0.0", bound, 309) != -1 or float_literal_magnitude_order("0.000e999999999999", bound, 309) != -1 { return false; }
+    if float_literal_magnitude_order(str_concat("1.0e", f64_repeat("1", 1000)), bound, 309) != 1 { return false; }
+    if float_literal_magnitude_order(str_concat("1.0e-", f64_repeat("1", 1000)), bound, 309) != -1 { return false; }
+    return float_literal_magnitude_order(str_concat(str_concat("0.", f64_repeat("0", 400)), "1"), bound, 309) == -1;
+}
+
+fn f64_main(body: str) -> str {
+    return concat3("fn main() -> i32\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n", body, "\n    return 0;\n}\n");
+}
+
+fn f64_find(value: str, marker: str) -> i32 {
+    let mut index = 0;
+    while index + str_len(marker) <= str_len(value) {
+        if starts_with_at(value, index, marker) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn f64_write(path: str, source: str) -> bool {
+    match write_file(path, source) {
+        Ok(_) => { return true; },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn f64_run_check(driver: str, path: str, json: bool) -> result<process_result, io_err> {
+    let mut args: list<str> = list();
+    list_push(mutref args, "check");
+    list_push(mutref args, path);
+    if json {
+        list_push(mutref args, "--diagnostics");
+        list_push(mutref args, "json");
+    }
+    return run_process(driver, ref args, ".");
+}
+
+fn f64_report(label: str, status: process_result) -> bool {
+    eprint_line(str_concat("f64 front-end case failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(status.stdout);
+    eprint_line(status.stderr);
+    return false;
+}
+
+fn f64_accepts(driver: str, directory: str, name: str, source: str) -> bool {
+    let path = concat4(directory, "/", name, ".nq");
+    if not f64_write(path, source) { return false; }
+    match f64_run_check(driver, path, false) {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+            return f64_report(name, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+// One error diagnostic with this code, message, help (when given), and exact
+// byte span; nothing internal.
+fn f64_rejects_with(driver: str, directory: str, name: str, source: str, code: str, message: str, help: str, start: i32, end: i32) -> bool {
+    if start < 0 or end <= start {
+        eprint_line(str_concat("f64 front-end case has no marker: ", name));
+        return false;
+    }
+    let path = concat4(directory, "/", name, ".nq");
+    if not f64_write(path, source) { return false; }
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let mut ok = status.exit_code == 1 and status.stderr == "";
+            ok = ok and integer_policy_count(output, "\"severity\": \"error\"") == 1;
+            ok = ok and integer_policy_count(output, "\"code\":") == 1;
+            ok = ok and integer_policy_count(output, concat3("\"code\": \"", code, "\"")) == 1;
+            ok = ok and integer_policy_count(output, concat3("\"message\": ", json_quote(message), ",")) == 1;
+            if help != "" { ok = ok and integer_policy_count(output, concat3("\"help\": ", json_quote(help), ",")) == 1; }
+            ok = ok and integer_policy_count(output, concat3("\"start\": { \"offset\": ", i32_to_str(start), ",")) == 1;
+            ok = ok and integer_policy_count(output, concat3("\"end\": { \"offset\": ", i32_to_str(end), ",")) == 1;
+            ok = ok and not text_contains(output, "NQ-INTERNAL-");
+            if ok { return true; }
+            return f64_report(name, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn f64_rejects(driver: str, directory: str, name: str, source: str, code: str, message: str, marker: str, width: i32) -> bool {
+    let start = f64_find(source, marker);
+    return f64_rejects_with(driver, directory, name, source, code, message, "", start, start + width);
+}
+
+fn f64_local(driver: str, directory: str, name: str, literal: str, code: str, message: str, help: str, width: i32) -> bool {
+    let source = f64_main(concat3("    let probe = ", literal, ";"));
+    let start = f64_find(source, literal);
+    let mut span = width;
+    if span == 0 { span = str_len(literal); }
+    return f64_rejects_with(driver, directory, name, source, code, message, help, start, start + span);
+}
+
+fn f64_parse_cases(driver: str, directory: str) -> bool {
+    let malformed = "malformed float literal";
+    let help = "write the exponent as lowercase `e` with an optional `-` and digits, as in `1.0e5` or `1.0e-5`";
+    if not f64_local(driver, directory, "parse_upper", "1.0E5", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "parse_plus", "1.0e+5", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "parse_bare", "1.0e", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "parse_minus", "1.0e-", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "parse_double_minus", "1.0e--5", "NQ-PARSE-004", malformed, help, 5) { return false; }
+    let ident_source = f64_main("    let x = 1;\n    let probe = 1.0ex;");
+    let ident_start = f64_find(ident_source, "1.0ex");
+    if not f64_rejects_with(driver, directory, "parse_ident", ident_source, "NQ-PARSE-004", malformed, help, ident_start, ident_start + 4) { return false; }
+    // Forms that do not begin with digits.digit keep their M56.1 diagnostics.
+    let unsupported = "stage1 limitation: unsupported expression shape in recursive type checker";
+    let dot_source = f64_main("    let probe = 1.;");
+    if not f64_rejects(driver, directory, "pinned_trailing_dot", dot_source, "NQ-TYPE-042", unsupported, "probe = ", 1) { return false; }
+    let dot_e_source = f64_main("    let probe = 1.e5;");
+    if not f64_rejects(driver, directory, "pinned_dot_exponent", dot_e_source, "NQ-TYPE-042", "field access base has integer type", "e5;", 1) { return false; }
+    let leading_source = f64_main("    let probe = .5;");
+    if not f64_rejects(driver, directory, "pinned_leading_dot", leading_source, "NQ-TYPE-042", unsupported, "probe = ", 1) { return false; }
+    let member_source = f64_main("    let probe = 1.foo;");
+    if not f64_rejects(driver, directory, "pinned_int_member", member_source, "NQ-TYPE-042", "field access base has integer type", "foo;", 1) { return false; }
+    // `1e5` is the integer `1` followed by the identifier `e5`: two errors.
+    let exponent_source = f64_main("    let probe = 1e5;");
+    let exponent_path = str_concat(directory, "/pinned_bare_exponent.nq");
+    if not f64_write(exponent_path, exponent_source) { return false; }
+    match f64_run_check(driver, exponent_path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let e5 = i32_to_str(f64_find(exponent_source, "e5;"));
+            let name = i32_to_str(f64_find(exponent_source, "probe = "));
+            let ok = status.exit_code == 1 and integer_policy_count(output, "\"severity\": \"error\"") == 2
+                and integer_policy_count(output, "\"code\": \"NQ-RESOLVE-010\"") == 1 and integer_policy_count(output, "\"code\": \"NQ-TYPE-042\"") == 1
+                and integer_policy_count(output, concat3("\"start\": { \"offset\": ", e5, ",")) == 1 and integer_policy_count(output, concat3("\"start\": { \"offset\": ", name, ",")) == 1;
+            if not ok { return f64_report("pinned_bare_exponent", status); }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let shapes = "    let a = 0.5;\n    let b = 1.0;\n    let c = 2.5e-3;\n    let d = 6.02e23;\n    let e = 007.5;\n    let f = 1.0e0;\n    let g = -1.5;\n    let h: f64 = 12.75e-1;\n    let i = 42;\n    let j: i64 = 9223372036854775807;\n    let total = a + b + c + d + e + f + g + h;\n    if total < 0.0 or i != 42 or j < 0 {\n        return 1;\n    }";
+    return f64_accepts(driver, directory, "legal_shapes", f64_main(shapes));
+}
+
+fn f64_type_cases(driver: str, directory: str) -> bool {
+    let operators = "    let a: f64 = 1.5;\n    let b = 2.25;\n    let sum = a + b;\n    let difference = a - b;\n    let product = a * b;\n    let quotient = a / b;\n    let negated = -a;\n    let grouped: f64 = -(a + b) * 2.0 / (1.0 - 0.5);\n    let compared = a == b or a != b or a < b or a <= b or a > b or a >= b;\n    let nan_test = sum != sum;\n    let finite_test = sum - sum == 0.0;\n    if compared and nan_test and finite_test and difference < product and quotient > negated and grouped < 0.0 {\n        return 1;\n    }";
+    if not f64_accepts(driver, directory, "operators", f64_main(operators)) { return false; }
+    let typed = "    let a: f64 = f64_from_i32(3);\n    let b: option<f64> = f64_from_i64(5);\n    let c: option<i32> = f64_trunc_i32(2.5);\n    let d: option<i64> = f64_trunc_i64(-2.5);\n    let e: str = str_from_f64(a);\n    let f: option<f64> = f64_from_str(\"2.5\");\n    let g: option<f64> = f64_from_i64(value: 7);\n    match b {\n        Some(value) => { if value < a { return 1; } },\n        None => { return 2; },\n    }\n    if str_len(e) == 0 { return 3; }";
+    if not f64_accepts(driver, directory, "builtins", f64_main(typed)) { return false; }
+    let payload = "    let carried: option<f64> = Some(1.5);\n    match carried {\n        Some(x) => { if x > 2.0 { return 1; } },\n        None => {},\n    }";
+    if not f64_accepts(driver, directory, "payload_binding", f64_main(payload)) { return false; }
+    let mixed = "arithmetic operands must have matching types";
+    let mixed_help = "convert one operand explicitly with `f64_from_i32`, `f64_from_i64`, `f64_trunc_i32`, or `f64_trunc_i64` — Nauqtype never converts numbers implicitly";
+    let pairs = ["a + b", "b - a", "a * c", "c / a", "2 * a", "a / 2"];
+    let mut pair_index = 0;
+    for expression in pairs {
+        let source = f64_main(concat3("    let a = 1.5;\n    let b = 2;\n    let c: i64 = 3;\n    let probe = ", expression, ";"));
+        let start = f64_find(source, "probe = ");
+        if not f64_rejects_with(driver, directory, str_concat("mixed_", i32_to_str(pair_index)), source, "NQ-TYPE-042", mixed, mixed_help, start, start + 1) { return false; }
+        pair_index = pair_index + 1;
+    }
+    let comparisons = ["a < 1", "a == c", "b >= a"];
+    for expression in comparisons {
+        let source = f64_main(concat3("    let a = 1.5;\n    let b = 2;\n    let c: i64 = 3;\n    let probe = ", expression, ";"));
+        let start = f64_find(source, "probe = ");
+        if not f64_rejects_with(driver, directory, str_concat("compare_", i32_to_str(pair_index)), source, "NQ-TYPE-042", "comparison operands must have matching types", mixed_help, start, start + 1) { return false; }
+        pair_index = pair_index + 1;
+    }
+    let bool_operand = f64_main("    let a = 1.5;\n    let probe = a + true;");
+    if not f64_rejects(driver, directory, "bool_operand", bool_operand, "NQ-TYPE-042", "arithmetic operand must have integer type", "probe = ", 1) { return false; }
+    // An integer literal is never an f64; the hint names the explicit route.
+    let mismatch = "annotated local initializer does not match declared type";
+    let literal_source = f64_main("    let probe: f64 = 1;");
+    let literal_start = f64_find(literal_source, "1;");
+    if not f64_rejects_with(driver, directory, "integer_literal_context", literal_source, "NQ-TYPE-042", mismatch, "write `1.0` or use `f64_from_i32` — Nauqtype never converts numbers implicitly", literal_start, literal_start + 1) { return false; }
+    let count_source = f64_main("    let count: i64 = 3;\n    let total: f64 = count;");
+    let count_start = f64_find(count_source, "count;");
+    if not f64_rejects_with(driver, directory, "teaching_negative", count_source, "NQ-TYPE-042", mismatch, "use `f64_from_i64(count)` — Nauqtype never converts numbers implicitly", count_start, count_start + 5) { return false; }
+    let index_source = f64_main("    let items: list<i32> = list();\n    let index = 1.0;\n    let probe = list_get(ref items, index);");
+    let index_start = f64_find(index_source, "list_get(ref");
+    if not f64_rejects_with(driver, directory, "list_index", index_source, "NQ-TYPE-042", "call argument type does not match parameter type", "use `f64_trunc_i32(index)` — Nauqtype never converts numbers implicitly", index_start, index_start + 1) { return false; }
+    let main_source = "fn main() -> i32\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n    return 1.5;\n}\n";
+    let main_start = f64_find(main_source, "return 1.5");
+    if not f64_rejects_with(driver, directory, "main_return", main_source, "NQ-TYPE-042", "return expression does not match function return type", "use `f64_trunc_i32(value)` — Nauqtype never converts numbers implicitly", main_start, main_start + 1) { return false; }
+    // Builtin arity and argument types.
+    let argument = "call argument type does not match parameter type";
+    let calls = ["f64_from_i32(1.0)", "f64_from_i64(1.5)", "f64_trunc_i32(1)", "f64_trunc_i64(true)", "str_from_f64(\"x\")", "f64_from_str(1.0)"];
+    let mut call_index = 0;
+    for call in calls {
+        let source = f64_main(concat3("    let probe = ", call, ";"));
+        if not f64_rejects(driver, directory, str_concat("builtin_argument_", i32_to_str(call_index)), source, "NQ-TYPE-042", argument, call, 1) { return false; }
+        call_index = call_index + 1;
+    }
+    let arity = "call argument count does not match target signature";
+    for call in ["f64_from_i32()", "f64_from_i64(1, 2)", "str_from_f64()", "f64_from_str(\"1.0\", \"2.0\")"] {
+        let source = f64_main(concat3("    let probe = ", call, ";"));
+        if not f64_rejects(driver, directory, str_concat("builtin_arity_", i32_to_str(call_index)), source, "NQ-TYPE-042", arity, call, 1) { return false; }
+        call_index = call_index + 1;
+    }
+    // NQ-TYPE-047: no f64 scrutinee and no float literal pattern.
+    let matched = "f64 values cannot be matched; compare with `if`";
+    let scrutinee = f64_main("    let x = 1.5;\n    match x {\n        _ => {},\n    }");
+    if not f64_rejects(driver, directory, "match_scrutinee", scrutinee, "NQ-TYPE-047", matched, "x {", 1) { return false; }
+    let expression_scrutinee = f64_main("    let x = 1.5;\n    let probe = match (x) {\n        _ => 1,\n    };");
+    if not f64_rejects(driver, directory, "match_expression_scrutinee", expression_scrutinee, "NQ-TYPE-047", matched, "x) {", 1) { return false; }
+    let pattern = f64_main("    let x = 1;\n    match x {\n        1.5 => {},\n        _ => {},\n    }");
+    if not f64_rejects(driver, directory, "match_float_pattern", pattern, "NQ-TYPE-047", matched, "1.5 =>", 3) { return false; }
+    let negative_pattern = f64_main("    let x = 1;\n    match x {\n        -2.5 => {},\n        _ => {},\n    }");
+    return f64_rejects(driver, directory, "match_negative_float_pattern", negative_pattern, "NQ-TYPE-047", matched, "-2.5 =>", 4);
+}
+
+fn f64_const_source(declaration: str) -> str {
+    return str_concat(declaration, "\n\nfn main() -> i32\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n    return 0;\n}\n");
+}
+
+fn f64_const_cases(driver: str, directory: str) -> bool {
+    if not f64_accepts(driver, directory, "const_accepted", f64_const_source("const ONE: f64 = 1.0;\nconst MINUS: f64 = -1.0;\nconst SMALL: f64 = 2.5e-3;")) { return false; }
+    let message = "f64 constants must be a literal; compute the value at runtime";
+    let shapes = ["(1.0)", "-(1.0)", "((1.0))", "--1.0", "-(-1.0)", "1.0 + 2.0", "1", "-x"];
+    let mut index = 0;
+    for shape in shapes {
+        let source = f64_const_source(concat3("const PROBE: f64 = ", shape, ";"));
+        if not f64_rejects(driver, directory, str_concat("const_shape_", i32_to_str(index)), source, "NQ-TYPE-048", message, shape, str_len(shape)) { return false; }
+        index = index + 1;
+    }
+    let reference = f64_const_source("const BASE: f64 = 1.0;\nconst PROBE: f64 = BASE;");
+    if not f64_rejects(driver, directory, "const_reference", reference, "NQ-TYPE-048", message, "BASE;", 4) { return false; }
+    let compared = f64_const_source("const PROBE: bool = 1.0 < 2.0;");
+    if not f64_rejects(driver, directory, "const_comparison", compared, "NQ-TYPE-048", message, "1.0 < 2.0", 9) { return false; }
+    let integer = f64_const_source("const PROBE: i32 = 1 + 2.0;");
+    return f64_rejects(driver, directory, "const_integer_operand", integer, "NQ-TYPE-048", message, "1 + 2.0", 7);
+}
+
+fn f64_function(signature: str, audit_mutates: str, body: str) -> str {
+    return concat5("fn ", signature, "\naudit {\n    intent(\"probe\");\n    mutates(", audit_mutates, str_concat(");\n    effects();\n}\n{\n", str_concat(body, "\n}\n\n")));
+}
+
+fn f64_reserved_source(position: i32, name: str) -> str {
+    let main = f64_main("");
+    if position == 0 { return f64_main(concat3("    let probe: ", name, " = 1;")); }
+    if position == 1 { return str_concat(f64_function(concat3("unused(probe: ", name, ") -> i32"), "", "    return 0;"), main); }
+    if position == 2 { return str_concat(f64_function(concat3("unused() -> ", name, ""), "", "    return 1;"), main); }
+    if position == 3 { return str_concat(concat3("type Holder {\n    probe: ", name, ",\n}\n\n"), main); }
+    if position == 4 { return str_concat(concat3("enum Holder {\n    Probe(", name, "),\n    Empty,\n}\n\n"), main); }
+    if position == 5 { return str_concat(f64_function(concat3("unused(probe: ref ", name, ") -> i32"), "", "    return 0;"), main); }
+    if position == 6 { return str_concat(f64_function(concat3("unused(probe: mutref ", name, ") -> i32"), "probe", "    return 0;"), main); }
+    if position == 7 { return str_concat(f64_function(concat3("unused(probe: list<option<", name, ">>) -> i32"), "", "    return 0;"), main); }
+    if position == 8 { return str_concat(f64_function(concat3("unused(probe: result<i32, ", name, ">) -> i32"), "", "    return 0;"), main); }
+    if position == 9 { return str_concat(f64_function(concat3("unused(probe: Bag<", name, ">) -> i32"), "", "    return 0;"), str_concat("type Bag<T> {\n    value: T,\n}\n\n", main)); }
+    return str_concat(f64_function("unused() -> i32", "", concat3("    let probe: ", name, " = 1;\n    return 0;")), main);
+}
+
+fn f64_reserved_marker(position: i32, name: str) -> str {
+    if position == 2 { return str_concat("-> ", name); }
+    if position == 3 or position == 1 or position == 0 or position == 10 { return str_concat("probe: ", name); }
+    if position == 4 { return str_concat("Probe(", name); }
+    if position == 5 { return str_concat("ref ", name); }
+    if position == 6 { return str_concat("mutref ", name); }
+    if position == 7 { return str_concat("option<", name); }
+    if position == 8 { return str_concat("i32, ", name); }
+    return str_concat("Bag<", name);
+}
+
+fn f64_reserved_cases(driver: str, directory: str) -> bool {
+    for name in ["f32", "u32", "u64", "char"] {
+        let message = concat3("`", name, "` is reserved and not yet supported");
+        let mut position = 0;
+        while position < 11 {
+            let source = f64_reserved_source(position, name);
+            let marker = f64_reserved_marker(position, name);
+            let start = f64_find(source, marker) + str_len(marker) - str_len(name);
+            if not f64_rejects_with(driver, directory, concat4("reserved_", name, "_", i32_to_str(position)), source, "NQ-TYPE-049", message, "", start, start + str_len(name)) { return false; }
+            position = position + 1;
+        }
+    }
+    return true;
+}
+
+fn f64_range_cases(driver: str, directory: str) -> bool {
+    let bound = f64_bound();
+    let below = str_concat(f64_bound_minus_one(), ".0");
+    let accepted = ["1.7976931348623157e308", "1.7976931348623158e308", below, "-1.7976931348623157e308", "-1.7976931348623158e308", str_concat("-", below), str_concat(str_concat("0.", f64_repeat("0", 400)), "1"), "1.0e-400", "-1.0e-400", "4.9406564584124654e-324", "0.0", "-0.0"];
+    let mut index = 0;
+    for literal in accepted {
+        if not f64_accepts(driver, directory, str_concat("range_accepted_", i32_to_str(index)), f64_main(concat3("    let probe = ", literal, ";"))) { return false; }
+        index = index + 1;
+    }
+    let message = "f64 literal is out of range (it would round to infinity)";
+    let rejected = ["1.7976931348623159e308", str_concat(bound, ".0"), str_concat(str_concat("-", bound), ".0"), "1.8e308", "1.0e309", str_concat("1.0e", f64_repeat("7", 1000)), "-1.8e308"];
+    for literal in rejected {
+        if not f64_local(driver, directory, str_concat("range_rejected_", i32_to_str(index)), literal, "NQ-TYPE-046", message, "", 0) { return false; }
+        index = index + 1;
+    }
+    let constant = f64_const_source("const PROBE: f64 = -1.0e309;");
+    return f64_rejects(driver, directory, "range_constant", constant, "NQ-TYPE-046", message, "-1.0e309", 8);
+}
+
+fn f64_front_end_cases(driver: str) -> bool {
+    if not f64_lexer_cases() { eprint_line("f64 lexer oracle failed"); return false; }
+    match create_dir_all("build") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let Ok(directory) = create_temp_dir("build", "m56-2-f64-") else { eprint_line("f64 front end: temporary directory refused"); return false; };
+    if not f64_parse_cases(driver, directory) { return false; }
+    if not f64_type_cases(driver, directory) { return false; }
+    if not f64_const_cases(driver, directory) { return false; }
+    if not f64_reserved_cases(driver, directory) { return false; }
+    return f64_range_cases(driver, directory);
+}
+
+// ---------------------------------------------------------------------------
+// M56.2 scalar f64 runtime: driver-built end-to-end fixtures with exact
+// output, the C runtime unit test (plain, sanitized, allocation failure), and
+// the runtime.h IEEE guard. The unit test needs `float-cast-overflow` and the
+// guard negatives need `-ffast-math`/`-std=gnu11`, none of which the fixture
+// C allowlist admits, so those compile directly with `cc`.
+// ---------------------------------------------------------------------------
+
+fn f64_rt_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m56_2_f64/", name);
+}
+
+fn f64_rt_output(name: str) -> str {
+    return str_concat("build/m56_2_f64/", name);
+}
+
+fn f64_rt_report(label: str, status: process_result) -> bool {
+    eprint_line(str_concat("f64 runtime case failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(str_concat("stdout: ", status.stdout));
+    eprint_line(str_concat("stderr: ", status.stderr));
+    return false;
+}
+
+fn f64_rt_exact(label: str, result: result<process_result, io_err>, code: i32, stdout: str, stderr: str) -> bool {
+    match result {
+        Ok(status) => {
+            if status.exit_code == code and status.stdout == stdout and status.stderr == stderr { return true; }
+            return f64_rt_report(label, status);
+        },
+        Err(err) => { eprint_line(concat3(label, ": ", io_err_text(err))); return false; },
+    }
+}
+
+fn f64_rt_cc(label: str, args: ref list<str>) -> bool {
+    return f64_rt_exact(label, run_process("cc", ref args, "."), 0, "", "");
+}
+
+// The compile must fail, and stderr must carry the runtime.h guard's own text.
+fn f64_rt_cc_rejected(label: str, args: ref list<str>, needle: str) -> bool {
+    match run_process("cc", ref args, ".") {
+        Ok(status) => {
+            if status.exit_code != 0 and text_contains(status.stderr, needle) { return true; }
+            return f64_rt_report(label, status);
+        },
+        Err(err) => { eprint_line(concat3(label, ": ", io_err_text(err))); return false; },
+    }
+}
+
+fn f64_rt_strict(args: mutref list<str>) -> unit {
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    list_push(mutref args, "-pedantic-errors");
+    list_push(mutref args, "-Wall");
+    list_push(mutref args, "-Wextra");
+    list_push(mutref args, "-Werror");
+    list_push(mutref args, "-O2");
+    return;
+}
+
+fn f64_rt_unit_build(output: str, sanitize: bool, fail_after: str) -> bool {
+    let mut args: list<str> = list();
+    f64_rt_strict(mutref args);
+    if sanitize {
+        list_push(mutref args, "-fsanitize=address,undefined,float-cast-overflow");
+        list_push(mutref args, "-fno-sanitize-recover=all");
+    }
+    if fail_after != "" { list_push(mutref args, str_concat("-DNQ_TEST_ALLOC_FAIL_AFTER=", fail_after)); }
+    list_push(mutref args, f64_rt_fixture("runtime_unit.c"));
+    list_push(mutref args, "stdlib/runtime.c");
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    return f64_rt_cc(str_concat("compile ", output), ref args);
+}
+
+fn f64_rt_unit_all(executable: str) -> bool {
+    let args: list<str> = list();
+    match run_process(executable, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" and str_ends_with(status.stdout, "ALL GROUPS PASSED\n") and not text_contains(status.stdout, "FAIL") and integer_policy_count(status.stdout, "\nPASS ") >= 10 { return true; }
+            return f64_rt_report(executable, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn f64_rt_unit_mode(executable: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
+    let args = [mode];
+    return f64_rt_exact(concat3(executable, " ", mode), run_process(executable, ref args, "."), code, stdout, stderr);
+}
+
+fn f64_rt_unit_cases() -> bool {
+    let plain = f64_rt_output("unit");
+    if not f64_rt_unit_build(plain, false, "") or not f64_rt_unit_all(plain) { return false; }
+    let sanitized = f64_rt_output("unit-asan-ubsan");
+    if not f64_rt_unit_build(sanitized, true, "") or not f64_rt_unit_all(sanitized) { return false; }
+    // Allocation failure: a short parse allocates nothing, str_from_f64 makes
+    // two allocations, so the third allocation is the >= 512-byte parse copy.
+    let warm = "warm-up ok: short parse allocated nothing, str_from_f64 used two allocations\n";
+    let oom = "nauqtype runtime: out of memory\n";
+    let fail_two = f64_rt_output("unit-oom-2");
+    if not f64_rt_unit_build(fail_two, true, "2") { return false; }
+    if not f64_rt_unit_mode(fail_two, "oom-heap", 1, warm, oom) { return false; }
+    if not f64_rt_unit_mode(fail_two, "oom-boundary", 1, str_concat(warm, "511-byte input parsed on the stack path\n"), oom) { return false; }
+    // Controls: one more allowed allocation completes; none allowed dies earlier.
+    let fail_three = f64_rt_output("unit-oom-3");
+    if not f64_rt_unit_build(fail_three, false, "3") { return false; }
+    if not f64_rt_unit_mode(fail_three, "oom-heap", 0, str_concat(warm, "heap-path parse completed\n"), "") { return false; }
+    let fail_zero = f64_rt_output("unit-oom-0");
+    if not f64_rt_unit_build(fail_zero, false, "0") { return false; }
+    return f64_rt_unit_mode(fail_zero, "oom-heap", 1, "", oom);
+}
+
+fn f64_rt_guard_args(source: str, extra: str, std: str, output: str) -> list<str> {
+    let mut args: list<str> = list();
+    list_push(mutref args, std);
+    list_push(mutref args, "-O2");
+    if extra != "" { list_push(mutref args, extra); }
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    list_push(mutref args, source);
+    list_push(mutref args, "stdlib/runtime.c");
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    return args;
+}
+
+fn f64_rt_guard_cases(generated: str) -> bool {
+    let trivial = f64_rt_output("guard.c");
+    match write_file(trivial, "#include \"runtime.h\"\nint main(void) { return 0; }\n") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let fast = "nauqtype f64 forbids -ffast-math";
+    let dialect = "nauqtype f64 requires an ISO C dialect under GCC";
+    for source in [trivial, generated] {
+        let accepted = f64_rt_guard_args(source, "", "-std=c11", f64_rt_output("guard-c11"));
+        if not f64_rt_cc(str_concat("guard accepts -std=c11: ", source), ref accepted) { return false; }
+        let fast_args = f64_rt_guard_args(source, "-ffast-math", "-std=c11", f64_rt_output("guard-fast-math"));
+        if not f64_rt_cc_rejected(str_concat("guard rejects -ffast-math: ", source), ref fast_args, fast) { return false; }
+        let gnu_args = f64_rt_guard_args(source, "", "-std=gnu11", f64_rt_output("guard-gnu11"));
+        if not f64_rt_cc_rejected(str_concat("guard rejects -std=gnu11: ", source), ref gnu_args, dialect) { return false; }
+    }
+    return true;
+}
+
+fn f64_rt_expected(name: str) -> option<str> {
+    match read_file(f64_rt_fixture(str_concat(name, ".expected"))) {
+        Ok(text_value) => { return Some(text_value); },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+fn f64_rt_driver_run(driver: str, name: str) -> bool {
+    let Some(expected) = f64_rt_expected(name) else { return false; };
+    let args = ["run", f64_rt_fixture(str_concat(name, ".nq"))];
+    return f64_rt_exact(str_concat("nauqc run ", name), run_process(driver, ref args, "."), 0, expected, "");
+}
+
+fn f64_rt_emit(driver: str, name: str) -> bool {
+    let args = ["emit-c", f64_rt_fixture(str_concat(name, ".nq")), "-o", f64_rt_output(str_concat(name, ".c"))];
+    return f64_rt_exact(str_concat("emit ", name), run_process(driver, ref args, "."), 0, "", "");
+}
+
+// The same emitted C under ASan/UBSan through the fixture C gate.
+fn f64_rt_sanitized_run(name: str) -> bool {
+    let Some(expected) = f64_rt_expected(name) else { return false; };
+    let source = f64_rt_output(str_concat(name, ".c"));
+    let output = f64_rt_output(str_concat(name, "-asan-ubsan"));
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", source, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(source, output, ref args, "runtime-h", "build/m56_2_f64/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("f64 sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+// The runtime declares NQ_Option__i64; a program using option<i64> directly
+// must not emit its own declaration of that carrier.
+fn f64_rt_option_abi_text() -> bool {
+    match read_file(f64_rt_output("option_abi.c")) {
+        Ok(generated) => {
+            if integer_policy_count(generated, "typedef struct NQ_Option__i64") == 0 and integer_policy_count(generated, "NQ_Option__i64 ") > 0 and integer_policy_count(generated, "nq_f64_trunc_i64(") > 0 and integer_policy_count(generated, "nq_f64_from_str(") > 0 { return true; }
+            eprint_line("option<i64> program emitted its own NQ_Option__i64 declaration or lost the f64 builtin calls");
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+// `zig cc` is the host_c.nq fallback; prove it only where the binary exists.
+fn f64_rt_zig(name: str) -> bool {
+    match path_metadata(".deps/ziglang/zig", true) {
+        Ok(_) => {},
+        Err(_) => {
+            eprint_line(str_concat("f64 runtime: SKIP zig cc fallback (.deps/ziglang/zig not present on this host) for ", name));
+            return true;
+        },
+    }
+    let Some(expected) = f64_rt_expected(name) else { return false; };
+    let output = f64_rt_output(str_concat(name, "-zig"));
+    let args = ["cc", "-std=c11", "-O2", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", f64_rt_output(str_concat(name, ".c")), "stdlib/runtime.c", "-o", output];
+    if not f64_rt_exact(str_concat("zig cc ", name), run_process(".deps/ziglang/zig", ref args, "."), 0, "", "") { return false; }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+fn f64_rt_teaching_negative(driver: str) -> bool {
+    let path = f64_rt_fixture("teaching_negative.nq");
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let help = "use `f64_from_i64(count)` — Nauqtype never converts numbers implicitly";
+            let ok = status.exit_code == 1 and status.stderr == "" and integer_policy_count(output, "\"code\":") == 1
+                and integer_policy_count(output, "\"code\": \"NQ-TYPE-042\"") == 1
+                and integer_policy_count(output, "\"message\": \"annotated local initializer does not match declared type\",") == 1
+                and integer_policy_count(output, concat3("\"help\": ", json_quote(help), ",")) == 1;
+            if ok { return true; }
+            return f64_rt_report("teaching negative", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn f64_runtime_gate_impl(driver: str) -> bool {
+    for name in ["runtime", "option_abi"] {
+        if not f64_rt_driver_run(driver, name) { return false; }
+        if not f64_rt_emit(driver, name) { return false; }
+        if not f64_rt_sanitized_run(name) { return false; }
+        if not f64_rt_zig(name) { return false; }
+    }
+    if not f64_rt_option_abi_text() { return false; }
+    if not f64_rt_teaching_negative(driver) { return false; }
+    if not f64_rt_unit_cases() { return false; }
+    return f64_rt_guard_cases(f64_rt_output("runtime.c"));
+}
+
+fn f64_runtime_gate(driver: str) -> bool {
+    let lock = "build/m56_2_f64/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m56_2_f64", lock) { eprint_line("f64 runtime: fixture gate lock refused"); return false; }
+    let ok = f64_runtime_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("f64 runtime: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
 fn integer_policy_gate_impl(driver: str) -> bool
 audit {
     intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
@@ -272,6 +909,7 @@ audit {
         return false;
     }
     if not integer_policy_diagnostics(driver) { return false; }
+    if not f64_front_end_cases(driver) { eprint_line("integer policy: M56.2 f64 front-end cases failed"); return false; }
     let mut macro_args: list<str> = list();
     list_push(mutref macro_args, "-std=c11");
     list_push(mutref macro_args, "-D_POSIX_C_SOURCE=200809L");
@@ -320,5 +958,7 @@ audit {
     if not fixture_c_gate_begin("build/m54_9_arithmetic", lock) { eprint_line("integer policy: fixture gate lock refused"); return false; }
     let ok = integer_policy_gate_impl(driver);
     if not fixture_c_gate_end(lock) { eprint_line("integer policy: fixture gate lock release failed"); return false; }
-    return ok;
+    if not ok { return false; }
+    if not f64_runtime_gate(driver) { eprint_line("integer policy: M56.2 f64 runtime cases failed"); return false; }
+    return true;
 }

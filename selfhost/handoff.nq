@@ -43,6 +43,7 @@ pub enum checked_expr_kind {
     checked_expr_bool,
     checked_expr_i32,
     checked_expr_i64,
+    checked_expr_f64,
     checked_expr_str,
     checked_expr_name,
     checked_expr_const,
@@ -76,6 +77,7 @@ pub enum checked_type_shape_kind {
     checked_type_bool,
     checked_type_i32,
     checked_type_i64,
+    checked_type_f64,
     checked_type_str,
     checked_type_unit,
     checked_type_io_err,
@@ -794,6 +796,16 @@ fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) 
                 },
             }
         },
+        checked_expr_f64 => {
+            match right {
+                checked_expr_f64 => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_expr_str => {
             match right {
                 checked_expr_str => {
@@ -1073,6 +1085,12 @@ fn token_can_end_expr(tok: token) -> bool {
             return true;
         },
         tk_int_lit => {
+            return true;
+        },
+        tk_float_lit => {
+            return true;
+        },
+        tk_malformed_float_lit => {
             return true;
         },
         tk_string_lit => {
@@ -2877,6 +2895,16 @@ fn checked_type_shape_kind_matches(left: checked_type_shape_kind, right: checked
                 },
             }
         },
+        checked_type_f64 => {
+            match right {
+                checked_type_f64 => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_type_str => {
             match right {
                 checked_type_str => {
@@ -3041,7 +3069,7 @@ fn canonical_type_origin_module(visibility: ref visibility_index, uses: ref list
     if type_name == "duration" or type_name == "instant" or type_name == "process" or type_name == "process_outcome" {
         return "";
     }
-    if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" or type_name == "bytes" or type_name == "list" or type_name == "option" or type_name == "result" {
+    if type_name == "" or type_name == "bool" or type_name == "i32" or type_name == "i64" or type_name == "f64" or type_name == "str" or type_name == "unit" or type_name == "io_err" or type_name == "process_result" or type_name == "path_metadata" or type_name == "bytes" or type_name == "list" or type_name == "option" or type_name == "result" {
         return "";
     }
     let origin = visible_type_origin_module_indexed(ref visibility, ref uses, ref items, module_name, type_name);
@@ -3100,6 +3128,9 @@ fn intern_checked_type_id(visibility: ref visibility_index, type_name: str, type
     }
     if type_name == "i64" {
         return push_type_shape(mutref type_shapes, checked_type_i64, "", "", -1, -1, false);
+    }
+    if type_name == "f64" {
+        return push_type_shape(mutref type_shapes, checked_type_f64, "", "", -1, -1, false);
     }
     if type_name == "str" {
         return push_type_shape(mutref type_shapes, checked_type_str, "", "", -1, -1, false);
@@ -3429,6 +3460,12 @@ fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
     if function_name == "str_join" and index == 0 {
         return "parts";
     }
+    if (function_name == "f64_from_i32" or function_name == "f64_from_i64" or function_name == "f64_trunc_i32" or function_name == "f64_trunc_i64" or function_name == "str_from_f64") and index == 0 {
+        return "value";
+    }
+    if function_name == "f64_from_str" and index == 0 {
+        return "text";
+    }
     if function_name == "str_get" {
         if index == 0 {
             return "text";
@@ -3502,6 +3539,9 @@ fn handoff_builtin_function_param_count(function_name: str) -> i32 {
     }
     if function_name == "write_file_bytes" or function_name == "path_metadata" or function_name == "rename_path" or function_name == "create_temp_file" or function_name == "create_temp_dir" or function_name == "atomic_write_file" {
         return 2;
+    }
+    if function_name == "f64_from_i32" or function_name == "f64_from_i64" or function_name == "f64_trunc_i32" or function_name == "f64_trunc_i64" or function_name == "str_from_f64" or function_name == "f64_from_str" {
+        return 1;
     }
     return -1;
 }
@@ -4303,6 +4343,10 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
                 literal_kind = checked_expr_i64;
             }
             return build_literal_expr(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, literal_kind, exported_ctx.head, current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
+        },
+        tk_float_lit => {
+            // The literal keeps its exact source text; C emission writes it verbatim.
+            return build_literal_expr(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_f64, "f64", current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
         },
         tk_string_lit => {
             return build_literal_expr(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_str, "str", current.text, ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);

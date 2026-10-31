@@ -8,10 +8,20 @@
   (2026-10-31; [evidence](AUDIT_REMEDIATION.md#m561-generic-aware-evidence-close))
 - [x] M56.2: `f64` decision record and Gate A review of the
   [contract](docs/M56_2_CONTRACT.md) (approved 2026-10-31, revision 3)
-- [ ] M56.2: implementation (slices A front end, B back end/runtime,
-  C evidence/tests/docs), focused checks, trailing audit, milestone gate
-- [ ] M57 planning after M56.1/M56.2 contracts are fixed, including the
-  in-repo standard library layout
+- [x] M56.2: implementation, focused checks, trailing audit, milestone gate
+  (2026-10-31; [evidence](AUDIT_REMEDIATION.md#m562-scalar-f64-close))
+- [ ] M57 planning, including the in-repo standard library layout
+- [ ] Triage correctness defects found while writing the verified tutorial
+  (2026-10-31; each is pinned by a tutorial snippet). These contradict SPEC:
+  - assignment to a plain `let` binding is accepted;
+  - a statement `match` missing a variant compiles and falls off the end of
+    the function;
+  - `str` `<` passes `check` and then fails in C compilation.
+
+  Also: parse errors are printed four times; `try { f()? + g()? }` reports
+  NQ-TYPE-042 instead of an NQ-TRY code; a missing workspace lock reports
+  NQ-IO-001 without a location; `nauqc run <src> -o <relative>` builds but
+  fails to start the program.
 
 ## Current Performance Checkpoint
 

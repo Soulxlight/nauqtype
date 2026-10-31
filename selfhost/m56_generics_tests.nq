@@ -444,7 +444,22 @@ fn m56_v5_clean(label: str, output: str) -> bool {
 }
 
 fn m56_v5_golden(driver: str, command: str, golden: str, schema_path: str) -> bool {
-    let entry = m56_evidence_path("src/app/main.nq");
+    return m56_v5_golden_entry(driver, command, m56_evidence_path("src/app/main.nq"), golden, schema_path);
+}
+
+// M56.2: the f64 workspace (a locked dependency exporting f64 functions and a
+// generic Bag<f64>) must show the type atom and the builtin call targets.
+fn m56_v5_f64_golden(driver: str, command: str, golden: str, schema_path: str) -> bool {
+    let entry = "tests/fixtures/m56_2_f64/workspace/src/app/main.nq";
+    if not m56_v5_golden_entry(driver, command, entry, golden, schema_path) { return false; }
+    let Ok(expected) = read_file(golden) else { return false; };
+    for needle in ["\"f64\"", "bag_item<f64>", "Bag<f64>", "builtin:f64_from_i32", "builtin:f64_trunc_i64", "builtin:f64_from_str", "builtin:str_from_f64", "measure::units", "ratio"] {
+        if not m56_v5_expect(str_concat("M56.2 f64 evidence in ", golden), expected, needle) { return false; }
+    }
+    return true;
+}
+
+fn m56_v5_golden_entry(driver: str, command: str, entry: str, golden: str, schema_path: str) -> bool {
     let Some(first) = m56_v5_stdout(str_concat(command, " v5 fixture"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
     let Some(second) = m56_v5_stdout(str_concat(command, " v5 fixture repeat"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
     if first != second { eprint_line(str_concat("M56.1 v5 repeat is not byte-identical: ", command)); return false; }
@@ -712,12 +727,12 @@ fn m56_render_fails(context: ref generic_render_context, key: str, argument: boo
 fn m56_renderer_cases() -> bool {
     let semantic = m56_render_context(false, "workspace:org.tool::module:m");
     let workspace = m56_render_context(true, "workspace:org.tool::module:m");
-    let atoms = ["bool", "i32", "i64", "str", "unit", "bytes", "io_err", "process_result", "path_metadata", "duration", "instant", "process", "process_outcome"];
+    let atoms = ["bool", "i32", "i64", "f64", "str", "unit", "bytes", "io_err", "process_result", "path_metadata", "duration", "instant", "process", "process_outcome"];
     for atom in atoms {
         if not m56_render_ok(ref semantic, atom, true, atom) or not m56_render_ok(ref workspace, atom, true, atom) { return false; }
     }
     if not m56_render_ok(ref semantic, "int", true, "i32") { return false; }
-    for bad in ["u32", "char", "f64", "", "p|0|0", "list", "list<i32,i32>", "result<i32>", "i32<bool>", "list<i32", "Plain", "t|m|Missing", "t|lib|Box", "t|m|Plain<i32>", "t|lib|Box<i32,i32>", "f|m|get<str>", "list<i32>x", "list< i32>"] {
+    for bad in ["u32", "char", "", "p|0|0", "list", "list<i32,i32>", "result<i32>", "i32<bool>", "list<i32", "Plain", "t|m|Missing", "t|lib|Box", "t|m|Plain<i32>", "t|lib|Box<i32,i32>", "f|m|get<str>", "list<i32>x", "list< i32>"] {
         if not m56_render_fails(ref semantic, bad, true, "NQ-GENERIC-009") { return false; }
     }
     if not m56_render_ok(ref semantic, "list<option<result<int,str>>>", true, "list<option<result<i32,str>>>") { return false; }
@@ -1099,6 +1114,8 @@ audit {
     if not m56_v5_view_cases() { eprint_line("M56.1 v5 identity view fail-closed oracle failed"); return false; }
     if not m56_v5_golden(driver_path, "facts", "tests/golden/schema_profile/facts-v5-positive.json", "schemas/facts-v5.schema.json") { return false; }
     if not m56_v5_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-positive.json", "schemas/review-v5.schema.json") { return false; }
+    if not m56_v5_f64_golden(driver_path, "facts", "tests/golden/schema_profile/facts-v5-f64.json", "schemas/facts-v5.schema.json") { return false; }
+    if not m56_v5_f64_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-f64.json", "schemas/review-v5.schema.json") { return false; }
     if not m56_v5_spans(driver_path) { return false; }
     let oracle_commands = ["review", "review", "facts", "facts"];
     let oracle_inputs = ["tests/fixtures/m54_8_final/mutations.nq", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/organizational_tool/src/app/main.nq", "tests/fixtures/m55_process/authority.nq"];

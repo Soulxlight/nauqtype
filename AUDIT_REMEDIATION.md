@@ -796,3 +796,80 @@ Receipts are retained in the native gate clone
 completion documents changed after the gate, bound to the final commit by
 `close`/`verify-close`. No generic-aware diff/change/policy/rename, M56.2 or
 M57 work, stable release or publication is claimed.
+
+## M56.2 Scalar f64 Close
+
+M56.2 scalar `f64` passes on frozen candidate tree
+`efac1247490d7969ed4981b7c6f9ac656e085b3d`, 2026-10-31, based on
+`0edd35e` (the Gate A contract commit). Native Ubuntu 24.04/ext4 WSL2,
+GCC 13.3.0 and unchanged serial milestone budgets are the acceptance
+boundary. Compiler lead: Claude Code; implementation by lead-directed
+workers in three slices (compiler side, C runtime, tests/evidence/docs).
+
+`docs/M56_2_CONTRACT.md` (Gate A revision 3, `gpt-5.6-sol` xhigh, which
+required changes on revisions 1 and 2) and D067 record the feature. It adds
+one IEEE binary64 primitive with one literal form, IEEE operators and
+comparisons, and no implicit conversion. It also adds:
+
+- six builtins: exact and checked conversions, ECMAScript-style shortest
+  rendering with `-0`, and JSON-grammar parsing over length-delimited text
+  under a per-call `"C"` locale;
+- literal-only constants and no `match` on `f64`;
+- NQ-PARSE-004 and NQ-TYPE-046..049;
+- a `runtime.h` IEEE guard instead of a new compiler flag, and no libm;
+- runtime-native `option<f64>`/`option<i64>` carriers.
+
+The proof-options flag frame, the `host_c.nq` arguments and the fixture
+argument allowlist are unchanged. D067 records six implementation
+deviations the lead accepted. One was found during integration: the
+fixture-C warm-reuse scanner now models `<float.h>`, `<locale.h>` and
+exactly `#pragma STDC FP_CONTRACT OFF`; without it, every owned fixture
+group silently compiled cold. The runtime unit test passes plain and under
+ASan/UBSan/float-cast-overflow, with about 630,000 vectors cross-checked
+against Python. Both focused host routes (provenance, attestation) passed
+before the freeze.
+
+One routine trailing audit (`gpt-5.6-sol` xhigh, static review of the
+frozen tree) returned PASS WITH NITS, with no blocking finding. Repairs:
+
+- the tiny-literal (`<= 2^-1075` → `0.0`) emission now has an executed
+  regression on both sides of the boundary;
+- the absent `zig cc` fallback now prints an explicit skip line instead of
+  passing silently;
+- the README's deferred list is corrected.
+
+One nit was declined: a constant-type message pinned by the frozen Python
+driver test, which valid `f64` constants cannot reach. The re-review passed.
+The zig fallback and a comma-decimal locale are not present on this host, so
+those two probes are recorded skips. Proving the zig path is an M60
+packaging input.
+
+The bootstrap seed was not promoted: no compiler source contains `f64`
+values or float literals.
+
+| Fresh Gate Phase | Seconds |
+| --- | ---: |
+| Stage1 driver | 300 |
+| Seed bootstrap | 336 |
+| Proof | 643 |
+| Linux alpha | 11 |
+| Stress leg | 3 |
+| Owned tests | 248 |
+| Ownership sanitizers | 6 |
+
+`scripts/check_milestone.sh` exits 0. Its stderr holds only the two
+recorded zig-skip lines. GNU time records 1562 s wall and 708036 KiB peak
+RSS, within the checked-in ceilings.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `63382826fee88d7660e2412a94713a5dd76ba4ac4a25b74910f9ef3e20bdbdd9` |
+| Performance summary | `6f0cd2211bbd9b46e3ec52a29d54c8faa5c2ec360d22301bdc6ba3725b1f013f` |
+| Proof summary | `3cc68901e612c1c8016c4f4a20e6893377bb67bbbcfde9eee8840117dc7b2f30` |
+| Seed manifest (unchanged) | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Receipts are retained in the native gate clone
+(`~/nauqtype-work/m56-2-gate/build/verification/`). Only allowlisted
+completion documents changed after the gate, bound to the final commit by
+`close`/`verify-close`. No M57 work, stable release or publication is
+claimed.

@@ -21,6 +21,21 @@ IDENT = ( "_" | ASCII_LETTER ) { "_" | ASCII_LETTER | ASCII_DIGIT } ;
 INT_LIT = ASCII_DIGIT { ASCII_DIGIT } ;
 ```
 
+### Float Literals
+
+```ebnf
+FLOAT_LIT = ASCII_DIGIT { ASCII_DIGIT } "." ASCII_DIGIT { ASCII_DIGIT }
+            [ "e" [ "-" ] ASCII_DIGIT { ASCII_DIGIT } ] ;
+```
+
+`INT_LIT` immediately followed by `.` and an ASCII digit starts a `FLOAT_LIT`
+(M56.2). A float literal has type `f64`. The exponent marker is lowercase `e`
+with an optional `-` only. After `DIGITS "." DIGITS`, the lexer consumes an
+`e` or `E`, at most one `+` or `-`, and the following digits; unless that is
+`e`, an optional `-`, and at least one digit, the consumed span is one
+malformed token reported as `NQ-PARSE-004` (`1.0E5`, `1.0e+5`, `1.0e`,
+`1.0e-`). `1.`, `1.e5`, `.5`, and `1e5` are not float literals.
+
 ### String Literals
 
 ```ebnf
@@ -92,6 +107,16 @@ type_list     = type_expr { "," type_expr } [ "," ] ;
 ```
 
 `const_expr` is deliberately narrower than general `expr` in the first stage1 implementation: literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or` over non-borrow `i32` / `i64` / `bool` / `str` constants only. String and boolean equality are intentionally rejected in const initializers until there is an explicit compile-time evaluator.
+
+An `f64` constant initializer is narrower still (M56.2):
+
+```ebnf
+f64_const_expr = FLOAT_LIT | "-" FLOAT_LIT ;
+```
+
+Parentheses, repeated minus, arithmetic, constant references, and any `f64`
+operand inside a `bool`/`i32`/`i64` initializer are rejected with
+`NQ-TYPE-048`. There is no compile-time float folding.
 
 ## Audit Grammar
 
@@ -274,6 +299,7 @@ Pattern meaning is resolved semantically:
 - bare `IDENT` may be a binding or a unit-like constructor
 - `IDENT(...)` is a tuple-like constructor pattern
 - integer literals, including `-INT`, match only `i32` scrutinees
+- float literals are never patterns, and an `f64` value is never a scrutinee (`NQ-TYPE-047`)
 - constructor patterns may nest recursively; a match containing a literal or nested constructor pattern requires a wildcard or binding fallback arm
 
 ## Precedence And Associativity

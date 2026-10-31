@@ -28,6 +28,12 @@ These examples cover specific semantic features of Nauqtype.
   explicit borrowed `list<str>`, a named argument, and unchanged input ownership.
   PRE-M56 E1 acceptance is tracked in `PERFORMANCE_ENABLEMENT.md`.
 
+- [f64_basics.nq](examples/f64_basics.nq): Scalar `f64` (M56.2): averaging
+  `i64` samples through explicit `f64_from_i64`, rendering a percentage with
+  `str_from_f64`, strict parsing with `f64_from_str`, truncating back with
+  `f64_trunc_i64`, and the NaN (`x != x`) and finiteness (`x - x == 0.0`)
+  idioms. Every fallible conversion returns `option` and is handled visibly.
+
 - [list_literals.nq](examples/list_literals.nq): Using square brackets to construct homogeneous `list<T>` literals.
 - [for_list.nq](examples/for_list.nq): Iterating directly over `list<T>` with an immutable per-iteration binding and nearest-loop `break` / `continue`.
 - [composite_field_backend.nq](examples/composite_field_backend.nq): Storing `list<T>`, `option<T>`, and `result<T, E>` values in a product type and borrowing a list field directly for a helper call.
@@ -73,6 +79,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `break_continue.nq`
 - `composite_field_backend.nq`
 - `enum_match.nq`
+- `f64_basics.nq`
 - `fallible_function.nq`
 - `fibonacci.nq`
 - `field_assignment.nq`
@@ -134,3 +141,10 @@ To teach supervised failure to a model:
    ownership, recursion/bounds and original-source diagnostic failures. Use
    `identity::<i32>(7)`, not inferred `identity(7)`. An unused template is not a
    universal proof that its operations work for every possible type.
+9. **No Implicit Numeric Conversion:** `let total: f64 = count;` with
+   `count: i64` (`tests/fixtures/m56_2_f64/teaching_negative.nq`) is rejected
+   with `NQ-TYPE-042` "annotated local initializer does not match declared
+   type" and the help "use `f64_from_i64(count)` — Nauqtype never converts
+   numbers implicitly". Write `let Some(total) = f64_from_i64(count) else {
+   ... };` and handle the `None` case (an `i64` that is not exactly
+   representable). The `integer-policy` suite pins this exact diagnostic.

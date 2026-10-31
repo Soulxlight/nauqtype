@@ -665,3 +665,81 @@ Full user generics and broader mutable-string/library growth remain deferred.
   was not promoted for M56.1: the change adds no language feature the
   compiler source needs, and the seed gate checks the existing seed through
   its historical-emission path.
+
+## D067: Scalar f64
+
+- **Decision.** M56.2 adds one primitive, `f64` (IEEE 754 binary64, C
+  `double`, copy, no drop), one literal spelling
+  (`DIGITS "." DIGITS [ "e" [ "-" ] DIGITS ]`, always `f64`), IEEE arithmetic
+  and comparison with no trapping, and six pure builtins: `f64_from_i32`,
+  `f64_from_i64`, `f64_trunc_i32`, `f64_trunc_i64`, `str_from_f64`,
+  `f64_from_str`. `f64` is never a `match` scrutinee and float literals are
+  never patterns (NQ-TYPE-047). An `f64` constant is one literal, optionally
+  negated (NQ-TYPE-048). `docs/M56_2_CONTRACT.md` owns exact semantics,
+  diagnostics, and the rendering/parsing contract.
+- **Alternatives rejected.** Integer literals in `f64` context and implicit
+  widening (both implicit conversions, per D055); literal suffixes or a second
+  spelling; trapping on division by zero; reflexive or total-order `==`;
+  unchecked casts; `printf("%g")` rendering; shipping a math library now.
+  A facts v6 / review v6 bump only to admit the new type atom was also
+  rejected (next bullet).
+- **Reason.** M57 JSON needs a value type for numbers that are not `i64`, and
+  terminal tools need ratios and human-readable sizes. Correct decimal
+  rendering and parsing cannot be written in Nauqtype source, so they are the
+  only runtime additions; everything else (math, fixed precision) is deferred
+  to M57+ library work.
+- **Compiler-relative atom rule.** The evidence type-atom set (M56.1 generic
+  `type_arguments` and every rendered type name) is the builtin type set of the
+  accepting compiler. Adding `f64` changes no output for any previously
+  accepted input, because every source mentioning `f64` was a hard error
+  before, and `f64` contains no `:`, so the M56.1 injectivity argument holds.
+  No schema version or schema file changes; `docs/M56_1_CONTRACT.md` is
+  amended accordingly. `i64` (M53) is the precedent.
+- **Validation tightening.** `f32`, `u32`, `u64`, and `char` are reserved
+  names: any use in any type position, reachable or not, is NQ-TYPE-049.
+  Programs that merely declared such types (for example an unused function
+  signature) previously compiled and now fail; the fix is to remove the
+  declaration. This is a recorded behavior change, not "no migration".
+- **No libm, no new flag.** The runtime uses only `<stdio.h>`, `<stdlib.h>`,
+  `<string.h>`, `<locale.h>`, and `<float.h>`; the toolchain still links
+  without `-lm`. Conversions are a bound check followed by a C conversion that
+  C11 defines, so no undefined conversion is reachable. The shipped
+  `-std=c11 -O2` flags, the attested proof-options frame, and every fixture
+  argument list are unchanged. IEEE preservation is instead enforced by a
+  `stdlib/runtime.h` guard (binary64 shape, `FLT_EVAL_METHOD == 0`,
+  `__STDC_IEC_559__`, no `__FAST_MATH__`, ISO dialect under GCC, Clang
+  `FP_CONTRACT OFF`). This raises the host C compiler capability requirement.
+- **Per-call locale.** Each `str_from_f64`/`f64_from_str` call runs its
+  `snprintf`/`strtod` work under its own `newlocale(LC_NUMERIC_MASK, "C")`
+  object installed with `uselocale` and released on every exit path, with no
+  shared lazily initialized state, so nothing races once M59 adds tasks and
+  the process locale never affects results. Failure to obtain the locale is a
+  fatal runtime error (`nauqtype runtime: numeric locale unavailable`, exit 1).
+  Rendering assembles its own output from digits and never copies the
+  library's decimal point.
+- **Accepted implementation deviations from the Gate A contract:**
+  1. NQ-PARSE-004 is reported once per malformed float token and parsing
+     continues (the contract said the parse stops like NQ-PARSE-003); no
+     cascade diagnostics result.
+  2. C emission writes any float literal whose value is at most 2^-1075
+     (decided by exact textual comparison) as `0.0`, which is the value C
+     rounds it to, avoiding GCC's default `-Woverflow` "truncated to zero"
+     warning. Negation stays outside the literal, so `-1.0e-400` is still
+     negative zero.
+  3. `-ffp-contract=fast` is detected after all: GCC 13.3 clears
+     `__GCC_IEC_559` under it, so `__STDC_IEC_559__` is undefined and the
+     guard rejects the build. The guard is stricter than the contract
+     specified.
+  4. `selfhost/c_emit.nq` gained `use lexer;` for the shared literal-magnitude
+     helper (an import edge, not a new module).
+  5. NQ-TYPE-049 is also reported for explicit generic arguments in
+     `generic.nq` `generic_parse_type` (for example `Bag<char>`).
+  6. The fixture-C warm-reuse scanner models `<float.h>`, `<locale.h>`, and
+     exactly the `#pragma STDC FP_CONTRACT OFF` line, so the new runtime
+     text keeps warm fixture reuse; every other pragma is still rejected.
+- **Consequences.** The bootstrap seed is not promoted: no compiler source
+  uses `f64` or float literals, and the seed gate checks the existing seed
+  through its historical path. `option<i64>` and `option<f64>` carriers move
+  into `runtime.h`; emitted C no longer declares `NQ_Option__i64` itself, with
+  identical names and layout. The text builtins have no per-call locale
+  construction on Windows builds and fail closed there.

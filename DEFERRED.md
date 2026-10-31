@@ -10,8 +10,13 @@ that have since shipped are historical, not current limitations.
   refactor exports. M56's explicit function/product/enum foundation is
   specified in `docs/M56_CONTRACT.md`; generic-aware `facts`/`review` v5 are
   specified in `docs/M56_1_CONTRACT.md`.
-- Numeric types beyond `i32`/`i64`: scalar `f64` is scheduled as M56.2;
-  `f32`, unsigned integers, and `char` remain deferred.
+- Numeric types beyond `i32`/`i64`/`f64`: `f32`, unsigned integers, and
+  `char` remain deferred (their names are reserved, `NQ-TYPE-049`). Scalar
+  `f64` shipped in M56.2 (`docs/M56_2_CONTRACT.md`) without float literal
+  patterns, compile-time float folding, total-order comparison, math functions
+  (`sqrt`, `floor`, `pow`, ...), or fixed-precision rendering (`1.50`); the
+  math functions and fixed-precision rendering belong to M57+ standard-library
+  planning.
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond `while` and list-only `for`, including iterator protocols

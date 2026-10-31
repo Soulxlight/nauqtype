@@ -100,7 +100,7 @@ fn type_ctx_is_copy(index: ref visibility_index, ctx: expected_type_ctx, module:
     if ctx.head == "process" {
         return false;
     }
-    if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" or ctx.head == "path_metadata" {
+    if ctx.head == "bool" or ctx.head == "i32" or ctx.head == "i64" or ctx.head == "f64" or ctx.head == "str" or ctx.head == "unit" or ctx.head == "io_err" or ctx.head == "process_result" or ctx.head == "path_metadata" {
         return true;
     }
     if ctx.head == "list" or ctx.head == "bytes" {
@@ -218,6 +218,89 @@ fn push_token_range_error(diags: mutref list<diag>, file: str, tokens: ref list<
 
 fn push_token_range_diag(diags: mutref list<diag>, file: str, tokens: ref list<token>, start: i32, end: i32, message: str) -> unit {
     push_token_range_error(mutref diags, file, ref tokens, start, end, "NQ-TYPE-042", message);
+    return;
+}
+
+// M56.2: an f64/integer mismatch keeps its existing diagnostic and gains a
+// help line naming the explicit conversion builtins (D055: Nauqtype never
+// converts numbers implicitly). Other mismatches keep an empty help.
+fn numeric_conversion_help(expected: str, actual: str, operand: str) -> str {
+    let suffix = " — Nauqtype never converts numbers implicitly";
+    let mut builtin = "";
+    if expected == "f64" and (actual == "i32" or actual == "int") {
+        builtin = "f64_from_i32";
+    }
+    if expected == "f64" and actual == "i64" {
+        builtin = "f64_from_i64";
+    }
+    if (expected == "i32" or expected == "int") and actual == "f64" {
+        builtin = "f64_trunc_i32";
+    }
+    if expected == "i64" and actual == "f64" {
+        builtin = "f64_trunc_i64";
+    }
+    if builtin == "" {
+        return "";
+    }
+    let first = char_at(operand, 0);
+    if expected == "f64" and first >= 48 and first <= 57 {
+        return concat5("write `", operand, ".0` or use `", builtin, str_concat("`", suffix));
+    }
+    let mut argument = operand;
+    if argument == "" {
+        argument = "value";
+    }
+    return concat5("use `", builtin, "(", argument, str_concat(")`", suffix));
+}
+
+fn mixed_numeric_operand_help(left: str, right: str) -> str {
+    let left_int = left == "i32" or left == "int" or left == "i64";
+    let right_int = right == "i32" or right == "int" or right == "i64";
+    if (left == "f64" and right_int) or (right == "f64" and left_int) {
+        return "convert one operand explicitly with `f64_from_i32`, `f64_from_i64`, `f64_trunc_i32`, or `f64_trunc_i64` — Nauqtype never converts numbers implicitly";
+    }
+    return "";
+}
+
+fn span_single_token_text(tokens: ref list<token>, start: i32, end: i32) -> str {
+    let mut expr_start = start;
+    let mut expr_end = end;
+    while span_is_wrapped_in_parens(ref tokens, expr_start, expr_end) {
+        expr_start = expr_start + 1;
+        expr_end = expr_end - 1;
+    }
+    if expr_start + 1 != expr_end {
+        return "";
+    }
+    let current = token_at(ref tokens, expr_start);
+    match current.kind {
+        tk_ident => { return current.text; },
+        tk_int_lit => { return current.text; },
+        _ => { return ""; },
+    }
+}
+
+fn push_mismatch_at(diags: mutref list<diag>, file: str, at: i32, message: str, help: str) -> unit {
+    if help == "" {
+        push_diag(mutref diags, file, at, message);
+        return;
+    }
+    let mut end = at;
+    if at >= 0 {
+        end = at + 1;
+    }
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, file, at, end, message, "", help));
+    return;
+}
+
+fn push_mismatch_range(diags: mutref list<diag>, file: str, tokens: ref list<token>, start: i32, end: i32, message: str, help: str) -> unit {
+    if help == "" or start < 0 or start >= end {
+        push_token_range_diag(mutref diags, file, ref tokens, start, end, message);
+        return;
+    }
+    let first = token_at(ref tokens, start);
+    let last = token_at(ref tokens, end - 1);
+    push_diagnostic_once(mutref diags, make_diagnostic("NQ-TYPE-042", diag_type, diag_error, file, first.start, last.end, message, "", help));
     return;
 }
 
@@ -1413,6 +1496,9 @@ fn builtin_function_arity(name: str) -> i32 {
     if name == "bytes_get" {
         return 2;
     }
+    if name == "f64_from_i32" or name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "str_from_f64" or name == "f64_from_str" {
+        return 1;
+    }
     if name == "list" {
         return 0;
     }
@@ -1728,6 +1814,15 @@ fn builtin_function_return_name(name: str) -> str {
     if name == "bytes_get" {
         return "option";
     }
+    if name == "f64_from_i32" {
+        return "f64";
+    }
+    if name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "f64_from_str" {
+        return "option";
+    }
+    if name == "str_from_f64" {
+        return "str";
+    }
     if name == "list" {
         return "list";
     }
@@ -1806,6 +1901,15 @@ fn builtin_function_return_arg1_name(name: str) -> str {
     }
     if name == "bytes_get" {
         return "i32";
+    }
+    if name == "f64_from_i64" or name == "f64_from_str" {
+        return "f64";
+    }
+    if name == "f64_trunc_i32" {
+        return "i32";
+    }
+    if name == "f64_trunc_i64" {
+        return "i64";
     }
     return "";
 }
@@ -2749,6 +2853,10 @@ fn clone_for_statements_for_function(source: ref list<stmt_fact>, module: str, f
     return copied;
 }
 
+fn is_reserved_numeric_head(name: str) -> bool {
+    return name == "f32" or name == "u32" or name == "u64" or name == "char";
+}
+
 fn type_names_match(expected: str, actual: str) -> bool {
     if expected == actual {
         return true;
@@ -2772,6 +2880,11 @@ fn type_ctx_arg_matches(expected: str, actual: str) -> bool {
 fn type_ctx_matches(expected: expected_type_ctx, actual: expected_type_ctx) -> bool {
     if expected.head == "" or actual.head == "" {
         return false;
+    }
+    // Reserved numeric names already fail with NQ-TYPE-049 at their type
+    // position; do not cascade a mismatch from them.
+    if is_reserved_numeric_head(expected.head) or is_reserved_numeric_head(actual.head) {
+        return true;
     }
     if not type_names_match(expected.head, actual.head) {
         return false;
@@ -3079,6 +3192,18 @@ fn builtin_function_param_type_name(function_name: str, index: i32) -> str {
         if function_name == "bytes_get" and index == 1 {
             return "i64";
         }
+    }
+    if function_name == "f64_from_i32" and index == 0 {
+        return "i32";
+    }
+    if function_name == "f64_from_i64" and index == 0 {
+        return "i64";
+    }
+    if (function_name == "f64_trunc_i32" or function_name == "f64_trunc_i64" or function_name == "str_from_f64") and index == 0 {
+        return "f64";
+    }
+    if function_name == "f64_from_str" and index == 0 {
+        return "str";
     }
     if function_name == "list_push" {
         if index == 0 {
@@ -3393,6 +3518,12 @@ fn builtin_function_param_name(function_name: str, index: i32) -> str {
         if index == 1 {
             return "index";
         }
+    }
+    if (function_name == "f64_from_i32" or function_name == "f64_from_i64" or function_name == "f64_trunc_i32" or function_name == "f64_trunc_i64" or function_name == "str_from_f64") and index == 0 {
+        return "value";
+    }
+    if function_name == "f64_from_str" and index == 0 {
+        return "text";
     }
     if function_name == "list_push" {
         if index == 0 {
@@ -3850,6 +3981,25 @@ fn is_int_like(type_name: str) -> bool {
     return type_name == "i32" or type_name == "i64";
 }
 
+fn is_numeric_like(type_name: str) -> bool {
+    return is_int_like(type_name) or type_name == "f64";
+}
+
+// B = 2^1024 - 2^970, the smallest decimal magnitude that rounds to binary64
+// infinity. 309 digits; its decimal point follows the last digit.
+fn f64_overflow_bound_digits() -> str {
+    return "179769313486231580793728971405303415079934132710037826936173778980444968292764750946649017977587207096330286416692887910946555547851940402630657488671505820681908902000708383676273854845817711531764475730270069855571366959622842914819860834936475292719074168444365510704342711559699508093042880177904174497792";
+}
+
+// NQ-TYPE-046 is decided exactly: the literal is rejected iff its decimal
+// value is at least B (lexer.nq compares the digits textually).
+fn float_literal_ctx(text_value: str, module: str, tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>) -> expected_type_ctx {
+    if float_literal_magnitude_order(text_value, f64_overflow_bound_digits(), 309) >= 0 {
+        push_token_range_error(mutref diags, module, ref tokens, start, end, "NQ-TYPE-046", "f64 literal is out of range (it would round to infinity)");
+    }
+    return make_expected_type_ctx("f64", "", "");
+}
+
 fn integer_expected_ctx(expected_ctx: expected_type_ctx) -> expected_type_ctx {
     if expected_ctx.head == "i64" {
         return make_expected_type_ctx("i64", "", "");
@@ -3973,6 +4123,11 @@ fn span_is_contextual_integer_expr(tokens: ref list<token>, start: i32, end: i32
 }
 
 fn arithmetic_result_ctx(expected_ctx: expected_type_ctx, left_ctx: expected_type_ctx, right_ctx: expected_type_ctx) -> expected_type_ctx {
+    // f64 arithmetic yields f64 whatever the context expects; a mismatch with
+    // an integer context is then reported by the enclosing check.
+    if left_ctx.head == "f64" or right_ctx.head == "f64" {
+        return make_expected_type_ctx("f64", "", "");
+    }
     let selected = integer_expected_ctx(expected_ctx);
     if selected.head != "" {
         return selected;
@@ -4134,6 +4289,12 @@ fn token_can_end_expr(tok: token) -> bool {
             return true;
         },
         tk_int_lit => {
+            return true;
+        },
+        tk_float_lit => {
+            return true;
+        },
+        tk_malformed_float_lit => {
             return true;
         },
         tk_string_lit => {
@@ -5434,7 +5595,7 @@ fn infer_call_expr_type_ctx(visibility: ref visibility_index, functions: ref lis
                     first_arg_ctx = actual_arg_ctx;
                 }
                 if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
-                    push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
+                    push_mismatch_at(mutref diags, module, head.start, "call argument type does not match parameter type", numeric_conversion_help(expected_arg_ctx.head, actual_arg_ctx.head, span_single_token_text(ref tokens, value_start, segment_end)));
                 }
             }
             arg_index = arg_index + 1;
@@ -5495,7 +5656,7 @@ fn infer_call_expr_type_ctx(visibility: ref visibility_index, functions: ref lis
             }
             if function_return_ctx.head != "" {
                 if expected_arg_ctx.head != "" and has_known_type_ctx(actual_arg_ctx) and not type_ctx_matches(expected_arg_ctx, actual_arg_ctx) {
-                    push_diag(mutref diags, module, head.start, "call argument type does not match parameter type");
+                    push_mismatch_at(mutref diags, module, head.start, "call argument type does not match parameter type", numeric_conversion_help(expected_arg_ctx.head, actual_arg_ctx.head, span_single_token_text(ref tokens, value_start, segment_end)));
                 }
             } else {
                 if variant_enum_name != "" {
@@ -5718,6 +5879,12 @@ fn pattern_span_is_refined(tokens: ref list<token>, start: i32, end: i32) -> boo
         let current = token_at(ref tokens, index);
         match current.kind {
             tk_int_lit => {
+                return true;
+            },
+            tk_float_lit => {
+                return true;
+            },
+            tk_malformed_float_lit => {
                 return true;
             },
             tk_minus => {
@@ -6028,6 +6195,10 @@ fn infer_match_expr_type_ctx(visibility: ref visibility_index, functions: ref li
     let scrutinee_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, scrutinee_start, cursor, at, empty_expected_type_ctx(), mutref diags);
     if is_unsupported_type_ctx(scrutinee_ctx) {
         return scrutinee_ctx;
+    }
+    if scrutinee_ctx.head == "f64" {
+        push_f64_match_diag(mutref diags, module, ref tokens, scrutinee_start, cursor);
+        return unsupported_type_ctx();
     }
     if has_known_type_ctx(scrutinee_ctx) and not match_expr_scrutinee_is_supported(ref visibility, ref variants, ref uses, ref items, module, scrutinee_ctx) {
         push_diag(mutref diags, module, match_token.start, "match expression scrutinee must be i32, option, result, or enum");
@@ -6429,7 +6600,7 @@ audit {
             right_type_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, compare_index + 1, expr_end, at, integer_expected_ctx(left_type_ctx), mutref diags);
         }
         if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
-            push_diag(mutref diags, module, at, "comparison operands must have matching types");
+            push_mismatch_at(mutref diags, module, at, "comparison operands must have matching types", mixed_numeric_operand_help(left_type_ctx.head, right_type_ctx.head));
         }
         if left_type_ctx.head == "duration" or left_type_ctx.head == "instant" or left_type_ctx.head == "process" or left_type_ctx.head == "process_outcome" or right_type_ctx.head == "duration" or right_type_ctx.head == "instant" or right_type_ctx.head == "process" or right_type_ctx.head == "process_outcome" {
             push_diag(mutref diags, module, at, "process and time values do not support comparison operators");
@@ -6453,14 +6624,14 @@ audit {
             }
             right_type_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, additive_index + 1, expr_end, at, right_expected, mutref diags);
         }
-        if has_known_type_ctx(left_type_ctx) and not is_int_like(left_type_ctx.head) {
+        if has_known_type_ctx(left_type_ctx) and not is_numeric_like(left_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        if has_known_type_ctx(right_type_ctx) and not is_int_like(right_type_ctx.head) {
+        if has_known_type_ctx(right_type_ctx) and not is_numeric_like(right_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_int_like(left_type_ctx.head) and is_int_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
-            push_diag(mutref diags, module, at, "arithmetic operands must have matching types");
+        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_numeric_like(left_type_ctx.head) and is_numeric_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
+            push_mismatch_at(mutref diags, module, at, "arithmetic operands must have matching types", mixed_numeric_operand_help(left_type_ctx.head, right_type_ctx.head));
         }
         return arithmetic_result_ctx(expected_ctx, left_type_ctx, right_type_ctx);
     }
@@ -6481,14 +6652,14 @@ audit {
             }
             right_type_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, multiplicative_index + 1, expr_end, at, right_expected, mutref diags);
         }
-        if has_known_type_ctx(left_type_ctx) and not is_int_like(left_type_ctx.head) {
+        if has_known_type_ctx(left_type_ctx) and not is_numeric_like(left_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        if has_known_type_ctx(right_type_ctx) and not is_int_like(right_type_ctx.head) {
+        if has_known_type_ctx(right_type_ctx) and not is_numeric_like(right_type_ctx.head) {
             push_diag(mutref diags, module, at, "arithmetic operand must have integer type");
         }
-        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_int_like(left_type_ctx.head) and is_int_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
-            push_diag(mutref diags, module, at, "arithmetic operands must have matching types");
+        if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_numeric_like(left_type_ctx.head) and is_numeric_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
+            push_mismatch_at(mutref diags, module, at, "arithmetic operands must have matching types", mixed_numeric_operand_help(left_type_ctx.head, right_type_ctx.head));
         }
         return arithmetic_result_ctx(expected_ctx, left_type_ctx, right_type_ctx);
     }
@@ -6528,16 +6699,23 @@ audit {
                     tk_int_lit => {
                         return integer_literal_ctx(literal.text, true, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
                     },
+                    tk_float_lit => {
+                        return float_literal_ctx(literal.text, module, ref tokens, expr_start, expr_end, mutref diags);
+                    },
+                    tk_malformed_float_lit => {
+                        // NQ-PARSE-004 already reported this token.
+                        return unsupported_type_ctx();
+                    },
                     _ => {
                     },
                 }
             }
             let numeric_expected = integer_expected_ctx(expected_ctx);
             let inner_type_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref typed_bindings, ref field_facts, ref uses, ref items, module, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, numeric_expected, mutref diags);
-            if has_known_type_ctx(inner_type_ctx) and not is_int_like(inner_type_ctx.head) {
+            if has_known_type_ctx(inner_type_ctx) and not is_numeric_like(inner_type_ctx.head) {
                 push_diag(mutref diags, module, current.start, "arithmetic operand must have integer type");
             }
-            if is_int_like(inner_type_ctx.head) {
+            if is_numeric_like(inner_type_ctx.head) {
                 return make_expected_type_ctx(inner_type_ctx.head, "", "");
             }
             return arithmetic_result_ctx(expected_ctx, inner_type_ctx, empty_expected_type_ctx());
@@ -6555,6 +6733,17 @@ audit {
         tk_int_lit => {
             if expr_start + 1 == expr_end {
                 return integer_literal_ctx(current.text, false, expected_ctx, module, ref tokens, expr_start, expr_end, mutref diags);
+            }
+        },
+        tk_float_lit => {
+            if expr_start + 1 == expr_end {
+                return float_literal_ctx(current.text, module, ref tokens, expr_start, expr_end, mutref diags);
+            }
+        },
+        tk_malformed_float_lit => {
+            if expr_start + 1 == expr_end {
+                // NQ-PARSE-004 already reported this token.
+                return unsupported_type_ctx();
             }
         },
         tk_string_lit => {
@@ -6612,6 +6801,10 @@ audit {
                         }
                         if is_int_like(base_type_ctx.head) {
                             push_diag(mutref diags, module, field_token.start, "field access base has integer type");
+                            return empty_expected_type_ctx();
+                        }
+                        if base_type_ctx.head == "f64" {
+                            push_diag(mutref diags, module, field_token.start, "field access base has type `f64`");
                             return empty_expected_type_ctx();
                         }
                         if base_type_ctx.head == "str" {
@@ -6674,12 +6867,29 @@ audit {
             _ => {
             },
         }
-        push_stage1_limitation(mutref diags, module, at);
+        if not const_span_has_malformed_float(ref tokens, expr_start, expr_end) {
+            push_stage1_limitation(mutref diags, module, at);
+        }
         return unsupported_type_ctx();
     }
 
-    push_stage1_limitation(mutref diags, module, at);
+    // A malformed float token was already reported as NQ-PARSE-004.
+    if not const_span_has_malformed_float(ref tokens, expr_start, expr_end) {
+        push_stage1_limitation(mutref diags, module, at);
+    }
     return unsupported_type_ctx();
+}
+
+fn const_span_has_malformed_float(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut cursor = start;
+    while cursor < end {
+        match token_at(ref tokens, cursor).kind {
+            tk_malformed_float_lit => { return true; },
+            _ => {},
+        }
+        cursor = cursor + 1;
+    }
+    return false;
 }
 
 fn infer_expr_type_name(visibility: ref visibility_index, functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, typed_bindings: ref list<typed_binding_fact>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, function_name: str, scope_id: i32, tokens: ref list<token>, start: i32, end: i32, at: i32, expected_ctx: expected_type_ctx, diags: mutref list<diag>) -> str {
@@ -6694,7 +6904,59 @@ fn is_const_safe_type(type_name: str, arg1_name: str, arg2_name: str, is_borrow:
     if arg1_name != "" or arg2_name != "" {
         return false;
     }
-    return type_name == "i32" or type_name == "i64" or type_name == "bool" or type_name == "str";
+    return type_name == "i32" or type_name == "i64" or type_name == "f64" or type_name == "bool" or type_name == "str";
+}
+
+fn const_span_has_float_token(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut cursor = start;
+    while cursor < end {
+        match token_at(ref tokens, cursor).kind {
+            tk_float_lit => { return true; },
+            tk_malformed_float_lit => { return true; },
+            _ => {},
+        }
+        cursor = cursor + 1;
+    }
+    return false;
+}
+
+// The complete f64 constant grammar is FLOAT_LIT or "-" FLOAT_LIT: no
+// parentheses, no repeated minus, no arithmetic, no constant references.
+fn check_f64_const_initializer(tokens: ref list<token>, start: i32, end: i32, declared_f64: bool, module: str, at: i32, diags: mutref list<diag>) -> unit {
+    let expr_start = expr_content_start(ref tokens, start, end);
+    if expr_start >= end {
+        push_diag(mutref diags, module, at, "const initializer cannot be empty");
+        return;
+    }
+    let mut cursor = expr_start;
+    while cursor < end {
+        match token_at(ref tokens, cursor).kind {
+            tk_malformed_float_lit => {
+                // NQ-PARSE-004 already reported this token.
+                return;
+            },
+            _ => {},
+        }
+        cursor = cursor + 1;
+    }
+    let mut literal_index = expr_start;
+    match token_at(ref tokens, expr_start).kind {
+        tk_minus => { literal_index = expr_start + 1; },
+        _ => {},
+    }
+    let mut literal_shape = false;
+    if declared_f64 and literal_index + 1 == end {
+        match token_at(ref tokens, literal_index).kind {
+            tk_float_lit => { literal_shape = true; },
+            _ => {},
+        }
+    }
+    if not literal_shape {
+        push_token_range_error(mutref diags, module, ref tokens, expr_start, end, "NQ-TYPE-048", "f64 constants must be a literal; compute the value at runtime");
+        return;
+    }
+    float_literal_ctx(token_at(ref tokens, literal_index).text, module, ref tokens, expr_start, end, mutref diags);
+    return;
 }
 
 fn infer_const_expr_type_ctx(tokens: ref list<token>, start: i32, end: i32, expected_ctx: expected_type_ctx, module: str, at: i32, diags: mutref list<diag>) -> expected_type_ctx {
@@ -6995,15 +7257,22 @@ audit {
                 }
                 let text = module_source_text(ref sources, value.module);
                 let tokens = lex(text);
-                let expected = make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
-                let actual = infer_const_expr_type_ctx(ref tokens, value.expr_start, value.expr_end, expected, value.module, value.at, mutref diags);
-                if has_known_type_ctx(actual) and not type_ctx_matches(expected, actual) {
-                    push_diag(mutref diags, value.module, value.at, "const initializer does not match declared type");
-                }
-                if list_len(ref diags) == before_const {
-                    let mut width = 4;
-                    if value.type_name == "i64" { width = 8; }
-                    let evaluated = evaluate_typed_const(ref tokens, value.expr_start, value.expr_end, width, value.module, mutref diags);
+                if value.type_name == "f64" or const_span_has_float_token(ref tokens, value.expr_start, value.expr_end) {
+                    // M56.2: f64_const_expr = FLOAT_LIT | "-" FLOAT_LIT, with no
+                    // folding; any other f64 constant shape, and any f64 operand in
+                    // another constant, is NQ-TYPE-048.
+                    check_f64_const_initializer(ref tokens, value.expr_start, value.expr_end, value.type_name == "f64" and not value.is_borrow and value.type_arg1_name == "" and value.type_arg2_name == "", value.module, value.at, mutref diags);
+                } else {
+                    let expected = make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                    let actual = infer_const_expr_type_ctx(ref tokens, value.expr_start, value.expr_end, expected, value.module, value.at, mutref diags);
+                    if has_known_type_ctx(actual) and not type_ctx_matches(expected, actual) {
+                        push_diag(mutref diags, value.module, value.at, "const initializer does not match declared type");
+                    }
+                    if list_len(ref diags) == before_const {
+                        let mut width = 4;
+                        if value.type_name == "i64" { width = 8; }
+                        let evaluated = evaluate_typed_const(ref tokens, value.expr_start, value.expr_end, width, value.module, mutref diags);
+                    }
                 }
             },
             None => {
@@ -7043,9 +7312,28 @@ fn typecheck_pattern_span(visibility: ref visibility_index, variants: ref list<v
                 return;
             }
         },
+        tk_float_lit => {
+            if pattern_start + 1 == pattern_end {
+                push_f64_match_diag(mutref diags, module, ref tokens, pattern_start, pattern_end);
+                return;
+            }
+        },
+        tk_malformed_float_lit => {
+            // NQ-PARSE-004 already reported this token.
+            return;
+        },
         tk_minus => {
             let value = token_at(ref tokens, pattern_start + 1);
             match value.kind {
+                tk_float_lit => {
+                    if pattern_start + 2 == pattern_end {
+                        push_f64_match_diag(mutref diags, module, ref tokens, pattern_start, pattern_end);
+                        return;
+                    }
+                },
+                tk_malformed_float_lit => {
+                    return;
+                },
                 tk_int_lit => {
                     if pattern_start + 2 == pattern_end {
                         let i32_ctx = make_expected_type_ctx("i32", "", "");
@@ -7132,7 +7420,24 @@ fn typecheck_match_arm(visibility: ref visibility_index, variants: ref list<vari
     if is_unsupported_type_ctx(scrutinee_ctx) {
         return;
     }
+    if scrutinee_ctx.head == "f64" {
+        push_f64_match_diag(mutref diags, module, ref tokens, arm.scrutinee_start, arm.scrutinee_end);
+        return;
+    }
     typecheck_pattern_span(ref visibility, ref variants, ref variant_payloads, ref uses, ref items, module, function_name, arm.scope_id, ref tokens, arm.pattern_start, arm.pattern_end, scrutinee_ctx, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    return;
+}
+
+// NQ-TYPE-047: literal matching of floating values would hide NaN and
+// rounding behavior, so f64 values are compared with `if` instead.
+fn push_f64_match_diag(diags: mutref list<diag>, module: str, tokens: ref list<token>, start: i32, end: i32) -> unit {
+    let mut span_start = start;
+    let mut span_end = end;
+    while span_is_wrapped_in_parens(ref tokens, span_start, span_end) {
+        span_start = span_start + 1;
+        span_end = span_end - 1;
+    }
+    push_token_range_error(mutref diags, module, ref tokens, span_start, span_end, "NQ-TYPE-047", "f64 values cannot be matched; compare with `if`");
     return;
 }
 
@@ -7512,7 +7817,7 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                                                         let payload_ctx = propagation_typecheck_payload_ctx(actual_ctx, return_ctx, current.module, current.at, mutref diags);
                                                         if current.expected_type_name != "" {
                                                             if expected_ctx.head != "" and has_known_type_ctx(payload_ctx) and not type_ctx_matches(expected_ctx, payload_ctx) {
-                                                                push_token_range_diag(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type");
+                                                                push_mismatch_range(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type", numeric_conversion_help(expected_ctx.head, payload_ctx.head, ""));
                                                             }
                                                         }
                                                         if current.name != "" and has_known_type_ctx(payload_ctx) {
@@ -7522,7 +7827,7 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                                                         if current.expected_type_name != "" {
                                                             if not current.expected_is_borrow {
                                                                 if expected_ctx.head != "" and has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
-                                                                    push_token_range_diag(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type");
+                                                                    push_mismatch_range(mutref diags, current.module, ref tokens, expr_start, current.expr_end, "annotated local initializer does not match declared type", numeric_conversion_help(expected_ctx.head, actual_ctx.head, span_single_token_text(ref tokens, expr_start, current.expr_end)));
                                                                 }
                                                             }
                                                         } else {
@@ -7553,7 +7858,7 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                                             if expected_ctx.head != "" {
                                                 let actual_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref function_scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                 if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
-                                                    push_diag(mutref diags, current.module, current.at, "assignment value does not match target type");
+                                                    push_mismatch_at(mutref diags, current.module, current.at, "assignment value does not match target type", numeric_conversion_help(expected_ctx.head, actual_ctx.head, span_single_token_text(ref tokens, current.expr_start, current.expr_end)));
                                                 }
                                             }
                                         },
@@ -7588,7 +7893,7 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                                                                     } else {
                                                                         let actual_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref function_scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_ctx, mutref diags);
                                                                         if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_ctx, actual_ctx) {
-                                                                            push_diag(mutref diags, current.module, current.at, "field assignment value does not match target field type");
+                                                                            push_mismatch_at(mutref diags, current.module, current.at, "field assignment value does not match target field type", numeric_conversion_help(expected_ctx.head, actual_ctx.head, span_single_token_text(ref tokens, current.expr_start, current.expr_end)));
                                                                         }
                                                                     }
                                                                 }
@@ -7616,7 +7921,7 @@ fn typecheck_value_facts_with_stmt_facts_indexed(visibility: ref visibility_inde
                                             if expected_return_ctx.head != "" and not expected_is_borrow {
                                                 let actual_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref function_scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, expected_return_ctx, mutref diags);
                                                 if has_known_type_ctx(actual_ctx) and not type_ctx_matches(expected_return_ctx, actual_ctx) {
-                                                    push_diag(mutref diags, current.module, current.at, "return expression does not match function return type");
+                                                    push_mismatch_at(mutref diags, current.module, current.at, "return expression does not match function return type", numeric_conversion_help(expected_return_ctx.head, actual_ctx.head, span_single_token_text(ref tokens, current.expr_start, current.expr_end)));
                                                 }
                                             }
                                         },
@@ -7702,6 +8007,7 @@ fn p2_frontend_expr_kind(kind: expr_fact_kind) -> i32 {
         expr_i32 => { return 3; }, expr_str => { return 4; }, expr_name => { return 5; },
         expr_field => { return 6; }, expr_call => { return 7; }, expr_struct => { return 8; },
         expr_list => { return 9; }, expr_match => { return 10; }, expr_try => { return 11; },
+        expr_f64 => { return 12; },
     }
 }
 

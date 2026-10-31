@@ -26,6 +26,13 @@ generic graphs with NQ-GENERIC-008, including unused templates. The exact
 contract is [docs/M56_1_CONTRACT.md](docs/M56_1_CONTRACT.md). `check`,
 `emit-c`, `build` and `run` remain available.
 
+M56.2 adds `f64` as a type atom wherever evidence renders a type name,
+including v5 generic `type_arguments` (for example
+`fn:app::bags::bag_item<f64>`). The atom set is the accepting compiler's
+builtin type set (D067), so no schema version changes. The six `f64`
+builtins appear in call evidence like other builtins (`builtin:str_from_f64`,
+origin `__builtin__`) with no effect atoms.
+
 AI Contracts are Nauqtype's first explicitly AI-first language feature.
 
 They are designed to make AI-authored code easier to supervise by attaching a small, fixed-shape, compiler-checked review surface to functions.

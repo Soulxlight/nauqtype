@@ -51,6 +51,10 @@ fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit
     return;
 }
 
+fn is_reserved_numeric_type_name(name: str) -> bool {
+    return name == "f32" or name == "u32" or name == "u64" or name == "char";
+}
+
 fn module_has_local_name(items: ref list<top_item>, module: str, name: str) -> bool {
     let mut index = 0;
     while index < list_len(ref items) {
@@ -389,6 +393,9 @@ fn is_builtin_name(name: str) -> bool {
         return true;
     }
     if name == "str_len" or name == "str_get" or name == "str_slice" or name == "str_concat" or name == "str_join" or name == "bytes_from_str" or name == "bytes_len" or name == "bytes_get" {
+        return true;
+    }
+    if name == "f64_from_i32" or name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "str_from_f64" or name == "f64_from_str" {
         return true;
     }
     if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
@@ -1213,12 +1220,18 @@ audit {
         let entry = list_get(ref type_refs, ref_index);
         match entry {
             Some(current) => {
-                if module_has_visible_type_name(ref items, ref uses, current.module, current.name) {
+                if is_reserved_numeric_type_name(current.name) {
+                    // M56.2 (D067): the deferred numeric names are reserved in every
+                    // type position, including unused declarations.
+                    list_push(mutref diags, make_error("NQ-TYPE-049", diag_type, current.module, current.at, current.at + str_len(current.name), concat3("`", current.name, "` is reserved and not yet supported")));
                 } else {
-                    if module_has_hidden_imported_type_name(ref items, ref uses, current.module, current.name) {
-                        push_diag(mutref diags, current.module, current.at, "type exists in an imported module but is not `pub`");
+                    if module_has_visible_type_name(ref items, ref uses, current.module, current.name) {
                     } else {
-                        push_diag(mutref diags, current.module, current.at, "unknown type in declaration");
+                        if module_has_hidden_imported_type_name(ref items, ref uses, current.module, current.name) {
+                            push_diag(mutref diags, current.module, current.at, "type exists in an imported module but is not `pub`");
+                        } else {
+                            push_diag(mutref diags, current.module, current.at, "unknown type in declaration");
+                        }
                     }
                 }
             },

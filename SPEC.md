@@ -124,16 +124,22 @@ Current primitive types:
 - `bool`
 - `i32`
 - `i64`
+- `f64`
 - `str`
 - `unit`
 
-Deferred numeric types:
+Deferred types, reserved:
 
 - `u32`
 - `u64`
 - `f32`
-- `f64`
 - `char`
+
+These four names are reserved. Writing one in any type position (local,
+parameter, return, field, enum payload, `ref`/`mutref` target, container or
+`result` argument, explicit generic argument), including inside an unused
+declaration, is rejected with `NQ-TYPE-049` "`<name>` is reserved and not yet
+supported" (M56.2; previously some unused declarations were accepted).
 
 `i32` and `i64` are exact integer types. Unsuffixed literals default to `i32`
 unless an expected `i64` context selects `i64`; arithmetic never performs an
@@ -152,6 +158,100 @@ rejected with `NQ-TYPE-045` at the slash token; boolean `and` and `or` still
 short-circuit. Literal range checks remain independent of reachability. This
 does not add casts or permit constant initializers to call functions or refer
 to other names.
+
+### Scalar `f64` (M56.2)
+
+`f64` is IEEE 754 binary64, emitted as C `double`. It is a copy type with no
+drop. The decision record is D067; the full contract is
+[docs/M56_2_CONTRACT.md](docs/M56_2_CONTRACT.md).
+
+**Literals.** The only float literal form is
+`DIGITS "." DIGITS [ "e" [ "-" ] DIGITS ]`: `0.5`, `1.0`, `2.5e-3`,
+`6.02e23`. A float literal always has type `f64`; negative values use unary
+`-`. There is no suffix, no `.5`, `1.`, `1e5`, `1E5`, `1e+5`, hexadecimal
+float, digit separator, or `inf`/`nan` spelling. `1.`, `1.e5`, `.5`, and `1e5`
+are not float literals and keep their earlier diagnostics. A float literal
+followed by a malformed exponent (`1.0E5`, `1.0e+5`, `1.0e`, `1.0e-`) is
+`NQ-PARSE-004` "malformed float literal". A literal whose decimal value is at
+least 2^1024 − 2^970 (it would round to infinity) is `NQ-TYPE-046`; the
+compiler decides this exactly on the decimal text. Literals that round to a
+subnormal or to zero are accepted. The emitted C literal is the source text;
+a literal at or below 2^-1075 is emitted as `0.0`, which is the value C would
+round it to.
+
+**No implicit conversion.** An integer literal is never an `f64`
+(`let x: f64 = 1;` is rejected; write `1.0`). Mixing `f64` with `i32` or `i64`
+in any arithmetic or comparison is rejected with the existing operand-mismatch
+diagnostic, whose help names the explicit conversion builtins. An `f64` where
+an `i32` is required (list index, `main` return) is likewise rejected.
+
+**Arithmetic.** Binary `+ - * /` and unary `-` on `f64` follow IEEE 754:
+round-to-nearest-ties-to-even, no fused multiply-add contraction, overflow to
+±infinity, and division by zero yielding ±infinity or NaN. Nothing traps.
+Unary `-` flips the sign bit, so `-0.0` is negative zero.
+
+**Comparison.** `== != < <= > >=` follow IEEE: every ordered comparison and
+`==` with a NaN operand is false, `!=` with a NaN operand is true, and
+`0.0 == -0.0` is true. The NaN test is `x != x`; the finiteness test is
+`x - x == 0.0`.
+
+**`match`.** An `f64` value cannot be a `match` scrutinee and a float literal
+cannot be a pattern (`NQ-TYPE-047` "f64 values cannot be matched; compare
+with `if`"). Binding an `f64` payload (`Some(x)`, `Ok(x)`, enum payloads) is
+unaffected.
+
+**Constants.** An `f64` constant initializer is exactly a float literal or
+`-` followed by a float literal. Parentheses, repeated or nested minus,
+arithmetic, references to other constants, and any `f64` operand inside a
+`bool`/`i32`/`i64` constant initializer are rejected with `NQ-TYPE-048`
+"f64 constants must be a literal; compute the value at runtime". The compiler
+performs no floating-point folding.
+
+**Builtins.** Six pure builtins (no effect atoms, no error values):
+
+```nauq
+fn f64_from_i32(value: i32) -> f64;          // exact
+fn f64_from_i64(value: i64) -> option<f64>;  // None unless exactly representable
+fn f64_trunc_i32(value: f64) -> option<i32>; // toward zero; None for NaN, ±inf, out of range
+fn f64_trunc_i64(value: f64) -> option<i64>; // toward zero; None for NaN, ±inf, out of range
+fn str_from_f64(value: f64) -> str;
+fn f64_from_str(text: str) -> option<f64>;
+```
+
+- `f64_trunc_i32(v)` is `Some` exactly when `-2147483649.0 < v < 2147483648.0`
+  (so `-2147483648.9` truncates to `INT32_MIN`); `f64_trunc_i64(v)` exactly
+  when `-2^63 <= v < 2^63`. No undefined C conversion and no `libm` call is
+  reachable; the toolchain still links without `-lm`.
+- `str_from_f64` renders finite nonzero values exactly as ECMAScript
+  `Number::toString`: the shortest round-tripping digits (ties toward the
+  closest), fixed notation when `1e-6 <= |x| < 1e21`, otherwise `d[.ddd]e±n`
+  with an explicit `+` (`0.1`, `100`, `0.000001`, `1e-7`, `1e+21`,
+  `5e-324`, `1.7976931348623157e+308`). `+0.0` renders `0` and `-0.0`
+  renders `-0`. NaN, +infinity and −infinity render `NaN`, `Infinity`,
+  `-Infinity`; `f64_from_str` does not accept those spellings.
+- `f64_from_str` accepts exactly the JSON number grammar (RFC 8259 §6) over the
+  whole string, `-? (0 | [1-9][0-9]*) (\.[0-9]+)? ([eE][+-]?[0-9]+)?`, with no
+  surrounding whitespace, leading `+`, `inf`/`nan`, or hexadecimal. The result
+  is the correctly rounded value; `-0` gives negative zero, underflow gives a
+  subnormal or zero, and any input that rounds to ±infinity gives `None`. It
+  validates exactly the string's bytes, so a `str_slice` view parses only
+  its own bytes (`str_slice("1.259", 0, 4)` gives `1.25`).
+- For every finite `x`, `f64_from_str(str_from_f64(x)) == Some(x)` with the
+  same sign of zero.
+- Both text builtins run each call under its own `"C"` numeric locale
+  (`newlocale`/`uselocale`), so the process locale never changes the result.
+  If that locale cannot be created, the program terminates with exit code 1 and
+  `nauqtype runtime: numeric locale unavailable`. Size and out-of-memory
+  failures use the fatal contract above. On Windows builds there is no
+  per-call locale construction, so rendering a finite nonzero value or parsing
+  grammar-valid text takes the locale failure path.
+
+**Host compiler requirement.** `stdlib/runtime.h` rejects, at compile time, a
+C compiler whose `double` is not binary64 with `FLT_EVAL_METHOD == 0`, that
+does not define `__STDC_IEC_559__`, that defines `__FAST_MATH__`, or (GCC)
+that compiles in a GNU dialect. Under Clang it sets `#pragma STDC FP_CONTRACT
+OFF`. GCC 13.3 also clears `__STDC_IEC_559__` under `-ffp-contract=fast`, so
+that flag is rejected too. The shipped `-std=c11 -O2` flags are unchanged.
 
 `str` is an immutable, length-carrying byte string. It is not guaranteed to be
 valid UTF-8; length, indexing, and slicing use byte offsets. Runtime-owned
@@ -294,7 +394,7 @@ Rules:
 
 - constants are private by default
 - `pub const` is visible through flat-root `use`
-- v1 constants support only non-borrow `i32`, `i64`, `bool`, and `str`
+- v1 constants support only non-borrow `i32`, `i64`, `f64`, `bool`, and `str`; an `f64` constant is a single float literal, optionally negated (see Scalar `f64`)
 - v1 initializers support literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or`
 - calls, constructors, lists, borrows, I/O, and const-to-const initializer references are intentionally rejected for now
 - constants can be referenced in function bodies as values, but cannot be called, borrowed, or assigned
@@ -389,7 +489,7 @@ Rules:
 
 Supported expression forms in v0.1:
 
-- literals: integer, string, `true`, `false`
+- literals: integer, float (`f64`), string, `true`, `false`
 - variable and top-level constant references
 - constructor references such as `Ok(value)` or `User { ... }`
 - list literals: `[]` and `[a, b, c]`
@@ -566,7 +666,7 @@ Supported pattern forms:
 - binding: `name`
 - unit-like variant: `None`
 - tuple-like variant: `Some(value)`
-- integer literal: `42` or `-1`, for `i32` scrutinees only
+- integer literal: `42` or `-1`, for `i32` scrutinees only (float literals are never patterns, and `f64` is never a scrutinee)
 - nested constructor: `Some(Some(value))`
 
 Any match containing a literal or nested constructor pattern must include a wildcard or binding fallback arm. This keeps the first refined-pattern form conservative and exhaustiveness visible. Guards, ranges, string or boolean literals, and or-patterns remain deferred.
@@ -609,6 +709,7 @@ Copy types in v0.1:
 - `bool`
 - `i32`
 - `i64`
+- `f64`
 - `str`
 - `unit`
 - `io_err`

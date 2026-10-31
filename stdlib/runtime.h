@@ -1,11 +1,49 @@
 #ifndef NAUQ_RUNTIME_H
 #define NAUQ_RUNTIME_H
 
+#include <float.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* IEEE 754 binary64 guard (M56.2 scalar f64). Every emitted translation unit
+ * and runtime.c include this header first, so an unsuitable compiler or flag
+ * set fails the build instead of silently changing f64 results. The shape
+ * checks use only standard C11 <float.h> macros. */
+#if !defined(FLT_RADIX) || FLT_RADIX != 2
+#error "nauqtype f64 requires FLT_RADIX == 2"
+#endif
+#if !defined(DBL_MANT_DIG) || DBL_MANT_DIG != 53
+#error "nauqtype f64 requires DBL_MANT_DIG == 53 (IEEE 754 binary64)"
+#endif
+#if !defined(DBL_MAX_EXP) || DBL_MAX_EXP != 1024
+#error "nauqtype f64 requires DBL_MAX_EXP == 1024 (IEEE 754 binary64)"
+#endif
+#if !defined(DBL_MIN_EXP) || DBL_MIN_EXP != -1021
+#error "nauqtype f64 requires DBL_MIN_EXP == -1021 (IEEE 754 binary64)"
+#endif
+#if !defined(DBL_HAS_SUBNORM) || DBL_HAS_SUBNORM != 1
+#error "nauqtype f64 requires subnormal doubles (DBL_HAS_SUBNORM == 1)"
+#endif
+#if !defined(FLT_EVAL_METHOD) || FLT_EVAL_METHOD != 0
+#error "nauqtype f64 requires FLT_EVAL_METHOD == 0 (no excess precision)"
+#endif
+_Static_assert(sizeof(double) == 8, "nauqtype f64 requires an 8-byte double");
+#ifndef __STDC_IEC_559__
+#error "nauqtype f64 requires IEC 60559 floating point (__STDC_IEC_559__)"
+#endif
+#ifdef __FAST_MATH__
+#error "nauqtype f64 forbids -ffast-math (__FAST_MATH__ is defined)"
+#endif
+/* A GNU dialect lets GCC contract a * b + c into a fused multiply-add. */
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__STRICT_ANSI__)
+#error "nauqtype f64 requires an ISO C dialect under GCC: compile with -std=c11, not -std=gnu11"
+#endif
+#if defined(__clang__)
+#pragma STDC FP_CONTRACT OFF
+#endif
 
 /* Constant-only operands: these remain strict C11 integer constant expressions.
  * Reconstruct the signed value using only representable casts and signed sums. */
@@ -130,6 +168,32 @@ typedef struct NQ_Option__i32 {
         NQUnit None;
     } data;
 } NQ_Option__i32;
+
+typedef enum NQ_Option__i64_Tag {
+    NQ_Option__i64_Tag_Some,
+    NQ_Option__i64_Tag_None,
+} NQ_Option__i64_Tag;
+
+typedef struct NQ_Option__i64 {
+    NQ_Option__i64_Tag tag;
+    union {
+        struct { int64_t _0; } Some;
+        NQUnit None;
+    } data;
+} NQ_Option__i64;
+
+typedef enum NQ_Option__f64_Tag {
+    NQ_Option__f64_Tag_Some,
+    NQ_Option__f64_Tag_None,
+} NQ_Option__f64_Tag;
+
+typedef struct NQ_Option__f64 {
+    NQ_Option__f64_Tag tag;
+    union {
+        struct { double _0; } Some;
+        NQUnit None;
+    } data;
+} NQ_Option__f64;
 
 typedef enum NQ_Option__str_Tag {
     NQ_Option__str_Tag_Some,
@@ -378,6 +442,17 @@ NQ_Result__process_outcome__io_err nq_process_wait(NQ_process child, NQ_Option__
 NQ_Result__unit__io_err nq_process_terminate(NQ_process* child);
 NQ_Option__i32 nq_str_get(NQStr text, int32_t index);
 NQ_Option__str nq_str_slice(NQStr text, int32_t start, int32_t end);
+/* Scalar f64 builtins (M56.2). The NQStr parameter is borrowed: the callee
+ * neither clones nor drops it, and the caller keeps ownership (the emitter
+ * cleans up argument temporaries after the call, as for nq_str_len and
+ * nq_str_slice). The NQStr result is owned (fresh storage, ref_count 1), and
+ * the caller drops it like the result of nq_str_concat. */
+double nq_f64_from_i32(int32_t value);
+NQ_Option__f64 nq_f64_from_i64(int64_t value);
+NQ_Option__i32 nq_f64_trunc_i32(double value);
+NQ_Option__i64 nq_f64_trunc_i64(double value);
+NQStr nq_str_from_f64(double value);
+NQ_Option__f64 nq_f64_from_str(NQStr text);
 NQBytes nq_bytes_from_str(NQStr text);
 NQStr nq_str_from_bytes(const NQBytes* bytes);
 int64_t nq_bytes_len(const NQBytes* bytes);

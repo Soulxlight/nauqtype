@@ -19,7 +19,7 @@ Formatter-lite exists to make canonical Nauqtype teaching material stable for hu
 - Dedent lines that begin with `}` before printing them.
 - Ignore braces inside string literals and line comments when computing indentation.
 
-Formatter-lite does not reorder imports, reflow expressions, align columns, move comments, normalize names, or change source semantics. It is a line-and-brace formatter for the current teaching subset.
+Formatter-lite does not reorder imports, reflow expressions, align columns, move comments, normalize names, or change source semantics. Float literals (M56.2) are reproduced byte-for-byte; only one spelling is accepted, so there is nothing to normalize. It is a line-and-brace formatter for the current teaching subset.
 
 ## Fail-Closed Cases
 

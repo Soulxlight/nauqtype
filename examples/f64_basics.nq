@@ -1,0 +1,73 @@
+fn average(samples: ref list<i64>) -> option<f64>
+audit {
+    intent("Average integer samples after converting each one explicitly");
+    mutates();
+    effects();
+}
+{
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for sample in samples {
+        let Some(value) = f64_from_i64(sample) else {
+            return None;
+        };
+        sum = sum + value;
+        count = count + 1.0;
+    }
+    if count == 0.0 {
+        return None;
+    }
+    return Some(sum / count);
+}
+
+fn is_nan(value: f64) -> bool {
+    return value != value;
+}
+
+fn is_finite(value: f64) -> bool {
+    return value - value == 0.0;
+}
+
+fn main() -> i32
+audit {
+    intent("Average samples, render a percentage, and parse and truncate user text");
+    mutates();
+    effects(print);
+}
+{
+    let samples: list<i64> = [3, 4, 4, 5];
+    let Some(mean) = average(ref samples) else {
+        return 1;
+    };
+    print_line(str_concat("mean: ", str_from_f64(mean)));
+    print_line(str_concat("share: ", str_concat(str_from_f64(mean / 8.0 * 100.0), "%")));
+    let Some(parsed) = f64_from_str("2.75") else {
+        return 2;
+    };
+    let Some(whole) = f64_trunc_i64(parsed) else {
+        return 3;
+    };
+    if whole != 2 {
+        return 4;
+    }
+    let rejected = f64_from_str("2,75");
+    match rejected {
+        Some(_) => {
+            return 5;
+        },
+        None => {
+            print_line("rejected: 2,75");
+        },
+    }
+    let zero = 0.0;
+    let undefined = zero / zero;
+    let unbounded = 1.0 / zero;
+    if not is_nan(undefined) or is_nan(mean) {
+        return 6;
+    }
+    if is_finite(unbounded) or not is_finite(mean) {
+        return 7;
+    }
+    print_line("checks: ok");
+    return 0;
+}

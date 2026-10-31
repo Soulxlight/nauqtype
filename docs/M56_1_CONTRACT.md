@@ -38,7 +38,7 @@ canonicalizes to `i32`; no spaces are emitted.
 ```text
 args      := "<" arg ("," arg)* ">"
 arg       := atom | container | nominal | nominal_instance
-atom      := "bool" | "i32" | "i64" | "str" | "unit" | "bytes" | "io_err"
+atom      := "bool" | "i32" | "i64" | "f64" | "str" | "unit" | "bytes" | "io_err"
            | "process_result" | "path_metadata" | "duration" | "instant"
            | "process" | "process_outcome"
 container := "list<" arg ">" | "option<" arg ">" | "result<" arg "," arg ">"
@@ -50,7 +50,12 @@ nominal_instance := the identity of a generic nominal template in the
 ```
 
 The atom list is the checked builtin set in `selfhost/handoff.nq`
-(`canonical_type_origin_module`); adding an atom later is a format change.
+(`canonical_type_origin_module`) of the accepting compiler. Adding a builtin
+type to that set adds an atom without a format change, provided every source
+that mentions the new name was a hard error before (so no output for any
+previously accepted input changes) and the name contains no `:` (so the
+injectivity argument below is unchanged). This sentence was amended by M56.2,
+which added `f64` under that rule (D067); `i64` (M53) is the precedent.
 Injectivity: atoms and container heads contain no `:`; every nominal begins
 with `type:`, `enum:`, or `workspace:`; source identifiers cannot contain
 `<`, `>`, `,`, `:`, or `@`. Parsing is therefore unambiguous left to right.
