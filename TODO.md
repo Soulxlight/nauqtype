@@ -6,7 +6,10 @@
   (approved 2026-10-31, revision 3)
 - [x] M56.1: implementation, focused checks, trailing audit, milestone gate
   (2026-10-31; [evidence](AUDIT_REMEDIATION.md#m561-generic-aware-evidence-close))
-- [ ] M56.2: `f64` decision record (SYNTAX_IDENTITY SOP) and Gate A review
+- [x] M56.2: `f64` decision record and Gate A review of the
+  [contract](docs/M56_2_CONTRACT.md) (approved 2026-10-31, revision 3)
+- [ ] M56.2: implementation (slices A front end, B back end/runtime,
+  C evidence/tests/docs), focused checks, trailing audit, milestone gate
 - [ ] M57 planning after M56.1/M56.2 contracts are fixed, including the
   in-repo standard library layout
 

@@ -1066,10 +1066,10 @@ The scope as scheduled:
 
 ### M56.2: Scalar `f64`
 
-Scheduled 2026-10-30 by the compiler lead with owner approval. Only the
-sequencing is approved; the bullets below are planning pressure, not contract
-terms. Requires the `SYNTAX_IDENTITY.md` decision record and Gate A review
-before implementation.
+Scheduled 2026-10-30 by the compiler lead with owner approval. Gate A passed
+2026-10-31 on revision 3 of the [M56.2 contract](docs/M56_2_CONTRACT.md),
+which is also the `SYNTAX_IDENTITY.md` decision record and supersedes the
+planning bullets below.
 
 - pressure: M57 JSON numbers and terminal tools (ratios, durations,
   measurements) need a floating-point value; no later milestone schedules one
