@@ -1,38 +1,28 @@
 # Nauqtype TODO
 
+## Next Actions
+
+- [ ] M56.1: Gate A review of the draft
+  [contract](docs/M56_1_CONTRACT.md), then implementation
+- [ ] M56.2: `f64` decision record (SYNTAX_IDENTITY SOP) and Gate A review
+- [ ] M57 planning after M56.1/M56.2 contracts are fixed, including the
+  in-repo standard library layout
+
 ## Current Performance Checkpoint
 
-P1-P4's required performance goals are met on reviewed frozen candidate
-`42999a5f31a8993b5ac8e38235ef5645d074af2d` in the supported WSL2/Linux-ext4
-environment. Focused feedback takes0.85s; two complete opt-in warm runs take
-49.46s/46.82s. The new serial seven-phase gate passes in1055.50s,58.13% less
-than P0's2520.62s. The10min cold working target remains unmet, not waived or
-reclassified as a passing result.
-
-Both independent source-readiness audits pass. Exact80-source/runtime seed
-propagation, both seed comparisons,12 proof phases,44 corpus cases, copied
-Linux layout, stress, fresh fixtures and sanitizers remain green. All23
-receipt bodies/inodes/mtimes are unchanged across both warm runs; every check
-executes. Whole warm workflow150.274565627s includes population and readbacks.
-Default/full-milestone/proof/release execution remains serial; the under60s
-result belongs only to the explicitly selected supported concurrent mode.
-See the [current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close)
-for identities, costs, scope and closing-review evidence.
-
-M56 explicit generic reuse passes its reviewed frozen Linux close on
-`67272d00dd7d3e6cbb3945cc5777141148ff2cc1`: exact86-source seed, both seed
-comparisons,12 proof phases/45 corpus cases, seed/release generic composition,
-owned tests, sanitizers and strict attestation. See the
-[M56 completion record](AUDIT_REMEDIATION.md#m56-generic-reuse-close).
-No stable release, publication or downstream pin change follows from this
-performance close. Earlier1055.02s/1011.04s cold and100.58s serial-warm results
-remain historical candidate-bound evidence, not the new gate's measurements.
+PRE-M56 P1-P4 required goals are met; the 10-minute cold working target
+remains open. Evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
+M56 closing evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m56-generic-reuse-close).
 
 ## Current Refactor Checkpoint
 
-Use [docs/README.md](docs/README.md) for authoritative-document routing and
-[docs/REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md) for staged maintenance scope.
-The checklists below retain milestone history, not a second current roadmap.
+R0-R6 maintenance is complete. Routing: [docs/README.md](docs/README.md);
+scope: [docs/REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md); results:
+[R2/R3](docs/R2_R3_RESULTS.md), [R4-R6](docs/R4_R6_RESULTS.md). The longer
+narratives that stood here until 2026-10-30 are archived in
+[docs/history/STATUS_NARRATIVES_2026-10.md](docs/history/STATUS_NARRATIVES_2026-10.md).
 
 - [x] R0: inventory active/archive/generated boundaries, add the documentation index and compiler map, and repair stale architecture/status guidance without changing executable inputs
 - [x] R1: P0/E1/P2 baseline checkpointed separately in `0564a32` with verified P2 closing evidence; packaged README passed independent mixed audits and one fresh seven-phase Linux milestone gate
@@ -41,57 +31,6 @@ The checklists below retain milestone history, not a second current roadmap.
 - [x] R4: borrowed driver/checked-project assembly and separate dispatch accepted with exact compatibility, generated-code inspection, bounded cost, and the fresh Linux gate
 - [x] R5: canonical backend type ownership intentionally retained without nominal-origin drift; static equality, C/runtime comparisons, and integrated acceptance passed
 - [x] R6: three proof wrappers share only their identical host invocation; distinct publishers/proof policies, required coverage, and final documentation are preserved and accepted
-
-R0/R1 change documentation only, not compiler behavior. R1's fresh Linux
-gate on 2026-10-09 passed all seven phases and 44 corpus cases in 2507.89s,
-with 437144 KiB peak RSS, on indexed candidate
-`16b8e84271c5c3e4db20384c17977a102710395b`. Its verified attestation SHA-256 is
-`9a422fed99c88c01d4605e2eaff76b5c033d2f0a63905b3992bd0c0504c5a210`.
-Receipts are retained locally under
-`build/verification/refactor-r1-20261009/full-gate/`; this is not publication
-or a stable release. Source/copied README bytes and links also passed.
-
-R2 attribution identifies `typecheck::visible_item_origin` at 19.72% of
-sampled CPU time. That separate `-pg` run is not a production timing or
-speedup result. The R2/R3 candidate now has ordinary measurements: identical
-baseline checks improve from 333.80s/331.23s to 269.12s/268.30s (19.19% less
-mean wall time); expanded current-tree checks take 289.82s/289.36s. All 37
-locked compatibility rows and six C outputs match. The exact self-generated
-74-file seed is promoted. Both independent final audits passed, then the one
-frozen seven-phase Linux gate passed on 2026-10-19 in 2290.24s with 437956 KiB
-peak RSS, 44 corpus cases, and all 12 proof phases. Indexed candidate:
-`e77dc750af7a97d759700f83da9d56779a66115a`; verified attestation SHA-256:
-`f9b53accd56b088179052f2d91013f1914def073a1f0e73406bfac460b938f27`.
-Receipts are retained under
-`build/verification/refactor-r2-r3-20261019/native-receipts/r23/final-gate/`.
-Only allowlisted completion documents change after that gate. See
-[R2/R3 results](docs/R2_R3_RESULTS.md). This is not a controlled cold-gate A/B
-result, stable release, or full campaign closure. Broader P1-P4 efficiency
-targets and M56-M61 remain open. The authoring-kit draft remains
-staged and unvalidated; no external consumer adoption is inferred.
-
-R4-R6's bounded candidate follows the
-[execution contract](docs/R4_R6_CONTRACT.md). All 82 reference/candidate
-cases and 11 emitted C artifacts match exactly; old function signatures,
-protected driver declarations, and unchanged backend owners are checked.
-Both independent source reviews passed. The new native compiler is built
-and verified. Matched-input checks pass at 296.87s/297.02s, an observed
-2.54% wall increase over the older reference, with 0.40% higher maximum RSS;
-no speedup is claimed. Exact self-generated seed promotion and both final
-mixed audits passed, then the one frozen seven-phase Linux gate passed on
-2026-10-19 in 2304.10s / 437820 KiB, including 44 corpus cases and all 12
-proof phases. Indexed candidate:
-`c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`; verified attestation SHA-256:
-`f943b10e5069a105a35201dfd4894b5f1cf1344120088ded0f2f35cee36703ee`.
-Receipts are retained under
-`build/verification/refactor-r4-r6-20261019/native-receipts/r456/final-gate/`.
-Only TODO, roadmap, and coordination completion text changes after that gate.
-See [focused results](docs/R4_R6_RESULTS.md). No owned project aggregate,
-neutral-enum relocation, publisher framework, language feature, or downstream
-pin migration is part of this work.
-R0-R6 maintenance is complete; PRE-M56 efficiency remains first, before M56.
-This is not campaign closure, a controlled cold-gate A/B result, a stable
-release, or a claim of GitHub publication.
 
 ## Documentation
 

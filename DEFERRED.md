@@ -6,9 +6,12 @@ that have since shipped are historical, not current limitations.
 ## Language Features
 
 - Generic inference/defaults/constraints, generic constants, higher-kinded
-  parameters, and generic-aware legacy evidence/refactor exports (M56's explicit
-  function/product/enum foundation is specified in `docs/M56_CONTRACT.md`;
-  closing acceptance remains in ROADMAP/TODO)
+  parameters, and generic-aware `review-diff`/`change-report`/`policy-check`/
+  refactor exports. M56's explicit function/product/enum foundation is
+  specified in `docs/M56_CONTRACT.md`; generic-aware `facts`/`review` are
+  scheduled as M56.1.
+- Numeric types beyond `i32`/`i64`: scalar `f64` is scheduled as M56.2;
+  `f32`, unsigned integers, and `char` remain deferred.
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond `while` and list-only `for`, including iterator protocols

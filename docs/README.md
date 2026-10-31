@@ -14,11 +14,12 @@ or a copied-release manifest.
 | Work on R2/R3 | [Execution contract](R2_R3_CONTRACT.md), [measurements](R2_R3_RESULTS.md) | [Performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [verification tiers](../VERIFICATION.md) |
 | Work on R4-R6 | [Execution contract](R4_R6_CONTRACT.md), [compatibility matrix](R4_R6_MATRIX.txt) | [Focused results](R4_R6_RESULTS.md), [refactor scope/retention decisions](REFACTOR_PLAN.md), [verification tiers](../VERIFICATION.md) |
 | Work on M56 | [Explicit reuse contract](M56_CONTRACT.md), [host memory boundary](M56_GCC_MEMORY_CONTRACT.md) | [Spec](../SPEC.md), [teaching corpus](../TEACHING_CORPUS.md), [roadmap acceptance](../ROADMAP.md) |
+| Work on M56.1 | [Draft generic-aware evidence contract](M56_1_CONTRACT.md) (Gate A pending) | [M56 contract](M56_CONTRACT.md), [AI Contracts](../AI_CONTRACTS.md), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |
 | Prepare a release | [Stable Release](../STABLE_RELEASE.md) | [release manifest](../LINUX_RELEASE_MANIFEST.md), [bootstrap retirement](../BOOTSTRAP_RETIREMENT.md) |
-| Change shared libraries | [coordination](../NAUQTYPE_COORDINATION.md) | [upstream response](../NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md); verify the separately assigned checkout |
+| Change shared libraries | [coordination](../NAUQTYPE_COORDINATION.md) (NQType Libraries is dormant; needs an owner assignment first) | [upstream response](../NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md) |
 
 ## Current Position
 
@@ -26,13 +27,12 @@ The active compiler, test runner, and proof runner are Nauqtype-owned. The
 host-C seed, narrow native runtime, and shell build/release integration remain
 intentional. Python is archived reference code, not the active path.
 
-M55 and required PRE-M56 efficiency goals have recorded Linux acceptance. M56
-explicit generic reuse is the current candidate, not a stable-release claim.
-Generic-aware evidence export remains a versioned follow-up; legacy formats
-reject generic graphs. M57-M61 are not complete. This is an organizational
+M55, required PRE-M56 efficiency goals, and M56 explicit generic reuse have
+recorded Linux acceptance; none is a stable-release claim. Generic-aware
+evidence is M56.1; legacy formats reject generic graphs. M57-M61 are not complete. This is an organizational
 alpha, not a stable or feature-complete application language. Current sequencing
 lives in [ROADMAP](../ROADMAP.md#current-position-and-resumption); open actions
-live in [TODO](../TODO.md#current-refactor-checkpoint).
+live in [TODO](../TODO.md#next-actions).
 
 Historical E1 and P2 mapping have candidate-specific executable evidence. P2's measured
 comparisons improve about 25-26x, but its one cold complete gate was only
@@ -91,7 +91,7 @@ to it. No document is moved or deleted by this checkpoint.
 | [README](../README.md) | Packaged introduction/quick start; its R1 rewrite has a separate executable acceptance checkpoint |
 | [AGENTS](../AGENTS.md) | Startup, delegation, independent audits, and verification rules |
 | [Agent Routing](../AGENT_ROUTING.md) | Task-fit routing and explicit model-availability fallbacks |
-| [Coordination](../NAUQTYPE_COORDINATION.md) | Ownership and dated provider/consumer contract ledger |
+| [Coordination](../NAUQTYPE_COORDINATION.md) | Roles, repository states, and current position (one page); the old cross-repository ledger is [archived](history/COORDINATION_LEDGER_2026-10.md) |
 | [Architecture](../ARCHITECTURE.md) | Active architectural boundaries and implementation ownership |
 | [Roadmap](../ROADMAP.md) | Current sequence followed by preserved milestone history |
 | [TODO](../TODO.md) | Current actions followed by historical/completed checklists |
@@ -160,6 +160,8 @@ to it. No document is moved or deleted by this checkpoint.
 | [Bootstrap Migration Map](../BOOTSTRAP_MIGRATION_MAP.md) | Historical Python-to-owned-fixture responsibility mapping |
 | [M39 Fixture Manifest](../M39_FIXTURE_MANIFEST.md) | Archived-test migration and coverage ledger |
 | [M46 Organizational Alpha](../M46_ORGANIZATIONAL_ALPHA.md) | Two-workspace alpha checkpoint, not stable certification |
+| [Archived coordination ledger](history/COORDINATION_LEDGER_2026-10.md) | Multi-repository ledger as of `e34d459`, archived 2026-10-31 |
+| [Archived status narratives](history/STATUS_NARRATIVES_2026-10.md) | ROADMAP/TODO status narratives as of `e34d459`, archived 2026-10-31 |
 
 ### Optional Model Assistance
 

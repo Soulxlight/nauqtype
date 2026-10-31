@@ -6,9 +6,12 @@ or pushing.
 
 ## Startup Check
 
-1. Load and follow the `$nauqtype-work` skill, then read
+1. Load and follow the `$nauqtype-work` skill (Codex) or the equivalent
+   startup in [CLAUDE.md](CLAUDE.md) (Claude Code), then read
    `NAUQTYPE_COORDINATION.md` in this checkout's root. This is
    required even when the current task appears confined to this repository.
+   Its Roles table names the current lead; its Repositories table says
+   which neighboring repositories are active, dormant, or retired.
 2. Resolve the repository root from this `AGENTS.md` and verify it with
    `git rev-parse --show-toplevel`. Work only in the checkout or agent worktree
    assigned to this task, not a path remembered from another host. Keep host
@@ -120,6 +123,17 @@ Use model diversity deliberately:
   escalation cases above or when repository evidence demonstrates a measured
   audit-quality gain.
 
+Classify by what the milestone changes, not by what it touches. The only
+exemption: regenerated seed artifacts (the generated C seed, copied runtime,
+source snapshot, inventory, and checksum files) produced by the existing,
+unchanged machinery from a compiler change do not by themselves make a
+milestone a bootstrap-boundary milestone. Any change to bootstrap machinery or
+authority is a bootstrap-boundary change, including seed generation, the
+build/reconstruction path, source-inventory rules, seed or manifest format,
+promotion, provenance, cache, attestation, the runtime copied into the seed,
+or what the seed is trusted to establish (see `VERIFICATION.md`). When unsure,
+classify as bootstrap.
+
 Auditors must reach their own verdicts before seeing another auditor's
 conclusion. Do not silently substitute a different model or reasoning level;
 record an unavailable-model fallback in the milestone evidence and preserve
@@ -156,6 +170,16 @@ results rather than copying the full conversation or unbounded logs.
 
 Report exact commands, outcomes, and skipped gates. Convert discovered
 composition bugs into focused fixtures before closing a milestone.
+
+## Status Document Hygiene
+
+`ROADMAP.md` (Current Position and milestone status), the top of `TODO.md`,
+and the dated notes in `NAUQTYPE_COORDINATION.md` are what every new agent
+reads first. Keep each milestone's entry there to a short status line or
+paragraph plus a link. Exact tree hashes, attestation digests, timings, RSS
+figures, and audit narratives belong once, in `AUDIT_REMEDIATION.md` or the
+milestone's own contract/results document. Do not repeat them across status
+files.
 
 ## Nauqtype Mission Guardrails
 

@@ -1,0 +1,427 @@
+# Archived Coordination Ledger (to 2026-10-30)
+
+Archived 2026-10-31 when the multi-repository lanes ended (Libraries lead
+released, AI/ML workspace retired). The body below is `NAUQTYPE_COORDINATION.md`
+as committed in `e34d459`, with only relative links adjusted for this location.
+It is a dated record, not current status: see [NAUQTYPE_COORDINATION.md](../../NAUQTYPE_COORDINATION.md).
+
+---
+
+# NauqType Work Coordination
+
+Last live review: 2026-09-06.
+
+Compiler/tooling planning update: 2026-10-19. Gate efficiency is the first
+priority before M56. WSL Ubuntu base tools and the reviewed native compiler
+P0 baseline are verified: seven-phase cold gate 2520.62s, repeated checks
+304.23s/308.99s. `PERFORMANCE_BASELINE.md` records identities and scope;
+overall speedup acceptance remains open. E1 and the bounded P2 normalizer
+mapping slice are evidenced below, not full P1-P4 closure. The user assigned
+the guide-only authoring lane to the compiler lead with a Sol High Professor
+worker; its draft is staged separately and not yet integrated or evidenced.
+The nonpackaged [documentation refactor](../REFACTOR_PLAN.md) adds a
+[task/authority index](../README.md) and [compiler map](../COMPILER_MAP.md)
+while preserving executable inputs and the existing performance sequence.
+Its bounded R2/R3 source work is implemented, measured, independently audited,
+and accepted by one frozen executable gate. R4-R6's separate bounded
+implementation/retention candidate is now accepted by both independent final
+audits and its own fresh seven-phase Linux gate. R0-R6 maintenance is complete;
+the broader PRE-M56 efficiency campaign remains open and first priority.
+The exact reviewed P0/E1/P2 baseline is
+locally committed as `0564a32`, with verified P2 closing evidence. A separate
+R1 packaged README passed mixed trailing audits and its own fresh Linux
+milestone gate on the exact candidate recorded below. That documentation
+acceptance does not extend the earlier P2 attestation or complete the source
+refactor, performance campaign, stable release, or publication.
+This update does not refresh dated downstream evidence or recover the missing
+workspaces/documents listed below. The required read-only status snapshot on
+2026-10-19 found local Libraries changes; they remain outside this write set.
+
+PRE-M56 local candidate update,2026-10-19: measured P2/P3 indexing and
+redundant-transfer slices, exact80-source seed propagation and the reviewed
+seven-phase Linux gate pass on`1afea662cc62bc88914a295ed407c6ddeaf650aa`.
+Cold time1055.02s meets the>=50% reduction goal; focused0.75s meets10s.
+Complete warm128.52s still misses60s, without an owner waiver. Overall P1-P4
+acceptance and M56 remain held; no publication or consumer pin changes.
+The10-minute cold working target is also unmet. See
+[candidate gate evidence](../../AUDIT_REMEDIATION.md#pre-m56-p1-p4-functional-candidate).
+
+Earlier follow-up: exact 80-source/runtime seed propagation and original-builder
+reconstruction pass, followed by the reviewed frozen seven-phase native gate
+on `03a3b53c865b9bccfd6a372668a600e5c1239770`: 1011.04s / 520388 KiB,
+59.89% less than P0. Post-gate focused feedback passes in 0.64s and complete
+serial warm coverage in 100.58s after 154.38s population; all checks execute
+and all 23 fixture receipt bodies/metadata remain unchanged. Both seed
+comparisons, 12 proof phases and 44 corpus cases remain. This closes the P4
+functional slice, not overall P1-P4 performance acceptance: strict warm 60s
+and the 10min cold working target remain unmet. On 2026-10-21 the owner
+authorized the [opt-in concurrent local tier](../P1_CONCURRENT_WARM_CONTRACT.md).
+Both mixed Gate A reviews passed its descriptor-bound ownership, frozen
+resource quiescence and environment boundary; implementation/verification are
+in progress, not accepted timing evidence. Default/milestone/proof/release
+remain serial. M56, publication and downstream pin
+changes remained held at that freeze. The old `1afea66` attestation is not reused; see
+[current evidence](../../AUDIT_REMEDIATION.md#follow-up-frozen-gate-and-warm-results).
+
+Current compiler performance close,2026-10-21: reviewed frozen candidate
+`42999a5f31a8993b5ac8e38235ef5645d074af2d` passes both independent source
+audits and its own fresh seven-phase native gate/attestation in1055.50s,
+58.13% below P0. Focused0.85s and complete opt-in warm49.46s/46.82s meet the
+required10s/60s goals. All23 receipt bodies/inodes/mtimes and protected
+identities remain unchanged across warm repeats. The current compiler/C images
+also match after the cold rebuild; no redundant warm rerun is substituted
+for identity checks. Both seed comparisons,12 proof phases,44 corpus cases,
+copied Linux layout, stress, fresh fixtures and sanitizers remain green.
+
+This closes required P1-P4 acceptance and unblocks M56 planning, not M56
+implementation, stable release or publication. The10min cold working target
+remains unmet. Concurrent timing applies only to the explicit supported local
+mode; default/full-milestone/proof/release remain serial. See the
+[current completion record](../../AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
+The older pending statuses above are dated planning context, not current
+compiler acceptance. Downstream needs, missing workspaces, library evidence
+and consumer pins are not refreshed by this compiler-only close.
+
+M56 compiler-owned candidate,2026-10-23: explicit function/product/enum reuse
+is implemented for focused validation under `docs/M56_CONTRACT.md`. Workers
+own the bounded elaborator, owned fixtures, checked propagation repair and
+host compiler memory-profile slices; the lead owns integration and Linux
+verification. Mixed Gate A reviews pass. Generic-aware legacy evidence export
+is not implemented: these commands fail closed with NQ-GENERIC-008. Closing
+audits, exact seed/release composition and the final gate are still required.
+No library/AI-ML pin, API freeze or consumer adoption changes in this pass.
+
+M56 compiler close,2026-10-23: reviewed frozen tree
+`67272d00dd7d3e6cbb3945cc5777141148ff2cc1` passes the fresh seven-phase native
+Linux gate and strict attestation in1137.41s. Both seed comparisons,12 proof
+phases/45 corpus cases, actual generic composition through seed and relocated
+release, owned tests and sanitizers pass. Exact86-source seed and independent
+mixed source/repair audits are retained. This supersedes the pending M56
+candidate note above, not the older candidate-bound performance figures.
+Legacy evidence commands still reject generic graphs with NQ-GENERIC-008;
+versioned source/instance evidence is required before generic library adoption.
+M57 is not started. No consumer pin, library API freeze or stable release is
+implied. See [closing evidence](../../AUDIT_REMEDIATION.md#m56-generic-reuse-close).
+
+This is the canonical cross-repository ledger for active NauqType work. It
+records coordination state, not aspirational completion. Every Codex working
+on NauqType must load the `$nauqtype-work` skill and read this file before
+planning, editing, testing, auditing, committing, pushing, or handing off.
+
+## Active Workspaces
+
+| Workspace | Repository location | Owns |
+| --- | --- | --- |
+| NauqType | This checkout's root | Language, compiler, runtime, builtins, evidence schemas, workspace resolution, ABI/FFI, release machinery |
+| NQType Libraries | Separately configured `NQType-Libraries` checkout | General-purpose NauqType libraries, public APIs, examples, docs, and library tests |
+| NQType AI/ML | Separately configured `NQType-AI-ML` checkout | AI/ML shapes, tensors, reference algorithms, codecs, metrics, backend adapters, examples, docs, and tests |
+
+`Gemmi Nauqtype`, `NauqType-compiler-audit`, `NauqTypeAudit`, the tutorial,
+mounted Windows paths, and other snapshots are not active implementation roots
+unless the user explicitly assigns them.
+
+### Portable Locations
+
+Resolve the active root with `git rev-parse --show-toplevel`; paths in this
+repository's instructions are relative to that root unless stated otherwise.
+Keep machine-specific checkout and credential locations in untracked local
+configuration. Do not assume related repositories are siblings or use a
+remembered home directory to locate them. Verify each separately assigned
+checkout before claiming current consumer status; the dated evidence below
+does not establish that a workspace still exists on the current host.
+
+Historical candidate names in milestone reports are snapshot identifiers, not
+paths to available directories. Their original host-specific parent locations
+have been omitted from prose; recorded revisions, digests, measurements, and
+raw audit artifacts remain unchanged. Sanitizing documentation neither
+recovers missing local artifacts nor reruns historical verification. Git
+history is not rewritten by this cleanup.
+
+Checkout inventory on 2026-09-19: `AIMachineLearning_NEEDS.md`,
+`AIMachineLearning_UPSTREAM_RESPONSE.md`, and `TOOLING_STUDY.md` are absent
+from the recovered tracked tree. References below are historical pointers,
+not available local documents or fresh evidence of another lane's status.
+Recover or obtain them from their owners before relying on those records.
+
+### Shared Linux Verification
+
+[WSL_DEVELOPMENT.md](../../WSL_DEVELOPMENT.md) defines the local Codex/Kimi Code
+integration workflow. Ubuntu 24.04 now runs under WSL2 with a non-root user,
+GCC 13.3.0, Git, GNU time, and native ext4 home storage. Kimi's earlier
+`wsl.exe` access check does not establish a fresh Linux integration pass.
+The specific reviewed compiler P0 capture/cache and baseline are now verified
+in `PERFORMANCE_BASELINE.md`; library integration remains pending. No remote relay access,
+shared credentials, or agent permission changes are implied. Keep each
+repository owner's sources and compiler/dependency pins explicit.
+
+## Active Codex Roles
+
+| Codex | Owns | Current mode | Boundaries |
+| --- | --- | --- | --- |
+| Compiler Codex (director plus scoped workers) | Active compiler/runtime and compiler-owned proof/seed contracts | M55, required P1-P4 goals and M56 explicit generic foundation complete; M56 frozen gate/attestation1137.41s | Prior performance figures remain tied to `42999a5`. M56 legacy evidence rejects generic graphs until a separately versioned export exists; complete that contract before library adoption, then plan M57. No stable release, publication or consumer pin change is claimed. |
+| Tool Codex | Nauqtype developer and distribution tooling: package-management and registry design, dependency workflows, CLI ergonomics, build/test/format/lint/docs/editor/debug tooling, release packaging, installation, and toolchain version management | Study only as of 2026-09-04; inventory needs, research precedents, and propose staged contracts without implementation | Does not own language semantics, compiler/runtime internals, general libraries, or AI/ML libraries. Any required provider change follows the contract ledger, and implementation waits for explicit user authorization. |
+
+## Contract Ledger
+
+R4-R6 close (2026-10-19): borrowed driver assembly and separate dispatch
+preserve existing entrypoints, command/error boundaries, and caller-owned
+collections. Backend enum ownership is intentionally retained; C emission
+still consumes IR collections. Three proof wrappers share only identical
+argv/cwd construction, not publication or proof policy. All 82 focused
+compatibility cases and 11 C outputs match exactly; both independent source
+reviews passed. Two exact-input checks pass at 296.87s/297.02s, with an
+observed 2.54% wall increase and 0.40% higher maximum RSS over the older
+reference; this is maintenance, not a speedup claim. Exact self-generated
+74-source seed promotion and both final mixed audits passed. The one frozen
+seven-phase Linux gate passed in 2304.10s / 437820 KiB on indexed candidate
+`c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`, with 44 corpus cases and all 12
+proof phases. Verified attestation SHA-256:
+`f943b10e5069a105a35201dfd4894b5f1cf1344120088ded0f2f35cee36703ee`.
+Only TODO, roadmap, and coordination completion text changes afterward.
+This closes R0-R6 maintenance, not the performance campaign or M56-M61.
+See
+[execution contract](../R4_R6_CONTRACT.md) and
+[focused results](../R4_R6_RESULTS.md). No external checkout or pin changes.
+
+R2/R3 close (2026-10-19): phase-owned visibility ranges and two shared
+builtin-evidence tables preserve the existing public wrappers, runtime,
+schemas, and proof edges. The 37-row compatibility matrix and six C files
+match exactly; ordinary identical-input checks average 19.19% less wall time.
+The exact self-generated seed contains all 74 current source files. Both
+mixed audits passed, then one frozen seven-phase gate passed in 2290.24s /
+437956 KiB on indexed candidate `e77dc750af7a97d759700f83da9d56779a66115a`,
+including 44 corpus cases and all 12 proof phases. Verified attestation SHA-256:
+`f9b53accd56b088179052f2d91013f1914def073a1f0e73406bfac460b938f27`.
+Only allowlisted completion documents change afterward. This is not campaign
+closure, a controlled cold-gate speedup, a stable release, or a downstream
+pin migration. See
+[R2/R3 results](../R2_R3_RESULTS.md).
+
+R1 documentation checkpoint (2026-10-09): the packaged README and documentation
+routing passed independent gpt-5.6-sol xhigh and gpt-6-astra xhigh audits
+(explicit unavailable-GPT-5.5 fallback), followed by one fresh seven-phase
+Linux gate on indexed candidate
+`16b8e84271c5c3e4db20384c17977a102710395b`: 2507.89s, 437144 KiB peak RSS,
+44 corpus cases, verified attestation, and byte-identical copied README with
+valid packaged links. Only allowlisted completion documents change afterward.
+The baseline remains separately checkpointed in `0564a32`; no executable
+source, runtime, schema, or seed changed in R0/R1. R2/R3's later bounded source
+candidate has separate measurements above, not inherited acceptance from R1.
+No downstream workspace or consumer pin is changed.
+
+PRE-M56 P2 mapping (2026-10-04): compiler-owned private append-only sorted
+runs preserve the old structural normalizer result and early-exit boundary.
+The 36-pair oracle, actual owned invariants, sanitizers, complete-compiler
+measurements (25-26x comparison gain), and exact self-generated seed passed.
+Source SHA-256 is `6c161ecfcf254b602d4aa9199024f3e4890f2e7d26daba6f147b157af7bc379d`;
+seed C is `5221d8ab5c788140bea2a079b2a37bc2de6204c0939399bf328c6803d3f0bc08`.
+Both independent final audits passed, then the one cold seven-phase gate and
+matching attestation passed on candidate
+`36e68e791d3ec2bb3b068fbabd69894a01913803`: 2485.30s, 436232 KiB peak RSS,
+44 corpus cases. Total is 2.90% less than E1 and 1.40% less than P0; proof
+and compiler construction still dominate, and the campaign goals remain open.
+Comparison memory rises to 43948-44768 KiB versus 25940-26496 KiB reference.
+See `PERFORMANCE_MAPPING.md` and `ROADMAP.md`; this candidate evidence was
+checkpointed locally in `0564a32` on 2026-10-09. It is not publication,
+an external consumer pin, or full generics.
+Next compiler action is bounded compiler-scan attribution; no other repo
+is changed or unblocked by an inferred adoption claim.
+
+PRE-M56 E1 (2026-10-01): compiler-owned `str_join(parts: ref list<str>) -> str`
+is implemented/focused-evidenced under `PERFORMANCE_ENABLEMENT.md`: assembly
+batches improve 18.3x, while representative ~80s comparisons show no
+conclusive gain. Exact self-generated seed C is `73ee8c354d3241dbcce9da003708a8ff6b3c5e0e903fe8c425c3aad7e0ec55de`;
+source lock is `317fcc1aa4d2415493700e406ba41368d328043adfebbbdca7c74bd4991b5e2f`.
+It is the sole admitted performance-enabling builtin; full M56 generics and
+P1-P4 goals remain separate. Both independent final audits and the one cold
+seven-phase gate/attestation passed on indexed candidate
+`7a5a1a894537989c64ca59ce7803fd8d8c398781` (2559.57s, 436000 KiB peak RSS,
+44 corpus cases). The cold gate is not faster than P0. The implementation is
+content-locked/evidenced and now locally checkpointed in `0564a32`: no
+consumer pin migration, publication, or adoption is claimed. Next compiler-owned action is bounded
+P2 scan/mapping attribution and optimization, not full generics.
+
+| Request | Provider | Consumer | State | Current evidence and next action |
+| --- | --- | --- | --- | --- |
+| [NQTYPE_LIBRARIES_NEEDS.md](../../NQTYPE_LIBRARIES_NEEDS.md) | NauqType | NQType Libraries | Frozen upstream foundation | [NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md](../../NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md) records the M54 contracts. M54 is implemented at `93a43f9` with the locked `tests/fixtures/m54_library_dependency/` copied-release proof. |
+| [M55_CONTRACTS.md](../../M55_CONTRACTS.md) | NauqType | Future general process/time modules and applications | Frozen compiler contract in this checkpoint | Exact source SHA-256 `be878c88dca696269c4c565c5b7f22f5d883d41ab1299b929c22a3d863b4a217`; seed C `2ec30ab03c77d5b113eb414e18e5b4ba52c6217d9cf3283f938eea8b150c5084`. Owned start/wait/terminate, bounded capture, nominal time/deadlines, checked cleanup authority, and `tests/fixtures/m55_process/runtime.nq` pass the copied-release gate. Consumers must explicitly pin this compiler and migrate old workspace locks; no external consumer adoption is claimed. |
+| First six general-library modules | NQType Libraries | NauqType and NQType AI/ML | Frozen initial alpha revision | `src/text.nq`, `src/utf8.nq`, `src/num.nq`, `src/path.nq`, `src/stdio.nq`, and `src/env.nq` pass `scripts/check.sh` with both the source-checkout and copied-release M54 compilers. Public revision [`bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d`](https://github.com/Soulxlight/NQType-Libraries/commit/bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d) carries locked source hash `638bf061fde6a14b51ae2aa031a86308b38745293f4713ff67519a7481b8764d`. Consumers may pin that exact revision; APIs remain experimental across future revisions. |
+| [AIMachineLearning_NEEDS.md](../../AIMachineLearning_NEEDS.md) | NauqType | NQType AI/ML | Responded; A1 unblocked, numeric contracts scheduled/provisional | [AIMachineLearning_UPSTREAM_RESPONSE.md](../../AIMachineLearning_UPSTREAM_RESPONSE.md) accepts the product pressure, authorizes provisional A1 shape/error work now, and splits remaining work into AI-U1 scalar numerics, AI-U2 storage/bytes, AI-U3 math/codec/RNG, and AI-U4 integration proof. Public milestone numbers and numerical contracts are not frozen yet. |
+| AIML A1 shape/error groundwork | NQType AI/ML | Future AIML tensor work | Evidenced locally, not frozen | `NQType-AI-ML/src/shape.nq` now provides provisional checked dimensions, canonical row-major strides, layout, offsets, reshape, and closed errors; the locked source hash is `e0afabc92ca93d29948a06b269371d3850d10c4cf5eb92a8e5e10899f4f15e41`. `NQType-AI-ML/scripts/check.sh` passes library/formatter checks, a locked copied-workspace facts v3/review v2 build/run, and the generated program separately passed the address/leak sanitizer. The repository remains unborn, so review plus an exact revision are still required before freezing or consumption. No float or tensor-storage promise is implied. |
+| AIML scalar floats and math | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | `f32`/`f64`, conversions, IEEE policy, classification, bit conversion, and reference math are not implemented end to end. Compiler primitives come first; ordinary wrappers belong in NQType Libraries. |
+| AIML contiguous storage and binary codecs | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | Current `list<T>` is contiguous but append/read-oriented and allocation failure aborts. Recoverable fixed-size construction, indexed replacement, copy/fill, byte mutation/slicing, overflow rules, and later native-borrow rules remain open. General endian/dtype codecs belong in NQType Libraries. |
+| AIML deterministic RNG and entropy | NauqType, then NQType Libraries | NQType AI/ML | Blocked/requested | Seeded RNG needs versioned wrapping/bit operations or another frozen primitive. Seeded generation must remain pure. OS entropy is separate checked authority and must not be replaced by time-derived seeding. |
+| Locked `nauqtype.ai` integration fixture | NauqType | NQType AI/ML | Blocked | Add only after float, storage, codec, and deterministic RNG contracts are evidenced. It must prove library-only checking, facts/review provenance, source and copied-release build/run, deterministic numeric behavior, failures, and cleanup. |
+| [AUTHORING_KIT.md](../../AUTHORING_KIT.md) | Compiler lead owns guide-only integration; Sol High Professor worker stages the bounded draft | Human-supervised model authors | Guide-only work assigned 2026-10-04; not integrated/evidenced, grammar and pilot remain design | Compact repo-local onboarding skill and authoritative compiler/example references first, staged outside the frozen P2 candidate. Lead verifies before integration. No grammar/decoder/model call, savings claim, or pilot authorization; conditional M59 maintained-kit integration remains separate from M56. |
+| [PERFORMANCE_CHECKPOINT.md](../../PERFORMANCE_CHECKPOINT.md) | NauqType | Compiler developers and future M56 work | Required P1-P4 goals evidenced on frozen `42999a5` | New gate1055.50s/58.13% below P0; focused0.85s and complete opt-in warm49.46s/46.82s. Exact seed, mixed source audits and fresh attestation pass. The10min working target remains unmet; default/full/proof/release stay serial. M56 planning is unblocked, not implemented. No waiver, relaxed budget, publication or downstream adoption is implied. |
+
+## Completed Foundation
+
+- NauqType stage1 is self-hosted and has checked handoff, borrow checking, IR,
+  deterministic C emission, copied self-build proof, and Linux release gates.
+- M54 supplies exact `i64`, owned `bytes`, Linux streams/environment/cwd,
+  checked filesystem operations, stable structured `io_err` accessors, fixed IO
+  evidence subkinds, explicit locked local dependencies, facts v3 provenance,
+  library-only `check`, and a copied-release general-library fixture.
+- M55 adds Linux owned process handles, consuming wait, cancellation, bounded
+  capture, explicit environment/stdin, nominal duration/instant values, and
+  checked cleanup authority. The contract does not promise hard-real-time
+  deadlines, background pumping, or control of escaped descendants.
+- NQType Libraries has published byte-oriented text, explicit UTF-8, checked
+  integer parse/render, lexical Linux path, standard-stream, and
+  argument/environment/cwd modules at exact revision `bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d`.
+  That revision is frozen for pinned consumption; APIs remain experimental
+  across future revisions.
+- NQType AI/ML has an initialized provisional workspace, ownership rules, a
+  capability audit, an A0-A4 roadmap, and locally evidenced A1 shape/error
+  groundwork. No tensor or numeric API is frozen, and A1 has no published
+  revision yet.
+
+## Current Parallel Lanes
+
+### NauqType Compiler/Runtime
+
+- M56's compiler-owned explicit generic reuse foundation passes its own frozen
+  close, including exact seed/release composition. Required P1-P4 performance
+  goals remain bound to their earlier candidate. The next compiler contract is
+  versioned generic-aware evidence before library adoption, then M57 planning.
+  Later changes never inherit an earlier attestation.
+- M54.10 migration notice: the completed compiler rejects old dependency locks and
+  requires explicit `workspace-lock/v2` path/content framing. Published
+  Libraries revision `bed7bf6` and provisional AIML source are not changed.
+  Their owners must regenerate and evidence consumer locks before upgrading
+  to this compiler; existing M54-pinned compiler/source evidence remains
+  historical evidence, not proof of compatibility with the new lock contract.
+  See `WORKSPACE_LOCK.md` and `M54_10_CONTRACTS.md`. No external lock edits or
+  new numerical/AI APIs are authorized by this correction.
+- M54.8-M54.10 corrective closure is now evidenced: M54.10's independent
+  Sol xhigh/GPT-5.5 xhigh audits passed and the unchanged candidate passed all
+  seven gate phases plus real attestation in 2,716 seconds. Exact source,
+  seed, cache, proof, and release identities are in `M54_10_CONTRACTS.md`.
+  No external repository was modified. That checkpoint deferred interrupted
+  process read/wait handling (F14), now closed by M55 below.
+
+- M54.7 closes expression precedence, ordered matches, and C-name collisions,
+  including the sanitizer-discovered expression-arm binding leak. The seed
+  fixed point, 42-case corpus, Linux release, and nine ownership sanitizer
+  cases passed the one frozen-candidate gate after independent audit PASS.
+- M55 is complete: focused native fault/sanitizer and Nauqtype integration
+  checks, independent Sol max/GPT-5.5 xhigh audits, actual seed fixed point,
+  and the unchanged seven-phase milestone gate plus attestation all passed.
+  See [M55_CONTRACTS.md](../../M55_CONTRACTS.md) for exact signatures and lifecycle
+  limits; `AUDIT_REMEDIATION.md` records the 2,504-second gate and identities.
+  M56 is complete as recorded above. M54.8-M54.10 are closed;
+  the following intermediate notes are historical, not open corrective work.
+- M54.8a now shares strict source-contract validity across compilation and
+  evidence commands, with contract diagnostics emitted once per analyzed input
+  and checked-plan readiness.
+  All seven frozen-gate phases passed after the independent repair audit.
+  M54.8b still owns absent/partial evidence and versioned failure envelopes;
+  this is not blanket closure of the contract/evidence audit findings.
+- M54.8b1 now provides opt-in review v3 with checked-ID direct-write evidence
+  and absent/declared audit provenance. All 1,467 selfhost functions passed
+  the v3 smoke. Legacy review outputs remain unchanged; the parent corrective
+  milestone remains open for call summaries, validation, and failure evidence.
+- M54.8 final closure now supersedes those intermediate open items: checked
+  call summaries, review v4/change-report v3, evidence-error v1, bounded schema
+  enforcement, and F15 passed independent audits and the seven-phase gate.
+  See `M54_8_CONTRACTS.md` for frozen tree and artifact identities. This does
+  not freeze M54.9/M54.10 or change external dependency lock contracts yet.
+- M54.9 now closes integer/allocation findings F06/F13. Final Sol max and
+  GPT-5.5 xhigh reviews passed; the unchanged candidate passed all seven gate
+  phases in 2,048 seconds. See `M54_9_CONTRACTS.md` for arithmetic, allocation,
+  borrow-place repair, and exact seed/gate evidence. This changes no Libraries
+  or AIML implementation and does not yet close M54.10 provenance or M55/F14.
+- M54.5 development-loop efficiency is complete and evidenced: content-verified
+  stage1 caching, 44 corpus compiler passes in place of 114, audit-before-gate
+  close ordering, and quick/full CI tiers all passed the 2,132-second
+  exact-candidate milestone gate. This removes repeated development work but
+  did not materially reduce the 2,128-second cold baseline.
+- M54.6 is implemented and measured: function-local semantic slices, one
+  private borrow-child index, and one-pass visible-item origin lookup reduced
+  the same-host full-tree check from 349.76 seconds to repeat runs of 194.66
+  and 194.51 seconds with effectively unchanged peak RSS. The audited
+  exact-candidate milestone gate passed all seven phases in 1,517 seconds.
+  Public semantic, evidence, proof, and release contracts remain unchanged.
+- The AIML response now splits the numerical request into independently
+  evidenced AI-U1 through AI-U4 slices. Public milestone numbers still need to
+  be assigned before implementation begins.
+
+### Model Authoring (Planned)
+
+- `AUTHORING_KIT.md` records the accepted direction and the external Kimi
+  prototype's blockers. No kit code, model benchmark, or savings claim has
+  been adopted. Compiler source and checked evidence remain authoritative.
+- Assign an implementation owner and bounded write set before work begins.
+  Keep compiler/evidence contracts here and ordinary shared helpers in
+  NQType Libraries; do not revive Python orchestration in the active path.
+- A pilot needs separate data/spend authorization and isolated execution of
+  all generated programs, independent of their declared effects. No live
+  model call enters mandatory tests or replaces an audit.
+- M56's foundation is complete; generic-aware evidence precedes library adoption.
+  M59 is the conditional integration
+  home for authoring components with measured benefit; a failed experiment
+  does not block the stable Linux program.
+
+### NQType Libraries
+
+- Consumers may pin the published `text`, `utf8`, `num`, `path`, `stdio`, and
+  `env` foundation at `bed7bf65c9d6e78d13d27d69b9a8019f305a3f0d`.
+- Do not invent compiler/runtime primitives in this repository.
+- Add general math, binary codec, and deterministic RNG modules only after
+  their upstream primitives are frozen.
+
+### NQType AI/ML
+
+- A1 shape/error APIs are implemented and locally evidenced with provisional
+  `NqAi`-prefixed names over exact integers. Review and a published revision
+  remain before the contract can freeze.
+- Do not freeze tensor, float, storage, RNG, codec, or native-backend APIs
+  before the corresponding upstream response and executable evidence.
+- Start with a deterministic single-threaded CPU reference backend. Generics,
+  native acceleration, tasks, and GPU work remain later dependencies.
+
+### Tool Codex
+
+- [TOOLING_STUDY.md](../../TOOLING_STUDY.md) is the current study-only inventory and
+  staged recommendation for workspace tooling, package management, registries,
+  editor support, and toolchain/Linux distribution.
+- No tooling implementation is authorized yet. Proposed command names,
+  schemas, package rules, and provider requests remain provisional pending
+  review.
+- Tool Codex must not implement compiler/runtime prerequisites or library
+  functionality; those dependencies enter this ledger as requests to their
+  owning lanes.
+
+## Planned Dependency Order
+
+1. Preserve the M54.5/M54.6 development-loop and semantic-performance gains
+   without weakening cold release proof; close M54.7-M54.10 audit corrections
+   before adding feature surface.
+2. Publish the current NQType Libraries tranche while AIML reviews and
+   publishes its locally evidenced A1 shape groundwork.
+3. Complete M55 without treating time as entropy.
+4. Add scalar `f32`/`f64`, explicit conversions, IEEE behavior, and narrow math
+   primitives through every compiler/evidence/proof phase.
+5. Add recoverable contiguous numeric storage and mutable binary-byte support.
+6. Let NQType Libraries provide general math, endian codecs, and a versioned
+   deterministic RNG over those primitives.
+7. Let AIML build a provisional monomorphic `NqAiTensorF32` reference slice.
+8. Freeze the compiler-owned `nauqtype.ai` integration fixture.
+9. Continue M56 generics, M57 data facilities, M58 FFI, and M59 bounded tasks;
+   generalize and optimize AIML only when each dependency is evidenced.
+
+## Update Rules
+
+- Use `requested -> scheduled -> implemented -> evidenced -> frozen ->
+  consumed` consistently. Do not skip states in prose.
+- A needs file is not permission for a consumer to patch its provider.
+- The owner of an implementation supplies exact files, checks, revision/hash,
+  remaining risks, and whether APIs are provisional.
+- A provider response is not frozen until executable evidence exists.
+- Any NauqType Codex may propose a factual update to this ledger for work it
+  personally verified. It must not rewrite another owner's plan or completion
+  claim, and it must leave commit/push control with the compiler-repository
+  lead.
+- Preserve unrelated dirty work in every repository. Never use the historical
+  mounted Windows checkout as a source of current truth.

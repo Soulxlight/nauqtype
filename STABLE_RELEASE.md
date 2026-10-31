@@ -143,10 +143,25 @@ M52-M61 product sequence is not permission to skip a confirmed defect.
 - avoid traits, implicit constraints, overload resolution, and method-driven
   dispatch in the first form.
 
+### M56.1: Generic-Aware Facts And Review
+
+- version `facts` and `review` so generic templates and concrete instances
+  have truthful, origin-linked identities before generic libraries are adopted;
+- keep every other evidence command failing closed on generic graphs until a
+  real consumer needs it.
+
+### M56.2: Scalar `f64`
+
+- add one IEEE-754 binary64 type with explicit checked integer conversions and
+  deterministic text rendering/parsing, as the numeric prerequisite for JSON
+  and practical terminal tools;
+- keep `f32`, unsigned integers, and `char` deferred.
+
 ### M57: Collections And Data Interchange
 
 - build reusable map/set facilities on M56 with an explicit, checked key
-  strategy;
+  strategy, in an in-repo standard library shipped with the compiler and
+  copied release (owner decision, 2026-10-31);
 - add a complete deterministic JSON value/parser/writer module;
 - graduate helpers only through real terminal and application fixtures.
 

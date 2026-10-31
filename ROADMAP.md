@@ -2,102 +2,22 @@
 
 ## Current Position And Resumption
 
-M55, the required PRE-M56 P1-P4 efficiency goals, and M56 explicit generic
-reuse have recorded Linux acceptance. M56's reviewed frozen tree
-`67272d00dd7d3e6cbb3945cc5777141148ff2cc1` passes all seven milestone phases
-and strict attestation in1137.41s. The project remains an organizational
-alpha, not a v1.0 stable or feature-complete terminal/application language.
-M57-M61 below remain the release sequence; earlier sections retain milestone
-history. Use the [documentation guide](docs/README.md) for authoritative
-contracts rather than treating historical steps as current instructions.
+Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
+complete. Published `main` is `e34d459`. Complete through M56 explicit
+generic reuse, including the PRE-M56 P1-P4 performance checkpoint (full
+milestone gate about 19 minutes; the 10-minute cold working target remains
+unmet and open). Evidence for each milestone is in
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) and its contract documents.
 
-Reviewed frozen candidate `42999a5f31a8993b5ac8e38235ef5645d074af2d` passes
-the new native seven-phase gate in1055.50s/520116KiB,58.13% less elapsed time
-than P0's2520.62s. Focused feedback is0.85s. Two complete opt-in warm runs
-take49.46s/46.82s, with all23 fixture receipt bodies/inodes/mtimes unchanged.
-Both independent source-readiness audits pass; both seed comparisons,12 proof
-phases,44 corpus cases, copied Linux layout, stress, fresh fixtures and
-sanitizers remain. See the
-[current completion record](AUDIT_REMEDIATION.md#pre-m56-concurrent-warm-close).
-
-The warm result applies only to the owner-approved
-[concurrent local tier](docs/P1_CONCURRENT_WARM_CONTRACT.md) on its pinned
-supported WSL2/Ubuntu24.04 provider. Default/full-milestone/proof/release
-execution remains serial. No budget, coverage or strict60 waiver is involved.
-The10min cold working target remains unmet and is tracked separately from
-the required>=50% reduction. These measurements are observed historical
-comparisons, not randomized causal estimates or release certification.
-
-The [P1-P4 pre-close report](PERFORMANCE_P1_P4.md) preserves component and
-intermediate evidence. Earlier1055.02s/1011.04s cold and128.52s/100.58s warm
-observations remain bound to their older candidates in the completion ledger;
-they do not attest the new host scripts. Current completion supersedes the
-pre-close pending statuses without rewriting sealed evidence. No publication,
-stable release, M56 implementation or downstream pin change is claimed.
-
-The recorded M55 gate was 2,504 seconds, with about 91% in driver, seed
-bootstrap, and proof. The native P0 now establishes 92.4% in those phases;
-use the same-host costs before choosing an implementation.
-Keep focused checks during edits, trailing audits before acceptance, and one
-complete final gate on each reviewed candidate. Preserve current proof and
-provenance obligations while reducing repeated captures, scans, comparisons,
-and unnecessary value transfers. See
-[VERIFICATION.md](VERIFICATION.md) and
-[PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md).
-
-The useful Kimi authoring-kit direction is accepted as a staged evaluation
-plan in [AUTHORING_KIT.md](AUTHORING_KIT.md): compiler-checked teaching,
-optional constrained generation, and a controlled behavioral/cost comparison.
-The prototype is not adopted code. This optional lane can be evaluated before
-M59 after its corrections and separate authorization; it does not delay M56,
-weaken audits, add model decisions to the compiler, or change locked schemas.
-
-### Documentation And Refactor Checkpoint
-
-The 2026-10-09 [refactor program](docs/REFACTOR_PLAN.md) starts with a
-nonpackaged documentation foundation: a complete document index, descriptive
-compiler map, and corrections to stale current-status guidance. It preserves
-the incoming source/runtime/seed/schema/script/fixture/skill content and does
-not extend an earlier executable attestation.
-
-R2/R3 now implement the attributed visibility scan and one identical
-builtin-fact family; both independent audits and the reviewed seven-phase
-Linux executable acceptance passed on 2026-10-19.
-R4-R6 are accepted as bounded implementation/retention work under the
-[execution contract](docs/R4_R6_CONTRACT.md): borrowed driver assembly,
-separate dispatch, intentional canonical backend-type retention, and one
-shared proof invocation. Exact focused compatibility, both independent final
-audits, and one fresh seven-phase Linux acceptance passed on 2026-10-19.
-PRE-M56 efficiency stays first. The packaged README
-rewrite received its own reviewed executable close after the `0564a32`
-baseline checkpoint: both independent trailing audits passed, then all seven
-Linux milestone phases and 44 corpus cases passed on indexed candidate
-`16b8e84271c5c3e4db20384c17977a102710395b`. The one cold run took 2507.89s
-with 437144 KiB peak RSS; matching attestation and copied README checks
-passed. This is documentation acceptance, not a performance improvement,
-source cleanup, new feature milestone, stable release, or publication. The
-retained P2 attestation still applies only to its earlier candidate.
-
-A separate instrumented profile now attributes 19.72% of sampled CPU time
-to `typecheck::visible_item_origin`. R2's phase-owned immutable module-run
-index preserves resolution order, visibility, and old entrypoint identities;
-R3 retains facts/review wrappers around shared pure classifiers. Separate
-ordinary identical-input measurements show 19.19% less mean wall time, with
-matching output for the locked 37-row matrix. See
-[R2/R3 results](docs/R2_R3_RESULTS.md). The one frozen executable gate passed
-in 2290.24s / 437956 KiB on indexed candidate
-`e77dc750af7a97d759700f83da9d56779a66115a`, with 44 corpus cases and verified
-attestation; exact receipt identity is in TODO. This is candidate-specific
-acceptance, not a controlled cold-gate speedup or stable release. R4-R6's
-candidate has separate [focused results](docs/R4_R6_RESULTS.md). All 82
-compatibility rows and 11 C files match. Its frozen gate passed in 2304.10s /
-437820 KiB on indexed tree `c4eff216dae15edaf5bd03b7df5f5d1070d0bd5b`,
-including 44 corpus cases and all 12 proof phases; exact attestation is in
-TODO. Only the three selected completion documents change afterward.
-R0-R6 maintenance is complete, not the broader PRE-M56 campaign. The observed
-2.54% matched-check wall increase is disclosed, not presented as a speedup.
-Next work remains bounded efficiency work before M56, not a new language
-feature, stable-release claim, or inferred downstream adoption.
+Next: M56.1 generic-aware facts/review, then M56.2 scalar `f64`, then
+M57-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
+Earlier sections below retain milestone history; use the
+[documentation guide](docs/README.md) for authoritative contracts. The
+optional [authoring kit](AUTHORING_KIT.md) remains a staged evaluation, not
+adopted tooling. The longer status narrative that stood here until
+2026-10-30 is archived in
+[docs/history/STATUS_NARRATIVES_2026-10.md](docs/history/STATUS_NARRATIVES_2026-10.md).
 
 ## MVP Definition
 
@@ -1121,13 +1041,59 @@ Status: complete.
   composition through seed and relocated release, independent mixed source
   audits and the unchanged seven-phase Linux gate pass. The measured host-GCC
   memory-profile repair has a [separate contract](docs/M56_GCC_MEMORY_CONTRACT.md).
-- Next: version generic-aware source/instance evidence before adopting generic
-  libraries, then plan M57. No M57 implementation or new warm-speedup claim.
+- Next: M56.1 versions generic-aware evidence for `facts` and `review`, then
+  M56.2 adds scalar `f64`, then M57. No new warm-speedup claim.
+
+### M56.1: Generic-Aware Facts And Review
+
+Scheduled 2026-10-30 by the compiler lead with owner approval. Only the
+sequencing is approved; the bullets below are planning scope, and the binding
+terms are the [draft contract](docs/M56_1_CONTRACT.md) once it passes Gate A.
+
+- add new versioned `facts` and `review` formats that report a generic
+  template once at its source identity and each concrete instance as a
+  separate, origin-linked identity; existing formats keep rejecting generic
+  graphs with NQ-GENERIC-008 and do not change
+- design against a real consumer: the acceptance fixture is a provisional
+  generic map/set-shaped module (generic product plus generic functions over
+  `list<T>`) of the kind M57 will ship, not a synthetic toy
+- audit contracts (`mutates`, `effects`, `propagates`) stay declared once on
+  the template; evidence states which instance produced each inferred fact
+- `review-diff`, `change-report`, `policy-check`, and `refactor-rename` keep
+  failing closed on generic graphs; widen each only when a consumer needs it
+- no new syntax, inference, traits, or methods
+
+### M56.2: Scalar `f64`
+
+Scheduled 2026-10-30 by the compiler lead with owner approval. Only the
+sequencing is approved; the bullets below are planning pressure, not contract
+terms. Requires the `SYNTAX_IDENTITY.md` decision record and Gate A review
+before implementation.
+
+- pressure: M57 JSON numbers and terminal tools (ratios, durations,
+  measurements) need a floating-point value; no later milestone schedules one
+- add one `f64` primitive with a canonical literal form, IEEE-754 binary64
+  arithmetic and comparison, and explicit checked conversions to and from
+  `i32`/`i64`; no implicit widening, no suffix family
+- decide at Gate A: NaN equality/ordering in `match` and `==`, division by
+  zero, deterministic text rendering and parsing (needed by JSON), and C
+  emission flags that preserve IEEE behavior
+- full phase coverage: parse through C emission, facts/review type names,
+  formatter, diagnostics, teaching example plus negative case, corpus entry
+- `f32`, unsigned integers, `char`, and math libraries stay deferred; ordinary
+  math wrappers belong in the in-repo standard library planned with M57
 
 ### M57: Collections And Data Interchange
 
-- build reusable map/set facilities with an explicit checked key strategy
-- add deterministic general JSON values, parsing, and writing
+- build reusable map/set facilities with an explicit checked key strategy,
+  using M56 generics and reported through M56.1 evidence
+- reusable modules (collections, JSON, and later ones) live in an in-repo
+  standard library shipped and tested with the compiler and copied release,
+  not in a separate repository (owner decision, 2026-10-31); M57 defines its
+  layout, module identity, and lock/provenance treatment
+- add deterministic general JSON values, parsing, and writing; JSON numbers
+  map to exact `i64` where integral and M56.2 `f64` otherwise, by an explicit
+  documented rule
 
 ### M58: Native Library And Linux ABI Boundary
 

@@ -134,14 +134,18 @@ semantic completeness by itself.
 
 ## Direction
 
-M54.7-M54.10 corrections and M55 process/time are complete in the recorded
-Linux evidence. PRE-M56 gate efficiency remains the immediate priority;
-candidate-specific E1/P2 gains do not close the overall campaign goals. The
-[refactor program](docs/REFACTOR_PLAN.md) stages maintenance work around that
-priority, without claiming its proposed source changes have shipped.
+Milestones through M56 (including the PRE-M56 performance checkpoint and the
+R0-R6 [refactor program](docs/REFACTOR_PLAN.md)) are complete in the recorded
+Linux evidence. The current sequence is in
+[ROADMAP.md](ROADMAP.md#current-position-and-resumption).
 
 The product target is trustworthy Linux terminal and native application
 development, not feature parity with another language. Compiler/runtime
-changes stay here; general libraries and AI/ML algorithms have separate owners under
-[NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md). Apply
-[SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md) before any language widening.
+changes stay here. From M57 onward, reusable general-purpose modules
+(collections, JSON, and later ones) also live in this repository as an in-repo
+standard library shipped with the compiler; the separate NQType Libraries
+repository is dormant and the AI/ML lane is retired (see
+[NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md)). The narrow-runtime rule
+still applies: library modules are Nauqtype source over checked primitives,
+not new compiler builtins. Apply [SYNTAX_IDENTITY.md](SYNTAX_IDENTITY.md)
+before any language widening.

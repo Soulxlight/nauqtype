@@ -45,6 +45,14 @@ part of this documentation slice.
 
 ## Dispatch Rules
 
+Lead handoff on 2026-10-30: the owner assigned the compiler lead to a Claude
+Code session. The fit table above still describes task shape; a Claude lead
+maps it onto Claude subagents for workers (cheapest capable model for
+mechanical work, strongest for semantics/ownership/integration) and keeps the
+formal audit policy unchanged by dispatching independent auditors as
+read-only Codex threads. See [CLAUDE.md](CLAUDE.md). The lead's own model is
+never the sole independent auditor of its own integration.
+
 M56 on2026-10-23 uses `gpt-5.6-sol` high workers for disjoint generic
 elaboration, owned Nauqtype fixtures, checked propagation evidence repair and
 the bounded host compiler memory profile. Ownership transfers are explicit;
