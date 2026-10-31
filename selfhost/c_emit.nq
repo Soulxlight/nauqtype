@@ -848,6 +848,47 @@ fn list_literal_uses_element_type(expressions: ref list<ir_expr>, type_shapes: r
     return false;
 }
 
+// M57.1: the list_replace/list_pop helpers are emitted only for element types
+// that a call actually uses, so C for programs without them is unchanged.
+fn list_move_helpers_use_element_type(expressions: ref list<ir_expr>, type_shapes: ref list<ir_type_shape>, element_type_id: i32) -> bool {
+    let mut index = 0;
+    while index < list_len(ref expressions) {
+        let entry = list_get(ref expressions, index);
+        match entry {
+            Some(expr) => {
+                match expr.kind {
+                    ir_expr_call => {
+                        if expr.target_origin_module == "__builtin__" and (expr.target_name == "list_replace" or expr.target_name == "list_pop") {
+                            let shape_entry = lookup_type_shape(ref type_shapes, expr.type_id);
+                            match shape_entry {
+                                Some(shape) => {
+                                    match shape.kind {
+                                        checked_type_option => {
+                                            if shape.arg1_id == element_type_id {
+                                                return true;
+                                            }
+                                        },
+                                        _ => {
+                                        },
+                                    }
+                                },
+                                None => {
+                                },
+                            }
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
 fn is_runtime_native_result(type_shapes: ref list<ir_type_shape>, ok_type_id: i32, err_type_id: i32) -> bool {
     let ok_entry = lookup_type_shape(ref type_shapes, ok_type_id);
     let err_entry = lookup_type_shape(ref type_shapes, err_type_id);
@@ -1227,7 +1268,7 @@ fn emit_result_definition(lines: mutref list<str>, type_shapes: ref list<ir_type
     return;
 }
 
-fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32, include_from_array: bool) -> unit {
+fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32, include_from_array: bool, include_move_helpers: bool) -> unit {
     let type_name = list_type_name(ref type_shapes, element_type_id);
     let helper = list_helper_prefix(ref type_shapes, element_type_id);
     let option_type = option_type_name(ref type_shapes, element_type_id);
@@ -1275,7 +1316,40 @@ fn emit_list_definition(lines: mutref list<str>, type_shapes: ref list<ir_type_s
     }
     append_line(mutref lines, concat6("    return (", option_type, "){ .tag = ", concat3(option_type, "_Tag_Some", ""), ", .data.Some = { ._0 = ", str_concat(get_value, " } };")));
     append_line(mutref lines, "}");
+    if include_move_helpers {
+        emit_list_move_helpers(mutref lines, ref type_shapes, element_type_id, type_name, helper, option_type);
+    }
     append_line(mutref lines, "");
+    return;
+}
+
+// M57.1: list_replace moves the old element out (the result is its only
+// owner) or, on a bad index, drops the incoming value exactly once. list_pop
+// moves the last element out, so dropping the shortened list never reaches
+// it; capacity is kept. Both are O(1).
+fn emit_list_move_helpers(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, element_type_id: i32, type_name: str, helper: str, option_type: str) -> unit {
+    let element_c = c_type(ref type_shapes, element_type_id);
+    let none_value = concat5("(", option_type, "){ .tag = ", concat3(option_type, "_Tag_None", ""), ", .data.None = NQ_UNIT }");
+    let some_prefix = concat5("(", option_type, "){ .tag = ", concat3(option_type, "_Tag_Some", ""), ", .data.Some = { ._0 = ");
+    append_line(mutref lines, concat7("static inline ", option_type, " ", helper, "_replace(", type_name, concat3("* items, int32_t index, ", element_c, " value) {")));
+    append_line(mutref lines, "    if (index < 0 || index >= items->len) {");
+    let drop_value = drop_statement_text(ref type_shapes, element_type_id, "value");
+    if drop_value != "" {
+        append_line(mutref lines, str_concat("        ", drop_value));
+    }
+    append_line(mutref lines, concat3("        return ", none_value, ";"));
+    append_line(mutref lines, "    }");
+    append_line(mutref lines, concat3("    ", element_c, " old = items->data[index];"));
+    append_line(mutref lines, "    items->data[index] = value;");
+    append_line(mutref lines, concat3("    return ", some_prefix, "old } };"));
+    append_line(mutref lines, "}");
+    append_line(mutref lines, concat7("static inline ", option_type, " ", helper, "_pop(", type_name, "* items) {"));
+    append_line(mutref lines, "    if (items->len <= 0) {");
+    append_line(mutref lines, concat3("        return ", none_value, ";"));
+    append_line(mutref lines, "    }");
+    append_line(mutref lines, "    items->len -= 1;");
+    append_line(mutref lines, concat3("    return ", some_prefix, "items->data[items->len] } };"));
+    append_line(mutref lines, "}");
     return;
 }
 
@@ -1870,6 +1944,11 @@ fn call_arg_transfers_ownership(call: ir_expr, arg_index: i32) -> bool {
     if call.target_name == "list_push" and arg_index == 1 {
         return true;
     }
+    // M57.1: list_replace consumes its value argument; the helper either
+    // stores it or drops it exactly once.
+    if call.target_name == "list_replace" and arg_index == 2 {
+        return true;
+    }
     if builtin_call_name(call.target_name, call.target_origin_module) != "" {
         return false;
     }
@@ -2310,7 +2389,7 @@ fn emit_ordered_declarations(lines: mutref list<str>, type_shapes: ref list<ir_t
                 Some(value) => {
                     let key = list_key(ref type_shapes, value);
                     if not list_contains(ref emitted, key) and list_definition_dependencies_emitted(ref type_shapes, value, ref emitted) {
-                        emit_list_definition(mutref lines, ref type_shapes, value, list_literal_uses_element_type(ref expressions, ref type_shapes, value));
+                        emit_list_definition(mutref lines, ref type_shapes, value, list_literal_uses_element_type(ref expressions, ref type_shapes, value), list_move_helpers_use_element_type(ref expressions, ref type_shapes, value));
                         list_push(mutref emitted, key);
                         progressed = true;
                     }
@@ -2804,6 +2883,9 @@ fn builtin_call_name(name: str, origin_module: str) -> str {
     if name == "f64_from_i32" or name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "str_from_f64" or name == "f64_from_str" {
         return str_concat("nq_", name);
     }
+    if name == "i64_from_i32" or name == "i32_from_i64" {
+        return str_concat("nq_", name);
+    }
     return "";
 }
 
@@ -3205,6 +3287,10 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                                                         checked_type_str => {
                                                             return concat4("nq_str_eq(", left_text, ", ", str_concat(right_text, ")"));
                                                         },
+                                                        checked_type_named => {
+                                                            // M57.1: only payload-free enums reach here (typecheck NQ-TYPE-050).
+                                                            return concat5("((", left_text, ").tag == (", right_text, ").tag)");
+                                                        },
                                                         _ => {
                                                             return concat5("((", left_text, ") == (", right_text, "))");
                                                         },
@@ -3247,6 +3333,9 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                                                     match type_value.kind {
                                                         checked_type_str => {
                                                             return concat4("(!nq_str_eq(", left_text, ", ", str_concat(right_text, "))"));
+                                                        },
+                                                        checked_type_named => {
+                                                            return concat5("((", left_text, ").tag != (", right_text, ").tag)");
                                                         },
                                                         _ => {
                                                             return concat5("((", left_text, ") != (", right_text, "))");
@@ -3447,7 +3536,7 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                     let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let mut args = "";
                     let mut arg_index = 0;
-                    let is_list_call = expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or (expr.target_origin_module == "__builtin__" and expr.target_name == "str_join");
+                    let is_list_call = expr.target_origin_module == "__builtin__" and (expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or expr.target_name == "list_replace" or expr.target_name == "list_pop" or expr.target_name == "str_join");
                     while arg_index < list_len(ref child_ids) {
                         let child_entry = list_get(ref child_ids, arg_index);
                         match child_entry {
@@ -3473,7 +3562,10 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                     if builtin != "" {
                         return concat4(builtin, "(", args, ")");
                     }
-                    if expr.target_name == "list" {
+                    // M57.1 repair: list helpers serve only calls that resolve to
+                    // the builtins; a qualified user function of the same name
+                    // lowers to its own symbol below.
+                    if expr.target_origin_module == "__builtin__" and expr.target_name == "list" {
                         let list_type_id = unwrap_ref_type_id(ref type_shapes, expr.type_id);
                         let list_shape = lookup_type_shape(ref type_shapes, list_type_id);
                         match list_shape {
@@ -3484,7 +3576,7 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                             },
                         }
                     }
-                    if expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" {
+                    if expr.target_origin_module == "__builtin__" and (expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or expr.target_name == "list_replace" or expr.target_name == "list_pop") {
                         let first_child_entry = list_get(ref child_ids, 0);
                         match first_child_entry {
                             Some(first_child_id) => {
@@ -3502,6 +3594,12 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                                                 }
                                                 if expr.target_name == "list_len" {
                                                     return concat4(helper, "_len(", args, ")");
+                                                }
+                                                if expr.target_name == "list_replace" {
+                                                    return concat4(helper, "_replace(", args, ")");
+                                                }
+                                                if expr.target_name == "list_pop" {
+                                                    return concat4(helper, "_pop(", args, ")");
                                                 }
                                                 return concat4(helper, "_get(", args, ")");
                                             },
@@ -3804,11 +3902,11 @@ fn lower_expr_value(membership: ref c_emit_membership_index, lines: mutref list<
                     if builtin != "" {
                         call_text = concat4(builtin, "(", args, ")");
                     } else {
-                        if expr.target_name == "list" {
+                        if expr.target_origin_module == "__builtin__" and expr.target_name == "list" {
                             let list_shape = lookup_type_shape(ref type_shapes, unwrap_ref_type_id(ref type_shapes, expr.type_id));
                             match list_shape { Some(value) => { call_text = concat4(list_helper_prefix(ref type_shapes, value.arg1_id), "_make(", "", ")"); }, None => { } }
                         } else {
-                            if expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" {
+                            if expr.target_origin_module == "__builtin__" and (expr.target_name == "list_push" or expr.target_name == "list_len" or expr.target_name == "list_get" or expr.target_name == "list_replace" or expr.target_name == "list_pop") {
                                 let first_id = lookup_expr_child_id(ref membership, ref expr_children, expr.id, 0);
                                 let first_expr = lookup_expression(ref expressions, first_id);
                                 match first_expr {
@@ -3819,6 +3917,8 @@ fn lower_expr_value(membership: ref c_emit_membership_index, lines: mutref list<
                                                 let mut suffix = "_get";
                                                 if expr.target_name == "list_push" { suffix = "_push"; }
                                                 if expr.target_name == "list_len" { suffix = "_len"; }
+                                                if expr.target_name == "list_replace" { suffix = "_replace"; }
+                                                if expr.target_name == "list_pop" { suffix = "_pop"; }
                                                 call_text = concat4(list_helper_prefix(ref type_shapes, shape.arg1_id), suffix, "(", str_concat(args, ")"));
                                             },
                                             None => {
@@ -3972,6 +4072,11 @@ fn lower_expr_value(membership: ref c_emit_membership_index, lines: mutref list<
                                                 checked_type_str => {
                                                     value_text = concat4("nq_str_eq(", left_text, ", ", str_concat(right_text, ")"));
                                                     if is_inequality { value_text = concat3("(!", value_text, ")"); }
+                                                },
+                                                checked_type_named => {
+                                                    // M57.1: payload-free enum equality compares tags.
+                                                    if is_inequality { value_text = concat5("((", left_text, ").tag != (", right_text, ").tag)"); }
+                                                    else { value_text = concat5("((", left_text, ").tag == (", right_text, ").tag)"); }
                                                 },
                                                 _ => {
                                                 },
@@ -4465,6 +4570,78 @@ fn emit_match_stmt(membership: ref c_emit_membership_index, lines: mutref list<s
         },
     }
     return;
+}
+
+// M57.1 backstop for NQ-TYPE-051: a closed-domain statement match (user enum,
+// option, result) without a fallback must name every variant. Unreachable
+// from source once typecheck passes.
+fn ir_stmt_match_is_nonexhaustive(type_shapes: ref list<ir_type_shape>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, variant_decls: ref list<ir_variant_decl>, stmt: ir_stmt) -> bool {
+    let Some(scrutinee) = lookup_expression(ref expressions, stmt.expr_id) else { return false; };
+    let Some(shape) = lookup_type_shape(ref type_shapes, scrutinee.type_id) else { return false; };
+    let mut required: list<str> = list();
+    match shape.kind {
+        checked_type_option => {
+            list_push(mutref required, "Some");
+            list_push(mutref required, "None");
+        },
+        checked_type_result => {
+            list_push(mutref required, "Ok");
+            list_push(mutref required, "Err");
+        },
+        checked_type_named => {
+            for variant in variant_decls {
+                if variant.module_name == shape.origin_module and variant.enum_name == shape.name {
+                    list_push(mutref required, variant.name);
+                }
+            }
+        },
+        _ => {
+        },
+    }
+    if list_len(ref required) == 0 {
+        return false;
+    }
+    let arms = lookup_match_arms_for_stmt(ref match_arms, stmt.id);
+    if match_arms_have_refined(ref arms, ref patterns, ref pattern_children) or match_arms_have_default(ref arms, ref patterns) {
+        return false;
+    }
+    for name in required {
+        if not match_arms_include_variant(ref arms, ref patterns, name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// One pass over the checked IR before any function C is appended: the
+// returned statements are the non-covering closed statement matches.
+fn collect_nonexhaustive_stmt_matches(type_shapes: ref list<ir_type_shape>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, variant_decls: ref list<ir_variant_decl>) -> list<ir_stmt> {
+    let mut offenders: list<ir_stmt> = list();
+    for stmt in statements {
+        match stmt.kind {
+            ir_stmt_match => {
+                if ir_stmt_match_is_nonexhaustive(ref type_shapes, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref variant_decls, stmt) {
+                    list_push(mutref offenders, stmt);
+                }
+            },
+            _ => {
+            },
+        }
+    }
+    return offenders;
+}
+
+// Per-function preflight: report each offending match and suppress all C for
+// that function's definition.
+fn report_nonexhaustive_stmt_matches(offenders: ref list<ir_stmt>, function: ir_function, diags: mutref list<diag>) -> i32 {
+    let mut count = 0;
+    for stmt in offenders {
+        if stmt.function_id == function.id {
+            list_push(mutref diags, make_error("NQ-C-001", diag_c, function.module_name, stmt.at, stmt.at + 5, "internal: non-exhaustive statement match reached C emission"));
+            count = count + 1;
+        }
+    }
+    return count;
 }
 
 fn emit_ordered_match_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
@@ -5059,7 +5236,7 @@ fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, t
             let local_entry = lookup_local(ref locals, stmt.target_local_id);
             match local_entry {
                 Some(local_value) => {
-                    if local_value.is_ref_param {
+                    if local_value.is_ref_param and not local_value.ref_mutable {
                         push_c_error(mutref diags, "", stmt.at, "field assignment cannot target a ref parameter");
                     } else {
                         if stmt.field_name == "" {
@@ -5068,7 +5245,12 @@ fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, t
                             if stmt.type_id <= 0 {
                                 push_c_error(mutref diags, "", stmt.at, "field assignment is missing field type truth");
                             } else {
-                                let target = concat3(binding_name(local_value), ".", member_name(ref type_shapes, local_value.type_id, stmt.field_name));
+                                // M57.1: a `mutref` parameter writes through the borrow, `(*p).member`.
+                                let mut base = binding_name(local_value);
+                                if local_value.is_ref_param {
+                                    base = concat3("(*", base, ")");
+                                }
+                                let target = concat3(base, ".", member_name(ref type_shapes, local_value_type_id(ref type_shapes, local_value), stmt.field_name));
                                 emit_replace_expr_target(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.id, stmt.expr_id, stmt.type_id, target, level, mutref temp_index, mutref diags);
                             }
                         }
@@ -5282,11 +5464,13 @@ audit {
         append_line(mutref lines_out, "");
     }
 
+    let nonexhaustive_matches = collect_nonexhaustive_stmt_matches(ref type_shapes, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref variant_decls);
     function_index = 0;
     while function_index < list_len(ref functions) {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
+                if report_nonexhaustive_stmt_matches(ref nonexhaustive_matches, value, mutref diags) == 0 {
                 append_line(mutref lines_out, concat3(function_signature(ref membership, value, ref locals, ref type_shapes), " {", ""));
                 emit_function_prelude(ref membership, mutref lines_out, ref type_shapes, ref locals, value);
                 let return_cleanups: list<str> = list();
@@ -5295,6 +5479,7 @@ audit {
                 emit_function_final_cleanup(ref membership, mutref lines_out, ref type_shapes, ref locals, value);
                 append_line(mutref lines_out, "}");
                 append_line(mutref lines_out, "");
+                }
             },
             None => {
             },
@@ -5463,6 +5648,25 @@ audit { intent("Observe actual private C emission for independent membership pro
         emit_ordered_match_stmt(ref membership, mutref lines, ref shapes, ref locals, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref variants, ref payloads, function, ref cleanups, ref cleanups, ref arms, 2, "scrutinee", 0, mutref temp, mutref diags);
     }
     return;
+}
+
+pub fn c_emit_index_probe_direct_expr(membership: ref c_emit_membership_index, shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, diags: mutref list<diag>) -> str
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(diags); effects(); }
+{
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    return emit_expr(ref membership, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, expr_id, mutref diags);
+}
+
+pub fn c_emit_index_probe_ordered_expr(membership: ref c_emit_membership_index, shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, children: ref list<ir_expr_child>, expr_id: i32, lines: mutref list<str>, diags: mutref list<diag>) -> str
+audit { intent("Observe actual private C emission for independent membership probes"); mutates(lines, diags); effects(); }
+{
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let mut temp = 0;
+    return lower_expr_value(ref membership, mutref lines, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, expr_id, 1, mutref temp, mutref diags);
 }
 
 pub fn c_emit_index_probe_missing_child() -> bool

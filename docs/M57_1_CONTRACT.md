@@ -1,7 +1,7 @@
 # M57.1: Library-Enabling Core
 
 Status: Gate A passed, 2026-10-31 (revision 4, approved with no findings).
-Compiler lead. Not implemented. Base:
+Compiler lead. Implemented 2026-10-31; closing evidence in AUDIT_REMEDIATION. Base:
 `675819b`. Planning context: [M57 plan](M57_PLAN.md). The independent Gate A
 reviewer (gpt-5.6-sol xhigh) required changes on revision 1 (six blocking,
 two should-fix, one nit), revision 2 (four blocking, three should-fix,
@@ -439,6 +439,86 @@ merged tree.
   new rejects at `check`).
 - The full corpus and self-build pass (the compiler source compiles under
   the stricter rules).
+
+## Implementation Notes
+
+Deviations from this contract that the compiler lead accepted during
+implementation (also summarized in D068):
+
+1. NQ-RESOLVE-010 is narrowed to enum variants only. M55 Gate B deliberately
+   supports user functions named like builtins reached by qualified calls
+   (`tests/fixtures/m55_process/compiler_import_provider.nq`,
+   `selfhost/process_tests.nq`); an unqualified call reaches the builtin as
+   before. Top-level types, functions, enums and constants named like
+   builtins remain accepted.
+2. The forwarded-borrow kind is the receiving parameter's kind: a `mutref`
+   parameter forwarded to two `ref` parameters is accepted (two shared
+   borrows).
+3. A cross-module recursive cycle cannot exist, because import cycles are
+   NQ-IMPORT-002. The test covers one cycle in each of two modules, ordered
+   by checked module order.
+4. A zero-arm statement `match` over an empty enum was not accepted at
+   `675819b` (it fails with NQ-HANDOFF-002, because empty enums get no checked
+   declaration). M57.1 leaves that baseline unchanged and only guarantees that
+   no NQ-TYPE-051 is added.
+5. The `emit_expr` equality path is unreachable from source; enum tag
+   lowering on that path is covered by an IR probe
+   (`selfhost/c_emit_index_probe.nq`).
+6. Slice C integration choices:
+   - NQ-TYPE-050 spells a concrete generic instance the way source writes it
+     (`Pair<i32>`, `Holder<result<i32, str>>`, `Holder<Pair<bool>>`): the
+     module-free nominal name and the `", "` separator every other comparison
+     type uses, never the internal `__nqg_` name. Decoding the generated name
+     needs `use generic_names;` in `selfhost/typecheck.nq`, an import edge, not
+     a new module or an inventory change.
+   - facts and review, in every format, run the NQ-TYPE-052 check at the same
+     point `check` does (right after the checked handoff, non-generic graphs
+     only), so they report the identical diagnostic and location. Generic
+     graphs in facts/review v5 keep their previous behaviour.
+   - The legacy name-based projection also applies to `review-diff`, which
+     shares the review v1/v2 inference model.
+   - The teaching negatives are four files, not one. Later-phase codes are
+     only reported once earlier phases are clean, so
+     `tests/fixtures/m57_1_core/teaching_negative.nq` holds NQ-RESOLVE-010,
+     NQ-TYPE-051, NQ-TYPE-007 and NQ-TYPE-050, and the companion files
+     `teaching_negative_place.nq` (NQ-TYPE-012), `teaching_negative_layout.nq`
+     (NQ-TYPE-052) and `teaching_negative_borrow.nq` (NQ-BORROW-006) hold one
+     code each.
+7. Trailing-audit repairs (no rule above changes; these make the shipped
+   compiler match it):
+   - A qualified call `m::name(...)` never reaches a builtin, as note 1
+     requires, for every builtin name including `list`, `list_push`,
+     `list_len`, `list_get`, `list_replace`, `list_pop`, `str_join`,
+     `i64_from_i32` and `i32_from_i64`. The call-site arity check uses only the
+     qualified function or qualified variant (never an unqualified function,
+     variant or builtin of the same name), list-specific argument and result
+     inference applies only to unqualified calls that resolve to the builtin,
+     and C lowering selects a list helper only for a `__builtin__` target
+     origin.
+   - The nearest visible binding (type, `let mut`, `mutref`) is the visible
+     declaration with the greatest position before the use, independent of
+     whether either binding is annotated or inferred. Same-scope shadowing
+     stays NQ-RESOLVE-010, so this only concerns nested scopes. The type
+     checker selects by position, and it publishes each function's resolved
+     bindings in declaration order, so the checked handoff's statement,
+     field-assignment and borrow contexts (and every later phase) see the same
+     nearest binding.
+   - A parenthesized borrowed place (`mutref (bag.items)`, `ref (bag.count)`)
+     resolves its root binding after the same parenthesis normalization the
+     type checker uses, so it passes the checked handoff and takes part in the
+     root-based NQ-BORROW-006 rule.
+
+Where the tests live: slice tests in `selfhost/integer_policy_tests.nq`
+(`m57_1_a1_gate`, `m57b_gate`, `m57a2_gate`, the cross-slice `m57c_gate`, and
+the trailing-audit repair `m57r_gate`) with fixtures under
+`tests/fixtures/m57_1_core/{a1,a2,b,c,repair}/` (the direct `emit_expr` half
+of the qualified-call repair is an IR probe in
+`selfhost/c_emit_index_probe.nq`, part of `c_emit_membership_index_cases`);
+the mutation surface table and the field-write contract checks in
+`selfhost/contract_evidence_tests.nq`; the facts/review v5 goldens
+`tests/golden/schema_profile/{facts,review}-v5-m57-1.json` in
+`selfhost/m56_generics_tests.nq`; `examples/in_place_update.nq` in the locked
+proof corpus and formatter list.
 
 ## Acceptance Gate
 

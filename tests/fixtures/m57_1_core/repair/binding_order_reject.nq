@@ -1,0 +1,71 @@
+// M57.1 repair (F2): the nearest visible declaration decides mutability and
+// type, whether either declaration is annotated or inferred. Annotated locals
+// are recorded while parsing and inferred locals only while their
+// initializers are checked; list order must not act as lexical precedence.
+// Every write below targets an immutable shadow and is rejected (NQ-TYPE-007
+// and the field-assignment root rule), and the last function reads an
+// annotated `str` shadow as `str`. The `mutref` place writes (NQ-TYPE-012)
+// are in binding_order_reject_place.nq, because that check only reports once
+// assignment checks are clean.
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+// Annotated immutable inner shadows inferred `let mut` outer.
+fn inner_annotated() -> i32 {
+    let mut bag = Bag { items: [1], count: 0 };
+    let mut x = 0;
+    if true {
+        let bag: Bag = Bag { items: [2], count: 0 };
+        let x: i32 = 1;
+        x = 2;
+        bag.count = 3;
+    }
+    return x + bag.count;
+}
+
+// Inferred immutable inner shadows annotated `let mut` outer.
+fn inner_inferred() -> i32 {
+    let mut bag: Bag = Bag { items: [1], count: 0 };
+    let mut x: i32 = 0;
+    if true {
+        let bag = Bag { items: [2], count: 0 };
+        let x = 1;
+        x = 2;
+        bag.count = 3;
+    }
+    return x + bag.count;
+}
+
+// Two scopes deep: the annotated immutable middle binding is nearest.
+fn nested_annotated() -> i32 {
+    let mut bag = Bag { items: [1], count: 0 };
+    let mut x = 0;
+    if true {
+        let bag: Bag = Bag { items: [2], count: 0 };
+        let x: i32 = 1;
+        if true {
+            x = 2;
+            bag.count = 3;
+        }
+    }
+    return x + bag.count;
+}
+
+// Type lookup: the annotated `str` shadow, not the inferred i32 outer.
+fn shadow_type() -> i32 {
+    let mut n = 1;
+    n = n + 1;
+    if true {
+        let n: str = "text";
+        let m: i32 = n;
+        return m;
+    }
+    return n;
+}
+
+fn main() -> i32 {
+    return inner_annotated() + inner_inferred() + nested_annotated() + shadow_type();
+}

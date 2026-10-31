@@ -73,11 +73,24 @@ audit {
 ## Compiler Inference
 
 - Mutation validation uses checked binding identities for direct assignments,
-  `list_push`, and resolved local/imported calls. Argument mapping follows
-  canonical parameter indexes, including reordered named arguments.
+  field assignments through a `mutref` parameter (`p.field = value;`, M57.1),
+  `list_push`, `list_replace`, `list_pop`, and resolved local/imported calls.
+  A `mutref p.field...` argument is attributed to its root parameter `p`.
+  Argument mapping follows canonical parameter indexes, including reordered
+  named arguments.
 - A finite fixed point propagates parameter may-writes through recursive
   calls. Shadowing locals remain separate bindings. Owned-local field writes
   are outside the outward mutable-parameter contract.
+- M57.1 mutation shapes per surface (each surface keeps its inference model):
+
+  | Surface | Field assignment through `mutref p` | `mutref p.f` argument, `list_replace`, `list_pop` |
+  | --- | --- | --- |
+  | review v1/v2 and `review-diff` (legacy, name-based) | yes, only when the checked handoff proves the field write's root binding is a `mutref` parameter of that function | no |
+  | review v3 (direct writes only) | yes | no |
+  | review v4/v5 and contract validation in every command | yes | yes |
+
+  A shadowing owned local that shares a parameter's name is never projected
+  into the legacy name-based model.
 - `print` is inferred directly from `print_line(...)` / `eprint_line(...)` calls and transitively through checked calls.
 - `io` is inferred directly from authority-bearing argument, environment, cwd, stream, filesystem, and process builtins and transitively through checked calls.
 - Facts v2 and review v2 expose checked IO evidence in canonical order as `read`, `write`, `create_dir`, `process`, `arguments`, `environment`, `cwd`, `stdin`, `stdout`, `stderr`, `metadata`, `traversal`, `create_file`, `temporary`, `remove`, `rename`, and `atomic_replace`; these subkinds are descriptive evidence, not new audit atoms.
@@ -112,8 +125,9 @@ audit {
 It preserves the v2 identities and successful-output structure, but makes
 `evidence.audit` exactly `absent` for `audit: null`, otherwise `declared`.
 `inferred.mutates` now comes from checked assignment target/binding/parameter
-IDs, with names deduplicated in parameter-index order. A shadowing local is
-not the parameter it happens to share a name with.
+IDs (direct assignments and, since M57.1, field assignments through the
+parameter), with names deduplicated in parameter-index order. A shadowing
+local is not the parameter it happens to share a name with.
 
 Every v3 function has this fixed capability-level evidence:
 

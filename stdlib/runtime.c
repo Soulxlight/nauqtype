@@ -940,6 +940,39 @@ NQ_Option__str nq_list__str_get(const NQ_List__str* items, int32_t index) {
     };
 }
 
+/* M57.1: no clone and no reference-count change on either path except the
+ * single drop of a rejected value; the moved string keeps its one owner. */
+NQ_Option__str nq_list__str_replace(NQ_List__str* items, int32_t index, NQStr value) {
+    NQStr old;
+    if (index < 0 || index >= items->len) {
+        nq_str_drop(&value);
+        return (NQ_Option__str){
+            .tag = NQ_Option__str_Tag_None,
+            .data.None = NQ_UNIT,
+        };
+    }
+    old = items->data[index];
+    items->data[index] = value;
+    return (NQ_Option__str){
+        .tag = NQ_Option__str_Tag_Some,
+        .data.Some = { ._0 = old },
+    };
+}
+
+NQ_Option__str nq_list__str_pop(NQ_List__str* items) {
+    if (items->len <= 0) {
+        return (NQ_Option__str){
+            .tag = NQ_Option__str_Tag_None,
+            .data.None = NQ_UNIT,
+        };
+    }
+    items->len -= 1;
+    return (NQ_Option__str){
+        .tag = NQ_Option__str_Tag_Some,
+        .data.Some = { ._0 = items->data[items->len] },
+    };
+}
+
 void nq_list__str_drop(NQ_List__str* items) {
     int32_t index = 0;
     if (items == NULL) {
@@ -3361,6 +3394,25 @@ NQ_Option__i64 nq_f64_trunc_i64(double value) {
     }
     return (NQ_Option__i64){
         .tag = NQ_Option__i64_Tag_None,
+        .data.None = NQ_UNIT,
+    };
+}
+
+/* ---- Integer conversions (M57.1) ---------------------------------------- */
+
+int64_t nq_i64_from_i32(int32_t value) {
+    return (int64_t)value;
+}
+
+NQ_Option__i32 nq_i32_from_i64(int64_t value) {
+    if (value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX) {
+        return (NQ_Option__i32){
+            .tag = NQ_Option__i32_Tag_Some,
+            .data.Some = { ._0 = (int32_t)value },
+        };
+    }
+    return (NQ_Option__i32){
+        .tag = NQ_Option__i32_Tag_None,
         .data.None = NQ_UNIT,
     };
 }

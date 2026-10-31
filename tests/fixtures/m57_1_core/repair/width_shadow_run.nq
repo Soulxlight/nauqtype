@@ -1,0 +1,88 @@
+// M57.1 repair (F2, checked handoff): statement and field contexts come from
+// the nearest declaration, not from stored binding order. Each inner binding
+// shadows an outer one of a different product or integer width; a write
+// lowered with the outer binding's i32 context would wrap at 2^31. The owned
+// test runs this program and the same C under ASan/UBSan.
+
+type Narrow {
+    value: i32,
+}
+
+type Wide {
+    value: i64,
+}
+
+fn show(label: str, passed: bool) -> unit
+audit {
+    intent("Print one labeled check");
+    mutates();
+    effects(print);
+}
+{
+    if passed {
+        print_line(str_concat(label, " ok"));
+    } else {
+        print_line(str_concat(label, " WRONG"));
+    }
+    return;
+}
+
+// Annotated inner product shadows an inferred outer product.
+fn annotated_field() -> bool {
+    let mut p = Narrow { value: 0 };
+    p.value = 1;
+    if true {
+        let mut p: Wide = Wide { value: 0 };
+        p.value = 2147483647 + 1;
+        return p.value == 2147483648;
+    }
+    return false;
+}
+
+// Inferred inner product shadows an annotated outer product.
+fn inferred_field() -> bool {
+    let mut p: Narrow = Narrow { value: 0 };
+    p.value = 1;
+    if true {
+        let mut p = Wide { value: 0 };
+        p.value = 2147483647 + 1;
+        return p.value == 2147483648;
+    }
+    return false;
+}
+
+// Annotated inner i64 shadows an inferred outer i32.
+fn annotated_assign() -> bool {
+    let mut n = 0;
+    n = n + 1;
+    if true {
+        let mut n: i64 = 0;
+        n = 2147483647 + 1;
+        return n == 2147483648;
+    }
+    return false;
+}
+
+// Inferred inner i64 shadows an annotated outer i32.
+fn inferred_assign() -> bool {
+    let mut n: i32 = 0;
+    n = n + 1;
+    if true {
+        let wide: i64 = 0;
+        let mut n = wide;
+        n = 2147483647 + 1;
+        return n == 2147483648;
+    }
+    return false;
+}
+
+fn main() -> i32 {
+    show("annotated field", annotated_field());
+    show("inferred field", inferred_field());
+    show("annotated assign", annotated_assign());
+    show("inferred assign", inferred_assign());
+    if annotated_field() and inferred_field() and annotated_assign() and inferred_assign() {
+        return 0;
+    }
+    return 1;
+}

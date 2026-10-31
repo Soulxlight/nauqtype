@@ -401,6 +401,9 @@ fn is_builtin_name(name: str) -> bool {
     if name == "list" or name == "list_push" or name == "list_len" or name == "list_get" {
         return true;
     }
+    if name == "list_replace" or name == "list_pop" or name == "i64_from_i32" or name == "i32_from_i64" {
+        return true;
+    }
     if name == "Some" or name == "None" or name == "Ok" or name == "Err" {
         return true;
     }
@@ -1145,6 +1148,19 @@ audit {
                         item_enum => { push_diag(mutref diags, current.module, current.at, "process and time builtin type names cannot be redeclared"); },
                         _ => {},
                     }
+                }
+                // M57.1: an enum variant named like a builtin callable is
+                // unreachable (variants are referenced unqualified, and the
+                // builtin wins), so it is rejected. Top-level functions,
+                // types, enums and constants with builtin names stay legal:
+                // M55 reaches such user functions through qualified calls.
+                match current.kind {
+                    item_variant => {
+                        if is_builtin_name(current.name) {
+                            list_push(mutref diags, make_error("NQ-RESOLVE-010", diag_resolve, current.module, current.at, current.at + str_len(current.name), "builtin callable names cannot be redeclared"));
+                        }
+                    },
+                    _ => {},
                 }
                 let mut prev_index = 0;
                 while prev_index < item_index {

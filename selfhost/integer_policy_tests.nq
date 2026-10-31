@@ -891,6 +891,165 @@ fn f64_runtime_gate(driver: str) -> bool {
     return ok;
 }
 
+// ---------------------------------------------------------------------------
+// M57.1 slice B: list_replace, list_pop, i64_from_i32 and i32_from_i64 end to
+// end (driver run, emitted C, and the same C under ASan/UBSan with leak
+// detection, so every ownership transfer must have exactly one owner), the
+// forwarded-borrow conflict repair (NQ-BORROW-006), and the builtins' front-end
+// diagnostics with exact spans.
+// ---------------------------------------------------------------------------
+
+fn m57b_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m57_1_core/b/", name);
+}
+
+fn m57b_output(name: str) -> str {
+    return str_concat("build/m57_1_b/", name);
+}
+
+fn m57b_c_text_count(label: str, generated: str, needle: str, expected: i32) -> bool {
+    let actual = integer_policy_count(generated, needle);
+    if actual == expected { return true; }
+    eprint_line(concat5("M57.1 builtins: ", label, " expected ", i32_to_str(expected), concat4(" of `", needle, "`, found ", i32_to_str(actual))));
+    return false;
+}
+
+fn m57b_c_text_present(label: str, generated: str, needle: str) -> bool {
+    if integer_policy_count(generated, needle) > 0 { return true; }
+    eprint_line(concat4("M57.1 builtins: ", label, " is missing ", needle));
+    return false;
+}
+
+// The emitted C calls the runtime-native list<str> helpers and the runtime
+// integer conversions, defines the move helpers once per used element type,
+// drops a rejected list_replace value inside the helper, and never redeclares
+// a runtime carrier.
+fn m57b_emitted_c_text() -> bool {
+    match read_file(m57b_output("list_builtins.c")) {
+        Ok(generated) => {
+            let label = "list_builtins.c";
+            for needle in ["nq_list__str_replace(&", "nq_list__str_pop(&", "nq_i32_from_i64(", "nq_i64_from_i32(", "nq_list__i32_replace(&", "nq_list__i32_pop(&", "nq_list__list__i32_replace(&", "nq_list__list__i32_pop(&"] {
+                if not m57b_c_text_present(label, generated, needle) { return false; }
+            }
+            if not m57b_c_text_count(label, generated, "static inline NQ_Option__i32 nq_list__i32_replace(NQ_List__i32* items, int32_t index, int32_t value) {", 1) { return false; }
+            if not m57b_c_text_count(label, generated, "static inline NQ_Option__i32 nq_list__i32_pop(NQ_List__i32* items) {", 1) { return false; }
+            if not m57b_c_text_count(label, generated, "static inline NQ_Option__list__i32 nq_list__list__i32_replace(NQ_List__list__i32* items, int32_t index, NQ_List__i32 value) {", 1) { return false; }
+            if not m57b_c_text_count(label, generated, "        nq_value__list__i32_drop(&value);\n", 1) { return false; }
+            if not m57b_c_text_count(label, generated, "nq_list__str_replace(NQ_List__str", 0) { return false; }
+            if not m57b_c_text_count(label, generated, "nq_list__str_pop(NQ_List__str", 0) { return false; }
+            return m57b_c_text_count(label, generated, "typedef struct NQ_Option__i32 ", 0);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+// A program with lists but no list_replace/list_pop keeps its previous C: no
+// move helper is emitted for an element type no call uses.
+fn m57b_unused_helpers(driver: str) -> bool {
+    let source = m57b_output("plain_lists.nq");
+    let output = m57b_output("plain_lists.c");
+    if not f64_write(source, "fn main() -> i32 {\n    let mut rows: list<list<i32>> = list();\n    list_push(mutref rows, [1, 2]);\n    let mut words: list<str> = [\"a\"];\n    list_push(mutref words, \"b\");\n    return list_len(ref rows) + list_len(ref words);\n}\n") { return false; }
+    let args = ["emit-c", source, "-o", output];
+    if not f64_rt_exact("emit plain_lists", run_process(driver, ref args, "."), 0, "", "") { return false; }
+    match read_file(output) {
+        Ok(generated) => {
+            if not m57b_c_text_count("plain_lists.c", generated, "_replace(", 0) { return false; }
+            return m57b_c_text_count("plain_lists.c", generated, "_pop(", 0);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m57b_runtime_cases(driver: str) -> bool {
+    let Ok(expected) = read_file(m57b_fixture("list_builtins.expected")) else { eprint_line("M57.1 builtins: missing list_builtins.expected"); return false; };
+    let fixture = m57b_fixture("list_builtins.nq");
+    let run_args = ["run", fixture];
+    if not f64_rt_exact("nauqc run list_builtins", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let source = m57b_output("list_builtins.c");
+    let emit_args = ["emit-c", fixture, "-o", source];
+    if not f64_rt_exact("emit list_builtins", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    if not m57b_emitted_c_text() { return false; }
+    let output = m57b_output("list_builtins-asan-ubsan");
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", source, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(source, output, ref args, "runtime-h", "build/m57_1_b/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M57.1 builtins: sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    if not f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "") { return false; }
+    return m57b_unused_helpers(driver);
+}
+
+// Each `bad_*` function reports one NQ-BORROW-006 at its call; the `ok_*`
+// functions (two shared forwards, a mutable borrow forwarded to two shared
+// parameters, distinct roots) report nothing.
+fn m57b_borrow_conflicts(driver: str) -> bool {
+    match f64_run_check(driver, m57b_fixture("borrow_conflicts.nq"), true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let mut ok = status.exit_code == 1 and status.stderr == "";
+            ok = ok and integer_policy_count(output, "\"code\":") == 4;
+            ok = ok and integer_policy_count(output, "\"code\": \"NQ-BORROW-006\"") == 4;
+            ok = ok and integer_policy_count(output, "\"message\": \"conflicting borrows of `items` in one call\",") == 4;
+            ok = ok and integer_policy_count(output, str_concat("\"start\": ", integer_policy_location(1016, 40, 5))) == 1;
+            ok = ok and integer_policy_count(output, str_concat("\"start\": ", integer_policy_location(1237, 51, 5))) == 1;
+            ok = ok and integer_policy_count(output, str_concat("\"start\": ", integer_policy_location(1464, 62, 5))) == 1;
+            ok = ok and integer_policy_count(output, str_concat("\"start\": ", integer_policy_location(1686, 73, 5))) == 1;
+            ok = ok and not text_contains(output, "NQ-INTERNAL-");
+            if ok { return true; }
+            return f64_report("M57.1 forwarded borrow conflicts", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m57b_front_end_cases(driver: str, directory: str) -> bool {
+    let mismatch = "call argument type does not match parameter type";
+    let replace_type = f64_main("    let mut xs = [1];\n    let probe = list_replace(mutref xs, 0, \"s\");");
+    if not f64_rejects(driver, directory, "m57b_replace_type", replace_type, "NQ-TYPE-042", mismatch, "list_replace(", 1) { return false; }
+    let replace_index = f64_main("    let mut xs = [1];\n    let wide = i64_from_i32(0);\n    let probe = list_replace(mutref xs, wide, 2);");
+    if not f64_rejects(driver, directory, "m57b_replace_index", replace_index, "NQ-TYPE-042", mismatch, "list_replace(", 1) { return false; }
+    let narrow = f64_main("    let narrow = 3;\n    let probe = i32_from_i64(narrow);");
+    if not f64_rejects(driver, directory, "m57b_narrow_arg", narrow, "NQ-TYPE-042", mismatch, "i32_from_i64(", 1) { return false; }
+    let widen = f64_main("    let probe: i32 = i64_from_i32(1);");
+    if not f64_rejects(driver, directory, "m57b_widen_result", widen, "NQ-TYPE-042", "annotated local initializer does not match declared type", "i64_from_i32(1)", 15) { return false; }
+    let arity = f64_main("    let mut xs = [1];\n    let probe = list_pop(mutref xs, 1);");
+    if not f64_rejects(driver, directory, "m57b_pop_arity", arity, "NQ-TYPE-042", "call argument count does not match target signature", "list_pop(", 1) { return false; }
+    let shared = f64_main("    let mut xs = [1];\n    let probe = list_pop(ref xs);");
+    if not f64_rejects(driver, directory, "m57b_pop_ref", shared, "NQ-TYPE-042", "mutable borrow parameter requires explicit `mutref` or an existing mutable borrowed binding", "ref xs", 1) { return false; }
+    let owned_arg = f64_main("    let xs = [1];\n    let probe = list_pop(xs);");
+    if not f64_rejects(driver, directory, "m57b_pop_owned", owned_arg, "NQ-TYPE-042", "borrow parameter requires explicit `ref` or an existing borrowed binding", "xs);", 1) { return false; }
+    // list_get still needs a copy element; list_pop and list_replace move.
+    let get_move = f64_main("    let mut rows: list<list<i32>> = list();\n    let probe = list_get(ref rows, 0);");
+    let get_start = f64_find(get_move, "list_get(");
+    if not f64_rejects_with(driver, directory, "m57b_get_move_only", get_move, "NQ-TYPE-044", "list_get requires a copy element type", "Keep the element in the list or use a copy element type; borrowing or moving a non-copy list element is not supported yet.", get_start, get_start + 8) { return false; }
+    if not f64_accepts(driver, directory, "m57b_move_only_ok", f64_main("    let mut rows: list<list<i32>> = list();\n    let probe = list_pop(mutref rows);\n    let other = list_replace(mutref rows, 0, [1]);")) { return false; }
+    // Both builtins mutate argument 0: a forwarded mutref parameter needs mutates(...).
+    let contract_help = "Declare the checked direct or call-mediated parameter write in mutates(...).";
+    let contract_message = "`audit` omits mutated `mutref` parameter `items`";
+    let drain = "fn drain(items: mutref list<i32>) -> option<i32>\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n    return list_pop(items);\n}\n\nfn main() -> i32 {\n    let mut xs = [1];\n    let probe = drain(mutref xs);\n    return 0;\n}\n";
+    if not f64_rejects_with(driver, directory, "m57b_pop_mutates", drain, "NQ-CONTRACT-005", contract_message, contract_help, 3, 8) { return false; }
+    let swap = "fn swap(items: mutref list<str>, value: str) -> option<str>\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n    return list_replace(mutref items, 0, value);\n}\n\nfn main() -> i32 {\n    let mut xs: list<str> = list();\n    let probe = swap(mutref xs, \"a\");\n    return 0;\n}\n";
+    return f64_rejects_with(driver, directory, "m57b_replace_mutates", swap, "NQ-CONTRACT-005", contract_message, contract_help, 3, 7);
+}
+
+fn m57b_gate_impl(driver: str) -> bool {
+    if not m57b_runtime_cases(driver) { return false; }
+    if not m57b_borrow_conflicts(driver) { return false; }
+    let Ok(directory) = create_temp_dir("build", "m57-1-b-") else { eprint_line("M57.1 builtins: temporary directory refused"); return false; };
+    return m57b_front_end_cases(driver, directory);
+}
+
+fn m57b_gate(driver: str) -> bool {
+    let lock = "build/m57_1_b/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m57_1_b", lock) { eprint_line("M57.1 builtins: fixture gate lock refused"); return false; }
+    let ok = m57b_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M57.1 builtins: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
 fn integer_policy_gate_impl(driver: str) -> bool
 audit {
     intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
@@ -947,6 +1106,252 @@ audit {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// M57.1 slice A1: `mutref` field places, field assignment through a `mutref`
+// parameter, assignment mutability (NQ-TYPE-007) and builtin-name
+// reservation (NQ-RESOLVE-010). Front-end cases reuse the M56.2 exact
+// single-diagnostic helpers; the run fixture executes plain and under
+// ASan/UBSan through the fixture C gate.
+// ---------------------------------------------------------------------------
+
+fn a1_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m57_1_core/a1/", name);
+}
+
+fn a1_output(name: str) -> str {
+    return str_concat("build/m57_1_a1/", name);
+}
+
+fn a1_bag() -> str {
+    return "type Bag {\n    items: list<i32>,\n    count: i32,\n}\n\ntype Inner {\n    values: list<i32>,\n    count: i32,\n}\n\ntype Outer {\n    inner: Inner,\n}\n\n";
+}
+
+fn a1_bump() -> str {
+    return f64_function("bump(value: mutref i32) -> unit", "value", "    value = value + 1;\n    return;");
+}
+
+// One exact diagnostic at the first occurrence of `marker`, offset by `skip`
+// bytes, `width` bytes wide.
+fn a1_rejects(driver: str, directory: str, name: str, source: str, code: str, message: str, help: str, marker: str, skip: i32, width: i32) -> bool {
+    let found = f64_find(source, marker);
+    if found < 0 {
+        eprint_line(str_concat("M57.1 A1 case has no marker: ", name));
+        return false;
+    }
+    return f64_rejects_with(driver, directory, name, source, code, message, help, found + skip, found + skip + width);
+}
+
+fn a1_mutref_root_cases(driver: str, directory: str) -> bool {
+    let bag_message = "cannot take `mutref` of immutable binding `bag`";
+    let push = "    list_push(mutref bag.items, 1);\n    return;";
+    let ref_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: ref Bag) -> unit", "", push), f64_main("")));
+    if not a1_rejects(driver, directory, "mutref_root_ref_param", ref_param, "NQ-TYPE-012", bag_message, "", "mutref bag.items", 7, 3) { return false; }
+    let owned_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: Bag) -> unit", "", push), f64_main("")));
+    if not a1_rejects(driver, directory, "mutref_root_owned_param", owned_param, "NQ-TYPE-012", bag_message, "", "mutref bag.items", 7, 3) { return false; }
+    let local = str_concat(a1_bag(), f64_main("    let bag = Bag { items: list(), count: 0 };\n    list_push(mutref bag.items, 1);"));
+    if not a1_rejects(driver, directory, "mutref_root_immutable_local", local, "NQ-TYPE-012", bag_message, "", "mutref bag.items", 7, 3) { return false; }
+    let two_level = str_concat(a1_bag(), f64_main("    let outer = Outer { inner: Inner { values: list(), count: 0 } };\n    list_push(mutref outer.inner.values, 1);"));
+    if not a1_rejects(driver, directory, "mutref_root_two_level", two_level, "NQ-TYPE-012", "cannot take `mutref` of immutable binding `outer`", "", "mutref outer.inner", 7, 5) { return false; }
+    let shadowed = str_concat(a1_bag(), f64_main("    let mut bag = Bag { items: list(), count: 0 };\n    list_push(mutref bag.items, 1);\n    if bag.count == 0 {\n        let bag = Bag { items: list(), count: 1 };\n        list_push(mutref bag.items, 2);\n    }"));
+    if not a1_rejects(driver, directory, "mutref_root_shadowed", shadowed, "NQ-TYPE-012", bag_message, "", "mutref bag.items, 2", 7, 3) { return false; }
+    let n_message = "cannot take `mutref` of immutable binding `n`";
+    let for_binding = str_concat(a1_bump(), f64_main("    let numbers = [1, 2];\n    for n in numbers {\n        bump(mutref n);\n    }"));
+    if not a1_rejects(driver, directory, "mutref_root_for", for_binding, "NQ-TYPE-012", n_message, "", "mutref n)", 7, 1) { return false; }
+    let pattern = str_concat(a1_bump(), f64_main("    let maybe: option<i32> = Some(1);\n    match maybe {\n        Some(n) => { bump(mutref n); },\n        None => {},\n    }"));
+    if not a1_rejects(driver, directory, "mutref_root_pattern", pattern, "NQ-TYPE-012", n_message, "", "mutref n)", 7, 1) { return false; }
+    let let_else = str_concat(a1_bump(), f64_main("    let maybe: option<i32> = Some(1);\n    let Some(n) = maybe else { return 1; };\n    bump(mutref n);"));
+    return a1_rejects(driver, directory, "mutref_root_let_else", let_else, "NQ-TYPE-012", n_message, "", "mutref n)", 7, 1);
+}
+
+fn a1_assignment_cases(driver: str, directory: str) -> bool {
+    let x_message = "cannot assign to immutable binding `x`";
+    let let_help = "declare it with `let mut x` to allow assignment";
+    let param_help = "parameters are immutable; take `mutref` to write through a borrow";
+    let pattern_help = "copy the value into a `let mut` local before assigning";
+    if not a1_rejects(driver, directory, "assign_let", f64_main("    let x = 1;\n    x = 2;"), "NQ-TYPE-007", x_message, let_help, "x = 2", 0, 1) { return false; }
+    let let_else = f64_main("    let maybe: option<i32> = Some(1);\n    let Some(x) = maybe else { return 1; };\n    x = 2;");
+    if not a1_rejects(driver, directory, "assign_let_else", let_else, "NQ-TYPE-007", x_message, let_help, "x = 2", 0, 1) { return false; }
+    let owned_param = str_concat(f64_function("probe(x: i32) -> unit", "", "    x = 2;\n    return;"), f64_main(""));
+    if not a1_rejects(driver, directory, "assign_owned_param", owned_param, "NQ-TYPE-007", x_message, param_help, "x = 2", 0, 1) { return false; }
+    let ref_param = str_concat(f64_function("probe(x: ref i32) -> unit", "", "    x = 2;\n    return;"), f64_main(""));
+    if not a1_rejects(driver, directory, "assign_ref_param", ref_param, "NQ-TYPE-007", x_message, param_help, "x = 2", 0, 1) { return false; }
+    let pattern = f64_main("    let maybe: option<i32> = Some(1);\n    match maybe {\n        Some(x) => { x = 2; },\n        None => {},\n    }");
+    if not a1_rejects(driver, directory, "assign_pattern", pattern, "NQ-TYPE-007", x_message, pattern_help, "x = 2", 0, 1) { return false; }
+    // A `let mut` shadowed by a plain `let` in an inner scope is immutable.
+    let shadowed = f64_main("    let mut x = 1;\n    x = 2;\n    if x > 0 {\n        let x = 3;\n        x = 4;\n    }");
+    if not a1_rejects(driver, directory, "assign_shadowed_immutable", shadowed, "NQ-TYPE-007", x_message, let_help, "x = 4", 0, 1) { return false; }
+    // `for` bindings keep their existing code and message, with no NQ-TYPE-007.
+    let for_binding = f64_main("    let numbers = [1, 2];\n    for x in numbers {\n        x = 3;\n    }");
+    if not a1_rejects(driver, directory, "assign_for_binding", for_binding, "NQ-TYPE-042", "`for` loop bindings are immutable", "", "x = 3", 0, 1) { return false; }
+    // The reverse shadow, a `mutref` parameter and a `let mut` local accept.
+    let accepted = str_concat(a1_bump(), f64_main("    let x = 1;\n    if x > 0 {\n        let mut x = 2;\n        x = 3;\n        bump(mutref x);\n    }\n    let mut y = x;\n    y = y + 1;"));
+    return f64_accepts(driver, directory, "assign_accepted", accepted);
+}
+
+fn a1_field_assignment_cases(driver: str, directory: str) -> bool {
+    let message = "field assignment requires an owned mutable local product binding";
+    let ref_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: ref Bag) -> unit", "", "    bag.count = 1;\n    return;"), f64_main("")));
+    if not a1_rejects(driver, directory, "field_assign_ref_param", ref_param, "NQ-TYPE-042", message, "", "bag.count = 1", 0, 1) { return false; }
+    let owned_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: Bag) -> unit", "", "    bag.count = 1;\n    return;"), f64_main("")));
+    if not a1_rejects(driver, directory, "field_assign_owned_param", owned_param, "NQ-TYPE-042", message, "", "bag.count = 1", 0, 1) { return false; }
+    let local = str_concat(a1_bag(), f64_main("    let bag = Bag { items: list(), count: 0 };\n    bag.count = 1;"));
+    if not a1_rejects(driver, directory, "field_assign_immutable_local", local, "NQ-TYPE-042", message, "", "bag.count = 1", 0, 1) { return false; }
+    let shadowed = str_concat(a1_bag(), f64_main("    let mut bag = Bag { items: list(), count: 0 };\n    bag.count = 1;\n    if bag.count > 0 {\n        let bag = Bag { items: list(), count: 2 };\n        bag.count = 3;\n    }"));
+    if not a1_rejects(driver, directory, "field_assign_shadowed", shadowed, "NQ-TYPE-042", message, "", "bag.count = 3", 0, 1) { return false; }
+    // Nested field paths stay rejected, also under a `mutref` parameter. The
+    // two existing parser fact collectors each report it (unchanged).
+    let nested = str_concat(a1_bag(), str_concat(f64_function("probe(outer: mutref Outer) -> unit", "outer", "    outer.inner.count = 1;\n    return;"), f64_main("")));
+    let nested_path = str_concat(directory, "/field_assign_nested.nq");
+    if not f64_write(nested_path, nested) { return false; }
+    match f64_run_check(driver, nested_path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let start = f64_find(nested, "outer.inner.count = 1");
+            let ok = status.exit_code == 1 and status.stderr == "" and integer_policy_count(output, "\"code\":") == 2
+                and integer_policy_count(output, "\"code\": \"NQ-PARSE-003\"") == 2
+                and integer_policy_count(output, "\"message\": \"nested field assignment is not supported in V1\",") == 2
+                and integer_policy_count(output, concat3("\"start\": { \"offset\": ", i32_to_str(start), ",")) == 2
+                and integer_policy_count(output, concat3("\"end\": { \"offset\": ", i32_to_str(start + 5), ",")) == 2;
+            if ok { return true; }
+            return f64_report("field_assign_nested", status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn a1_reserved_cases(driver: str, directory: str) -> bool {
+    // Only enum variants are reserved: a variant is always referenced
+    // unqualified, so one named like a builtin callable is unreachable.
+    let message = "builtin callable names cannot be redeclared";
+    let main = f64_main("");
+    let variant = str_concat("enum E {\n    Some(i32),\n    Other,\n}\n\n", main);
+    if not a1_rejects(driver, directory, "reserved_variant_some", variant, "NQ-RESOLVE-010", message, "", "Some(i32)", 0, 4) { return false; }
+    let builtin_variant = str_concat("enum Lookup {\n    Found,\n    read_file,\n}\n\n", main);
+    if not a1_rejects(driver, directory, "reserved_variant_function", builtin_variant, "NQ-RESOLVE-010", message, "", "read_file,", 0, 9) { return false; }
+    let print_variant = str_concat("enum Output {\n    print_line(str),\n    Quiet,\n}\n\n", main);
+    if not a1_rejects(driver, directory, "reserved_variant_print_line", print_variant, "NQ-RESOLVE-010", message, "", "print_line(str)", 0, 10) { return false; }
+    let constructor_variant = str_concat("enum Shape {\n    list,\n    Single,\n}\n\n", main);
+    if not a1_rejects(driver, directory, "reserved_variant_list", constructor_variant, "NQ-RESOLVE-010", message, "", "list,", 0, 4) { return false; }
+    // M57.1 slice C: the four builtins slice B added are reserved the same way.
+    let new_names = ["list_pop", "list_replace", "i64_from_i32", "i32_from_i64"];
+    for new_name in new_names {
+        let new_variant = str_concat(concat3("enum Edit {\n    Keep,\n    ", new_name, "(i32),\n}\n\n"), main);
+        if not a1_rejects(driver, directory, str_concat("reserved_variant_", new_name), new_variant, "NQ-RESOLVE-010", message, "", str_concat(new_name, "(i32)"), 0, str_len(new_name)) { return false; }
+    }
+    if not f64_accepts(driver, directory, "builtin_named_fn_list_pop", str_concat(f64_function("list_pop(value: i32) -> i32", "", "    return value;"), main)) { return false; }
+    // Top-level functions, types, enums and constants named like builtins
+    // stay accepted exactly as at 675819b (M55 reaches such functions through
+    // qualified calls), as do names that merely contain a builtin name.
+    if not f64_accepts(driver, directory, "builtin_named_fn_print_line", str_concat(f64_function("print_line(value: str) -> unit", "", "    return;"), main)) { return false; }
+    if not f64_accepts(driver, directory, "builtin_named_fn_str_concat", str_concat(f64_function("str_concat(left: str, right: str) -> str", "", "    return left;"), main)) { return false; }
+    if not f64_accepts(driver, directory, "builtin_named_fn_list", str_concat(f64_function("list() -> i32", "", "    return 0;"), main)) { return false; }
+    if not f64_accepts(driver, directory, "builtin_named_type", str_concat("type str_len {\n    value: i32,\n}\n\ntype path_metadata {\n    value: i32,\n}\n\n", main)) { return false; }
+    if not f64_accepts(driver, directory, "builtin_named_enum", str_concat("enum list_len {\n    Short,\n}\n\n", main)) { return false; }
+    if not f64_accepts(driver, directory, "builtin_named_const", str_concat("const list_get: i32 = 1;\n\n", main)) { return false; }
+    return f64_accepts(driver, directory, "reserved_neighbours", str_concat("type print_lines {\n    value: i32,\n}\n\nenum Maybe {\n    Something(i32),\n    Nothing,\n}\n\nconst list_size: i32 = 1;\n\n", main));
+}
+
+// Each compatibility fixture is accepted (or fails late) at 675819b and is
+// rejected at `check` now with the recorded code at the recorded name.
+fn a1_compat_case(driver: str, name: str, code: str, marker: str, count: i32) -> bool {
+    let path = a1_fixture(str_concat("compat/", name));
+    let Ok(source) = read_file(path) else { eprint_line(str_concat("M57.1 A1 compat fixture missing: ", path)); return false; };
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let start = f64_find(source, marker);
+            let ok = status.exit_code == 1 and status.stderr == "" and start >= 0
+                and integer_policy_count(output, "\"code\":") == count
+                and integer_policy_count(output, concat3("\"code\": \"", code, "\"")) == count
+                and integer_policy_count(output, concat3("\"start\": { \"offset\": ", i32_to_str(start), ",")) == 1
+                and not text_contains(output, "NQ-INTERNAL-");
+            if ok { return true; }
+            return f64_report(str_concat("compat ", name), status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn a1_compat_cases(driver: str) -> bool {
+    if not a1_compat_case(driver, "assign_immutable_let.nq", "NQ-TYPE-007", "total = total + 1", 1) { return false; }
+    if not a1_compat_case(driver, "assign_owned_param.nq", "NQ-TYPE-007", "value = value * 2", 1) { return false; }
+    return a1_compat_case(driver, "field_assign_shadowed.nq", "NQ-TYPE-042", "pair.right = 6", 1);
+}
+
+// Acceptance regressions: builtin-named top-level items keep their 675819b
+// behaviour (accepted; an unqualified call still reaches the builtin).
+fn a1_compat_accepts(driver: str, name: str, stdout: str) -> bool {
+    let path = a1_fixture(str_concat("compat/", name));
+    let check_args = ["check", path];
+    if not f64_rt_exact(str_concat("compat check ", name), run_process(driver, ref check_args, "."), 0, "", "") { return false; }
+    let run_args = ["run", path];
+    return f64_rt_exact(str_concat("compat run ", name), run_process(driver, ref run_args, "."), 0, stdout, "");
+}
+
+fn a1_reserved_compat_cases(driver: str) -> bool {
+    if not a1_compat_case(driver, "builtin_variant_some.nq", "NQ-RESOLVE-010", "Some(i32)", 1) { return false; }
+    if not a1_compat_accepts(driver, "builtin_fn_print_line.nq", "hello\n") { return false; }
+    return a1_compat_accepts(driver, "builtin_type_const.nq", "");
+}
+
+fn a1_expected(name: str) -> option<str> {
+    match read_file(a1_fixture(name)) {
+        Ok(text_value) => { return Some(text_value); },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+// The places fixture runs with exact output, its C keeps `ref` parameters
+// `const` and writes `mutref` fields through `(*p).member`, and the same C
+// runs clean under ASan/UBSan (the old `list` field is dropped exactly once).
+fn a1_places_run(driver: str) -> bool {
+    let Some(expected) = a1_expected("places_run.expected") else { return false; };
+    let source = a1_fixture("places_run.nq");
+    let run_args = ["run", source];
+    if not f64_rt_exact("nauqc run places_run", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let generated = a1_output("places_run.c");
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact("emit places_run", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    let Ok(text_value) = read_file(generated) else { eprint_line("places_run.c unreadable"); return false; };
+    // `ref` stays a const pointer; `mutref` field writes go through `(*p)`.
+    let shapes = ["nq_fn_places_urun_c_ccount_uof(const NQ_User__", "nq_fn_places_urun_c_cadd(NQ_User__","_bag).nqf_count = ", "_bag).nqf_items = ", "_bag).nqf_label = ", "_outer).nqf_total = ", "_box).nqf_value = "];
+    for needle in shapes {
+        if not text_contains(text_value, needle) {
+            eprint_line(str_concat("places_run.c lacks ", needle));
+            return false;
+        }
+    }
+    let output = a1_output("places_run-asan-ubsan");
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", generated, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(generated, output, ref args, "runtime-h", "build/m57_1_a1/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M57.1 A1 sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+fn m57_1_a1_gate_impl(driver: str) -> bool {
+    let Ok(directory) = create_temp_dir("build", "m57-1-a1-") else { eprint_line("M57.1 A1: temporary directory refused"); return false; };
+    if not a1_mutref_root_cases(driver, directory) { return false; }
+    if not a1_assignment_cases(driver, directory) { return false; }
+    if not a1_field_assignment_cases(driver, directory) { return false; }
+    if not a1_compat_cases(driver) { return false; }
+    if not a1_places_run(driver) { return false; }
+    if not a1_reserved_cases(driver, directory) { return false; }
+    return a1_reserved_compat_cases(driver);
+}
+
+fn m57_1_a1_gate(driver: str) -> bool {
+    let lock = "build/m57_1_a1/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m57_1_a1", lock) { eprint_line("M57.1 A1: fixture gate lock refused"); return false; }
+    let ok = m57_1_a1_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M57.1 A1: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
 pub fn run_integer_policy_gate(driver: str) -> bool
 audit {
     intent("Lock wrapping integer arithmetic, division diagnostics, C11 constant expressions, and dynamic evaluation order");
@@ -960,5 +1365,656 @@ audit {
     if not fixture_c_gate_end(lock) { eprint_line("integer policy: fixture gate lock release failed"); return false; }
     if not ok { return false; }
     if not f64_runtime_gate(driver) { eprint_line("integer policy: M56.2 f64 runtime cases failed"); return false; }
+    if not m57_1_a1_gate(driver) { eprint_line("integer policy: M57.1 places/assignment/reservation cases failed"); return false; }
+    if not m57b_gate(driver) { eprint_line("integer policy: M57.1 list and integer conversion builtin cases failed"); return false; }
+    if not m57a2_gate(driver) { eprint_line("integer policy: M57.1 comparison, statement match, and layout cases failed"); return false; }
+    if not m57c_gate(driver) { eprint_line("integer policy: M57.1 cross-slice field builtins, borrows, spelling, layout parity, and teaching cases failed"); return false; }
+    if not m57r_gate(driver) { eprint_line("integer policy: M57.1 repair qualified builtin names, binding order, and parenthesized places cases failed"); return false; }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// M57.1 slice A2: runtime comparison typing (NQ-TYPE-050), statement `match`
+// exhaustiveness (NQ-TYPE-051), and recursive layouts (NQ-TYPE-052). Each
+// rejection is pinned by its complete diagnostic digest (code, exact span,
+// message, help, order); accepted forms must check quietly.
+// ---------------------------------------------------------------------------
+
+fn m57a2_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m57_1_core/a2/", name);
+}
+
+fn m57a2_find_from(value: str, marker: str, from: i32) -> i32 {
+    let mut index = from;
+    while index + str_len(marker) <= str_len(value) {
+        if starts_with_at(value, index, marker) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+// The raw JSON text after `marker` up to the end of its line, without the
+// trailing comma.
+fn m57a2_field(value: str, marker: str, from: i32) -> str {
+    let start = m57a2_find_from(value, marker, from);
+    if start < 0 { return "?"; }
+    let begin = start + str_len(marker);
+    let mut stop = m57a2_find_from(value, "\n", begin);
+    if stop < 0 { stop = str_len(value); }
+    let mut raw = slice_text(value, begin, stop);
+    if str_ends_with(raw, ",") { raw = slice_text(raw, 0, str_len(raw) - 1); }
+    return raw;
+}
+
+fn m57a2_offset(value: str, marker: str, from: i32) -> str {
+    let start = m57a2_find_from(value, marker, from);
+    if start < 0 { return "?"; }
+    let begin = start + str_len(marker);
+    let stop = m57a2_find_from(value, ",", begin);
+    if stop < 0 { return "?"; }
+    return slice_text(value, begin, stop);
+}
+
+// One line per diagnostic, in output order: code|start|end|message|help.
+fn m57a2_digest(output: str) -> str {
+    let mut digest = "";
+    let mut cursor = m57a2_find_from(output, "\"code\": ", 0);
+    while cursor >= 0 {
+        let next = m57a2_find_from(output, "\"code\": ", cursor + 1);
+        let code = m57a2_field(output, "\"code\": ", cursor);
+        let mut start = m57a2_offset(output, "\"start\": { \"offset\": ", cursor);
+        let mut end = m57a2_offset(output, "\"end\": { \"offset\": ", cursor);
+        let no_span = m57a2_find_from(output, "\"span\": null", cursor);
+        if no_span >= 0 and (next < 0 or no_span < next) {
+            start = "-1";
+            end = "-1";
+        }
+        let message = m57a2_field(output, "\"message\": ", cursor);
+        let help = m57a2_field(output, "\"help\": ", cursor);
+        digest = str_concat(digest, concat6(code, "|", start, "|", end, concat5("|", message, "|", help, "\n")));
+        cursor = next;
+    }
+    return digest;
+}
+
+fn m57a2_entry(code: str, start: i32, end: i32, message: str, help: str) -> str {
+    let mut help_json = "null";
+    if help != "" { help_json = json_quote(help); }
+    return concat6(json_quote(code), "|", i32_to_str(start), "|", i32_to_str(end), concat5("|", json_quote(message), "|", help_json, "\n"));
+}
+
+fn m57a2_expect_digest(driver: str, label: str, path: str, expected: str) -> bool {
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            let actual = m57a2_digest(status.stdout);
+            if status.exit_code == 1 and status.stderr == "" and actual == expected { return true; }
+            eprint_line(str_concat("M57.1 A2 case failed: ", label));
+            eprint_line(str_concat("expected digest:\n", expected));
+            eprint_line(str_concat("actual digest:\n", actual));
+            return f64_report(label, status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m57a2_rejects(driver: str, directory: str, name: str, source: str, expected: str) -> bool {
+    let path = concat4(directory, "/", name, ".nq");
+    if not f64_write(path, source) { return false; }
+    return m57a2_expect_digest(driver, name, path, expected);
+}
+
+// A single diagnostic whose span is `width` bytes at the first `marker`, offset
+// by `skip` bytes into the marker.
+fn m57a2_rejects_one(driver: str, directory: str, name: str, source: str, code: str, message: str, help: str, marker: str, skip: i32, width: i32) -> bool {
+    let start = f64_find(source, marker);
+    if start < 0 {
+        eprint_line(str_concat("M57.1 A2 case has no marker: ", name));
+        return false;
+    }
+    return m57a2_rejects(driver, directory, name, source, m57a2_entry(code, start + skip, start + skip + width, message, help));
+}
+
+fn m57a2_program(declarations: str, body: str) -> str {
+    return str_concat(declarations, f64_main(body));
+}
+
+fn m57a2_comparison_cases(driver: str, directory: str) -> bool {
+    let enums = "enum Shape {\n    Dot,\n    Circle(i32),\n}\n\nenum Light {\n    Red,\n    Amber,\n}\n\ntype Point {\n    x: i32,\n}\n\n";
+    let accepted = "    let a = Red;\n    let b = Amber;\n    let s = \"x\";\n    let i: i64 = 2;\n    let f = 1.5;\n    if a == b or a != b or s == \"y\" or s != \"y\" or true == false or true != false { return 1; }\n    if i < 3 and i <= 3 and i > 1 and i >= 1 and f < 2.0 and f >= 1.0 and 1 < 2 { return 2; }";
+    if not f64_accepts(driver, directory, "m57a2_compare_accepted", m57a2_program(enums, accepted)) { return false; }
+    let generic = "enum Tag<T> {\n    First,\n    Second,\n}\n\n";
+    if not f64_accepts(driver, directory, "m57a2_compare_generic_enum", m57a2_program(generic, "    let a: Tag<i32> = First::<i32>;\n    let b: Tag<i32> = Second::<i32>;\n    if a == b or a != b { return 1; }")) { return false; }
+    let other = "compare the fields or elements individually";
+    let cases = [
+        "    let a = \"x\";\n    let probe = a < \"y\";",
+        "    let a = Dot;\n    let b = Circle(2);\n    let probe = a == b;",
+        "    let a = Point { x: 1 };\n    let b = Point { x: 2 };\n    let probe = a == b;",
+        "    let a: option<i32> = Some(1);\n    let b: option<i32> = None;\n    let probe = a != b;",
+        "    let a: list<i32> = list();\n    let b: list<i32> = list();\n    let probe = a == b;",
+        "    let probe = print_line(\"a\") == print_line(\"b\");",
+        "    let a = true;\n    let probe = a < false;",
+        "    let a = Red;\n    let probe = a <= Amber;",
+        "    let a: result<i32, str> = Ok(1);\n    let probe = a == a;",
+        "    let a = \"x\";\n    let probe = a >= \"y\";"
+    ];
+    let operators = ["<", "==", "==", "!=", "==", "==", "<", "<=", "==", ">="];
+    let types = ["str", "Shape", "Point", "option<i32>", "list<i32>", "unit", "bool", "Light", "result<i32, str>", "str"];
+    let helps = [
+        "compare text with a library function; `str` supports only `==` and `!=`",
+        "use `match` to compare variants with payloads",
+        other, other, other, other,
+        "`bool` supports only `==` and `!=`",
+        other, other,
+        "compare text with a library function; `str` supports only `==` and `!=`"
+    ];
+    let mut index = 0;
+    while index < list_len(ref cases) {
+        let body = f64_list_text(ref cases, index);
+        let op = f64_list_text(ref operators, index);
+        let source = m57a2_program(enums, body);
+        let marker = concat3(" ", op, " ");
+        let start = m57a2_find_from(source, marker, f64_find(source, "probe = ")) + 1;
+        let message = concat5("operator `", op, "` is not defined for type `", f64_list_text(ref types, index), "`");
+        if not m57a2_rejects(driver, directory, str_concat("m57a2_compare_rejected_", i32_to_str(index)), source, m57a2_entry("NQ-TYPE-050", start, start + str_len(op), message, f64_list_text(ref helps, index))) { return false; }
+        index = index + 1;
+    }
+    // Mismatch and process/time keep NQ-TYPE-042; NQ-TYPE-050 never joins them.
+    let mixed = m57a2_program("", "    let a = 1;\n    let s = \"x\";\n    let probe = a == s;");
+    let mixed_at = f64_find(mixed, "probe = ");
+    if not m57a2_rejects(driver, directory, "m57a2_compare_mismatch", mixed, m57a2_entry("NQ-TYPE-042", mixed_at, mixed_at + 1, "comparison operands must have matching types", "")) { return false; }
+    let timed = "fn same(left: duration, right: duration) -> bool {\n    return left == right;\n}\n\nfn odd(left: duration, right: i32) -> bool {\n    return left < right;\n}\n\n";
+    let timed_source = m57a2_program(timed, "");
+    let same_at = f64_find(timed_source, "return left ==");
+    let odd_at = f64_find(timed_source, "return left <");
+    let process_message = "process and time values do not support comparison operators";
+    let timed_expected = concat3(m57a2_entry("NQ-TYPE-042", same_at, same_at + 1, process_message, ""), m57a2_entry("NQ-TYPE-042", odd_at, odd_at + 1, "comparison operands must have matching types", ""), m57a2_entry("NQ-TYPE-042", odd_at, odd_at + 1, process_message, ""));
+    if not m57a2_rejects(driver, directory, "m57a2_compare_process_time", timed_source, timed_expected) { return false; }
+    // Constant comparisons keep their integer-only checker and message.
+    let constant = f64_const_source("const B: bool = \"a\" < \"b\";");
+    if not m57a2_rejects_one(driver, directory, "m57a2_compare_const", constant, "NQ-TYPE-042", "const comparison operand must have integer type", "", "B: bool", 0, 1) { return false; }
+    return f64_accepts(driver, directory, "m57a2_compare_const_ok", f64_const_source("const B: bool = 1 < 2;"));
+}
+
+fn f64_list_text(values: ref list<str>, index: i32) -> str {
+    match list_get(ref values, index) {
+        Some(value) => { return value; },
+        None => { return ""; },
+    }
+}
+
+fn m57a2_match_cases(driver: str, directory: str) -> bool {
+    let color = "enum Color {\n    Red,\n    Green,\n    Blue,\n}\n\n";
+    let help = "add an arm for each missing variant or a `_ => { ... }` fallback arm";
+    let enum_source = m57a2_program(color, "    let c = Red;\n    match c {\n        Green => {},\n    }");
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_enum", enum_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Red`, `Blue`", help, "match c", 0, 5) { return false; }
+    let option_source = m57a2_program("", "    let v: option<i32> = Some(1);\n    match v {\n        Some(x) => {},\n    }");
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_option", option_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `None`", help, "match v", 0, 5) { return false; }
+    let result_source = m57a2_program("", "    let r: result<i32, str> = Err(\"e\");\n    match r {\n        Err(e) => {},\n    }");
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_result", result_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Ok`", help, "match r", 0, 5) { return false; }
+    let zero_source = m57a2_program(color, "    let c = Blue;\n    match c {\n    }");
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_zero_arms", zero_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Red`, `Green`, `Blue`", help, "match c", 0, 5) { return false; }
+    // A function parameter scrutinee inside a non-main function.
+    let param_source = str_concat(color, "fn name(c: Color) -> i32 {\n    match c {\n        Red => { return 1; },\n        Blue => { return 3; },\n    }\n    return 0;\n}\n\nfn main() -> i32 {\n    return name(Green);\n}\n");
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_param", param_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Green`", help, "match c", 0, 5) { return false; }
+    // Exhaustive forms and fallbacks are unchanged.
+    let exhaustive = "    let c = Red;\n    match c {\n        Red => {},\n        Green => {},\n        Blue => {},\n    }\n    match c {\n        Red => {},\n        _ => {},\n    }\n    match c {\n        other => {},\n    }\n    let v: option<i32> = None;\n    match v {\n        Some(x) => {},\n        None => {},\n    }\n    let r: result<i32, str> = Ok(1);\n    match r {\n        Ok(x) => {},\n        Err(e) => {},\n    }";
+    if not f64_accepts(driver, directory, "m57a2_match_exhaustive", m57a2_program(color, exhaustive)) { return false; }
+    // Refined arms keep the existing refined-group rule (no NQ-TYPE-051).
+    let refined = "literal or nested constructor patterns require a wildcard or binding fallback arm";
+    let refined_source = m57a2_program("", "    let v: option<i32> = Some(1);\n    match v {\n        Some(1) => {},\n        None => {},\n    }");
+    let refined_at = f64_find(refined_source, "match v");
+    if not m57a2_rejects(driver, directory, "m57a2_match_refined", refined_source, m57a2_entry("NQ-TYPE-042", refined_at, refined_at + 1, refined, "")) { return false; }
+    let integer_source = m57a2_program("", "    let n = 2;\n    match n {\n        1 => {},\n    }");
+    let integer_at = f64_find(integer_source, "match n");
+    if not m57a2_rejects(driver, directory, "m57a2_match_integer", integer_source, m57a2_entry("NQ-TYPE-042", integer_at, integer_at + 1, refined, "")) { return false; }
+    // A zero-arm match over an empty enum has no missing variant. The empty
+    // enum itself still stops at the pre-existing value-plan limitation.
+    let empty_source = "enum Empty {\n}\n\nfn drain(e: Empty) -> i32 {\n    match e {\n    }\n    return 0;\n}\n\nfn main() -> i32 {\n    return 0;\n}\n";
+    if not m57a2_rejects(driver, directory, "m57a2_match_empty_enum", empty_source, m57a2_entry("NQ-HANDOFF-002", -1, -1, "stage1 value plan cannot classify named type `Empty`", "")) { return false; }
+    return true;
+}
+
+fn m57a2_layout_message(name: str, path: str) -> str {
+    return concat5("type `", name, "` contains itself through `", path, "`; recursive data layouts are not supported");
+}
+
+fn m57a2_layout_entry(source: str, marker: str, name: str, path: str) -> str {
+    let start = f64_find(source, marker) + str_len(marker) - str_len(name);
+    return m57a2_entry("NQ-TYPE-052", start, start + str_len(name), m57a2_layout_message(name, path), "store related values in a separate list and refer to them by index");
+}
+
+fn m57a2_layout_rejects(driver: str, directory: str, name: str, source: str, expected: str) -> bool {
+    return m57a2_rejects(driver, directory, name, source, expected);
+}
+
+fn m57a2_layout_cases(driver: str, directory: str) -> bool {
+    let self_source = m57a2_program("type Node {\n    value: i32,\n    next: Node,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_self", self_source, m57a2_layout_entry(self_source, "type Node", "Node", "Node -> Node")) { return false; }
+    let list_source = m57a2_program("type Json {\n    items: list<Json>,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_list", list_source, m57a2_layout_entry(list_source, "type Json", "Json", "Json -> Json")) { return false; }
+    let option_source = m57a2_program("type Chain {\n    next: option<Chain>,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_option", option_source, m57a2_layout_entry(option_source, "type Chain", "Chain", "Chain -> Chain")) { return false; }
+    let two_source = m57a2_program("type Tree {\n    branch: option<Branch>,\n}\n\nenum Branch {\n    Leaf,\n    Node(Tree),\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_two", two_source, m57a2_layout_entry(two_source, "type Tree", "Tree", "Tree -> Branch -> Tree")) { return false; }
+    // The representative is the earliest declaration, here the enum.
+    let enum_first = m57a2_program("enum Branch {\n    Leaf,\n    Node(Tree),\n}\n\ntype Tree {\n    branch: option<Branch>,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_enum_first", enum_first, m57a2_layout_entry(enum_first, "enum Branch", "Branch", "Branch -> Tree -> Branch")) { return false; }
+    // Two independent cycles: one diagnostic each, in declaration order.
+    let pair_source = m57a2_program("type Alpha {\n    again: list<Alpha>,\n}\n\ntype Plain {\n    value: i32,\n}\n\ntype Beta {\n    back: option<Gamma>,\n}\n\ntype Gamma {\n    forward: list<Beta>,\n}\n\n", "");
+    let pair_expected = str_concat(m57a2_layout_entry(pair_source, "type Alpha", "Alpha", "Alpha -> Alpha"), m57a2_layout_entry(pair_source, "type Beta", "Beta", "Beta -> Gamma -> Beta"));
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_two_cycles", pair_source, pair_expected) { return false; }
+    // Equally short cycles through result<Left, Right>: the first argument wins.
+    let tied_source = m57a2_program("type Root {\n    pick: result<Left, Right>,\n}\n\ntype Left {\n    back: list<Root>,\n}\n\ntype Right {\n    back: option<Root>,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_tied", tied_source, m57a2_layout_entry(tied_source, "type Root", "Root", "Root -> Left -> Root")) { return false; }
+    // Shortest cycle wins over an earlier but longer one.
+    let short_source = m57a2_program("type Hub {\n    long: list<Spoke>,\n    short: option<Hub>,\n}\n\ntype Spoke {\n    rim: list<Hub>,\n}\n\n", "");
+    if not m57a2_layout_rejects(driver, directory, "m57a2_layout_shortest", short_source, m57a2_layout_entry(short_source, "type Hub", "Hub", "Hub -> Hub")) { return false; }
+    // Cross-module: each module's cycle is reported in its own module, in
+    // checked module order (the imported module is checked first). A
+    // non-member reference adds nothing. Import cycles are rejected
+    // (NQ-IMPORT-002), so one cycle never spans two modules.
+    let helper = "pub type Loop {\n    next: list<Loop>,\n}\n";
+    if not f64_write(str_concat(directory, "/m57a2_layout_helper.nq"), helper) { return false; }
+    let main_source = m57a2_program("use m57a2_layout_helper;\n\ntype Holder {\n    loops: list<Loop>,\n}\n\ntype Own {\n    again: option<Own>,\n}\n\n", "");
+    let main_path = str_concat(directory, "/m57a2_layout_cross.nq");
+    if not f64_write(main_path, main_source) { return false; }
+    let cross_expected = str_concat(m57a2_layout_entry(helper, "pub type Loop", "Loop", "Loop -> Loop"), m57a2_layout_entry(main_source, "type Own", "Own", "Own -> Own"));
+    if not m57a2_expect_digest(driver, "m57a2_layout_cross", main_path, cross_expected) { return false; }
+    // Non-recursive containment is accepted.
+    if not f64_accepts(driver, directory, "m57a2_layout_acyclic", m57a2_program("type Leaf {\n    value: i32,\n}\n\ntype Bag {\n    items: list<Leaf>,\n    first: option<Leaf>,\n    pair: result<Leaf, str>,\n}\n\nenum Slot {\n    Empty,\n    Full(Bag),\n}\n\n", "")) { return false; }
+    // Graphs with generic declarations keep the NQ-GENERIC-005 path.
+    let generic_path = "tests/fixtures/m56_generics/data_cycle.nq";
+    match read_file(generic_path) {
+        Ok(generic_source) => {
+            let generic_at = f64_find(generic_source, "Cycle");
+            if not m57a2_expect_digest(driver, "m57a2_layout_generic", generic_path, m57a2_entry("NQ-GENERIC-005", generic_at, generic_at + 5,"recursive concrete data layouts are not supported, including through containers", "")) { return false; }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    return true;
+}
+
+fn m57a2_run_fixture(driver: str, name: str) -> bool {
+    match read_file(m57a2_fixture(str_concat(name, ".expected"))) {
+        Ok(expected) => {
+            let args = ["run", m57a2_fixture(str_concat(name, ".nq"))];
+            return f64_rt_exact(str_concat("nauqc run ", name), run_process(driver, ref args, "."), 0, expected, "");
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+// Payload-free enum `==`/`!=` lower to tag comparisons (six of each in the
+// fixture). The direct `emit_expr` path is pinned in c_emit_index_probe.
+fn m57a2_emitted_tags(driver: str) -> bool {
+    match create_dir_all("build/m57_1_a2") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let output = "build/m57_1_a2/comparisons.c";
+    let args = ["emit-c", m57a2_fixture("comparisons.nq"), "-o", output];
+    if not f64_rt_exact("emit comparisons", run_process(driver, ref args, "."), 0, "", "") { return false; }
+    match read_file(output) {
+        Ok(generated) => {
+            if integer_policy_count(generated, ").tag == (") == 6 and integer_policy_count(generated, ").tag != (") == 6 { return true; }
+            eprint_line("payload-free enum comparisons did not lower to tag comparisons");
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return false;
+}
+
+// Compatibility fixtures: each was accepted by `check` at 675819b (or failed
+// only later); each is now rejected at `check` with its new code.
+fn m57a2_compat_cases(driver: str) -> bool {
+    let names = ["compat_comparison", "compat_match", "compat_layout"];
+    let codes = ["NQ-TYPE-050", "NQ-TYPE-051", "NQ-TYPE-052"];
+    let mut index = 0;
+    while index < list_len(ref names) {
+        let path = m57a2_fixture(str_concat(f64_list_text(ref names, index), ".nq"));
+        match f64_run_check(driver, path, true) {
+            Ok(status) => {
+                let code = f64_list_text(ref codes, index);
+                if not (status.exit_code == 1 and integer_policy_count(status.stdout, "\"code\": ") == 1 and integer_policy_count(status.stdout, concat3("\"code\": \"", code, "\"")) == 1) { return f64_report(path, status); }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn m57a2_gate(driver: str) -> bool {
+    match create_dir_all("build") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let Ok(directory) = create_temp_dir("build", "m57-1-a2-") else { eprint_line("M57.1 A2: temporary directory refused"); return false; };
+    if not m57a2_comparison_cases(driver, directory) { return false; }
+    if not m57a2_match_cases(driver, directory) { return false; }
+    if not m57a2_layout_cases(driver, directory) { return false; }
+    if not m57a2_compat_cases(driver) { return false; }
+    if not m57a2_run_fixture(driver, "comparisons") { return false; }
+    return m57a2_emitted_tags(driver);
+}
+
+// ---------------------------------------------------------------------------
+// M57.1 slice C: cross-slice integration. Slice B's list builtins through
+// slice A1's field places (run, emitted C and ASan/UBSan), root-based borrow
+// conflicts for field paths, NQ-TYPE-050 source spelling for generic
+// instances, NQ-TYPE-052 parity in facts/review, the teaching example and the
+// teaching negatives with exact diagnostics.
+// ---------------------------------------------------------------------------
+
+fn m57c_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m57_1_core/", name);
+}
+
+fn m57c_output(name: str) -> str {
+    return str_concat("build/m57_1_c/", name);
+}
+
+fn m57c_read(path: str) -> option<str> {
+    match read_file(path) {
+        Ok(text_value) => { return Some(text_value); },
+        Err(err) => { eprint_line(concat3(path, ": ", io_err_text(err))); return None; },
+    }
+}
+
+// `list_replace`/`list_pop` through field places run with exact output; the
+// C reaches the list through `(*bag).nqf_...` for a `mutref` root and through
+// the local for an owned root; the same C is leak- and UB-clean.
+fn m57c_field_builtins(driver: str) -> bool {
+    let Some(expected) = m57c_read(m57c_fixture("c/field_builtins.expected")) else { return false; };
+    let source = m57c_fixture("c/field_builtins.nq");
+    let run_args = ["run", source];
+    if not f64_rt_exact("nauqc run field_builtins", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let generated = m57c_output("field_builtins.c");
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact("emit field_builtins", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    let Some(text_value) = m57c_read(generated) else { return false; };
+    for needle in ["nq_list__i32_replace(&((((*", "nq_list__i32_pop(&((((*", "nq_list__str_replace(&((((*", "nq_list__str_pop(&((((*", "nq_list__list__i32_replace(&((((*", "nq_list__list__i32_pop(&((((*", "_bag)).nqf_items), 1, 20)", "_bag)).nqf_names)", "_bag)).nqf_rows), 0, "] {
+        if not m57b_c_text_present("field_builtins.c", text_value, needle) { return false; }
+    }
+    let output = m57c_output("field_builtins-asan-ubsan");
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", generated, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(generated, output, ref args, "runtime-h", "build/m57_1_c/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M57.1 C: sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+// One NQ-BORROW-006 entry at the start of the `marker` statement.
+fn m57c_borrow_entry(source: str, marker: str, root: str) -> str {
+    let start = f64_find(source, marker);
+    return m57a2_entry("NQ-BORROW-006", start, start + 1, concat3("conflicting borrows of `", root, "` in one call"), "");
+}
+
+fn m57c_field_borrows(driver: str) -> bool {
+    let path = m57c_fixture("c/field_borrow_conflicts.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let mut expected = m57c_borrow_entry(source, "write_with(mutref bag.items, ref bag.count);\n    return;\n}\n\nfn bad_local", "bag");
+    expected = str_concat(expected, m57c_borrow_entry(source, "write_with(mutref bag.items, ref bag.count);\n    return;\n}\n\nfn bad_forward", "bag"));
+    expected = str_concat(expected, m57c_borrow_entry(source, "bag_and_items(bag, mutref bag.items);", "bag"));
+    expected = str_concat(expected, m57c_borrow_entry(source, "read_bag_write_items(bag, mutref bag.items);", "bag"));
+    return m57a2_expect_digest(driver, "field borrow conflicts", path, expected);
+}
+
+// NQ-TYPE-050 spells a concrete generic instance as source writes it, never
+// as its internal generated name.
+fn m57c_generic_spelling(driver: str, directory: str) -> bool {
+    let declarations = "type Pair<T> {\n    left: T,\n    right: T,\n}\n\nenum Shape<T> {\n    Dot,\n    Circle(T),\n}\n\ntype Holder<T> {\n    inner: Pair<T>,\n}\n\n";
+    let body = "    let a = Pair::<i32> { left: 1, right: 2 };\n    let p1 = a == a;\n    let s: Shape<str> = Dot::<str>;\n    let p2 = s != s;\n    let o = Pair::<option<i64>> { left: None, right: None };\n    let p3 = o == o;\n    let h = Holder::<result<i32, str>> { inner: Pair::<result<i32, str>> { left: Ok(1), right: Err(\"e\") } };\n    let p4 = h == h;\n    let n = Holder::<Pair<bool>> { inner: Pair::<Pair<bool>> { left: Pair::<bool> { left: true, right: false }, right: Pair::<bool> { left: false, right: true } } };\n    let p5 = n != n;";
+    let source = m57a2_program(declarations, body);
+    let markers = ["p1 = a ", "p2 = s ", "p3 = o ", "p4 = h ", "p5 = n "];
+    let operators = ["==", "!=", "==", "==", "!="];
+    let types = ["Pair<i32>", "Shape<str>", "Pair<option<i64>>", "Holder<result<i32, str>>", "Holder<Pair<bool>>"];
+    let other = "compare the fields or elements individually";
+    let helps = [other, "use `match` to compare variants with payloads", other, other, other];
+    let mut expected = "";
+    let mut index = 0;
+    while index < list_len(ref markers) {
+        let marker = f64_list_text(ref markers, index);
+        let op = f64_list_text(ref operators, index);
+        let start = f64_find(source, marker) + str_len(marker);
+        let message = concat5("operator `", op, "` is not defined for type `", f64_list_text(ref types, index), "`");
+        expected = str_concat(expected, m57a2_entry("NQ-TYPE-050", start, start + str_len(op), message, f64_list_text(ref helps, index)));
+        index = index + 1;
+    }
+    if not m57a2_rejects(driver, directory, "m57c_generic_spelling", source, expected) { return false; }
+    let path = concat3(directory, "/", "m57c_generic_spelling.nq");
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            if text_contains(status.stdout, "__nqg_") or text_contains(status.stdout, "t|") { return f64_report("generic spelling leaked an internal name", status); }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    return true;
+}
+
+fn m57c_status(result: result<process_result, io_err>) -> option<process_result> {
+    match result {
+        Ok(status) => { return Some(status); },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+// facts and review (every format) report a non-generic recursive layout with
+// the same NQ-TYPE-052 diagnostic `check` reports, at the same location,
+// instead of a location-free NQ-HANDOFF-002.
+fn m57c_layout_parity(driver: str) -> bool {
+    let path = m57c_fixture("teaching_negative_layout.nq");
+    let check_args = ["check", path];
+    let Some(checked) = m57c_status(run_process(driver, ref check_args, ".")) else { return false; };
+    let reference = str_concat(checked.stdout, checked.stderr);
+    if checked.exit_code != 1 or integer_policy_count(reference, "NQ-TYPE-052") != 1 or text_contains(reference, "NQ-HANDOFF-002") {
+        return f64_report("layout check reference", checked);
+    }
+    for command in ["facts", "review"] {
+        let plain = [command, path];
+        let Some(status) = m57c_status(run_process(driver, ref plain, ".")) else { return false; };
+        if status.exit_code != 1 or status.stdout != "" or status.stderr != reference { return f64_report(str_concat(command, " layout parity"), status); }
+        for version in ["v1", "v2", "v3", "v4", "v5"] {
+            let args = [command, path, "--format", version];
+            let Some(versioned) = m57c_status(run_process(driver, ref args, ".")) else { return false; };
+            if versioned.exit_code != 1 or versioned.stdout != "" or versioned.stderr != reference { return f64_report(concat4(command, " ", version, " layout parity"), versioned); }
+        }
+    }
+    return true;
+}
+
+// The teaching negatives: each new code once, with its exact diagnostic.
+// Codes from later phases (place roots, layouts, borrows) are only reported
+// when earlier phases are clean, so they live in companion files.
+fn m57c_teaching_negative(driver: str) -> bool {
+    let path = m57c_fixture("teaching_negative.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let resolve_at = f64_find(source, "list_pop,");
+    let match_at = f64_find(source, "match light");
+    let assign_at = f64_find(source, "total = 1;");
+    let compare_at = f64_find(source, "< \"pear\"");
+    let mut expected = m57a2_entry("NQ-RESOLVE-010", resolve_at, resolve_at + 8, "builtin callable names cannot be redeclared", "");
+    expected = str_concat(expected, m57a2_entry("NQ-TYPE-051", match_at, match_at + 5, "match statement must be exhaustive; missing `Amber`", "add an arm for each missing variant or a `_ => { ... }` fallback arm"));
+    expected = str_concat(expected, m57a2_entry("NQ-TYPE-007", assign_at, assign_at + 5, "cannot assign to immutable binding `total`", "declare it with `let mut total` to allow assignment"));
+    expected = str_concat(expected, m57a2_entry("NQ-TYPE-050", compare_at, compare_at + 1, "operator `<` is not defined for type `str`", "compare text with a library function; `str` supports only `==` and `!=`"));
+    if not m57a2_expect_digest(driver, "teaching negative", path, expected) { return false; }
+    let place_path = m57c_fixture("teaching_negative_place.nq");
+    let Some(place) = m57c_read(place_path) else { return false; };
+    let root_at = f64_find(place, "mutref shelf.items") + 7;
+    if not m57a2_expect_digest(driver, "teaching negative place", place_path, m57a2_entry("NQ-TYPE-012", root_at, root_at + 5, "cannot take `mutref` of immutable binding `shelf`", "")) { return false; }
+    let layout_path = m57c_fixture("teaching_negative_layout.nq");
+    let Some(layout) = m57c_read(layout_path) else { return false; };
+    if not m57a2_expect_digest(driver, "teaching negative layout", layout_path, m57a2_layout_entry(layout, "type Tree", "Tree", "Tree -> Tree")) { return false; }
+    let borrow_path = m57c_fixture("teaching_negative_borrow.nq");
+    let Some(borrow) = m57c_read(borrow_path) else { return false; };
+    return m57a2_expect_digest(driver, "teaching negative borrow", borrow_path, m57c_borrow_entry(borrow, "restock(shelf, mutref shelf.items);", "shelf"));
+}
+
+// The teaching example runs with exact output and is canonically formatted.
+fn m57c_example(driver: str) -> bool {
+    let path = "examples/in_place_update.nq";
+    let run_args = ["run", path];
+    let expected = "replaced: pear\nindex 9: unchanged\npopped: plum\ncount: 2\n3000000000 does not fit in i32\nscaled: 2000\nstatus: open\nstatus: closed\n";
+    if not f64_rt_exact("nauqc run in_place_update", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let fmt_args = ["fmt", "--check", path];
+    return f64_rt_exact("nauqc fmt --check in_place_update", run_process(driver, ref fmt_args, "."), 0, "", "");
+}
+
+fn m57c_gate_impl(driver: str) -> bool {
+    if not m57c_field_builtins(driver) { return false; }
+    if not m57c_field_borrows(driver) { return false; }
+    let Ok(directory) = create_temp_dir("build", "m57-1-c-") else { eprint_line("M57.1 C: temporary directory refused"); return false; };
+    if not m57c_generic_spelling(driver, directory) { return false; }
+    if not m57c_layout_parity(driver) { return false; }
+    if not m57c_teaching_negative(driver) { return false; }
+    return m57c_example(driver);
+}
+
+fn m57c_gate(driver: str) -> bool {
+    let lock = "build/m57_1_c/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m57_1_c", lock) { eprint_line("M57.1 C: fixture gate lock refused"); return false; }
+    let ok = m57c_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M57.1 C: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// M57.1 trailing-audit repair. F1: a qualified user function named like a
+// list or integer builtin reaches the user function in type checking and in
+// C lowering, while unqualified calls in the same program reach the builtins.
+// F2: the nearest visible declaration decides type and mutability whether the
+// bindings are annotated or inferred. F3: parenthesized borrowed places pass
+// the checked handoff and borrow under their root.
+// ---------------------------------------------------------------------------
+
+fn m57r_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m57_1_core/repair/", name);
+}
+
+fn m57r_output(name: str) -> str {
+    return str_concat("build/m57_1_repair/", name);
+}
+
+fn m57r_nth(source: str, marker: str, occurrence: i32) -> i32 {
+    let mut at = m57a2_find_from(source, marker, 0);
+    let mut seen = 1;
+    while at >= 0 and seen < occurrence {
+        at = m57a2_find_from(source, marker, at + 1);
+        seen = seen + 1;
+    }
+    return at;
+}
+
+// Run with exact output, emit C, and run the same C under ASan/UBSan.
+fn m57r_run_emit_sanitized(driver: str, name: str) -> option<str> {
+    let Some(expected) = m57c_read(m57r_fixture(str_concat(name, ".expected"))) else { return None; };
+    let source = m57r_fixture(str_concat(name, ".nq"));
+    let run_args = ["run", source];
+    if not f64_rt_exact(str_concat("nauqc run ", name), run_process(driver, ref run_args, "."), 0, expected, "") { return None; }
+    let generated = m57r_output(str_concat(name, ".c"));
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact(str_concat("emit ", name), run_process(driver, ref emit_args, "."), 0, "", "") { return None; }
+    let Some(text_value) = m57c_read(generated) else { return None; };
+    let output = m57r_output(str_concat(name, "-asan-ubsan"));
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", generated, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(generated, output, ref args, "runtime-h", "build/m57_1_repair/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return None; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M57.1 repair: sanitized compile failed: ", output, " ", status.stderr));
+        return None;
+    }
+    let none: list<str> = list();
+    if not f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "") { return None; }
+    return Some(text_value);
+}
+
+// F1: every qualified call lowers to the user symbol (two call sites each:
+// positional and named arguments); unqualified calls keep the builtin helpers.
+fn m57r_qualified_builtins(driver: str) -> bool {
+    let Some(text_value) = m57r_run_emit_sanitized(driver, "qualified_builtins") else { return false; };
+    let label = "qualified_builtins.c";
+    for name in ["list_upop", "list_ureplace", "list_upush", "list_ulen", "list_uget", "i64_ufrom_ui32", "i32_ufrom_ui64", "list", "str_ujoin"] {
+        if not m57b_c_text_count(label, text_value, concat3("= nq_fn_qualified_uhelper_c_c", name, "("), 2) { return false; }
+    }
+    if not m57b_c_text_count(label, text_value, "= nq_list__str_pop(&", 1) { return false; }
+    if not m57b_c_text_count(label, text_value, "= nq_list__str_replace(&", 1) { return false; }
+    if not m57b_c_text_count(label, text_value, "= nq_list__named__qualified_uhelper_c_cItem_pop(&", 1) { return false; }
+    if not m57b_c_text_count(label, text_value, "= nq_list__named__qualified_uhelper_c_cItem_replace(&", 1) { return false; }
+    if not m57b_c_text_count(label, text_value, "= nq_i64_from_i32(", 2) { return false; }
+    if not m57b_c_text_count(label, text_value, "= nq_i32_from_i64(", 1) { return false; }
+    return m57b_c_text_present(label, text_value, "nq_list__str_push(&");
+}
+
+// F2: assignment and field-assignment roots (one file) and `mutref` place
+// roots (a second file, since NQ-TYPE-012 reports only once assignment checks
+// are clean), plus the type of an annotated shadow over an inferred outer.
+fn m57r_binding_order(driver: str) -> bool {
+    let path = m57r_fixture("binding_order_reject.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let mut expected = "";
+    let mut occurrence = 1;
+    while occurrence <= 3 {
+        let assign_at = m57r_nth(source, "x = 2;", occurrence);
+        let field_at = m57r_nth(source, "bag.count = 3;", occurrence);
+        if assign_at < 0 or field_at < 0 { eprint_line("M57.1 repair: binding order markers missing"); return false; }
+        expected = str_concat(expected, m57a2_entry("NQ-TYPE-007", assign_at, assign_at + 1, "cannot assign to immutable binding `x`", "declare it with `let mut x` to allow assignment"));
+        expected = str_concat(expected, m57a2_entry("NQ-TYPE-042", field_at, field_at + 1, "field assignment requires an owned mutable local product binding", ""));
+        occurrence = occurrence + 1;
+    }
+    let type_at = f64_find(source, "let m: i32 = n;") + str_len("let m: i32 = ");
+    expected = str_concat(expected, m57a2_entry("NQ-TYPE-042", type_at, type_at + 1, "annotated local initializer does not match declared type", ""));
+    if not m57a2_expect_digest(driver, "binding order assignment", path, expected) { return false; }
+    let place_path = m57r_fixture("binding_order_reject_place.nq");
+    let Some(place_source) = m57c_read(place_path) else { return false; };
+    let mut place_expected = "";
+    occurrence = 1;
+    while occurrence <= 3 {
+        let at = m57r_nth(place_source, "list_push(mutref bag.items, 4);", occurrence) + str_len("list_push(mutref ");
+        place_expected = str_concat(place_expected, m57a2_entry("NQ-TYPE-012", at, at + 3, "cannot take `mutref` of immutable binding `bag`", ""));
+        occurrence = occurrence + 1;
+    }
+    return m57a2_expect_digest(driver, "binding order mutref places", place_path, place_expected);
+}
+
+// F3: parenthesized places borrow their root in the conflict rule.
+fn m57r_paren_borrows(driver: str) -> bool {
+    let path = m57r_fixture("paren_borrow_conflicts.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let mut expected = m57c_borrow_entry(source, "write_with(mutref (bag.items), ref bag.count);", "bag");
+    expected = str_concat(expected, m57c_borrow_entry(source, "write_with(mutref bag.items, ref (bag.count));", "bag"));
+    return m57a2_expect_digest(driver, "parenthesized borrow conflicts", path, expected);
+}
+
+// F1 arity: a qualified constructor call is checked against the qualified
+// variant's payload count (accepted run plus one exact rejection).
+fn m57r_qualified_ctor(driver: str) -> bool {
+    let Some(ctor) = m57r_run_emit_sanitized(driver, "qualified_ctor_run") else { return false; };
+    let path = m57r_fixture("qualified_ctor_arity_reject.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let at = f64_find(source, "qualified_ctor_helper::Dot(3);") + str_len("qualified_ctor_helper::");
+    let expected = m57a2_entry("NQ-TYPE-042", at, at + 1, "constructor call argument count does not match payload count", "");
+    return m57a2_expect_digest(driver, "qualified constructor arity", path, expected);
+}
+
+fn m57r_gate_impl(driver: str) -> bool {
+    if not m57r_qualified_builtins(driver) { return false; }
+    if not m57r_qualified_ctor(driver) { return false; }
+    if not m57r_binding_order(driver) { return false; }
+    let Some(places) = m57r_run_emit_sanitized(driver, "places_run") else { return false; };
+    // F2 in the checked handoff: assignment and field-assignment contexts of
+    // an inner binding with a different product or integer width.
+    let Some(widths) = m57r_run_emit_sanitized(driver, "width_shadow_run") else { return false; };
+    return m57r_paren_borrows(driver);
+}
+
+fn m57r_gate(driver: str) -> bool {
+    let lock = "build/m57_1_repair/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m57_1_repair", lock) { eprint_line("M57.1 repair: fixture gate lock refused"); return false; }
+    let ok = m57r_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M57.1 repair: fixture gate lock release failed"); return false; }
+    return ok;
 }

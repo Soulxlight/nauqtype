@@ -459,6 +459,19 @@ fn m56_v5_f64_golden(driver: str, command: str, golden: str, schema_path: str) -
     return true;
 }
 
+// M57.1: field assignment through a `mutref` parameter and the four new
+// builtins (`list_replace`, `list_pop`, `i64_from_i32`, `i32_from_i64`) appear
+// as ordinary builtin call targets; no schema change.
+fn m57_v5_golden(driver: str, command: str, golden: str, schema_path: str) -> bool {
+    let entry = "tests/fixtures/m57_1_core/c/mutation_surfaces.nq";
+    if not m56_v5_golden_entry(driver, command, entry, golden, schema_path) { return false; }
+    let Ok(expected) = read_file(golden) else { return false; };
+    for needle in ["builtin:list_push", "builtin:list_replace", "builtin:list_pop", "builtin:i64_from_i32", "builtin:i32_from_i64", "set_count"] {
+        if not m56_v5_expect(str_concat("M57.1 builtin evidence in ", golden), expected, needle) { return false; }
+    }
+    return true;
+}
+
 fn m56_v5_golden_entry(driver: str, command: str, entry: str, golden: str, schema_path: str) -> bool {
     let Some(first) = m56_v5_stdout(str_concat(command, " v5 fixture"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
     let Some(second) = m56_v5_stdout(str_concat(command, " v5 fixture repeat"), m56_command(driver, command, entry, "", "v5", "")) else { return false; };
@@ -1116,6 +1129,8 @@ audit {
     if not m56_v5_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-positive.json", "schemas/review-v5.schema.json") { return false; }
     if not m56_v5_f64_golden(driver_path, "facts", "tests/golden/schema_profile/facts-v5-f64.json", "schemas/facts-v5.schema.json") { return false; }
     if not m56_v5_f64_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-f64.json", "schemas/review-v5.schema.json") { return false; }
+    if not m57_v5_golden(driver_path, "facts", "tests/golden/schema_profile/facts-v5-m57-1.json", "schemas/facts-v5.schema.json") { return false; }
+    if not m57_v5_golden(driver_path, "review", "tests/golden/schema_profile/review-v5-m57-1.json", "schemas/review-v5.schema.json") { return false; }
     if not m56_v5_spans(driver_path) { return false; }
     let oracle_commands = ["review", "review", "facts", "facts"];
     let oracle_inputs = ["tests/fixtures/m54_8_final/mutations.nq", "tests/fixtures/m55_process/authority.nq", "tests/fixtures/organizational_tool/src/app/main.nq", "tests/fixtures/m55_process/authority.nq"];

@@ -1,0 +1,126 @@
+enum Status {
+    Open,
+    Closed,
+}
+
+type Shelf {
+    items: list<str>,
+    count: i32,
+    status: Status,
+}
+
+fn add(shelf: mutref Shelf, item: str) -> unit
+audit {
+    intent("Append an item through a field place and keep the count in step");
+    mutates(shelf);
+    effects();
+}
+{
+    list_push(mutref shelf.items, item);
+    shelf.count = shelf.count + 1;
+    return;
+}
+
+fn swap_item(shelf: mutref Shelf, index: i32, item: str) -> option<str>
+audit {
+    intent("Replace one item in place and hand back the one it displaced");
+    mutates(shelf);
+    effects();
+}
+{
+    return list_replace(mutref shelf.items, index, item);
+}
+
+fn take_last(shelf: mutref Shelf) -> option<str>
+audit {
+    intent("Remove the last item and keep the count in step");
+    mutates(shelf);
+    effects();
+}
+{
+    let last = list_pop(mutref shelf.items);
+    match last {
+        Some(_) => {
+            shelf.count = shelf.count - 1;
+        },
+        None => {},
+    }
+    return last;
+}
+
+fn close(shelf: mutref Shelf) -> unit
+audit {
+    intent("Mark the shelf closed by assigning a field through the borrow");
+    mutates(shelf);
+    effects();
+}
+{
+    shelf.status = Closed;
+    return;
+}
+
+fn show_count(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled count");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(label, str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Update a product's list and fields in place through mutref parameters");
+    mutates();
+    effects(print);
+}
+{
+    let mut shelf = Shelf { items: list(), count: 0, status: Open };
+    add(mutref shelf, "apple");
+    add(mutref shelf, "pear");
+    add(mutref shelf, "plum");
+    let Some(old) = swap_item(mutref shelf, 1, "fig") else {
+        return 1;
+    };
+    print_line(str_concat("replaced: ", old));
+    let missing = swap_item(mutref shelf, 9, "kiwi");
+    match missing {
+        Some(_) => {
+            return 2;
+        },
+        None => {
+            print_line("index 9: unchanged");
+        },
+    }
+    let Some(last) = take_last(mutref shelf) else {
+        return 3;
+    };
+    print_line(str_concat("popped: ", last));
+    show_count("count: ", shelf.count);
+    let big: i64 = 3000000000;
+    let narrowed = i32_from_i64(big);
+    match narrowed {
+        Some(_) => {
+            return 4;
+        },
+        None => {
+            print_line("3000000000 does not fit in i32");
+        },
+    }
+    let wide = i64_from_i32(shelf.count) * 1000;
+    let Some(scaled) = i32_from_i64(wide) else {
+        return 5;
+    };
+    show_count("scaled: ", scaled);
+    if shelf.status == Open {
+        print_line("status: open");
+    }
+    close(mutref shelf);
+    if shelf.status != Closed {
+        return 6;
+    }
+    print_line("status: closed");
+    return 0;
+}

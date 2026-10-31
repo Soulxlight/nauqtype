@@ -1134,6 +1134,12 @@ fn builtin_function_param_count(name: str) -> i32 {
     if name == "list_get" {
         return 2;
     }
+    if name == "list_replace" {
+        return 3;
+    }
+    if name == "list_pop" or name == "i64_from_i32" or name == "i32_from_i64" {
+        return 1;
+    }
     return -1;
 }
 
@@ -1145,6 +1151,9 @@ fn builtin_function_param_is_borrow(name: str, index: i32) -> bool {
         return true;
     }
     if name == "list_push" and index == 0 {
+        return true;
+    }
+    if (name == "list_replace" or name == "list_pop") and index == 0 {
         return true;
     }
     if (name == "list_len" or name == "str_join") and index == 0 {
@@ -1187,6 +1196,48 @@ fn lookup_function_param_is_borrow(param_index: ref list<p2_checked_param_mode>,
         },
     }
     return false;
+}
+
+// M57.1: the mutability of a builtin borrow parameter (mirrors typecheck).
+fn builtin_function_param_borrow_mutable(name: str, index: i32) -> bool {
+    return (name == "list_push" or name == "list_replace" or name == "list_pop" or name == "process_terminate") and index == 0;
+}
+
+fn lookup_function_param_borrow_mutable(param_index: ref list<p2_checked_param_mode>, function_id: i32, index: i32) -> bool {
+    let entry = p2_checked_first_param_mode(ref param_index, function_id, index);
+    match entry {
+        Some(value) => { return value.borrow_mutable; },
+        None => {
+        },
+    }
+    return false;
+}
+
+// M57.1: a borrow-typed parameter forwarded by name to a borrow parameter is
+// a borrow of that parameter's place, so it takes part in the one-call
+// conflict check. Returns the forwarded binding id, or -1.
+fn forwarded_borrow_param_binding_id(bindings: ref list<checked_binding>, expr: checked_expr) -> i32 {
+    let binding_id = expr_name_binding_id(expr);
+    if binding_id <= 0 {
+        return -1;
+    }
+    let entry = lookup_binding(ref bindings, binding_id);
+    match entry {
+        Some(value) => {
+            match value.kind {
+                checked_binding_param => {
+                    if value.is_borrow {
+                        return binding_id;
+                    }
+                },
+                _ => {
+                },
+            }
+        },
+        None => {
+        },
+    }
+    return -1;
 }
 
 fn expr_name_binding_id(expr: checked_expr) -> i32 {
@@ -1846,6 +1897,30 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                                                 push_borrow_error(mutref diags, child_expr.module_name, child_expr.at, "NQ-BORROW-007", str_concat("cannot both move and borrow `", str_concat(name, "` in one call")));
                                             }
                                             walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, child_id, mutref state, false, true, emit_diagnostics, mutref diags);
+                                        } else {
+                                            // M57.1: a borrow parameter forwarded by name borrows its
+                                            // root with the receiving parameter's kind.
+                                            let forwarded_id = forwarded_borrow_param_binding_id(ref bindings, child_expr);
+                                            if forwarded_id > 0 {
+                                                let mut param_borrow_mutable = false;
+                                                if is_target_builtin_function(expr.target_kind) {
+                                                    param_borrow_mutable = builtin_function_param_borrow_mutable(expr.name, arg_index);
+                                                } else {
+                                                    param_borrow_mutable = lookup_function_param_borrow_mutable(ref params, lookup_function_id(ref functions, expr.target_origin_module, expr.name), arg_index);
+                                                }
+                                                let previous = lookup_call_borrow_kind(ref borrowed, forwarded_id);
+                                                let mut kind = "ref";
+                                                if param_borrow_mutable {
+                                                    kind = "mutref";
+                                                }
+                                                if emit_diagnostics {
+                                                    if previous == "mutref" or (previous == "ref" and kind == "mutref") {
+                                                        let name = lookup_binding_name(ref bindings, forwarded_id, child_expr.name);
+                                                        push_borrow_error(mutref diags, child_expr.module_name, child_expr.at, "NQ-BORROW-006", str_concat("conflicting borrows of `", str_concat(name, "` in one call")));
+                                                    }
+                                                }
+                                                set_call_borrow_kind(mutref borrowed, forwarded_id, kind);
+                                            }
                                         }
                                     } else {
                                         let symbol_id = expr_name_binding_id(child_expr);

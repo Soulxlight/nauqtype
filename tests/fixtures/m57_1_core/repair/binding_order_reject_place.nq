@@ -1,0 +1,54 @@
+// M57.1 repair (F2), `mutref` places: the nearest visible declaration decides
+// mutability, whether either declaration is annotated or inferred. Annotated
+// locals are recorded while parsing and inferred locals only while their
+// initializers are checked; list order must not act as lexical precedence.
+// Every `mutref` place below has an immutable shadow as its root and is
+// rejected with NQ-TYPE-012 (the assignment and field-assignment cases are in
+// binding_order_reject.nq).
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+// Annotated immutable inner shadows inferred `let mut` outer.
+fn inner_annotated() -> i32 {
+    let mut bag = Bag { items: [1], count: 0 };
+    let mut x = 0;
+    if true {
+        let bag: Bag = Bag { items: [2], count: 0 };
+        let x: i32 = 1;
+        list_push(mutref bag.items, 4);
+    }
+    return x + bag.count;
+}
+
+// Inferred immutable inner shadows annotated `let mut` outer.
+fn inner_inferred() -> i32 {
+    let mut bag: Bag = Bag { items: [1], count: 0 };
+    let mut x: i32 = 0;
+    if true {
+        let bag = Bag { items: [2], count: 0 };
+        let x = 1;
+        list_push(mutref bag.items, 4);
+    }
+    return x + bag.count;
+}
+
+// Two scopes deep: the annotated immutable middle binding is nearest.
+fn nested_annotated() -> i32 {
+    let mut bag = Bag { items: [1], count: 0 };
+    let mut x = 0;
+    if true {
+        let bag: Bag = Bag { items: [2], count: 0 };
+        let x: i32 = 1;
+        if true {
+            list_push(mutref bag.items, 4);
+        }
+    }
+    return x + bag.count;
+}
+
+fn main() -> i32 {
+    return inner_annotated() + inner_inferred() + nested_annotated();
+}

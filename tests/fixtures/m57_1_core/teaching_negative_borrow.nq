@@ -1,0 +1,37 @@
+// M57.1 teaching negative: a forwarded `mutref` parameter plus a mutable
+// borrow of its field in one call are two live mutable aliases of one place
+// (NQ-BORROW-006). Write two statements instead.
+
+type Shelf {
+    items: list<str>,
+    count: i32,
+}
+
+fn restock(shelf: mutref Shelf, items: mutref list<str>) -> unit
+audit {
+    intent("Count the shelf and append to a list");
+    mutates(shelf, items);
+    effects();
+}
+{
+    shelf.count = shelf.count + 1;
+    list_push(mutref items, "box");
+    return;
+}
+
+fn refill(shelf: mutref Shelf) -> unit
+audit {
+    intent("Forward the shelf beside a borrow of its own field");
+    mutates(shelf);
+    effects();
+}
+{
+    restock(shelf, mutref shelf.items);
+    return;
+}
+
+fn main() -> i32 {
+    let mut shelf = Shelf { items: list(), count: 0 };
+    refill(mutref shelf);
+    return shelf.count;
+}

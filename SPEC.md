@@ -445,7 +445,7 @@ Rules:
 - `mutates(...)` may list only `mutref` parameters
 - `effects(...)` currently supports the fixed atoms `print` and `io`
 - `propagates(...)` may list exact error types forwarded unchanged by statement-boundary `?`
-- `mutates(...)` is checked against direct write-through assignments to `mutref` parameters
+- `mutates(...)` is checked against write-through to `mutref` parameters: direct assignments (`p = value;`), field assignments through the parameter (`p.field = value;`), and call-mediated writes (passing `mutref p` or `mutref p.field...` to a mutating parameter or to `list_push`, `list_replace`, or `list_pop`)
 - `effects(print)` is checked against direct or transitive use of `print_line` / `eprint_line`
 - `effects(io)` is checked against direct or transitive use of authority-bearing builtins; facts v2 and review v2 report the fixed checked subkinds `read`, `write`, `create_dir`, `process`, `arguments`, `environment`, `cwd`, `stdin`, `stdout`, `stderr`, `metadata`, `traversal`, `create_file`, `temporary`, `remove`, `rename`, and `atomic_replace` without widening source-level effect syntax
 - `propagates(E)` is checked against direct `let name = result_expr?;` propagation sites in the function
@@ -467,7 +467,8 @@ Rules:
 - field order is declared order
 - field types are required
 - no methods in v0.1
-- direct field assignment is allowed only through an owned `let mut` local product binding
+- direct field assignment is allowed through an owned `let mut` local product binding or a `mutref` parameter of a user-defined product type (M57.1)
+- a product or enum may not contain itself by value, directly or through `list`, `option`, or `result` arguments at any depth; `check` rejects each such cycle once with `NQ-TYPE-052`, naming the shortest cycle (for example `Tree -> Branch -> Tree`) at its first-declared member. Store related values in a separate list and refer to them by index. Graphs with generic declarations keep reporting `NQ-GENERIC-005`
 
 ### Enums
 
@@ -554,7 +555,8 @@ append(mutref buffer, item);
 Rules:
 
 - `ref expr` and `mutref expr` are only legal as direct call arguments in v0.1
-- borrow expressions must name a mutable-capable place when `mutref` is used
+- both may name a binding or a product field path `root.f1.f2...` (including fields of a concrete generic product instance)
+- `mutref` requires a mutable-capable root: the nearest visible binding of `root` must be a `let mut` owned local or a `mutref` parameter; any other root (`ref` or owned parameter, immutable local, `for`, pattern, or `let-else` binding) is `NQ-TYPE-012` "cannot take `mutref` of immutable binding `<root>`"
 - borrow values cannot be stored in locals, fields, or return values
 - inside a callee, `ref T` and `mutref T` parameters act as alias parameters; reading the parameter reads the referent, and assigning to a `mutref` parameter writes the referent
 
@@ -565,8 +567,8 @@ Supported statements:
 - local binding, including an explicitly typed local `try` boundary
 - statement-boundary propagation binding: `let name = result_expr?;`
 - `let-else` guard binding for `option` / `result` success patterns
-- assignment to a mutable local
-- direct field assignment through an owned mutable local product binding
+- assignment to a mutable local or a `mutref` parameter
+- direct field assignment through an owned mutable local product binding or a `mutref` product parameter
 - `if`
 - `while`
 - `match`
@@ -583,9 +585,10 @@ count = count + 1;
 
 Rules:
 
-- only mutable locals may be assigned
-- `binding.field = value;` requires `binding` to be a direct, owned `let mut` local of a user-defined product type
-- field assignment rejects `mutref` parameters, enum values, list elements, nested field paths, and arbitrary assignment targets
+- `name = value;` requires the nearest visible binding of `name` to be a `let mut` local or a `mutref` parameter; plain `let`, `let-else` and pattern bindings and `ref` or owned parameters are `NQ-TYPE-007` "cannot assign to immutable binding `<name>`" (shadowing is respected in both directions; `for` bindings keep their existing `NQ-TYPE-042` message)
+- `binding.field = value;` requires the nearest visible binding to be an owned `let mut` local or a `mutref` parameter of a user-defined product type, including a concrete generic product instance
+- field assignment through a `mutref` parameter writes through the borrow (C `(*p).member`); the overwritten field value is dropped exactly once, as for an owned local
+- field assignment rejects `ref` parameters, owned non-`mut` locals and parameters, enum values, list elements, nested field paths (`p.a.b = v`), and arbitrary assignment targets
 - assigning to a `mutref` parameter writes through the borrow
 
 ### If
@@ -639,6 +642,7 @@ Rules:
 - each arm body is a block
 - arm patterns are matched top to bottom
 - a `match` must be exhaustive for its scrutinee type
+- a statement `match` over a user enum, `option<T>`, or `result<T, E>` with no wildcard or binding fallback arm must cover every variant with a top-level variant arm; otherwise `check` reports `NQ-TYPE-051` "match statement must be exhaustive; missing `<V1>`, `<V2>`" at the `match` keyword (variants in declaration order; `Some`, `None`; `Ok`, `Err`). A zero-arm statement `match` over such a type lists every variant. Integer scrutinees and literal or nested-constructor arms keep the refined-pattern fallback rule (see Patterns)
 - statement `match` arms do not produce values
 
 ### Match Expressions
@@ -690,6 +694,17 @@ From lowest to highest:
 
 - binary operators require explicitly compatible operand types
 - there are no implicit numeric promotions in v0.1
+
+Runtime comparison operands (both sides must have the identical type):
+
+| Operators | Operand type |
+| --- | --- |
+| `==`, `!=` | `i32`, `i64`, `f64`, `bool`, `str`, payload-free enums |
+| `<`, `<=`, `>`, `>=` | `i32`, `i64`, `f64` |
+
+- A payload-free enum is a user enum, or a concrete instance of a generic user enum, whose declared variants all have no payload; `==` compares variants.
+- Any other identical operand type (`str` ordering, `bool` ordering, enums with payloads, products, `option`, `result`, `list`, `unit`, ...) is `NQ-TYPE-050` "operator `<op>` is not defined for type `<type>`", with the type spelled as in source (for example `Pair<i32>`). Mismatched operands keep `NQ-TYPE-042` "comparison operands must have matching types", and process/time types keep their `NQ-TYPE-042` message.
+- `const` initializers keep their integer-only comparison rule.
 
 ## Type Rules
 
@@ -745,13 +760,14 @@ Rules:
 - shared borrows use `ref`
 - mutable borrows use `mutref`
 - mutable borrows require the source binding to be mutable
-- `mutref` cannot coexist with any other borrow of the same place in the same call
+- `mutref` cannot coexist with any other borrow of the same root in the same call (`NQ-BORROW-006`). Every argument under root `r` borrows `r`: `ref r...`, `mutref r...`, and a borrow parameter `r` forwarded by name, whose kind is the receiving parameter's kind. So `f(mutref b.items, ref b.count)` and `f(p, mutref p.items)` are rejected, while two shared borrows never conflict; field-disjoint checking is deferred
 - consuming a non-copy pointee through a borrowed binding is rejected; copy values may be read from a borrow and are copied according to their checked value plan
 - bootstrap `while` analysis tracks possible moves across iterations conservatively
 - no stored references
-- read-only `ref binding.field` paths are supported for direct call arguments,
-  including the shipped runtime product fields; `mutref` still targets a
-  binding rather than a field
+- `ref binding.field...` and `mutref binding.field...` paths are supported for
+  direct call arguments, including the shipped runtime product fields; a
+  `mutref` path needs a `let mut` owned local or `mutref` parameter root, and
+  writes through a `mutref` parameter root reach the caller's value in place
 - borrow-prefixed arithmetic is not a place and is rejected, not silently
   lowered as pointer arithmetic
 
@@ -813,12 +829,35 @@ fn list() -> list<T>;            // requires expected context
 fn list_push(items: mutref list<T>, value: T) -> unit;
 fn list_len(items: ref list<T>) -> i32;
 fn list_get(items: ref list<T>, index: i32) -> option<T>;
+fn list_replace(items: mutref list<T>, index: i32, value: T) -> option<T>;
+fn list_pop(items: mutref list<T>) -> option<T>;
+fn i64_from_i32(value: i32) -> i64;
+fn i32_from_i64(value: i64) -> option<i32>;
 fn bytes_from_str(text: str) -> bytes;
 fn bytes_len(value: ref bytes) -> i64;
 fn bytes_get(value: ref bytes, index: i64) -> option<i32>;
 ```
 
 `[]` is the literal equivalent of an empty `list<T>` and follows the same expected-context rule as `list()`.
+
+M57.1 in-place list updates and integer conversions:
+
+- `list_replace` stores `value` at `index` when `0 <= index < list_len` and
+  returns `Some(old)`, moving the old element out to the caller; otherwise the
+  list is unchanged, `value` is dropped once, and the result is `None`.
+- `list_pop` removes the last element and returns it as `Some`, moving it out
+  (dropping the list later does not drop it again), or returns `None` when the
+  list is empty.
+- Unlike `list_get`, neither needs a copy element type. Both mutate argument 0
+  for `mutates(...)` like `list_push`, have no effects, run in O(1), and never
+  shrink capacity.
+- `i64_from_i32` is exact. `i32_from_i64` returns `None` outside
+  `[-2147483648, 2147483647]`. There is still no implicit numeric conversion.
+- Builtin callable names (every builtin function plus `list`, `Some`, `None`,
+  `Ok`, `Err`) cannot name an enum variant (`NQ-RESOLVE-010` "builtin callable
+  names cannot be redeclared"). Top-level functions, types, enums and
+  constants with such names remain accepted; an unqualified call still reaches
+  the builtin.
 
 `str_join` concatenates borrowed text parts in list order, with no separator
 or conversion, into independently owned text. Empty input returns empty text;

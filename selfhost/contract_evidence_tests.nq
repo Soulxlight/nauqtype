@@ -273,6 +273,8 @@ audit {
     if not evidence_expect("recursive omission", evidence_command(driver, "check", "tests/fixtures/m54_8_final/missing_recursive.nq", "", "", ""), 1, "NQ-CONTRACT-005", "target") { return false; }
     if not evidence_expect("readonly warning", evidence_command(driver, "review", "tests/fixtures/m54_8_final/readonly_warning.nq", "", "v4", ""), 0, "NQ-CONTRACT-006", "\"completeness\": \"complete\"") { return false; }
     if not evidence_expect("borrow alias rejection", evidence_command(driver, "check", "tests/fixtures/m54_8_final/alias_rejected.nq", "", "", ""), 1, "NQ-BORROW-006", "conflicting") { return false; }
+    if not m57_mutation_surfaces(driver) { eprint_line("M57.1 mutation-surface table regressed"); return false; }
+    if not m57_field_write_contracts(driver) { eprint_line("M57.1 field-write contract validation regressed"); return false; }
 
     let mut versions: list<str> = list();
     list_push(mutref versions, "v1");
@@ -313,5 +315,125 @@ audit {
     if not evidence_expect("change v3 checked policy", evidence_command(driver, "change-report", policy_source, policy_source, "v3", "tests/fixtures/policy/change_report_policy.json"), 0, "\"policy\": \"checked\"", "\"malformed\": false") { return false; }
     if not evidence_expect("change v3 invalid policy", evidence_command(driver, "change-report", fixture, fixture, "v3", "tests/fixtures/m54_8a/invalid_policy.json"), 1, "\"policy\": \"failed\"", "\"ok\": false") { return false; }
     if not evidence_expect("change v3 unreadable policy", evidence_command(driver, "change-report", fixture, fixture, "v3", "tests/fixtures/m54_8_final/missing-policy.json"), 1, "\"policy\": \"failed\"", "\"malformed\": true") { return false; }
+    return true;
+}
+
+// M57.1: the inferred `mutates` list of `function` in a review output, with
+// whitespace and quotes removed (`[]` or `[bag]`). The first `"name"` match is
+// the function entry; its `inferred` object follows its `audit` object.
+fn m57_inferred_mutates(output: str, function: str) -> str {
+    let marker = concat3("\"name\": \"", function, "\",");
+    let mut index = 0;
+    let mut found = -1;
+    while found < 0 and index + str_len(marker) <= str_len(output) {
+        if starts_with_at(output, index, marker) { found = index; }
+        index = index + 1;
+    }
+    if found < 0 { return "?"; }
+    let inferred_marker = "\"inferred\": {";
+    index = found;
+    let mut inferred = -1;
+    while inferred < 0 and index + str_len(inferred_marker) <= str_len(output) {
+        if starts_with_at(output, index, inferred_marker) { inferred = index; }
+        index = index + 1;
+    }
+    if inferred < 0 { return "?"; }
+    let mutates_marker = "\"mutates\": [";
+    index = inferred;
+    let mut start = -1;
+    while start < 0 and index + str_len(mutates_marker) <= str_len(output) {
+        if starts_with_at(output, index, mutates_marker) { start = index + str_len(mutates_marker) - 1; }
+        index = index + 1;
+    }
+    if start < 0 { return "?"; }
+    let mut pieces: list<str> = list();
+    index = start;
+    let mut done = false;
+    while not done and index < str_len(output) {
+        let value = char_at(output, index);
+        if value != 32 and value != 10 and value != 34 { list_push(mutref pieces, slice_text(output, index, index + 1)); }
+        if value == 93 { done = true; }
+        index = index + 1;
+    }
+    return str_join(ref pieces);
+}
+
+// M57.1 mutation-surface table: a direct field assignment through a `mutref`
+// parameter is a write in every review version and in `check`; call-mediated
+// field-place writes (`list_push`/`list_replace`/`list_pop` on
+// `mutref bag.items`) appear only in review v4/v5 and `check`; a shadowing
+// owned local named like the parameter is never projected.
+fn m57_mutation_surfaces(driver: str) -> bool {
+    let fixture = "tests/fixtures/m57_1_core/c/mutation_surfaces.nq";
+    if not evidence_expect("M57.1 mutation surfaces check", evidence_command(driver, "check", fixture, "", "", ""), 0, "", "") { return false; }
+    match evidence_command(driver, "check", fixture, "", "", "") {
+        Ok(status) => { if status.stdout != "" or status.stderr != "" { eprint_line("M57.1 mutation surfaces check is not quiet"); eprint_line(status.stderr); return false; } },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let versions = ["v1", "v2", "v3", "v4", "v5"];
+    let functions = ["set_count", "push_item", "swap_first", "drop_last", "shadowed"];
+    let mut version_index = 0;
+    while version_index < list_len(ref versions) {
+        let Some(version) = list_get(ref versions, version_index) else { return false; };
+        match evidence_command(driver, "review", fixture, "", version, "") {
+            Ok(status) => {
+                if status.exit_code != 0 or status.stderr != "" { eprint_line(str_concat("M57.1 review failed: ", version)); eprint_line(status.stderr); return false; }
+                let mut function_index = 0;
+                while function_index < list_len(ref functions) {
+                    let Some(function) = list_get(ref functions, function_index) else { return false; };
+                    let mut expected = "[]";
+                    if function_index == 0 { expected = "[bag]"; }
+                    if function_index > 0 and function_index < 4 and version_index >= 3 { expected = "[bag]"; }
+                    let actual = m57_inferred_mutates(status.stdout, function);
+                    if actual != expected {
+                        eprint_line(concat6("M57.1 review ", version, " inferred mutates for ", function, " is ", concat4(actual, ", expected ", expected, "")));
+                        return false;
+                    }
+                    function_index = function_index + 1;
+                }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+        version_index = version_index + 1;
+    }
+    let mut legacy_index = 0;
+    while legacy_index < 2 {
+        let Some(version) = list_get(ref versions, legacy_index) else { return false; };
+        // review-diff shares the legacy projection: a self-diff stays clean.
+        if not evidence_expect(str_concat("M57.1 review-diff ", version), evidence_command(driver, "review-diff", fixture, fixture, version, ""), 0, "\"changed_functions\": 0", "") { return false; }
+        legacy_index = legacy_index + 1;
+    }
+    return true;
+}
+
+// A function whose only write is a field assignment through its `mutref`
+// parameter satisfies `mutates(p)` (no NQ-CONTRACT-006) and, without it,
+// reports NQ-CONTRACT-005 in `check` and in every review version.
+fn m57_field_write_contracts(driver: str) -> bool {
+    let Ok(directory) = create_temp_dir("build", "m57-1-c-contracts-") else { eprint_line("M57.1 contracts: temporary directory refused"); return false; };
+    let declarations = "type Bag {\n    items: list<i32>,\n    count: i32,\n}\n\n";
+    let main = "fn main() -> i32 {\n    let mut bag = Bag { items: list(), count: 0 };\n    reset(mutref bag);\n    return bag.count;\n}\n";
+    let body = "{\n    bag.items = [1];\n    bag.count = 1;\n    return;\n}\n\n";
+    let declared = concat4(declarations, "fn reset(bag: mutref Bag) -> unit\naudit {\n    intent(\"Reset the bag\");\n    mutates(bag);\n    effects();\n}\n", body, main);
+    let omitted = concat4(declarations, "fn reset(bag: mutref Bag) -> unit\naudit {\n    intent(\"Reset the bag\");\n    mutates();\n    effects();\n}\n", body, main);
+    let declared_path = str_concat(directory, "/declared.nq");
+    let omitted_path = str_concat(directory, "/omitted.nq");
+    match write_file(declared_path, declared) { Ok(_) => {}, Err(err) => { eprint_line(io_err_text(err)); return false; }, }
+    match write_file(omitted_path, omitted) { Ok(_) => {}, Err(err) => { eprint_line(io_err_text(err)); return false; }, }
+    match evidence_command(driver, "check", declared_path, "", "", "") {
+        Ok(status) => { if status.exit_code != 0 or status.stdout != "" or status.stderr != "" { eprint_line("M57.1 field-write mutates(bag) was not accepted quietly"); eprint_line(status.stderr); return false; } },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    if not evidence_expect("M57.1 field-write omission", evidence_command(driver, "check", omitted_path, "", "", ""), 1, "NQ-CONTRACT-005", "`audit` omits mutated `mutref` parameter `bag`") { return false; }
+    for version in ["v1", "v2", "v3", "v4", "v5"] {
+        match evidence_command(driver, "review", declared_path, "", version, "") {
+            Ok(status) => { if status.exit_code != 0 or evidence_contains(status.stderr, "NQ-CONTRACT-006") { eprint_line(str_concat("M57.1 field-write review warned: ", version)); eprint_line(status.stderr); return false; } },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+        match evidence_command(driver, "review", omitted_path, "", version, "") {
+            Ok(status) => { if status.exit_code != 1 or evidence_count(status.stderr, "NQ-CONTRACT-005") != 1 { eprint_line(str_concat("M57.1 field-write omission not reported: ", version)); eprint_line(status.stderr); return false; } },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+    }
     return true;
 }

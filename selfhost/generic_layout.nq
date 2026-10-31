@@ -1,3 +1,4 @@
+use ast;
 use diag;
 use handoff;
 use text;
@@ -95,4 +96,244 @@ audit {
         }
     }
     return generic_layout_error(mutref diags, "NQ-GENERIC-009", "", -1, "invalid cyclic checked type metadata");
+}
+
+// M57.1 (NQ-TYPE-052): by-value recursive layouts in graphs without generic
+// declarations. Nodes are user products and enums ordered by checked module
+// order, then source offset; edges follow field/variant/payload declaration
+// order and a left-to-right preorder through list, option and result.
+type recursive_layout_node {
+    module_id: i32,
+    module_name: str,
+    name: str,
+    at: i32,
+    decl_id: i32,
+    is_enum: bool,
+}
+
+type recursive_layout_parent {
+    node: i32,
+    parent: i32,
+}
+
+fn recursive_layout_item_at(items: ref list<top_item>, module_name: str, name: str, is_enum: bool, fallback: i32) -> i32 {
+    for item in items {
+        if item.module == module_name and item.name == name {
+            match item.kind {
+                item_type => { if not is_enum { return item.at; } },
+                item_enum => { if is_enum { return item.at; } },
+                _ => {},
+            }
+        }
+    }
+    return fallback;
+}
+
+fn recursive_layout_node_before(left: recursive_layout_node, right: recursive_layout_node) -> bool {
+    if left.module_id != right.module_id { return left.module_id < right.module_id; }
+    return left.at < right.at;
+}
+
+fn recursive_layout_node_index(nodes: ref list<recursive_layout_node>, module_name: str, name: str) -> i32 {
+    let mut index = 0;
+    for node in nodes {
+        if node.module_name == module_name and node.name == name { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn recursive_layout_add_edge(edges: mutref list<generic_layout_edge>, parent: i32, child: i32) -> unit {
+    for edge in edges {
+        if edge.parent == parent and edge.child == child { return; }
+    }
+    list_push(mutref edges, generic_layout_edge { parent: parent, child: child });
+    return;
+}
+
+fn recursive_layout_walk(shapes: ref list<checked_type_shape>, nodes: ref list<recursive_layout_node>, type_id: i32, parent: i32, edges: mutref list<generic_layout_edge>) -> unit {
+    for shape in shapes {
+        if shape.id == type_id {
+            match shape.kind {
+                checked_type_named => {
+                    let child = recursive_layout_node_index(ref nodes, shape.origin_module, shape.name);
+                    if child >= 0 { recursive_layout_add_edge(mutref edges, parent, child); }
+                },
+                checked_type_list => { recursive_layout_walk(ref shapes, ref nodes, shape.arg1_id, parent, mutref edges); },
+                checked_type_option => { recursive_layout_walk(ref shapes, ref nodes, shape.arg1_id, parent, mutref edges); },
+                checked_type_result => {
+                    recursive_layout_walk(ref shapes, ref nodes, shape.arg1_id, parent, mutref edges);
+                    recursive_layout_walk(ref shapes, ref nodes, shape.arg2_id, parent, mutref edges);
+                },
+                _ => {},
+            }
+            return;
+        }
+    }
+    return;
+}
+
+fn recursive_layout_reaches(edges: ref list<generic_layout_edge>, from: i32, target: i32) -> bool {
+    let mut queue: list<i32> = list();
+    list_push(mutref queue, from);
+    let mut cursor = 0;
+    while cursor < list_len(ref queue) {
+        let current = list_get(ref queue, cursor);
+        match current {
+            Some(node) => {
+                for edge in edges {
+                    if edge.parent == node {
+                        if edge.child == target { return true; }
+                        if not list_contains_i32(ref queue, edge.child) { list_push(mutref queue, edge.child); }
+                    }
+                }
+            },
+            None => {},
+        }
+        cursor = cursor + 1;
+    }
+    return false;
+}
+
+fn recursive_layout_parent_of(parents: ref list<recursive_layout_parent>, node: i32) -> i32 {
+    for entry in parents {
+        if entry.node == node { return entry.parent; }
+    }
+    return -1;
+}
+
+fn recursive_layout_name(nodes: ref list<recursive_layout_node>, index: i32) -> str {
+    match list_get(ref nodes, index) {
+        Some(node) => { return node.name; },
+        None => { return ""; },
+    }
+}
+
+// Shortest cycle from the representative back to itself; breadth-first in
+// edge enumeration order, so the earliest edges win among equal lengths.
+fn recursive_layout_cycle_path(nodes: ref list<recursive_layout_node>, edges: ref list<generic_layout_edge>, representative: i32) -> str {
+    let mut queue: list<i32> = list();
+    let mut parents: list<recursive_layout_parent> = list();
+    list_push(mutref queue, representative);
+    let mut cursor = 0;
+    while cursor < list_len(ref queue) {
+        let current = list_get(ref queue, cursor);
+        match current {
+            Some(node) => {
+                for edge in edges {
+                    if edge.parent == node {
+                        if edge.child == representative {
+                            let mut reversed: list<i32> = list();
+                            let mut walk = node;
+                            while walk != representative {
+                                list_push(mutref reversed, walk);
+                                walk = recursive_layout_parent_of(ref parents, walk);
+                            }
+                            let rep_name = recursive_layout_name(ref nodes, representative);
+                            let mut path = rep_name;
+                            let mut index = list_len(ref reversed) - 1;
+                            while index >= 0 {
+                                match list_get(ref reversed, index) {
+                                    Some(step) => { path = concat3(path, " -> ", recursive_layout_name(ref nodes, step)); },
+                                    None => {},
+                                }
+                                index = index - 1;
+                            }
+                            return concat3(path, " -> ", rep_name);
+                        }
+                        if not list_contains_i32(ref queue, edge.child) {
+                            list_push(mutref queue, edge.child);
+                            list_push(mutref parents, recursive_layout_parent { node: edge.child, parent: node });
+                        }
+                    }
+                }
+            },
+            None => {},
+        }
+        cursor = cursor + 1;
+    }
+    return "";
+}
+
+pub fn check_recursive_layouts(items: ref list<top_item>, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, enums: ref list<checked_enum_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>, diags: mutref list<diag>) -> bool
+audit {
+    intent("Report each recursive by-value data layout component once, at its representative declaration, with the shortest cycle path");
+    mutates(diags);
+    effects();
+}
+{
+    let mut unsorted: list<recursive_layout_node> = list();
+    for value in types {
+        list_push(mutref unsorted, recursive_layout_node { module_id: value.module_id, module_name: value.module_name, name: value.name, at: recursive_layout_item_at(ref items, value.module_name, value.name, false, value.at), decl_id: value.id, is_enum: false });
+    }
+    for value in enums {
+        list_push(mutref unsorted, recursive_layout_node { module_id: value.module_id, module_name: value.module_name, name: value.name, at: recursive_layout_item_at(ref items, value.module_name, value.name, true, value.at), decl_id: value.id, is_enum: true });
+    }
+    // Stable selection sort into representative order.
+    let mut nodes: list<recursive_layout_node> = list();
+    let mut taken: list<i32> = list();
+    while list_len(ref nodes) < list_len(ref unsorted) {
+        let mut best = -1;
+        let mut index = 0;
+        for candidate in unsorted {
+            if not list_contains_i32(ref taken, index) {
+                match list_get(ref unsorted, best) {
+                    Some(current) => { if recursive_layout_node_before(candidate, current) { best = index; } },
+                    None => { best = index; },
+                }
+            }
+            index = index + 1;
+        }
+        list_push(mutref taken, best);
+        match list_get(ref unsorted, best) {
+            Some(chosen) => { list_push(mutref nodes, chosen); },
+            None => { return true; },
+        }
+    }
+    let mut edges: list<generic_layout_edge> = list();
+    let mut node_index = 0;
+    for node in nodes {
+        if node.is_enum {
+            for variant in variants {
+                if variant.enum_id == node.decl_id {
+                    let mut payload_index = 0;
+                    while payload_index < variant.payload_count {
+                        for payload in payloads {
+                            if payload.variant_id == variant.id and payload.index == payload_index and not payload.is_borrow {
+                                recursive_layout_walk(ref shapes, ref nodes, payload.type_id, node_index, mutref edges);
+                            }
+                        }
+                        payload_index = payload_index + 1;
+                    }
+                }
+            }
+        } else {
+            for field in fields {
+                if field.type_id == node.decl_id and not field.field_is_borrow {
+                    recursive_layout_walk(ref shapes, ref nodes, field.field_type_id, node_index, mutref edges);
+                }
+            }
+        }
+        node_index = node_index + 1;
+    }
+    let mut reported: list<i32> = list();
+    let mut ok = true;
+    let mut representative = 0;
+    for node in nodes {
+        if not list_contains_i32(ref reported, representative) and recursive_layout_reaches(ref edges, representative, representative) {
+            let mut member = 0;
+            while member < list_len(ref nodes) {
+                if member == representative or (recursive_layout_reaches(ref edges, representative, member) and recursive_layout_reaches(ref edges, member, representative)) {
+                    list_push(mutref reported, member);
+                }
+                member = member + 1;
+            }
+            let path = recursive_layout_cycle_path(ref nodes, ref edges, representative);
+            let message = concat5("type `", node.name, "` contains itself through `", path, "`; recursive data layouts are not supported");
+            list_push(mutref diags, make_diagnostic("NQ-TYPE-052", diag_type, diag_error, node.module_name, node.at, node.at + str_len(node.name), message, "", "store related values in a separate list and refer to them by index"));
+            ok = false;
+        }
+        representative = representative + 1;
+    }
+    return ok;
 }

@@ -1,0 +1,23 @@
+// M57.1 acceptance regression (slice A1): accepted at 675819b and still
+// accepted; the unqualified call reaches the builtin (prints "hello"). Only
+// enum variants named like builtins are reserved (NQ-RESOLVE-010).
+fn print_line(value: str) -> unit
+audit {
+    intent("Declare a function named like a builtin");
+    mutates();
+    effects();
+}
+{
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Call the shadowed name");
+    mutates();
+    effects(print);
+}
+{
+    print_line("hello");
+    return 0;
+}

@@ -14,18 +14,21 @@
   (2026-10-31)
 - [x] M57.1 library-enabling core: Gate A review of the
   [contract](docs/M57_1_CONTRACT.md) (approved 2026-10-31, revision 4)
-- [ ] M57.1: implementation, focused checks, ownership-class trailing
-  audits, milestone gate
-- [ ] Triage correctness defects found while writing the verified tutorial
-  (2026-10-31; each is pinned by a tutorial snippet). These contradict SPEC
-  and are scheduled in M57.1:
-  - assignment to a plain `let` binding is accepted;
-  - a statement `match` missing a variant compiles and falls off the end of
-    the function;
-  - `str` `<` passes `check` and then fails in C compilation; enum `==`
-    does the same (found in M57 planning).
-
-  Also: parse errors are printed four times; `try { f()? + g()? }` reports
+- [x] M57.1: implementation, focused checks, ownership-class trailing
+  audits, milestone gate (2026-10-31;
+  [evidence](AUDIT_REMEDIATION.md#m571-library-enabling-core-close))
+- [ ] Language charter: owner approval, then replace `STABLE_RELEASE.md`
+  and re-plan the roadmap (owner redirected the end goal 2026-10-31)
+- [ ] AGENTS.md audit policy names `gpt-5.5` for the independent
+  adversarial auditor; it is no longer offered on the Codex account
+  (M57.1 used `gpt-6.1-sol`). Update the policy text.
+- [ ] Pre-existing miscompile: `let mut x = x + 1;` in an inner scope reads
+  the new zero-initialised `x` instead of the outer `x` (found in M57.1).
+- [x] Tutorial-found SPEC contradictions fixed in M57.1: assignment to a
+  plain `let` (NQ-TYPE-007), non-exhaustive statement `match` (NQ-TYPE-051),
+  `str <` and enum `==` failing in C (NQ-TYPE-050).
+- [ ] Remaining tutorial-found defects (each pinned by a tutorial snippet):
+  parse errors are printed four times; `try { f()? + g()? }` reports
   NQ-TYPE-042 instead of an NQ-TRY code; a missing workspace lock reports
   NQ-IO-001 without a location; `nauqc run <src> -o <relative>` builds but
   fails to start the program; non-canonical float literals (`.5`, `1.`,

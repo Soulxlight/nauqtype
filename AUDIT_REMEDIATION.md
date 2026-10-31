@@ -873,3 +873,78 @@ Receipts are retained in the native gate clone
 completion documents changed after the gate, bound to the final commit by
 `close`/`verify-close`. No M57 work, stable release or publication is
 claimed.
+
+## M57.1 Library-Enabling Core Close
+
+M57.1 passes on frozen candidate tree
+`d3dfaed11be25ce2b1222091e46dfc60e30e3a1d`, 2026-10-31, based on `1aa6d4e`
+(the M57 plan and Gate A contract commit). Native Ubuntu 24.04/ext4 WSL2,
+GCC 13.3.0 and unchanged serial milestone budgets are the acceptance
+boundary. Compiler lead: Claude Code; implementation by lead-directed workers
+in three parallel slices (places/assignment, comparisons/match/layouts,
+builtins/borrow), an integration slice (evidence, tests, docs) and two
+repair rounds.
+
+`docs/M57_1_CONTRACT.md` (Gate A revision 4, `gpt-5.6-sol` xhigh, which
+required changes on revisions 1-3) and D068 record the feature: `mutref`
+field places and field assignment through `mutref` parameters;
+`list_replace`, `list_pop`, `i64_from_i32`, `i32_from_i64`; NQ-TYPE-007
+(immutable assignment), NQ-TYPE-050 (comparison table, payload-free enum tag
+equality), NQ-TYPE-051 (statement `match` exhaustiveness, with an NQ-C-001
+emitter preflight backstop), NQ-TYPE-052 (located non-generic recursive
+layouts, also in facts/review); forwarded borrow-parameter conflicts
+(NQ-BORROW-006); NQ-RESOLVE-010 for enum variants named like builtin
+callables; and per-surface mutation evidence for field writes. The contract's
+Implementation Notes record seven accepted deviations, chiefly: the
+builtin-name reservation was narrowed to enum variants because M55 Gate B
+deliberately supports qualified user functions named like builtins.
+
+Ownership-class trailing audit, independent verdicts. The required
+`gpt-5.5` xhigh adversarial auditor is no longer offered on the Codex
+account (`model_not_found`, 2026-10-31); `gpt-6.1-sol` xhigh, the strongest
+available model distinct from the primary, substituted for it.
+
+| Round | Primary `gpt-5.6-sol` xhigh | Adversarial `gpt-6.1-sol` xhigh |
+| --- | --- | --- |
+| Frozen `3c55c13` | FAIL: qualified user `list_pop`/`list_replace` routed to builtins | FAIL: same; annotated/inferred shadowing bypassed mutability checks; parenthesized `mutref` places failed handoff |
+| Repair `ecbf86d` | FAIL: handoff still chose bindings by insertion order; qualified arity fell back to unqualified names | FAIL: handoff insertion order (counterexample: an `i32` context lowered into an `i64` field); a regression probe was never invoked |
+| Repair `a3abd08` | PASS | PASS |
+
+The repairs gate every builtin-specific typecheck and C-lowering branch on
+the resolved builtin origin (older list builtins and the integer conversions
+had the same name-only dispatch), publish each function's resolved bindings
+in declaration order so every downstream nearest-binding scan is correct
+(type lookup shared the bug), normalize parenthesized borrow roots, and keep
+qualified calls on qualified arity. Each repair has a regression that failed
+before it, including sanitized execution.
+
+The bootstrap seed was not promoted; the compiler source compiles under the
+stricter rules without source changes.
+
+| Fresh Gate Phase | Seconds |
+| --- | ---: |
+| Stage1 driver | 331 |
+| Seed bootstrap | 363 |
+| Proof | 708 |
+| Linux alpha | 10 |
+| Stress leg | 3 |
+| Owned tests | 285 |
+| Ownership sanitizers | 6 |
+
+`scripts/check_milestone.sh` exits 0. GNU time records 1720 s wall and
+695024 KiB peak RSS, within the checked-in ceilings. Two earlier gate runs
+on the superseded candidates (`3c55c13`, `ecbf86d`) also passed; they are
+not acceptance evidence.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `b6e2f99dee06435aa38be05c87acfb3798a2713d8f17b0a25b621afd22029a83` |
+| Performance summary | `3039d90de62bd5a3bdbe559e2991f153d19da762743a53d0170cd3a88579d8a5` |
+| Proof summary | `822d31c5f6269436afa0f9cc8ba3289887f7ebcb553b4aca0b3454b956893e13` |
+| Seed manifest (unchanged) | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Receipts are retained in the native gate clone
+(`~/nauqtype-work/m57-1-gate/build/verification/`). Only allowlisted
+completion documents changed after the gate, bound to the final commit by
+`close`/`verify-close`. No later M57 work, stable release or publication is
+claimed.

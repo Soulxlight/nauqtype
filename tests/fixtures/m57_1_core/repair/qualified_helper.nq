@@ -1,0 +1,110 @@
+// M57.1 repair (F1): user functions named like the list and integer builtins,
+// reached from qualified_builtins.nq only by qualified calls. Each one
+// deliberately differs from the builtin it shares a name with (parameter
+// kinds, arity, element or return type, behaviour), so a call that is
+// redirected to the builtin either fails to compile or prints the wrong line.
+// Unqualified calls inside this module still reach the builtins.
+
+pub type Item {
+    name: str,
+    weight: i32,
+}
+
+// Reads only, never removes: a `ref` list, where the builtin takes `mutref`.
+pub fn list_pop(items: ref list<str>) -> option<str>
+audit {
+    intent("Describe a list without removing anything");
+    mutates();
+    effects();
+}
+{
+    return Some(str_concat("user-pop-", str_from_f64(f64_from_i32(list_len(ref items)))));
+}
+
+// Four parameters, a `ref` list of a user element type, and an i32 result
+// instead of option<T>.
+pub fn list_replace(items: ref list<Item>, index: i32, value: Item, bonus: i32) -> i32
+audit {
+    intent("Score a replacement without changing the list");
+    mutates();
+    effects();
+}
+{
+    return list_len(ref items) * 100 + index * 10 + bonus + value.weight;
+}
+
+// Pushes two values through the builtin and returns the new length.
+pub fn list_push(items: mutref list<str>, first: str, second: str) -> i32
+audit {
+    intent("Append two values through the builtin");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, first);
+    list_push(mutref items, second);
+    return list_len(ref items);
+}
+
+pub fn list_len(items: ref list<str>) -> i32
+audit {
+    intent("Report an offset length");
+    mutates();
+    effects();
+}
+{
+    return 900 + list_len(ref items);
+}
+
+// Returns a plain str, not option<T>, for a list of a non-copy element.
+pub fn list_get(items: ref list<str>, index: i32) -> str
+audit {
+    intent("Name an index without reading the list");
+    mutates();
+    effects();
+}
+{
+    return str_concat("user-get-", str_from_f64(f64_from_i32(index)));
+}
+
+pub fn i64_from_i32(value: i32) -> i32
+audit {
+    intent("Return the successor as i32");
+    mutates();
+    effects();
+}
+{
+    return value + 1;
+}
+
+pub fn i32_from_i64(value: i64) -> i64
+audit {
+    intent("Return the double as i64");
+    mutates();
+    effects();
+}
+{
+    return value * 2;
+}
+
+// The builtin list constructor takes no arguments and returns list<T>.
+pub fn list(count: i32) -> i32
+audit {
+    intent("Triple a count");
+    mutates();
+    effects();
+}
+{
+    return count * 3;
+}
+
+// The builtin str_join returns str; this one returns an i32.
+pub fn str_join(items: ref list<str>, separator: i32) -> i32
+audit {
+    intent("Offset a list length");
+    mutates();
+    effects();
+}
+{
+    return list_len(ref items) + separator;
+}

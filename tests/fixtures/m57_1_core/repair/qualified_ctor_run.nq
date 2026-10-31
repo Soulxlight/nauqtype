@@ -1,0 +1,28 @@
+// M57.1 repair (F1 arity): a qualified constructor call is checked against the
+// qualified variant's payload count. (A same-named local function in this
+// module would be an NQ-RESOLVE-010 import collision, so the unqualified
+// fallback the repair removed cannot be observed from source; this pins the
+// qualified path.)
+use qualified_ctor_helper;
+
+fn dot(value: i32) -> i32 {
+    return value * 10;
+}
+
+fn area(shape: Shape) -> i32 {
+    match shape {
+        qualified_ctor_helper::Dot(width, height) => {
+            return width * height;
+        },
+        qualified_ctor_helper::Empty => {
+            return 0;
+        },
+    }
+}
+
+fn main() -> i32 {
+    let shape = qualified_ctor_helper::Dot(3, 4);
+    print_line(str_from_f64(f64_from_i32(area(shape))));
+    print_line(str_from_f64(f64_from_i32(dot(5))));
+    return 0;
+}

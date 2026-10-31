@@ -743,3 +743,62 @@ Full user generics and broader mutable-string/library growth remain deferred.
   into `runtime.h`; emitted C no longer declares `NQ_Option__i64` itself, with
   identical names and layout. The text builtins have no per-call locale
   construction on Windows builds and fail closed there.
+
+## D068: Library-enabling core
+
+- **Decision.** M57.1 widens existing syntax so ordinary Nauqtype modules can
+  update data in place, and adds four builtins; no new syntax. A `mutref`
+  call argument may name a product field path `root.f...` whose root is a
+  `let mut` owned local or a `mutref` parameter (otherwise NQ-TYPE-012 naming
+  the root). `p.field = value;` is accepted through a `mutref` product
+  parameter, writes through the borrow and drops the old field value once.
+  `list_replace(mutref items, index, value) -> option<T>` and
+  `list_pop(mutref items) -> option<T>` move elements in and out without a
+  copy element type; `i64_from_i32` is exact and `i32_from_i64` returns
+  `option<i32>`. Four repairs make `check` reject what used to fail late or
+  silently: assignment to an immutable binding (NQ-TYPE-007), a non-exhaustive
+  closed-domain statement `match` (NQ-TYPE-051, with an NQ-C-001 emitter
+  backstop), runtime comparisons the backend cannot lower (NQ-TYPE-050; `==`
+  on payload-free enums lowers to tag comparison), and non-generic recursive
+  layouts (NQ-TYPE-052, also in facts and review). Borrow conflicts are
+  root-based and include forwarded borrow parameters (NQ-BORROW-006); an enum
+  variant may not take a builtin callable name (NQ-RESOLVE-010).
+  `docs/M57_1_CONTRACT.md` owns exact rules, diagnostics and its accepted
+  implementation notes.
+- **Alternatives rejected.** A builtin `map<K, V>` (STABLE_RELEASE engineering
+  rules, and the field/list gaps would still block every other library);
+  field-disjoint borrow checking (needs place-aware conflict tracking in
+  borrow, review and C aliasing reasoning); moving fields out of owned
+  products; `list_replace` returning `result<T, T>`; a fatal error on a bad
+  index; `%` and bitwise operators; extending constant comparisons beyond
+  integers; reserving builtin names for top-level functions, types, enums and
+  constants (M55 deliberately reaches user functions named like builtins
+  through qualified calls).
+- **Reason.** M57.2-M57.4 ship maps, sets and arena JSON as ordinary modules.
+  Before M57.1 no user-written data structure could be updated in place:
+  `mutref m.items` and field assignment through `mutref` were rejected, a list
+  element could only be appended or copied out, `i32` and `i64` could not be
+  converted, and three SPEC violations (plain `let` assignment, fall-through
+  statement `match`, uncompilable comparisons) made library code silently
+  wrong or late-failing.
+- **Evidence.** A field assignment through a `mutref` parameter is a direct
+  write in contract validation and every review version; call-mediated field
+  place writes (`mutref p.f` arguments, `list_replace`, `list_pop`) appear in
+  review v4/v5 and contract validation only. Review v1/v2 project a field write
+  into their name-based model only when the checked handoff proves its root
+  binding is a `mutref` parameter. Facts change only by listing the new
+  builtins where builtin calls already appear; no schema version changes.
+- **Consequences.** Programs that relied on the repaired defects stop
+  compiling (the compatibility list in the contract); each is unsound or
+  failed later before. No compiler source repair was needed for stage1 to
+  compile itself under the stricter rules. `selfhost/typecheck.nq` imports `generic_names` to spell
+  generic instances in NQ-TYPE-050 as source writes them (an import edge, not a
+  new module). The seed is not promoted. Recursion through containers stays
+  deferred.
+- **Reversibility.** The widened forms (field places, field assignment
+  through `mutref`, the builtins) are additive and could be withdrawn only by a
+  breaking change, so they are intended to stay. The repairs reject only
+  unsound or late-failing programs and should not be reversed. The
+  conservative choices (root-based conflicts, no recursion through containers,
+  enum-variant-only reservation) can each be relaxed later without breaking
+  accepted programs.

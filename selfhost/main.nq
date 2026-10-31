@@ -969,6 +969,9 @@ fn run_pipeline(workspace_root: str, entry_module: str, entry_path: str, output_
     if source_graph_has_generics(ref sources) {
         if diagnostics_have_errors(ref diags) { return emit_pipeline_failure(mutref diags, ref sources, diagnostics_json); }
         if not check_generic_layouts(ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref diags) { return emit_pipeline_failure(mutref diags, ref sources, diagnostics_json); }
+    } else {
+        // M57.1: NQ-TYPE-052 replaces the late NQ-HANDOFF-002 for non-generic graphs.
+        if not diagnostics_have_errors(ref diags) and not check_recursive_layouts(ref items, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref diags) { return emit_pipeline_failure(mutref diags, ref sources, diagnostics_json); }
     }
     let mut contract_mutations: list<review_direct_mutation> = list();
     let mut contract_coverage: list<review_mutation_coverage> = list();
@@ -1175,6 +1178,7 @@ fn run_facts(workspace_root: str, entry_module: str, entry_path: str, format_ver
     assemble_frontend(ref loaded, ref uses, ref items, ref type_refs, ref scopes, ref bindings, ref refs, ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref call_facts, ref pattern_facts, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref sources, entry_module, false, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     if diagnostics_have_errors(ref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    if not check_tooling_recursive_layouts(ref sources, ref items, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref diags) { emit_all_with_sources(ref diags, ref sources); return 1; }
     let mut contract_mutations: list<review_direct_mutation> = list();
     let mut contract_coverage: list<review_mutation_coverage> = list();
     let contract_summaries = assemble_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, mutref call_facts, mutref local_inits, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements, ref checked_expressions, ref checked_expr_children, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref contract_functions, mutref contract_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
@@ -1263,6 +1267,7 @@ fn collect_facts_ready_project(capture: workspace_capture, captured_sources: ref
     assemble_frontend(ref loaded, ref uses, ref items, ref type_refs, ref scopes, ref bindings, ref refs, ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref call_facts, ref pattern_facts, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref sources, entry_module, false, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     if diagnostics_have_errors(ref diags) { return false; }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements_out, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions_out, mutref checked_expr_children_out, mutref checked_struct_fields_out, mutref diags);
+    if not check_tooling_recursive_layouts(ref sources, ref items, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref diags) { return false; }
     let mut contract_mutations: list<review_direct_mutation> = list();
     let mut contract_coverage: list<review_mutation_coverage> = list();
     let contract_summaries = assemble_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, mutref call_facts, mutref local_inits, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements_out, ref checked_expressions_out, ref checked_expr_children_out, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref contract_functions, mutref contract_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
@@ -1337,6 +1342,46 @@ fn run_policy_check(workspace_root: str, entry_module: str, entry_path: str, pol
     return emit_policy_check(capture, ref dependencies, entry_module, ref items, ref uses, ref variant_facts, ref field_facts, ref bindings, policy_path);
 }
 
+// M57.1: review v1/v2 (and review-diff) infer mutation from name-based
+// assignment facts, which only record `name = value;`. Project a checked field
+// assignment `p.f = value;` into that model only when the handoff proves its
+// root binding id is a `mutref` parameter of the same function. A shadowing
+// owned local that shares the parameter's name has its own binding id and is
+// never projected.
+fn project_legacy_field_mutations(bindings: ref list<checked_binding>, statements: ref list<checked_stmt>, assignment_facts: mutref list<assignment_fact>) -> unit {
+    for stmt in statements {
+        let mut field_write = false;
+        match stmt.kind {
+            checked_stmt_field_assign => { field_write = true; },
+            _ => {},
+        }
+        if field_write and stmt.target_binding_id > 0 {
+            match list_get(ref bindings, stmt.target_binding_id - 1) {
+                Some(binding) => {
+                    let mut is_param = false;
+                    match binding.kind {
+                        checked_binding_param => { is_param = true; },
+                        _ => {},
+                    }
+                    if is_param and binding.id == stmt.target_binding_id and binding.function_id == stmt.function_id and binding.module_name == stmt.module_name and binding.function_name == stmt.function_name and binding.is_borrow and binding.borrow_mutable {
+                        list_push(mutref assignment_facts, make_assignment_fact(binding.module_name, binding.function_name, stmt.scope_id, binding.name, stmt.at, stmt.at, stmt.at, expr_unknown, "", ""));
+                    }
+                },
+                None => {},
+            }
+        }
+    }
+    return;
+}
+
+// M57.1: `check` reports a non-generic recursive layout as NQ-TYPE-052 right
+// after the checked handoff; facts and review run the same check at the same
+// point instead of failing later with a location-free NQ-HANDOFF-002.
+fn check_tooling_recursive_layouts(sources: ref list<source_file>, items: ref list<top_item>, shapes: ref list<checked_type_shape>, types: ref list<checked_type_decl>, fields: ref list<checked_field_decl>, enums: ref list<checked_enum_decl>, variants: ref list<checked_variant_decl>, payloads: ref list<checked_variant_payload_decl>, diags: mutref list<diag>) -> bool {
+    if source_graph_has_generics(ref sources) or diagnostics_have_errors(ref diags) { return true; }
+    return check_recursive_layouts(ref items, ref shapes, ref types, ref fields, ref enums, ref variants, ref payloads, mutref diags);
+}
+
 fn collect_review_ready_project(allow_generics: bool, capture: workspace_capture, captured_sources: ref list<workspace_captured_source>, dependencies: ref list<workspace_locked_dependency>, workspace_root: str, entry_module: str, entry_path: str, sources: mutref list<source_file>, uses: mutref list<module_use>, items: mutref list<top_item>, function_facts: mutref list<function_fact>, variant_facts: mutref list<variant_fact>, function_param_facts: mutref list<function_param_fact>, assignment_facts: mutref list<assignment_fact>, call_facts: mutref list<call_fact>, local_inits: mutref list<local_init_fact>, contract_functions: mutref list<review_function_fact>, contract_decls: mutref list<review_decl_entry>, diags: mutref list<diag>, mutation_mode: i32, direct_mutations: mutref list<review_direct_mutation>, coverage_out: mutref list<review_mutation_coverage>) -> review_summary {
     let mut seen: list<str> = list();
     let mut loaded: list<str> = list();
@@ -1383,6 +1428,7 @@ fn collect_review_ready_project(allow_generics: bool, capture: workspace_capture
     assemble_frontend(ref loaded, ref uses, ref items, ref type_refs, ref scopes, ref bindings, ref refs, ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref call_facts, ref pattern_facts, ref typed_bindings, ref field_facts, ref match_arms, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref sources, entry_module, false, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
     if diagnostics_have_errors(ref diags) { return make_review_summary(0, 0, 0, 1); }
     let checked_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arms, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    if not check_tooling_recursive_layouts(ref sources, ref items, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref diags) { return make_review_summary(0, 0, 0, 1); }
     let mut contract_mutations: list<review_direct_mutation> = list();
     let mut contract_coverage: list<review_mutation_coverage> = list();
     let contract_summaries = assemble_source_contracts(ref sources, ref uses, ref items, ref function_facts, ref function_param_facts, ref assignment_facts, mutref call_facts, mutref local_inits, ref checked_functions, ref checked_bindings, ref checked_params, ref checked_statements, ref checked_expressions, ref checked_expr_children, ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref contract_functions, mutref contract_decls, mutref contract_mutations, mutref contract_coverage, mutref diags);
@@ -1402,6 +1448,7 @@ fn collect_review_ready_project(allow_generics: bool, capture: workspace_capture
         collect_review_direct_mutations(ref checked_bindings, ref checked_params, ref checked_statements, mutref direct_mutations, mutref diags);
     }
     if mutation_mode == 4 or mutation_mode == 5 { direct_mutations = contract_mutations; }
+    if mutation_mode < 3 { project_legacy_field_mutations(ref checked_bindings, ref checked_statements, mutref assignment_facts); }
     coverage_out = contract_coverage;
     return checked_contract_summary;
 }

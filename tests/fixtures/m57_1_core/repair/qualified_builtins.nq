@@ -1,0 +1,126 @@
+// M57.1 repair (F1): a qualified call reaches the user function even when it
+// shares a builtin's name, in type checking and in both C lowering paths;
+// unqualified calls in the same program still reach the builtins. The owned
+// test runs this program, checks the emitted C calls the user symbols, and
+// runs the same C under ASan/UBSan with leak detection.
+use qualified_helper;
+
+fn show(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled integer");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn show_i64(label: str, value: i64) -> unit
+audit {
+    intent("Print one labeled 64-bit integer");
+    mutates();
+    effects(print);
+}
+{
+    match f64_from_i64(value) {
+        Some(found) => {
+            print_line(str_concat(str_concat(label, " "), str_from_f64(found)));
+        },
+        None => {
+            print_line(str_concat(label, " inexact"));
+        },
+    }
+    return;
+}
+
+fn show_text(label: str, value: option<str>) -> unit
+audit {
+    intent("Print one labeled optional text");
+    mutates();
+    effects(print);
+}
+{
+    match value {
+        Some(found) => {
+            print_line(str_concat(str_concat(label, " "), found));
+        },
+        None => {
+            print_line(str_concat(label, " None"));
+        },
+    }
+    return;
+}
+
+fn main() -> i32 {
+    let mut words: list<str> = [str_concat("ke", "ep")];
+    // The audited counterexample: the user list_pop takes `ref` and must not
+    // remove anything.
+    let popped = qualified_helper::list_pop(ref words);
+    show_text("user pop", popped);
+    show_text("user pop named", qualified_helper::list_pop(items: ref words));
+    show("words after user pop", list_len(ref words));
+    let items: list<Item> = [Item { name: str_concat("a", "b"), weight: 1 }];
+    show("user replace", qualified_helper::list_replace(ref items, 2, Item { name: str_concat("c", "d"), weight: 7 }, 4));
+    show("user replace named", qualified_helper::list_replace(bonus: 5, value: Item { name: "e", weight: 3 }, index: 1, items: ref items));
+    show("user push", qualified_helper::list_push(mutref words, str_concat("b", ""), "c"));
+    show("user push named", qualified_helper::list_push(second: "e", first: "d", items: mutref words));
+    show("user len", qualified_helper::list_len(ref words));
+    show("user len named", qualified_helper::list_len(items: ref words));
+    print_line(qualified_helper::list_get(ref words, 0));
+    print_line(qualified_helper::list_get(index: 9, items: ref words));
+    show("user widen", qualified_helper::i64_from_i32(41));
+    show("user widen named", qualified_helper::i64_from_i32(value: 1));
+    show_i64("user narrow", qualified_helper::i32_from_i64(21));
+    show_i64("user narrow named", qualified_helper::i32_from_i64(value: 4));
+    show("user list", qualified_helper::list(4));
+    show("user list named", qualified_helper::list(count: 2));
+    show("user join", qualified_helper::str_join(ref words, 10));
+    show("user join named", qualified_helper::str_join(separator: 20, items: ref words));
+    // Unqualified calls reach the builtins.
+    let made: list<str> = list();
+    show("builtin list", list_len(ref made));
+    print_line(str_join(ref words));
+    show_text("builtin pop", list_pop(mutref words));
+    show("words after builtin pop", list_len(ref words));
+    show_text("builtin replace", list_replace(mutref words, 0, str_concat("fi", "rst")));
+    list_push(mutref words, "f");
+    show("builtin len", list_len(ref words));
+    let mut pool: list<Item> = [Item { name: "x", weight: 10 }, Item { name: "y", weight: 20 }];
+    match list_pop(mutref pool) {
+        Some(found) => {
+            show(str_concat("builtin pop item ", found.name), found.weight);
+        },
+        None => {
+            print_line("builtin pop item None");
+        },
+    }
+    match list_replace(mutref pool, 0, Item { name: "z", weight: 30 }) {
+        Some(old) => {
+            show(str_concat("builtin replace item ", old.name), old.weight);
+        },
+        None => {
+            print_line("builtin replace item None");
+        },
+    }
+    show("pool after builtin calls", list_len(ref pool));
+    let numbers: list<i32> = [5, 6];
+    match list_get(ref numbers, 1) {
+        Some(found) => {
+            show("builtin get", found);
+        },
+        None => {
+            print_line("builtin get None");
+        },
+    }
+    show_i64("builtin widen", i64_from_i32(41));
+    match i32_from_i64(i64_from_i32(77)) {
+        Some(found) => {
+            show("builtin narrow", found);
+        },
+        None => {
+            print_line("builtin narrow None");
+        },
+    }
+    return 0;
+}

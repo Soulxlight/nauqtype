@@ -1159,6 +1159,21 @@ fn skip_until_match_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
     }
 }
 
+// M57.1 repair: the root binding of a borrowed place `root.f1...`, which the
+// type checker also accepts wrapped in parentheses (`mutref (bag.items)`).
+// Uses the same normalization as typecheck: strip wrapping parens, then the
+// first token names the root. The borrow checker's root-based conflict rule
+// reads the binding resolved from this token.
+fn borrow_place_root_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut target_start = start;
+    let mut target_end = end;
+    while span_is_wrapped_in_parens(ref tokens, target_start, target_end) {
+        target_start = target_start + 1;
+        target_end = target_end - 1;
+    }
+    return target_start;
+}
+
 fn span_is_wrapped_in_parens(tokens: ref list<token>, start: i32, end: i32) -> bool {
     if end - start < 2 {
         return false;
@@ -3506,6 +3521,23 @@ fn handoff_builtin_function_param_name(function_name: str, index: i32) -> str {
             return "index";
         }
     }
+    if function_name == "list_replace" {
+        if index == 0 {
+            return "items";
+        }
+        if index == 1 {
+            return "index";
+        }
+        if index == 2 {
+            return "value";
+        }
+    }
+    if function_name == "list_pop" and index == 0 {
+        return "items";
+    }
+    if (function_name == "i64_from_i32" or function_name == "i32_from_i64") and index == 0 {
+        return "value";
+    }
     return "";
 }
 
@@ -3541,6 +3573,12 @@ fn handoff_builtin_function_param_count(function_name: str) -> i32 {
         return 2;
     }
     if function_name == "f64_from_i32" or function_name == "f64_from_i64" or function_name == "f64_trunc_i32" or function_name == "f64_trunc_i64" or function_name == "str_from_f64" or function_name == "f64_from_str" {
+        return 1;
+    }
+    if function_name == "list_replace" {
+        return 3;
+    }
+    if function_name == "list_pop" or function_name == "i64_from_i32" or function_name == "i32_from_i64" {
         return 1;
     }
     return -1;
@@ -4009,9 +4047,10 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
     match current.kind {
         tk_kw_ref => {
             let child_id = build_expr_tree(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, expr_start + 1).text, current.start + 1);
+            let root_index = borrow_place_root_index(ref tokens, expr_start + 1, expr_end);
+            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start + 1);
             if child_id < 0 or binding_id < 0 {
-                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for ref expression: ", token_at(ref tokens, expr_start + 1).text));
+                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for ref expression: ", token_at(ref tokens, root_index).text));
             }
             let expr_id = push_expr_record(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_ref, exported_ctx, true, false, binding_id, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             push_expr_child(mutref expr_children, expr_id, 0, child_id);
@@ -4019,9 +4058,10 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
         },
         tk_kw_mutref => {
             let child_id = build_expr_tree(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
-            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, expr_start + 1).text, current.start + 1);
+            let root_index = borrow_place_root_index(ref tokens, expr_start + 1, expr_end);
+            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start + 1);
             if child_id < 0 or binding_id < 0 {
-                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for mutref expression: ", token_at(ref tokens, expr_start + 1).text));
+                return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for mutref expression: ", token_at(ref tokens, root_index).text));
             }
             let expr_id = push_expr_record(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_mutref, exported_ctx, true, true, binding_id, "", checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
             push_expr_child(mutref expr_children, expr_id, 0, child_id);

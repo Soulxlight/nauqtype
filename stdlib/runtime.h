@@ -418,6 +418,10 @@ NQ_List__str nq_list__str_from_array(const NQStr* values, int32_t len);
 NQUnit nq_list__str_push(NQ_List__str* items, NQStr value);
 int32_t nq_list__str_len(const NQ_List__str* items);
 NQ_Option__str nq_list__str_get(const NQ_List__str* items, int32_t index);
+/* M57.1: replace consumes value (stored, or dropped once on a bad index) and
+ * moves the old element into the result; pop moves the last element out. */
+NQ_Option__str nq_list__str_replace(NQ_List__str* items, int32_t index, NQStr value);
+NQ_Option__str nq_list__str_pop(NQ_List__str* items);
 void nq_list__str_drop(NQ_List__str* items);
 int32_t nq_str_len(NQStr text);
 NQStr nq_str_concat(NQStr left, NQStr right);
@@ -453,6 +457,10 @@ NQ_Option__i32 nq_f64_trunc_i32(double value);
 NQ_Option__i64 nq_f64_trunc_i64(double value);
 NQStr nq_str_from_f64(double value);
 NQ_Option__f64 nq_f64_from_str(NQStr text);
+/* Integer conversions (M57.1): i64_from_i32 is exact; i32_from_i64 returns
+ * None outside [-2147483648, 2147483647]. */
+int64_t nq_i64_from_i32(int32_t value);
+NQ_Option__i32 nq_i32_from_i64(int64_t value);
 NQBytes nq_bytes_from_str(NQStr text);
 NQStr nq_str_from_bytes(const NQBytes* bytes);
 int64_t nq_bytes_len(const NQBytes* bytes);

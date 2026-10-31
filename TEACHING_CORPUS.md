@@ -34,6 +34,15 @@ These examples cover specific semantic features of Nauqtype.
   `f64_trunc_i64`, and the NaN (`x != x`) and finiteness (`x - x == 0.0`)
   idioms. Every fallible conversion returns `option` and is handled visibly.
 
+- [in_place_update.nq](examples/in_place_update.nq): In-place updates
+  (M57.1): a product holding a `list` is changed through `mutref` parameters
+  with `list_push(mutref shelf.items, ...)` and `shelf.count = ...`, an
+  element is swapped out with `list_replace` and removed with `list_pop` (both
+  hand the old value back as `option`), an `i64` is narrowed with
+  `i32_from_i64` and its `None` handled, and a payload-free enum is compared
+  with `==`/`!=`. Each helper's `mutates(shelf)` covers both field writes and
+  call-mediated writes.
+
 - [list_literals.nq](examples/list_literals.nq): Using square brackets to construct homogeneous `list<T>` literals.
 - [for_list.nq](examples/for_list.nq): Iterating directly over `list<T>` with an immutable per-iteration binding and nearest-loop `break` / `continue`.
 - [composite_field_backend.nq](examples/composite_field_backend.nq): Storing `list<T>`, `option<T>`, and `result<T, E>` values in a product type and borrowing a list field directly for a helper call.
@@ -41,7 +50,7 @@ These examples cover specific semantic features of Nauqtype.
 - [match_expr_let_else.nq](examples/match_expr_let_else.nq): Using `match` as an expression to yield values, and the `let-else` guard binding.
 - [record_update.nq](examples/record_update.nq): Copy-only record update using the explicit `Type { from base, field: value }` syntax.
 - [record_update_nontrivial.nq](examples/record_update_nontrivial.nq): Record update performed over a computed owned base value.
-- [field_assignment.nq](examples/field_assignment.nq): Updating a direct field on an owned `let mut` product local without widening mutation authority.
+- [field_assignment.nq](examples/field_assignment.nq): Updating a direct field on an owned `let mut` product local without widening mutation authority (`in_place_update.nq` shows the same write through a `mutref` parameter).
 - [named_arguments.nq](examples/named_arguments.nq): Using labeled arguments in direct function calls.
 - [qualified_calls.nq](examples/qualified_calls.nq): Making direct module-qualified function calls across a flat-root module boundary.
 - [qualified_call_chain.nq](examples/qualified_call_chain.nq): Multi-module qualified call chains across several files.
@@ -87,6 +96,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `generic_reuse.nq`
 - `hello.nq`
 - `import_aliases.nq`
+- `in_place_update.nq`
 - `list_literals.nq`
 - `list_sum.nq`
 - `match_expr_let_else.nq`
@@ -132,7 +142,7 @@ To teach supervised failure to a model:
 1. **Unpropagated Errors:** Remove the `propagates(io_err)` clause from `examples/propagation_question.nq` and run `bin/nauqc check` to see `NQ-PROPAGATE-004`.
 2. **Undeclared Mutation:** Remove the `mutates()` clause from `examples/mutate_counter.nq` to see the compiler infer the `mutref` and demand the contract.
 3. **Invalid Exact Error:** Try using `?` on an `io_err` inside a function returning `result<str, parse_err>` in `examples/fallible_function.nq` to see the exact matching rules reject the code (`NQ-PROPAGATE-003`).
-4. **Restricted Field Mutation:** Remove `mut` from `score` in `examples/field_assignment.nq`, or try assigning through a `mutref` parameter, to see direct field writes rejected outside owned mutable product locals.
+4. **Restricted Field Mutation:** Remove `mut` from `score` in `examples/field_assignment.nq`, or change `shelf: mutref Shelf` to `shelf: ref Shelf` in `examples/in_place_update.nq`, to see field writes rejected outside owned mutable product locals and `mutref` parameters.
 5. **Refined Pattern Fallback:** Remove the `_` arm from `examples/nested_patterns.nq` to see refined patterns rejected until their fallback path is explicit.
 6. **Ambiguous Try Boundary:** Remove the `result<i32, io_err>` annotation from `measured` in `examples/try_expression.nq` to see `NQ-TRY-001` require explicit boundary truth.
 7. **Unsafe Try Control Flow:** Put a propagated call on the right side of `and` inside `try` to see `NQ-TRY-004` preserve short-circuit semantics rather than hoisting the call.
@@ -148,3 +158,13 @@ To teach supervised failure to a model:
    numbers implicitly". Write `let Some(total) = f64_from_i64(count) else {
    ... };` and handle the `None` case (an `i64` that is not exactly
    representable). The `integer-policy` suite pins this exact diagnostic.
+10. **M57.1 Library-Core Rules:** `tests/fixtures/m57_1_core/teaching_negative.nq`
+    shows an enum variant named like a builtin (`NQ-RESOLVE-010`), a statement
+    `match` missing a variant (`NQ-TYPE-051`), assignment to a plain `let`
+    (`NQ-TYPE-007`), and `str <` (`NQ-TYPE-050`). Later-phase codes need a
+    clean front end, so they have companion files: `teaching_negative_place.nq`
+    (`mutref` through a `ref` parameter's field, `NQ-TYPE-012`),
+    `teaching_negative_layout.nq` (a type containing itself through a `list`,
+    `NQ-TYPE-052`), and `teaching_negative_borrow.nq` (a forwarded `mutref`
+    parameter beside `mutref` of its own field in one call, `NQ-BORROW-006`).
+    The `integer-policy` suite pins each exact diagnostic.

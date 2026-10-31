@@ -1,0 +1,244 @@
+// M57.1 slice B: list_replace, list_pop, and the i32/i64 conversions end to
+// end. Strings are built with str_concat so they are heap-owned and every
+// move, clone, and drop changes a real reference count; the gate runs this
+// program plainly and under ASan/UBSan with leak detection.
+
+type Item {
+    name: str,
+    weight: i32,
+}
+
+fn show_i32(value: i32) -> str {
+    return str_from_f64(f64_from_i32(value));
+}
+
+fn show_i64(value: i64) -> str {
+    match f64_from_i64(value) {
+        Some(found) => {
+            return str_from_f64(found);
+        },
+        None => {
+            return "inexact";
+        },
+    }
+}
+
+fn owned(text: str) -> str {
+    return str_concat(text, "!");
+}
+
+fn describe_i32(value: option<i32>) -> str {
+    match value {
+        Some(found) => {
+            return str_concat("Some(", str_concat(show_i32(found), ")"));
+        },
+        None => {
+            return "None";
+        },
+    }
+}
+
+fn describe_str(value: option<str>) -> str {
+    match value {
+        Some(found) => {
+            return str_concat("Some(", str_concat(found, ")"));
+        },
+        None => {
+            return "None";
+        },
+    }
+}
+
+fn describe_item(value: option<Item>) -> str {
+    match value {
+        Some(found) => {
+            return str_concat(found.name, str_concat("/", show_i32(found.weight)));
+        },
+        None => {
+            return "None";
+        },
+    }
+}
+
+// A mutref parameter forwarded by name to the builtin's borrow parameter.
+fn replace_through(items: mutref list<str>, index: i32, value: str) -> option<str>
+audit {
+    intent("Replace one element through a forwarded mutable borrow");
+    mutates(items);
+    effects();
+}
+{
+    return list_replace(items, index, value);
+}
+
+fn pop_through(items: mutref list<str>) -> option<str>
+audit {
+    intent("Pop through a forwarded mutable borrow");
+    mutates(items);
+    effects();
+}
+{
+    return list_pop(items);
+}
+
+// The popped element must survive dropping the shortened list.
+fn take_last(items: list<str>) -> option<str> {
+    let mut held = items;
+    return list_pop(mutref held);
+}
+
+fn rotate_first<T>(items: mutref list<T>, value: T) -> option<T>
+audit {
+    intent("Swap the first element of any list for a new value");
+    mutates(items);
+    effects();
+}
+{
+    return list_replace(items, 0, value);
+}
+
+fn int_cases() -> unit
+audit {
+    intent("Replace and pop a list of copy elements");
+    mutates();
+    effects(print);
+}
+{
+    let mut numbers = [10, 20, 30];
+    print_line(describe_i32(list_replace(mutref numbers, 1, 21)));
+    print_line(describe_i32(list_replace(mutref numbers, -1, 99)));
+    print_line(describe_i32(list_replace(mutref numbers, 3, 99)));
+    print_line(describe_i32(list_get(ref numbers, 1)));
+    print_line(describe_i32(list_pop(mutref numbers)));
+    print_line(describe_i32(list_pop(mutref numbers)));
+    print_line(describe_i32(list_pop(mutref numbers)));
+    print_line(describe_i32(list_pop(mutref numbers)));
+    print_line(show_i32(list_len(ref numbers)));
+    list_push(mutref numbers, 7);
+    print_line(describe_i32(list_get(ref numbers, 0)));
+    return;
+}
+
+fn str_cases() -> unit
+audit {
+    intent("Replace and pop the runtime-native string list");
+    mutates();
+    effects(print);
+}
+{
+    let mut words: list<str> = [owned("a"), owned("b"), owned("c")];
+    let shared = list_get(ref words, 0);
+    print_line(describe_str(list_replace(mutref words, 0, owned("x"))));
+    print_line(describe_str(shared));
+    print_line(describe_str(list_replace(mutref words, 3, owned("lost"))));
+    let keep = owned("kept");
+    print_line(describe_str(list_replace(mutref words, -1, keep)));
+    print_line(describe_str(replace_through(mutref words, 1, owned("y"))));
+    print_line(describe_str(pop_through(mutref words)));
+    print_line(str_join(ref words));
+    list_push(mutref words, owned("z"));
+    let last = take_last(words);
+    print_line(describe_str(last));
+    let mut empty: list<str> = list();
+    print_line(describe_str(list_pop(mutref empty)));
+    print_line(describe_str(list_replace(mutref empty, 0, owned("never"))));
+    return;
+}
+
+fn nested_cases() -> unit
+audit {
+    intent("Replace and pop move-only list elements");
+    mutates();
+    effects(print);
+}
+{
+    let mut rows: list<list<i32>> = list();
+    list_push(mutref rows, [1, 2]);
+    list_push(mutref rows, [3]);
+    match list_replace(mutref rows, 0, [4, 5, 6]) {
+        Some(old) => {
+            print_line(str_concat("old row ", show_i32(list_len(ref old))));
+        },
+        None => {
+            print_line("missing row");
+        },
+    }
+    match list_replace(mutref rows, 2, [9]) {
+        Some(old) => {
+            print_line(str_concat("unexpected row ", show_i32(list_len(ref old))));
+        },
+        None => {
+            print_line("rejected row");
+        },
+    }
+    match list_pop(mutref rows) {
+        Some(row) => {
+            print_line(str_concat("popped row ", show_i32(list_len(ref row))));
+        },
+        None => {
+            print_line("empty rows");
+        },
+    }
+    print_line(str_concat("rows left ", show_i32(list_len(ref rows))));
+    let mut items: list<Item> = [Item { name: owned("p"), weight: 1 }, Item { name: owned("q"), weight: 2 }];
+    print_line(describe_item(list_replace(mutref items, 1, Item { name: owned("r"), weight: 3 })));
+    print_line(describe_item(list_replace(mutref items, 2, Item { name: owned("s"), weight: 4 })));
+    print_line(describe_item(list_pop(mutref items)));
+    print_line(describe_item(list_pop(mutref items)));
+    print_line(describe_item(list_pop(mutref items)));
+    return;
+}
+
+fn generic_cases() -> unit
+audit {
+    intent("Use the list builtins through generic instances");
+    mutates();
+    effects(print);
+}
+{
+    let mut words: list<str> = [owned("g"), owned("h")];
+    print_line(describe_str(rotate_first::<str>(mutref words, owned("i"))));
+    print_line(str_join(ref words));
+    let mut numbers = [5];
+    print_line(describe_i32(rotate_first::<i32>(mutref numbers, 6)));
+    print_line(describe_i32(list_get(ref numbers, 0)));
+    let mut none: list<i32> = list();
+    print_line(describe_i32(rotate_first::<i32>(mutref none, 1)));
+    return;
+}
+
+fn conversion_cases() -> unit
+audit {
+    intent("Convert between i32 and i64 at and past the i32 bounds");
+    mutates();
+    effects(print);
+}
+{
+    let low = i64_from_i32(-2147483648);
+    let high = i64_from_i32(2147483647);
+    print_line(show_i64(low));
+    print_line(show_i64(high + 1));
+    print_line(describe_i32(i32_from_i64(low)));
+    print_line(describe_i32(i32_from_i64(high)));
+    print_line(describe_i32(i32_from_i64(low - 1)));
+    print_line(describe_i32(i32_from_i64(high + 1)));
+    print_line(describe_i32(i32_from_i64(0)));
+    print_line(describe_i32(i32_from_i64(-9223372036854775807 - 1)));
+    print_line(describe_i32(i32_from_i64(9223372036854775807)));
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise the M57.1 list and integer conversion builtins");
+    mutates();
+    effects(print);
+}
+{
+    int_cases();
+    str_cases();
+    nested_cases();
+    generic_cases();
+    conversion_cases();
+    return 0;
+}

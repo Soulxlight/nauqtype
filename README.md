@@ -96,11 +96,14 @@ workspace or legacy flat-root layout. The supported surface includes:
   parameter and return types, named function arguments, and explicit module
   imports, aliases, and qualified function/data names.
 - `option<T>`, `result<T, E>`, `list<T>`, and move-only `bytes`, with the
-  documented narrow constructors, list literals, and ownership rules.
+  documented narrow constructors, list literals, and ownership rules. Lists
+  are updated in place with `list_push`, `list_replace`, and `list_pop`;
+  `i64_from_i32` and `i32_from_i64` convert integers explicitly.
 - `if`, `while`, list-only `for`, nearest-loop `break`/`continue`, statement
-  and value `match`, narrow `let-else`, and supported integer/constructor
-  patterns. Copy-only record update names its base explicitly; direct field
-  assignment is limited to owned mutable product locals.
+  and value `match` (both exhaustive), narrow `let-else`, and supported
+  integer/constructor patterns. Copy-only record update names its base
+  explicitly; direct field assignment works on owned mutable product locals
+  and through `mutref` parameters (`examples/in_place_update.nq`).
 - Explicit `ref`, `mutref`, and owned `let mut` mutation; checked moves,
   borrows, and deterministic clone/move/drop behavior for owned values.
 - Statement-boundary `?` for unchanged `result` errors, optional context

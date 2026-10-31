@@ -1,0 +1,179 @@
+// M57.1 slice A1: `mutref` field places, field assignment through a `mutref`
+// parameter, and assignment mutability with shadowing. Expected output is in
+// places_run.expected; the owned test also runs this under ASan/UBSan.
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+    label: str,
+}
+
+type Inner {
+    values: list<i32>,
+}
+
+type Outer {
+    inner: Inner,
+    total: i32,
+}
+
+type Box<T> {
+    value: T,
+    items: list<T>,
+}
+
+fn show(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled integer");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn add(bag: mutref Bag, value: i32) -> unit
+audit {
+    intent("Append through a field place of a mutref parameter and count it");
+    mutates(bag);
+    effects();
+}
+{
+    list_push(mutref bag.items, value);
+    bag.count = bag.count + 1;
+    bag.label = str_concat(bag.label, "+");
+    return;
+}
+
+fn reset(bag: mutref Bag) -> unit
+audit {
+    intent("Replace the list field through the borrow, dropping the old list once");
+    mutates(bag);
+    effects();
+}
+{
+    // Field assignments alone are direct write-through for `mutates(bag)`.
+    bag.items = [100, 200];
+    bag.count = 2;
+    return;
+}
+
+fn deep(outer: mutref Outer, value: i32) -> unit
+audit {
+    intent("Append through a two-level field place under a mutref parameter");
+    mutates(outer);
+    effects();
+}
+{
+    list_push(mutref outer.inner.values, value);
+    outer.total = outer.total + value;
+    return;
+}
+
+fn box_add(box: mutref Box<i32>, value: i32) -> unit
+audit {
+    intent("Update a concrete generic product instance through a mutref parameter");
+    mutates(box);
+    effects();
+}
+{
+    list_push(mutref box.items, value);
+    box.value = box.value + value;
+    return;
+}
+
+fn box_label(box: mutref Box<str>, value: str) -> unit
+audit {
+    intent("Replace a str field of a generic product instance through a mutref parameter");
+    mutates(box);
+    effects();
+}
+{
+    box.value = value;
+    list_push(mutref box.items, value);
+    return;
+}
+
+fn count_of(bag: ref Bag) -> i32
+audit {
+    intent("Read through a ref parameter");
+    mutates();
+    effects();
+}
+{
+    return bag.count + list_len(ref bag.items);
+}
+
+fn replace_whole(bag: mutref Bag) -> unit
+audit {
+    intent("Assign a whole value through a mutref parameter");
+    mutates(bag);
+    effects();
+}
+{
+    bag = Bag { items: [7], count: 1, label: "whole" };
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise in-place updates through field places");
+    mutates();
+    effects(print);
+}
+{
+    let mut bag = Bag { items: list(), count: 0, label: "bag" };
+    add(mutref bag, 1);
+    add(mutref bag, 2);
+    list_push(mutref bag.items, 3);
+    bag.count = bag.count + 10;
+    show("bag.count", bag.count);
+    show("bag.items", list_len(ref bag.items));
+    print_line(bag.label);
+    show("count_of", count_of(ref bag));
+    reset(mutref bag);
+    show("reset.items", list_len(ref bag.items));
+    replace_whole(mutref bag);
+    print_line(bag.label);
+    show("whole.count", count_of(ref bag));
+
+    let mut outer = Outer { inner: Inner { values: list() }, total: 0 };
+    deep(mutref outer, 4);
+    deep(mutref outer, 5);
+    list_push(mutref outer.inner.values, 6);
+    show("outer.total", outer.total);
+    show("outer.values", list_len(ref outer.inner.values));
+
+    let mut box = Box::<i32> { value: 0, items: list() };
+    box_add(mutref box, 3);
+    box_add(mutref box, 4);
+    list_push(mutref box.items, 5);
+    show("box.value", box.value);
+    show("box.items", list_len(ref box.items));
+
+    let mut text_box = Box::<str> { value: "a", items: list() };
+    box_label(mutref text_box, "b");
+    box_label(mutref text_box, "c");
+    print_line(text_box.value);
+    show("text_box.items", list_len(ref text_box.items));
+
+    // Shadowing: a `let mut` in an inner scope shadowing a plain `let` is
+    // assignable (the nearest binding decides).
+    let fixed = 1;
+    if fixed > 0 {
+        let mut fixed = 10;
+        fixed = fixed + 1;
+        show("inner.fixed", fixed);
+    }
+    show("outer.fixed", fixed);
+    let mut scratch = 5;
+    scratch = scratch + 1;
+    if scratch > 0 {
+        let mut scratch = 40;
+        scratch = scratch + 2;
+        show("inner.scratch", scratch);
+    }
+    show("outer.scratch", scratch);
+    return 0;
+}

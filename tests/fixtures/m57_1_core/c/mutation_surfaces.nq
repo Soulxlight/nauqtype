@@ -1,0 +1,84 @@
+// M57.1 slice C: which evidence surface reports which mutation shape.
+// `set_count` writes a field directly through its `mutref` parameter: every
+// review version and `check` count it. `push_item`, `swap_first` and
+// `drop_last` write only through calls (`mutref bag.items` to `list_push`,
+// `list_replace`, `list_pop`): review v4/v5 and `check` count them, review
+// v1/v2/v3 keep their unchanged models and do not. `shadowed` assigns a field
+// of an owned local that shares the parameter's name: no surface counts it.
+// `widen` uses the integer conversions (facts/review v5 golden).
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+fn set_count(bag: mutref Bag, value: i32) -> unit
+audit {
+    intent("Assign a field through a mutref parameter");
+    mutates(bag);
+    effects();
+}
+{
+    bag.count = value;
+    return;
+}
+
+fn push_item(bag: mutref Bag, value: i32) -> unit
+audit {
+    intent("Append through a mutref field place");
+    mutates(bag);
+    effects();
+}
+{
+    list_push(mutref bag.items, value);
+    return;
+}
+
+fn swap_first(bag: mutref Bag, value: i32) -> option<i32>
+audit {
+    intent("Replace the first item through a mutref field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_replace(mutref bag.items, 0, value);
+}
+
+fn drop_last(bag: mutref Bag) -> option<i32>
+audit {
+    intent("Pop the last item through a mutref field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_pop(mutref bag.items);
+}
+
+fn shadowed(bag: mutref Bag) -> i32
+audit {
+    intent("Assign a field of an owned local that shadows the parameter name");
+    mutates();
+    effects();
+}
+{
+    if bag.count > 0 {
+        let mut bag = Bag { items: list(), count: 0 };
+        bag.count = 2;
+        return bag.count;
+    }
+    return 0;
+}
+
+fn widen(value: i32) -> option<i32> {
+    return i32_from_i64(i64_from_i32(value) * 2);
+}
+
+fn main() -> i32 {
+    let mut bag = Bag { items: [1], count: 0 };
+    set_count(mutref bag, 1);
+    push_item(mutref bag, 2);
+    let first = swap_first(mutref bag, 3);
+    let last = drop_last(mutref bag);
+    let doubled = widen(bag.count);
+    return shadowed(mutref bag);
+}

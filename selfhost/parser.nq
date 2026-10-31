@@ -2027,7 +2027,17 @@ fn scan_expr_calls(tokens: ref list<token>, start: i32, end: i32, module: str, f
                     let open = token_at(ref tokens, index + 4);
                     if is_colon_token(second_colon) and is_ident_token(callee) and is_lparen_token(open) {
                         let arg_count = count_comma_args(ref tokens, index + 4);
-                        list_push(mutref calls, make_call_fact(module, function_name, callee.text, callee.start, arg_count));
+                        // M57.1 repair: keep the full `a::b` qualifier so the
+                        // arity check uses the qualified target, never a builtin.
+                        let mut qualifier = current.text;
+                        let mut back = index;
+                        while back >= 3 and is_colon_token(token_at(ref tokens, back - 1)) and is_colon_token(token_at(ref tokens, back - 2)) and is_ident_token(token_at(ref tokens, back - 3)) {
+                            qualifier = str_concat(str_concat(token_at(ref tokens, back - 3).text, "::"), qualifier);
+                            back = back - 3;
+                        }
+                        let mut fact = make_call_fact(module, function_name, callee.text, callee.start, arg_count);
+                        fact.qualifier = qualifier;
+                        list_push(mutref calls, fact);
                     }
                 } else {
                     if is_dot_token(previous) or is_colon_token(previous) {

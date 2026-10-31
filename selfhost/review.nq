@@ -300,7 +300,8 @@ fn review_mutation_add(bindings: ref list<checked_binding>, binding_id: i32, wri
 fn review_builtin_mutation_profile(name: str) -> i32 {
     if name == "process_terminate" { return 0; }
     if name == "process_start" or name == "process_wait" or name == "duration_from_ns" or name == "duration_as_ns" or name == "duration_between" or name == "wall_time_ns" or name == "monotonic_now" or name == "deadline_after" or name == "sleep_for" { return -1; }
-    if name == "list_push" { return 0; }
+    if name == "list_push" or name == "list_replace" or name == "list_pop" { return 0; }
+    if name == "i64_from_i32" or name == "i32_from_i64" { return -1; }
     if name == "print_line" or name == "eprint_line" or name == "read_file" or name == "write_file" or name == "arg_count" or name == "arg_get" or name == "create_dir_all" or name == "run_process" or name == "io_err_text" { return -1; }
     if name == "stdin_read" or name == "stdin_read_bytes" or name == "stdin_read_line" or name == "stdout_write" or name == "stdout_write_bytes" or name == "stderr_write" or name == "stderr_write_bytes" or name == "stdout_flush" or name == "stderr_flush" { return -1; }
     if name == "env_get" or name == "current_dir" or name == "read_file_bytes" or name == "write_file_bytes" or name == "path_metadata" or name == "read_dir" or name == "create_dir" or name == "create_file_new" or name == "remove_file" or name == "remove_dir" or name == "rename_path" { return -1; }
@@ -555,6 +556,8 @@ fn review_validate_call_children(shapes: ref list<checked_type_shape>, types: re
                         } else {
                             if target == -1 and expr.name == "list_push" and count != 2 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
                             if target == -1 and expr.name == "process_terminate" and count != 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                            if target == -1 and expr.name == "list_replace" and count != 3 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
+                            if target == -1 and expr.name == "list_pop" and count != 1 { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; }
                         }
                     },
                     None => { review_mutation_identity_error(mutref diags, expr.module_name, expr.at); return false; },
@@ -814,6 +817,10 @@ fn review_mutation_identity_error(diags: mutref list<diag>, module: str, at: i32
 fn review_is_assignment(kind: checked_stmt_kind) -> bool {
     match kind {
         checked_stmt_assign => { return true; },
+        // M57.1: `p.field = value;` writes through its root binding. Only a
+        // `mutref` parameter root passes the parameter checks below; an owned
+        // `let mut` local root stays outside the parameter contract.
+        checked_stmt_field_assign => { return true; },
         _ => { return false; },
     }
 }
@@ -1173,6 +1180,9 @@ fn is_builtin_function(name: str) -> bool {
         return true;
     }
     if name == "f64_from_i32" or name == "f64_from_i64" or name == "f64_trunc_i32" or name == "f64_trunc_i64" or name == "str_from_f64" or name == "f64_from_str" {
+        return true;
+    }
+    if name == "list_replace" or name == "list_pop" or name == "i64_from_i32" or name == "i32_from_i64" {
         return true;
     }
     return false;
@@ -3528,7 +3538,7 @@ audit {
                     }
                     let mut error_name = "";
                     if expr.type_name == "result" { error_name = expr.type_arg2_name; }
-                    list_push(mutref sites, call_fact { module: expr.module_name, function_name: expr.function_name, name: expr.name, at: expr.target_at, arg_count: -1, checked_origin: expr.target_origin_module, checked_kind: checked_call_kind(expr), checked_start: expr.start, checked_end: expr.end, checked_error_name: error_name });
+                    list_push(mutref sites, call_fact { module: expr.module_name, function_name: expr.function_name, name: expr.name, at: expr.target_at, arg_count: -1, checked_origin: expr.target_origin_module, checked_kind: checked_call_kind(expr), checked_start: expr.start, checked_end: expr.end, checked_error_name: error_name, qualifier: "" });
                 },
                 _ => {},
             }
@@ -3574,7 +3584,7 @@ audit {
             if matched != 1 or kind == "" {
                 list_push(mutref diags, make_diagnostic("NQ-INTERNAL-012", diag_internal, diag_error, call.module, call.at, call.at + str_len(call.name), "stage1 internal error: call evidence lacks a unique checked target", "", ""));
             }
-            list_push(mutref out, call_fact { module: call.module, function_name: call.function_name, name: call.name, at: call.at, arg_count: call.arg_count, checked_origin: origin, checked_kind: kind, checked_start: expr_start, checked_end: expr_end, checked_error_name: error_name });
+            list_push(mutref out, call_fact { module: call.module, function_name: call.function_name, name: call.name, at: call.at, arg_count: call.arg_count, checked_origin: origin, checked_kind: kind, checked_start: expr_start, checked_end: expr_end, checked_error_name: error_name, qualifier: call.qualifier });
         }
     }
     return out;

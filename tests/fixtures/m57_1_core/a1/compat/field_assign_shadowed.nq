@@ -1,0 +1,25 @@
+// M57.1 compatibility (slice A1): `nauqc check` at 675819b accepts this
+// program (exit 0) because any visible `let mut` made the field assignment
+// legal; M57.1 uses the nearest binding (the plain `let`) and rejects it with
+// NQ-TYPE-042 "field assignment requires an owned mutable local product binding".
+type Pair {
+    left: i32,
+    right: i32,
+}
+
+fn main() -> i32
+audit {
+    intent("Assign a field of a shadowing immutable binding");
+    mutates();
+    effects();
+}
+{
+    let mut pair = Pair { left: 1, right: 2 };
+    pair.left = 3;
+    if pair.left > 0 {
+        let pair = Pair { left: 4, right: 5 };
+        pair.right = 6;
+        return pair.right - 6;
+    }
+    return 0;
+}

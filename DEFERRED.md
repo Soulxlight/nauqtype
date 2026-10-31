@@ -17,6 +17,13 @@ that have since shipped are historical, not current limitations.
   (`sqrt`, `floor`, `pow`, ...), or fixed-precision rendering (`1.50`); the
   math functions and fixed-precision rendering belong to M57+ standard-library
   planning.
+- M57.1 deliberate exclusions (`docs/M57_1_CONTRACT.md`): recursive data
+  layouts through containers (`type Json { items: list<Json> }` is
+  `NQ-TYPE-052`; M57 uses arena indexes); field-disjoint borrow checking
+  (`f(mutref b.a, ref b.b)` is still one conflicting root); moving fields out
+  of owned products (destructuring); missing-return analysis; the `%` operator
+  and bitwise operators; and comparisons of `bool`, `str` or enums inside
+  `const` initializers (constant comparisons stay integer-only).
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond `while` and list-only `for`, including iterator protocols

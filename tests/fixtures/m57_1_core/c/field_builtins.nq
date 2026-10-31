@@ -1,0 +1,200 @@
+// M57.1 slice C: slice B's list builtins through slice A1's field places.
+// `list_replace` and `list_pop` reach a list field through a `mutref`
+// parameter, an owned `let mut` local and a concrete generic product
+// instance; element types cover a copy scalar, the runtime-native `str` and a
+// move-only `list<i32>`. Expected output is in field_builtins.expected; the
+// owned test also runs the same C under ASan/UBSan with leak detection.
+
+type Bag {
+    items: list<i32>,
+    names: list<str>,
+    rows: list<list<i32>>,
+    count: i32,
+}
+
+type Box<T> {
+    items: list<T>,
+    size: i32,
+}
+
+fn show(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled integer");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn describe(value: option<i32>) -> str {
+    match value {
+        Some(found) => {
+            return str_concat(str_concat("Some(", str_from_f64(f64_from_i32(found))), ")");
+        },
+        None => {
+            return "None";
+        },
+    }
+}
+
+fn describe_str(value: option<str>) -> str {
+    match value {
+        Some(found) => {
+            return str_concat(str_concat("Some(", found), ")");
+        },
+        None => {
+            return "None";
+        },
+    }
+}
+
+fn replace_in(bag: mutref Bag, index: i32, value: i32) -> option<i32>
+audit {
+    intent("Replace an item through a field place of a mutref parameter");
+    mutates(bag);
+    effects();
+}
+{
+    return list_replace(mutref bag.items, index, value);
+}
+
+fn pop_in(bag: mutref Bag) -> option<i32>
+audit {
+    intent("Pop an item through a field place and keep the count in step");
+    mutates(bag);
+    effects();
+}
+{
+    let last = list_pop(mutref bag.items);
+    match last {
+        Some(_) => {
+            bag.count = bag.count - 1;
+        },
+        None => {},
+    }
+    return last;
+}
+
+fn rename_in(bag: mutref Bag, index: i32, value: str) -> option<str>
+audit {
+    intent("Replace a runtime-native str element through a field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_replace(mutref bag.names, index, value);
+}
+
+fn pop_name(bag: mutref Bag) -> option<str>
+audit {
+    intent("Pop a runtime-native str element through a field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_pop(mutref bag.names);
+}
+
+fn swap_row(bag: mutref Bag, row: list<i32>) -> option<list<i32>>
+audit {
+    intent("Replace a move-only element through a field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_replace(mutref bag.rows, 0, row);
+}
+
+fn pop_row(bag: mutref Bag) -> option<list<i32>>
+audit {
+    intent("Pop a move-only element through a field place");
+    mutates(bag);
+    effects();
+}
+{
+    return list_pop(mutref bag.rows);
+}
+
+fn box_swap(box: mutref Box<str>, value: str) -> option<str>
+audit {
+    intent("Replace through a field of a generic product instance");
+    mutates(box);
+    effects();
+}
+{
+    return list_replace(mutref box.items, 0, value);
+}
+
+fn box_pop(box: mutref Box<i32>) -> option<i32>
+audit {
+    intent("Pop through a field of a generic product instance and record the size");
+    mutates(box);
+    effects();
+}
+{
+    let last = list_pop(mutref box.items);
+    box.size = box.size - 1;
+    return last;
+}
+
+fn main() -> i32
+audit {
+    intent("Exercise list_replace and list_pop through field places");
+    mutates();
+    effects(print);
+}
+{
+    let mut bag = Bag { items: [1, 2, 3], names: ["a", "b"], rows: [[1], [2, 3]], count: 3 };
+    print_line(describe(replace_in(mutref bag, 0, 10)));
+    print_line(describe(replace_in(mutref bag, 3, 99)));
+    print_line(describe(replace_in(mutref bag, -1, 99)));
+    print_line(describe(pop_in(mutref bag)));
+    show("count", bag.count);
+    print_line(describe(list_replace(mutref bag.items, 1, 20)));
+    print_line(describe(list_pop(mutref bag.items)));
+    print_line(describe(list_pop(mutref bag.items)));
+    print_line(describe(list_pop(mutref bag.items)));
+    print_line(describe(pop_in(mutref bag)));
+    show("count", bag.count);
+    print_line(describe_str(rename_in(mutref bag, 1, "z")));
+    print_line(describe_str(rename_in(mutref bag, 2, "unused")));
+    print_line(describe_str(list_pop(mutref bag.names)));
+    print_line(describe_str(pop_name(mutref bag)));
+    print_line(describe_str(pop_name(mutref bag)));
+    let Some(old_row) = swap_row(mutref bag, [7, 8, 9]) else {
+        return 1;
+    };
+    show("old_row", list_len(ref old_row));
+    let Some(row) = pop_row(mutref bag) else {
+        return 2;
+    };
+    show("row", list_len(ref row));
+    let Some(first_row) = list_pop(mutref bag.rows) else {
+        return 3;
+    };
+    show("first_row", list_len(ref first_row));
+    show("rows", list_len(ref bag.rows));
+    let missing = list_replace(mutref bag.rows, 0, [4]);
+    match missing {
+        Some(_) => {
+            return 4;
+        },
+        None => {
+            print_line("rows: unchanged");
+        },
+    }
+    let mut words = Box::<str> { items: ["x"], size: 1 };
+    print_line(describe_str(box_swap(mutref words, "y")));
+    print_line(describe_str(list_replace(mutref words.items, 5, "w")));
+    print_line(describe_str(list_pop(mutref words.items)));
+    let mut numbers = Box::<i32> { items: [4, 5], size: 2 };
+    print_line(describe(box_pop(mutref numbers)));
+    show("size", numbers.size);
+    print_line(describe(list_pop(mutref numbers.items)));
+    print_line(describe(list_pop(mutref numbers.items)));
+    bag.names = ["fresh", "list"];
+    show("names", list_len(ref bag.names));
+    return 0;
+}

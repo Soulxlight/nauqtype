@@ -1,0 +1,66 @@
+// M57.1 slice A2: the runtime comparison table executes. Payload-free enum
+// `==`/`!=` lower to tag comparisons for local and call operands, a generic
+// instance, and an imported enum. (Statement-level code reaches the ordered
+// value lowering; the direct expression path is pinned by an IR probe.)
+use comparisons_helper;
+
+enum Light {
+    Red,
+    Amber,
+    Green,
+}
+
+enum Tag<T> {
+    First,
+    Second,
+}
+
+fn pick(index: i32) -> Light {
+    if index == 0 {
+        return Red;
+    }
+    if index == 1 {
+        return Amber;
+    }
+    return Green;
+}
+
+fn show(label: str, value: bool) -> unit {
+    if value {
+        print_line(str_concat(label, " yes"));
+    } else {
+        print_line(str_concat(label, " no"));
+    }
+    return;
+}
+
+fn main() -> i32 {
+    let a = Red;
+    let b = Green;
+    let c = Red;
+    show("plain eq same", a == c);
+    show("plain eq different", a == b);
+    show("plain ne different", a != b);
+    show("plain ne same", a != c);
+    show("ordered eq same", pick(1) == pick(1));
+    show("ordered eq different", pick(0) == pick(2));
+    show("ordered ne different", pick(0) != pick(2));
+    show("ordered ne same", pick(2) != pick(2));
+    let t: Tag<i32> = First::<i32>;
+    let u: Tag<i32> = Second::<i32>;
+    show("generic eq", t == u);
+    show("generic ne", t != u);
+    let m = North;
+    show("imported eq", m == North);
+    show("imported ne", m != South);
+    let i: i32 = 3;
+    show("i32", i < 4 and i <= 3 and i > 2 and i >= 3 and i == 3 and i != 4);
+    let j: i64 = 4;
+    show("i64", j < 5 and j <= 4 and j > 3 and j >= 4 and j == 4 and j != 5);
+    let f = 1.5;
+    show("f64", f < 2.0 and f <= 1.5 and f > 1.0 and f >= 1.5 and f == 1.5 and f != 2.5);
+    show("bool", true == true and true != false);
+    let s = "ab";
+    show("str", s == "ab" and s != "ac");
+    return 0;
+}

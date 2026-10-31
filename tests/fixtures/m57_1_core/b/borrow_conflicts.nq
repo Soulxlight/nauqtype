@@ -1,0 +1,111 @@
+// M57.1 slice B: a borrow parameter forwarded by name is a borrow of that
+// parameter's place, with the receiving parameter's kind. Each `bad_*`
+// function must report exactly one NQ-BORROW-006; the `ok_*` functions are
+// accepted.
+
+fn both(first: mutref list<i32>, second: mutref list<i32>) -> unit
+audit {
+    intent("Write through two mutable borrows");
+    mutates(first, second);
+    effects();
+}
+{
+    list_push(mutref first, 1);
+    list_push(mutref second, 2);
+    return;
+}
+
+fn read_write(first: ref list<i32>, second: mutref list<i32>) -> unit
+audit {
+    intent("Read one list and write another");
+    mutates(second);
+    effects();
+}
+{
+    list_push(mutref second, list_len(ref first));
+    return;
+}
+
+fn read_two(first: ref list<i32>, second: ref list<i32>) -> i32 {
+    return list_len(ref first) + list_len(ref second);
+}
+
+fn bad_forward_twice(items: mutref list<i32>) -> unit
+audit {
+    intent("Forward one mutable borrow to two mutable parameters");
+    mutates(items);
+    effects();
+}
+{
+    both(items, items);
+    return;
+}
+
+fn bad_forward_and_mutref(items: mutref list<i32>) -> unit
+audit {
+    intent("Forward a mutable borrow beside a fresh mutable borrow of it");
+    mutates(items);
+    effects();
+}
+{
+    both(items, mutref items);
+    return;
+}
+
+fn bad_forward_read_then_write(items: mutref list<i32>) -> unit
+audit {
+    intent("Forward one borrow to a shared and a mutable parameter");
+    mutates(items);
+    effects();
+}
+{
+    read_write(items, items);
+    return;
+}
+
+fn bad_shared_then_forward(items: mutref list<i32>) -> unit
+audit {
+    intent("Take a shared borrow beside a forwarded mutable borrow");
+    mutates(items);
+    effects();
+}
+{
+    read_write(ref items, items);
+    return;
+}
+
+fn ok_two_shared_forwards(items: ref list<i32>) -> i32 {
+    return read_two(items, items);
+}
+
+fn ok_mutable_forwarded_to_shared(items: mutref list<i32>) -> i32
+audit {
+    intent("Forward a mutable borrow to two shared parameters");
+    mutates();
+    effects();
+}
+{
+    return read_two(items, items);
+}
+
+fn ok_shared_and_forward(items: ref list<i32>) -> i32 {
+    return read_two(ref items, items);
+}
+
+fn ok_separate_roots(left: mutref list<i32>, right: mutref list<i32>) -> unit
+audit {
+    intent("Forward two distinct mutable borrows");
+    mutates(left, right);
+    effects();
+}
+{
+    both(left, right);
+    return;
+}
+
+fn main() -> i32 {
+    let mut values = [1];
+    let mut other = [2];
+    ok_separate_roots(mutref values, mutref other);
+    return read_two(ref values, ref values) + ok_two_shared_forwards(ref values) + ok_shared_and_forward(ref other);
+}

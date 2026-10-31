@@ -4,6 +4,7 @@ use diag;
 use handoff;
 use ir;
 use text;
+use value_plan;
 
 fn emit_probe_failure(label: str) -> unit {
     eprint_line(str_concat("C_EMIT_INDEX_FAILURE ", label));
@@ -389,6 +390,179 @@ fn emit_probe_collection_cases() -> bool {
     if not emit_probe_collection_case(ref filtered_locals, ref filtered_children, ref filtered_statements, "empty") { okay = false; }
     return okay;
 }
+// M57.1 statement-match backstop: a checked IR program whose `pick` holds a
+// closed statement match over `Color { Red, Green }` with arms for `Red` and,
+// when `covering`, `Green`. Built by hand because typecheck (NQ-TYPE-051)
+// rejects the non-covering form from source.
+fn emit_probe_backstop_program(covering: bool, lines: mutref list<str>, diags: mutref list<diag>) -> unit {
+    let programs = [ir_program { entry_function: "main" }];
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, ir_type_shape { id: 1, kind: checked_type_i32, name: "i32", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    list_push(mutref shapes, ir_type_shape { id: 2, kind: checked_type_named, name: "Color", origin_module: "probe", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    let mut sigs: list<ir_function_sig> = list();
+    list_push(mutref sigs, ir_function_sig { function_id: 1, module_name: "probe", name: "pick", internal_name: "pick", return_type_id: 1, param_count: 1 });
+    list_push(mutref sigs, ir_function_sig { function_id: 2, module_name: "probe", name: "main", internal_name: "main", return_type_id: 1, param_count: 0 });
+    let mut functions: list<ir_function> = list();
+    list_push(mutref functions, ir_function { id: 1, module_name: "probe", name: "pick", internal_name: "pick", return_type_id: 1, root_block_id: 1, at: 10 });
+    list_push(mutref functions, ir_function { id: 2, module_name: "probe", name: "main", internal_name: "main", return_type_id: 1, root_block_id: 4, at: 200 });
+    let locals = [ir_local { binding_id: 1, function_id: 1, module_name: "probe", function_name: "pick", name: "c", at: 20, binding_kind: checked_binding_param, param_index: 0, type_id: 2, owner_block_id: 1, is_ref_param: false, ref_mutable: false }];
+    let consts: list<ir_const_decl> = list();
+    let mut blocks: list<ir_block> = list();
+    list_push(mutref blocks, ir_block { id: 1, function_id: 1, parent_block_id: -1, depth: 0 });
+    list_push(mutref blocks, ir_block { id: 2, function_id: 1, parent_block_id: 1, depth: 1 });
+    list_push(mutref blocks, ir_block { id: 3, function_id: 1, parent_block_id: 1, depth: 1 });
+    list_push(mutref blocks, ir_block { id: 4, function_id: 2, parent_block_id: -1, depth: 0 });
+    let mut statements: list<ir_stmt> = list();
+    list_push(mutref statements, ir_stmt { id: 1, function_id: 1, block_id: 1, at: 50, kind: ir_stmt_match, type_id: -1, target_local_id: -1, field_name: "", expr_id: 1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 2, function_id: 1, block_id: 1, at: 90, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 2, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 3, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    let mut arms: list<ir_match_arm> = list();
+    list_push(mutref arms, ir_match_arm { id: 1, stmt_id: 1, block_id: 2, pattern_id: 1, result_expr_id: -1, at: 60 });
+    let mut patterns: list<ir_pattern> = list();
+    list_push(mutref patterns, ir_pattern { id: 1, arm_id: 1, function_id: 1, at: 60, start: 60, end: 63, kind: ir_pattern_variant, local_id: -1, name: "Red", constructor_origin_module: "probe", constructor_enum_name: "Color" });
+    if covering {
+        list_push(mutref arms, ir_match_arm { id: 2, stmt_id: 1, block_id: 3, pattern_id: 2, result_expr_id: -1, at: 70 });
+        list_push(mutref patterns, ir_pattern { id: 2, arm_id: 2, function_id: 1, at: 70, start: 70, end: 75, kind: ir_pattern_variant, local_id: -1, name: "Green", constructor_origin_module: "probe", constructor_enum_name: "Color" });
+    }
+    let pattern_children: list<ir_pattern_child> = list();
+    let mut expressions: list<ir_expr> = list();
+    list_push(mutref expressions, ir_expr { id: 1, function_id: 1, at: 56, start: 56, end: 57, kind: ir_expr_name, type_id: 2, use_kind: checked_value_copy, local_id: 1, mutable: false, name: "c", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, ir_expr { id: 2, function_id: 1, at: 97, start: 97, end: 98, kind: ir_expr_i32, type_id: 1, use_kind: checked_value_copy, local_id: -1, mutable: false, name: "1", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, ir_expr { id: 3, function_id: 2, at: 217, start: 217, end: 218, kind: ir_expr_i32, type_id: 1, use_kind: checked_value_copy, local_id: -1, mutable: false, name: "0", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    let children: list<ir_expr_child> = list();
+    let fields: list<ir_field_value> = list();
+    let structs: list<ir_struct_decl> = list();
+    let field_decls: list<ir_field_decl> = list();
+    let enums = [ir_enum_decl { id: 1, module_name: "probe", name: "Color", at: 0 }];
+    let mut variants: list<ir_variant_decl> = list();
+    list_push(mutref variants, ir_variant_decl { id: 1, enum_id: 1, module_name: "probe", enum_name: "Color", name: "Red", payload_count: 0 });
+    list_push(mutref variants, ir_variant_decl { id: 2, enum_id: 1, module_name: "probe", enum_name: "Color", name: "Green", payload_count: 0 });
+    let payloads: list<ir_variant_payload_decl> = list();
+    let summary = emit_c_program(ref programs, ref sigs, ref functions, ref locals, ref consts, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref shapes, ref structs, ref field_decls, ref enums, ref variants, ref payloads, mutref lines, mutref diags);
+    return;
+}
+
+fn emit_probe_occurrences(value: str, needle: str) -> i32 {
+    let mut count = 0;
+    let mut at = 0;
+    while at + str_len(needle) <= str_len(value) {
+        if starts_with_at(value, at, needle) { count = count + 1; }
+        at = at + 1;
+    }
+    return count;
+}
+
+fn emit_probe_backstop_cases() -> bool {
+    let mut okay = true;
+    let mut lines: list<str> = list();
+    let mut diags: list<diag> = list();
+    emit_probe_backstop_program(false, mutref lines, mutref diags);
+    let rendered = render_c_lines(ref lines);
+    if not emit_probe_check(list_len(ref diags) == 1, "backstop diagnostic count") { okay = false; }
+    match list_get(ref diags, 0) {
+        Some(found) => {
+            let exact = found.code == "NQ-C-001" and found.message == "internal: non-exhaustive statement match reached C emission" and found.source_name == "probe" and found.start == 50 and found.end == 55 and found.help == "";
+            if not emit_probe_check(exact, "backstop diagnostic identity") { okay = false; eprint_line(concat6(found.code, " ", found.message, " ", found.source_name, i32_to_str(found.start))); }
+        },
+        None => { okay = false; },
+    }
+    // Only the prototype of `pick` remains; `main` is still defined.
+    if not emit_probe_check(emit_probe_occurrences(rendered, "nq_fn_pick(") == 1 and emit_probe_occurrences(rendered, "nq_fn_main(void) {") == 1, "backstop suppresses only the offending definition") { okay = false; eprint_line(rendered); }
+    lines = list();
+    diags = list();
+    emit_probe_backstop_program(true, mutref lines, mutref diags);
+    let covered = render_c_lines(ref lines);
+    if not emit_probe_check(list_len(ref diags) == 0, "backstop control diagnostics") { okay = false; }
+    if not emit_probe_check(emit_probe_occurrences(covered, "nq_fn_pick(") == 2, "backstop control keeps the definition") { okay = false; eprint_line(covered); }
+    return okay;
+}
+
+// M57.1: payload-free enum `==`/`!=` compare tags on both C lowering paths.
+fn emit_probe_tag_expr(id: i32, kind: ir_expr_kind, type_id: i32, local_id: i32) -> ir_expr {
+    return ir_expr { id: id, function_id: 41, at: id, start: id, end: id + 1, kind: kind, type_id: type_id, use_kind: checked_value_copy, local_id: local_id, mutable: false, name: "", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" };
+}
+
+fn emit_probe_tag_cases() -> bool {
+    let mut okay = true;
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, ir_type_shape { id: 1, kind: checked_type_bool, name: "bool", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    list_push(mutref shapes, ir_type_shape { id: 2, kind: checked_type_named, name: "Light", origin_module: "probe", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    let mut locals: list<ir_local> = list();
+    list_push(mutref locals, ir_local { binding_id: 1, function_id: 41, module_name: "probe", function_name: "probe", name: "a", at: 1, binding_kind: checked_binding_local, param_index: -1, type_id: 2, owner_block_id: 10, is_ref_param: false, ref_mutable: false });
+    list_push(mutref locals, ir_local { binding_id: 2, function_id: 41, module_name: "probe", function_name: "probe", name: "b", at: 2, binding_kind: checked_binding_local, param_index: -1, type_id: 2, owner_block_id: 10, is_ref_param: false, ref_mutable: false });
+    let mut expressions: list<ir_expr> = list();
+    list_push(mutref expressions, emit_probe_tag_expr(1, ir_expr_name, 2, 1));
+    list_push(mutref expressions, emit_probe_tag_expr(2, ir_expr_name, 2, 2));
+    list_push(mutref expressions, emit_probe_tag_expr(3, ir_expr_eq, 1, -1));
+    list_push(mutref expressions, emit_probe_tag_expr(4, ir_expr_ne, 1, -1));
+    let mut children: list<ir_expr_child> = list();
+    list_push(mutref children, ir_expr_child { parent_expr_id: 3, index: 0, child_expr_id: 1 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 3, index: 1, child_expr_id: 2 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 4, index: 0, child_expr_id: 1 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 4, index: 1, child_expr_id: 2 });
+    let statements: list<ir_stmt> = list();
+    let context = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let mut diags: list<diag> = list();
+    if not emit_probe_literal(c_emit_index_probe_direct_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 3, mutref diags), "((nqv_1_a).tag == (nqv_2_b).tag)", "direct enum ==") { okay = false; }
+    if not emit_probe_literal(c_emit_index_probe_direct_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 4, mutref diags), "((nqv_1_a).tag != (nqv_2_b).tag)", "direct enum !=") { okay = false; }
+    let mut op_index = 0;
+    while op_index < 2 {
+        let mut lines: list<str> = list();
+        let value = c_emit_index_probe_ordered_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 3 + op_index, mutref lines, mutref diags);
+        let rendered = str_concat(render_c_lines(ref lines), value);
+        let mut needle = ").tag == (";
+        if op_index == 1 { needle = ").tag != ("; }
+        if not emit_probe_check(emit_probe_occurrences(rendered, needle) == 1 and emit_probe_occurrences(rendered, ".tag") == 2, str_concat("ordered enum op_index ", i32_to_str(op_index))) { okay = false; eprint_line(rendered); }
+        op_index = op_index + 1;
+    }
+    if not emit_probe_check(list_len(ref diags) == 0, "enum equality diagnostics") { okay = false; }
+    return okay;
+}
+
+// M57.1 repair: a call named like a list builtin selects a list helper only
+// when its target origin is the builtin. A user `helper::list_pop` lowers to
+// its own symbol on both C lowering paths (the direct `emit_expr` path is not
+// reachable from source, so this IR probe pins it).
+fn emit_probe_call_expr(id: i32, kind: ir_expr_kind, type_id: i32, use_kind: checked_value_use_kind, local_id: i32, target: str, origin: str) -> ir_expr {
+    return ir_expr { id: id, function_id: 41, at: id, start: id, end: id + 1, kind: kind, type_id: type_id, use_kind: use_kind, local_id: local_id, mutable: false, name: target, target_name: target, target_origin_module: origin, field_owner_module: "", field_owner_type: "", field_name: "" };
+}
+
+fn emit_probe_qualified_list_call_cases() -> bool {
+    let mut okay = true;
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, ir_type_shape { id: 1, kind: checked_type_i32, name: "i32", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    list_push(mutref shapes, ir_type_shape { id: 2, kind: checked_type_list, name: "list", origin_module: "", arg1_id: 1, arg2_id: -1, mutable: false, is_copy: false, needs_drop: true });
+    list_push(mutref shapes, ir_type_shape { id: 3, kind: checked_type_option, name: "option", origin_module: "", arg1_id: 1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    let mut locals: list<ir_local> = list();
+    list_push(mutref locals, ir_local { binding_id: 1, function_id: 41, module_name: "probe", function_name: "probe", name: "words", at: 1, binding_kind: checked_binding_local, param_index: -1, type_id: 2, owner_block_id: 10, is_ref_param: false, ref_mutable: false });
+    let mut expressions: list<ir_expr> = list();
+    list_push(mutref expressions, emit_probe_call_expr(1, ir_expr_name, 2, checked_value_borrow, 1, "", ""));
+    list_push(mutref expressions, emit_probe_call_expr(2, ir_expr_borrow, 2, checked_value_borrow, -1, "", ""));
+    list_push(mutref expressions, emit_probe_call_expr(3, ir_expr_call, 3, checked_value_copy, -1, "list_pop", "helper"));
+    list_push(mutref expressions, emit_probe_call_expr(4, ir_expr_call, 3, checked_value_copy, -1, "list_pop", "__builtin__"));
+    let mut children: list<ir_expr_child> = list();
+    list_push(mutref children, ir_expr_child { parent_expr_id: 2, index: 0, child_expr_id: 1 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 3, index: 0, child_expr_id: 2 });
+    list_push(mutref children, ir_expr_child { parent_expr_id: 4, index: 0, child_expr_id: 2 });
+    let statements: list<ir_stmt> = list();
+    let context = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let mut diags: list<diag> = list();
+    let user_direct = c_emit_index_probe_direct_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 3, mutref diags);
+    let builtin_direct = c_emit_index_probe_direct_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 4, mutref diags);
+    if not emit_probe_check(emit_probe_occurrences(user_direct, "helper_c_clist_upop(") == 1 and emit_probe_occurrences(user_direct, "nq_list__") == 0, "direct qualified list_pop reaches the user symbol") { okay = false; eprint_line(user_direct); }
+    if not emit_probe_check(emit_probe_occurrences(builtin_direct, "nq_list__i32_pop(") == 1, "direct builtin list_pop keeps the helper") { okay = false; eprint_line(builtin_direct); }
+    let mut user_lines: list<str> = list();
+    let user_value = c_emit_index_probe_ordered_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 3, mutref user_lines, mutref diags);
+    let user_ordered = str_concat(render_c_lines(ref user_lines), user_value);
+    if not emit_probe_check(emit_probe_occurrences(user_ordered, "helper_c_clist_upop(") == 1 and emit_probe_occurrences(user_ordered, "nq_list__") == 0, "ordered qualified list_pop reaches the user symbol") { okay = false; eprint_line(user_ordered); }
+    let mut builtin_lines: list<str> = list();
+    let builtin_value = c_emit_index_probe_ordered_expr(ref context, ref shapes, ref locals, ref expressions, ref children, 4, mutref builtin_lines, mutref diags);
+    let builtin_ordered = str_concat(render_c_lines(ref builtin_lines), builtin_value);
+    if not emit_probe_check(emit_probe_occurrences(builtin_ordered, "nq_list__i32_pop(") == 1, "ordered builtin list_pop keeps the helper") { okay = false; eprint_line(builtin_ordered); }
+    if not emit_probe_check(list_len(ref diags) == 0, "qualified list call diagnostics") { okay = false; }
+    return okay;
+}
+
 pub fn c_emit_membership_index_cases() -> bool
 audit {
     intent("Compare actual C-emitter membership helpers with independent full ordered IR scans and literal cleanup lines");
@@ -399,7 +573,10 @@ audit {
     let collections_ok = emit_probe_collection_cases();
     let cleanup_ok = emit_probe_cleanup_cases();
     let missing_ok = emit_probe_check(c_emit_index_probe_missing_child(), "missing-child");
-    return collections_ok and cleanup_ok and missing_ok;
+    let backstop_ok = emit_probe_backstop_cases();
+    let tag_ok = emit_probe_tag_cases();
+    let qualified_ok = emit_probe_qualified_list_call_cases();
+    return collections_ok and cleanup_ok and missing_ok and backstop_ok and tag_ok and qualified_ok;
 }
 fn main() -> i32 {
     let membership_ok = c_emit_membership_index_cases();

@@ -1,0 +1,48 @@
+// M57.1 repair (F3): a parenthesized borrowed place borrows its root, so the
+// root-based conflict rule sees it. Each `bad_*` function reports exactly one
+// NQ-BORROW-006 at its call; `ok_two_shared` is accepted.
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+fn write_with(items: mutref list<i32>, count: ref i32) -> unit
+audit {
+    intent("Append a shared count to a mutable list");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, count);
+    return;
+}
+
+fn read_two(first: ref list<i32>, second: ref i32) -> i32 {
+    return list_len(ref first) + second;
+}
+
+fn bad_paren_mutable(bag: mutref Bag) -> unit
+audit {
+    intent("Borrow a parenthesized field mutably beside another field of the same root");
+    mutates(bag);
+    effects();
+}
+{
+    write_with(mutref (bag.items), ref bag.count);
+    return;
+}
+
+fn bad_paren_shared() -> unit {
+    let mut bag = Bag { items: [1], count: 2 };
+    write_with(mutref bag.items, ref (bag.count));
+    return;
+}
+
+fn ok_two_shared(bag: ref Bag) -> i32 {
+    return read_two(ref (bag.items), ref (bag.count));
+}
+
+fn main() -> i32 {
+    return 0;
+}

@@ -3,15 +3,19 @@
 ## Current Position And Resumption
 
 Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
-complete. Complete through M56.2 scalar `f64`, including M56.1
-generic-aware facts/review v5, M56 explicit generic reuse and the PRE-M56
-P1-P4 performance checkpoint (full milestone gate about 26 minutes at M56.2;
-the 10-minute cold working target remains unmet and open). Evidence for each
-milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md) and its contract
-documents.
+complete. Complete through M57.1 library-enabling core, including M56.2
+scalar `f64`, M56.1 generic-aware facts/review v5, M56 explicit generic reuse
+and the PRE-M56 P1-P4 performance checkpoint (full milestone gate about 29
+minutes at M57.1; the 10-minute cold working target remains unmet and open).
+Evidence for each milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md)
+and its contract documents.
 
-Next: M57 collections and data interchange (planning first, including the
-in-repo standard library layout), then M58-M61 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+Next: on 2026-10-31 the owner redirected the end goal from a stable Linux
+release to a complete, coherent language that follows its own principles. A
+language charter (independently reviewed, awaiting owner approval) will
+replace `STABLE_RELEASE.md` and re-plan everything after M57.1; until then the
+M57.2-M57.4 and M58-M61 entries below are superseded planning, not
+commitments. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -1090,6 +1094,9 @@ planning bullets as scheduled:
 
 ### M57: Collections And Data Interchange
 
+M57.1 complete 2026-10-31 per the [M57.1 contract](docs/M57_1_CONTRACT.md)
+(Gate A revision 4; D068). Evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m571-library-enabling-core-close).
 Planned 2026-10-31 as four sub-milestones in the [M57 plan](docs/M57_PLAN.md):
 M57.1 library-enabling core (field places, list replace/pop, integer
 conversions, comparison and assignment repairs), M57.2 in-repo standard

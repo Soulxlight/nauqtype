@@ -1,0 +1,117 @@
+// M57.1 slice C: borrow conflicts are root-based for field paths. Each
+// `bad_*` function reports exactly one NQ-BORROW-006 at its call; the `ok_*`
+// functions are accepted (two shared borrows of one root never conflict).
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+fn write_with(items: mutref list<i32>, count: ref i32) -> unit
+audit {
+    intent("Append a shared count to a mutable list");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, count);
+    return;
+}
+
+fn bag_and_items(bag: mutref Bag, items: mutref list<i32>) -> unit
+audit {
+    intent("Write through a bag and a list");
+    mutates(bag, items);
+    effects();
+}
+{
+    bag.count = bag.count + 1;
+    list_push(mutref items, 1);
+    return;
+}
+
+fn read_bag_write_items(bag: ref Bag, items: mutref list<i32>) -> unit
+audit {
+    intent("Read a bag and write a list");
+    mutates(items);
+    effects();
+}
+{
+    list_push(mutref items, bag.count);
+    return;
+}
+
+fn read_two(first: ref list<i32>, second: ref i32) -> i32 {
+    return list_len(ref first) + second;
+}
+
+fn bad_two_field_paths(bag: mutref Bag) -> unit
+audit {
+    intent("Borrow one field mutably and another field of the same root");
+    mutates(bag);
+    effects();
+}
+{
+    write_with(mutref bag.items, ref bag.count);
+    return;
+}
+
+fn bad_local_field_paths() -> unit {
+    let mut bag = Bag { items: list(), count: 0 };
+    write_with(mutref bag.items, ref bag.count);
+    return;
+}
+
+fn bad_forward_and_field(bag: mutref Bag) -> unit
+audit {
+    intent("Forward a mutable borrow beside a mutable borrow of its field");
+    mutates(bag);
+    effects();
+}
+{
+    bag_and_items(bag, mutref bag.items);
+    return;
+}
+
+fn bad_shared_forward_and_field(bag: mutref Bag) -> unit
+audit {
+    intent("Forward a borrow to a shared parameter beside a mutable field borrow");
+    mutates(bag);
+    effects();
+}
+{
+    read_bag_write_items(bag, mutref bag.items);
+    return;
+}
+
+fn ok_two_shared_paths(bag: ref Bag) -> i32 {
+    return read_two(ref bag.items, ref bag.count);
+}
+
+fn ok_mutable_root_shared_paths(bag: mutref Bag) -> i32
+audit {
+    intent("Take two shared field borrows of a mutable root");
+    mutates();
+    effects();
+}
+{
+    return read_two(ref bag.items, ref bag.count);
+}
+
+fn ok_separate_roots(left: mutref Bag, right: mutref Bag) -> unit
+audit {
+    intent("Borrow fields of two distinct roots");
+    mutates(left);
+    effects();
+}
+{
+    write_with(mutref left.items, ref right.count);
+    return;
+}
+
+fn main() -> i32 {
+    let mut left = Bag { items: list(), count: 1 };
+    let mut right = Bag { items: list(), count: 2 };
+    ok_separate_roots(mutref left, mutref right);
+    return ok_two_shared_paths(ref left) + ok_mutable_root_shared_paths(mutref right);
+}

@@ -1,0 +1,118 @@
+// M57.1 repair (F2, F3): accepted shadowing in both annotated/inferred
+// directions for assignment, field assignment and `mutref` places, the type
+// of an annotated shadow over an inferred outer binding, and parenthesized
+// `mutref (bag.items)` / `ref (bag.items)` places through the checked
+// handoff, borrow checker and C emission. Expected output is in
+// places_run.expected.
+
+type Bag {
+    items: list<i32>,
+    count: i32,
+}
+
+fn show(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled integer");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(str_concat(label, " "), str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn total(items: ref list<i32>) -> i32 {
+    let mut sum = 0;
+    for value in items {
+        sum = sum + value;
+    }
+    return sum;
+}
+
+fn grow(bag: mutref Bag, value: i32) -> unit
+audit {
+    intent("Append through a parenthesized field place of a mutref parameter");
+    mutates(bag);
+    effects();
+}
+{
+    list_push(mutref (bag.items), value);
+    bag.count = bag.count + 1;
+    return;
+}
+
+fn main() -> i32 {
+    // Annotated `let mut` inner shadows an inferred immutable outer.
+    let bag = Bag { items: [1], count: 0 };
+    let x = 0;
+    if true {
+        let mut bag: Bag = Bag { items: [2], count: 0 };
+        let mut x: i32 = 1;
+        x = x + 10;
+        bag.count = 3;
+        list_push(mutref bag.items, 4);
+        show("annotated inner x", x);
+        show("annotated inner count", bag.count);
+        show("annotated inner total", total(ref bag.items));
+    }
+    // Inferred `let mut` inner shadows an annotated immutable outer.
+    let other: Bag = Bag { items: [5], count: 0 };
+    let y: i32 = 0;
+    if true {
+        let mut other = Bag { items: [6], count: 0 };
+        let mut y = 5;
+        y = y + 1;
+        other.count = 7;
+        list_push(mutref other.items, 9);
+        show("inferred inner y", y);
+        show("inferred inner count", other.count);
+        show("inferred inner total", total(ref other.items));
+    }
+    // Two scopes deep: the annotated `let mut` middle binding is nearest.
+    let first = Bag { items: [10], count: 0 };
+    let z = 0;
+    if true {
+        let mut first: Bag = Bag { items: [11], count: 0 };
+        let mut z: i32 = 1;
+        if true {
+            z = z + 1;
+            first.count = 12;
+            list_push(mutref first.items, 13);
+        }
+        show("nested z", z);
+        show("nested count", first.count);
+        show("nested total", total(ref first.items));
+    }
+    show("outer z", z);
+    show("outer first total", total(ref first.items));
+    // Type lookup: an annotated `str` shadow over an inferred i32 outer.
+    let mut label = 0;
+    label = label + 1;
+    if true {
+        let label: str = "shadow text";
+        print_line(label);
+    }
+    show("outer label", label);
+    // The outer bindings are untouched.
+    show("outer x", x);
+    show("outer y", y);
+    show("outer bag total", total(ref bag.items) + total(ref other.items));
+    // Parenthesized places.
+    let mut held = Bag { items: [1, 2], count: 0 };
+    list_push(mutref (held.items), 3);
+    list_push(mutref ((held.items)), 4);
+    show("paren len", list_len(ref (held.items)));
+    show("paren total", total(ref (held.items)));
+    grow(mutref (held), 5);
+    show("paren grown total", total(ref ((held.items))));
+    show("paren count", held.count);
+    match list_pop(mutref (held.items)) {
+        Some(found) => {
+            show("paren pop", found);
+        },
+        None => {
+            print_line("paren pop None");
+        },
+    }
+    return 0;
+}
