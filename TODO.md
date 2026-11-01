@@ -19,11 +19,16 @@
   [evidence](AUDIT_REMEDIATION.md#m571-library-enabling-core-close))
 - [x] Language charter approved by the owner and adopted (2026-10-31):
   [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md) replaces `STABLE_RELEASE.md`
-- [ ] M58 corrective sweep: contract and Gate A review
+- [x] M58 split into M58.1 (correctness and diagnostics), M58.2 (small
+  language additions), M58.3 (rewrite tooling); M58.1 Gate A review of the
+  [contract](docs/M58_1_CONTRACT.md) (approved 2026-10-31, revision 4)
+- [ ] M58.1: implementation, focused checks, ownership-class trailing
+  audits, milestone gate
 - [x] Audit policy now names `gpt-6.1-sol` for the independent adversarial
   auditor (`gpt-5.5` withdrawn from the Codex account, 2026-10-31).
 - [ ] Pre-existing miscompile: `let mut x = x + 1;` in an inner scope reads
-  the new zero-initialised `x` instead of the outer `x` (found in M57.1).
+  the new zero-initialised `x` instead of the outer `x` (found in M57.1;
+  scheduled in M58.1).
 - [x] Tutorial-found SPEC contradictions fixed in M57.1: assignment to a
   plain `let` (NQ-TYPE-007), non-exhaustive statement `match` (NQ-TYPE-051),
   `str <` and enum `==` failing in C (NQ-TYPE-050).
