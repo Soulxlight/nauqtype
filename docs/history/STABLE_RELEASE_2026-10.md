@@ -1,4 +1,9 @@
-# Stable Linux Release Contract
+# Stable Linux Release Contract (archived)
+
+Archived 2026-10-31. The owner redirected NauqType's end goal from a
+stable Linux release to the language defined by
+[LANGUAGE_CHARTER.md](../../LANGUAGE_CHARTER.md). This document is kept
+as history; its packaging and platform scope is after v1.
 
 ## Purpose
 
