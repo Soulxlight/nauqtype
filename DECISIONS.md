@@ -802,3 +802,38 @@ Full user generics and broader mutable-string/library growth remain deferred.
   conservative choices (root-based conflicts, no recursion through containers,
   enum-variant-only reservation) can each be relaxed later without breaking
   accepted programs.
+
+## D069: Language charter replaces the stable Linux release target
+
+- **Decision.** On 2026-10-31 the owner redirected NauqType's end goal from a
+  stable Linux release to a complete, coherent language that follows its own
+  principles. [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md) (approved revision
+  4) is the definition of v1.0: an identity statement, evidence classes,
+  design rules R1-R10, semantic commitments, a carry-forward and exclusion
+  list, a bootstrap bridge procedure for breaking changes, and the milestone
+  sequence M58-M69. Owner decisions recorded in it: plain non-capturing
+  function values; capability values for external authority, scoped with
+  directory and read-only attenuation; required contracts on `pub fn`;
+  explicit `move` with must-consume lifecycle resources; a capitalization
+  rule separating constructor and binding patterns; tasks and channels, FFI
+  and library artifacts in v1.
+- **Alternatives rejected.** Keeping `STABLE_RELEASE.md`: it measured
+  distribution (packaging, platforms, terminal capabilities), not whether the
+  language is coherent, and its checklist missed SPEC violations that
+  M57.1 had to repair. Traits/interfaces and closures for abstraction (hidden
+  dispatch or captured state); ambient authority with finer effect atoms
+  (authority stays invisible in signatures); optional contracts; implicit
+  Rust-style moves.
+- **Reason.** The mission (programs written by AI and supervised by people)
+  needs authority, mutation, fallibility and ownership visible in source and
+  checked, with evidence as a reading of checked semantics. Familiar shapes
+  borrowed from other languages are kept only where they serve a principle.
+- **Consequences.** `STABLE_RELEASE.md` is archived at
+  `docs/history/STABLE_RELEASE_2026-10.md`; packaging, install/upgrade/
+  rollback and the platform matrix are after v1. The M57.2-M57.4 plan is
+  superseded: the standard library moves to M67, after the breaking language
+  changes, with generic maps built from function values. Each area in the
+  charter's semantic commitments gets a Gate A design record (M59) before
+  implementation.
+- **Reversible later.** Charter changes need the owner; design records may
+  refine details but not the commitments.

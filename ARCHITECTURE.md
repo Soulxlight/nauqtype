@@ -128,8 +128,8 @@ assets remain intentionally preserved.
 
 Development uses focused checks, independent audits, and one final frozen
 candidate gate. [VERIFICATION.md](VERIFICATION.md) defines exact commands and
-budgets; [STABLE_RELEASE.md](STABLE_RELEASE.md) defines independent release
-requirements. Cached success or bootstrap consistency is never evidence of
+budgets; [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md) defines the v1.0
+language and its acceptance. Cached success or bootstrap consistency is never evidence of
 semantic completeness by itself.
 
 ## Direction

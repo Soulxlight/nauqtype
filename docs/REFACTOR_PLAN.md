@@ -221,5 +221,5 @@ integration remains intentional, and Python remains archived.
 The complete refactor is not done when this plan is written. Source slices
 remain open until behavior, identities, evidence, resources, seed lineage and
 gates pass. R0 is documentation only. M56-M61 stay in the
-[existing release sequence](../STABLE_RELEASE.md) after the efficiency
+[existing release sequence](history/STABLE_RELEASE_2026-10.md) after the efficiency
 checkpoint, not hidden inside this refactor.

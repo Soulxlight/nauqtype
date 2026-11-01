@@ -13,7 +13,7 @@ run, so do not project account savings.
 | Scoped shell profiling or ordinary implementation after contracts are fixed | `gpt-5.6-terra` high | Profile existing cost first; do not turn a bounded task into architecture work. |
 | Compiler semantic indexing or ownership-sensitive code | `gpt-5.6-sol` high/xhigh | Preserve semantic identity, cleanup, provenance, and output-order contracts. |
 | Independent trailing audit | `gpt-5.6-sol` xhigh | Read-only, findings-first, and independent of the implementation verdict; this retains the `AGENTS.md` audit policy. |
-| Ownership, bootstrap, process, FFI, or release boundaries | `gpt-5.5` xhigh alongside the existing mixed review pattern | Use the stronger mixed-model review required by the repository policy. |
+| Ownership, bootstrap, process, FFI, or release boundaries | `gpt-6.1-sol` xhigh (replaced `gpt-5.5`, 2026-10-31) alongside the existing mixed review pattern | Use the stronger mixed-model review required by the repository policy. |
 | Decomposition, scope, integration, and escalation | Current lead model | The director owns orchestration and decisions, not routine implementation. This includes integration in `AGENTS.md`, `README.md`, `NAUQTYPE_COORDINATION.md`, and `PERFORMANCE_BUDGETS.md`. |
 
 The 2026-09-20 preparation assignments were documentation routing on Luna high,

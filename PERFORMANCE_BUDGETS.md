@@ -161,4 +161,5 @@ clean runner builds stage1 once before the owned fixture tier; a local warm run
 reuses it only through the checked cache manifest. The composed full gate stays
 serial so its phases can reuse freshly built artifacts, and runs nightly, by
 manual dispatch, and on `v*` release tags. Release candidates still run the
-independent gates in `STABLE_RELEASE.md`; the quick job is not release proof.
+independent gates in `VERIFICATION.md` and `LANGUAGE_CHARTER.md`; the quick
+job is not release proof.

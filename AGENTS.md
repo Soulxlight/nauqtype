@@ -115,10 +115,12 @@ Use model diversity deliberately:
   auditor;
 - ownership, bootstrap, filesystem authority, process execution, FFI, and
   release-boundary milestones require a `gpt-5.6-sol` `xhigh` primary auditor
-  plus an independent `gpt-5.5` `xhigh` adversarial auditor;
+  plus an independent `gpt-6.1-sol` `xhigh` adversarial auditor (it
+  replaced `gpt-5.5`, which the Codex account stopped offering on
+  2026-10-31);
 - M60/M61 release gates, conflicting verdicts, or materially ambiguous safety
   findings escalate the primary auditor to `gpt-5.6-sol` `max` while retaining
-  the independent `gpt-5.5` `xhigh` review;
+  the independent `gpt-6.1-sol` `xhigh` review;
 - `max` and higher-cost modes are not routine defaults. Use them only for the
   escalation cases above or when repository evidence demonstrates a measured
   audit-quality gain.
@@ -152,7 +154,7 @@ gate when another assigned agent already has it in progress.
   validation, and a trailing audit unless the text can affect an executable
   fixture or release artifact;
 - stable/release candidate: the independent gates listed in
-  `VERIFICATION.md` and `STABLE_RELEASE.md`.
+  `VERIFICATION.md` and `LANGUAGE_CHARTER.md`.
 
 For any milestone that needs the expensive executable close, use this order:
 
@@ -192,5 +194,6 @@ files.
   pile of special compiler builtins.
 - Do not widen ownership, lifetimes, methods, traits, implicit conversions, or
   hidden control flow without demonstrated pressure and a recorded decision.
-- Stable Linux work follows `STABLE_RELEASE.md`; it must improve real terminal
-  or application development rather than accumulate prestige features.
+- Language work follows `LANGUAGE_CHARTER.md`: every feature serves a stated
+  principle and design rule, never resemblance to another language or
+  prestige.

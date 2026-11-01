@@ -19,7 +19,7 @@ or a copied-release manifest.
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |
-| Prepare a release | [Stable Release](../STABLE_RELEASE.md) | [release manifest](../LINUX_RELEASE_MANIFEST.md), [bootstrap retirement](../BOOTSTRAP_RETIREMENT.md) |
+| Plan toward v1.0 | [Language Charter](../LANGUAGE_CHARTER.md) | [release manifest](../LINUX_RELEASE_MANIFEST.md), [bootstrap retirement](../BOOTSTRAP_RETIREMENT.md) |
 | Change shared libraries | [coordination](../NAUQTYPE_COORDINATION.md) (NQType Libraries is dormant; needs an owner assignment first) | [upstream response](../NQTYPE_LIBRARIES_UPSTREAM_RESPONSE.md) |
 
 ## Current Position
@@ -123,7 +123,7 @@ to it. No document is moved or deleted by this checkpoint.
 | [Verification](../VERIFICATION.md) | Focused feedback, reviewed milestone close, independent release gates |
 | [Linux](../LINUX.md) | Supported development/launcher workflow, not distro readiness |
 | [Linux Release Manifest](../LINUX_RELEASE_MANIFEST.md) | Exact copied layout and packaged-file boundary |
-| [Stable Release](../STABLE_RELEASE.md) | M52-M61 terminal/application scope and future stable gate |
+| [Language Charter](../LANGUAGE_CHARTER.md) | Identity, design rules, v1.0 definition and milestone sequence |
 | [Stress Leg](../STRESS_LEG.md) | Dense cross-feature exercise and finding reduction |
 | [Performance Budgets](../PERFORMANCE_BUDGETS.md) | Checked ceilings; goals do not relax them |
 | [Stage1 Bootstrap](../BOOTSTRAP_STAGE1.md) | Current host-C seed chain and copied-selfhost proof |

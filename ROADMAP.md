@@ -10,12 +10,10 @@ minutes at M57.1; the 10-minute cold working target remains unmet and open).
 Evidence for each milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md)
 and its contract documents.
 
-Next: on 2026-10-31 the owner redirected the end goal from a stable Linux
-release to a complete, coherent language that follows its own principles. A
-language charter (independently reviewed, awaiting owner approval) will
-replace `STABLE_RELEASE.md` and re-plan everything after M57.1; until then the
-M57.2-M57.4 and M58-M61 entries below are superseded planning, not
-commitments. Open actions are in [TODO](TODO.md#next-actions); roles and
+End goal (owner, 2026-10-31): NauqType v1.0 is the complete, coherent
+language defined by [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a
+stable Linux release. Next: M58 corrective sweep, then the charter's
+sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -785,8 +783,10 @@ Status:
 - [AGENTS.md](AGENTS.md) assigns critical-path, integration, verification,
   commit, and push ownership to the lead while allowing disciplined parallel
   research, disjoint implementation, and trailing audits
-- [STABLE_RELEASE.md](STABLE_RELEASE.md) defines the terminal/application
-  contracts, engineering rules, M52-M61 order, and stable release evidence
+- [STABLE_RELEASE.md](docs/history/STABLE_RELEASE_2026-10.md) defined the
+  terminal/application contracts, engineering rules, M52-M61 order, and
+  stable release evidence (archived 2026-10-31, replaced by
+  [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md))
 - shell gates invoked by CI now preserve executable mode in git instead of
   relying on permissions left over in one working tree
 
@@ -1097,52 +1097,39 @@ planning bullets as scheduled:
 M57.1 complete 2026-10-31 per the [M57.1 contract](docs/M57_1_CONTRACT.md)
 (Gate A revision 4; D068). Evidence:
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m571-library-enabling-core-close).
-Planned 2026-10-31 as four sub-milestones in the [M57 plan](docs/M57_PLAN.md):
-M57.1 library-enabling core (field places, list replace/pop, integer
-conversions, comparison and assignment repairs), M57.2 in-repo standard
-library layout, M57.3 key-specialized maps and sets, M57.4 arena JSON. The
-scope as scheduled:
+The [M57 plan](docs/M57_PLAN.md) (2026-10-31) split M57 into M57.1-M57.4.
+M57.1 shipped. M57.2-M57.4 (stdlib layout, key-specialized maps, arena JSON)
+are superseded by the charter: the standard library is built in M67 after the
+breaking language changes, with generic `Map<K, V>`/`Set<K>` built from
+explicit hash and equality function values, and the plan's deterministic
+collection and exact JSON number requirements carry forward.
 
-- build reusable map/set facilities with an explicit checked key strategy,
-  using M56 generics and reported through M56.1 evidence
-- reusable modules (collections, JSON, and later ones) live in an in-repo
-  standard library shipped and tested with the compiler and copied release,
-  not in a separate repository (owner decision, 2026-10-31); M57 defines its
-  layout, module identity, and lock/provenance treatment
-- add deterministic general JSON values, parsing, and writing; JSON numbers
-  map to exact `i64` where integral and M56.2 `f64` otherwise, by an explicit
-  documented rule
+## Charter Sequence To v1.0
 
-### M58: Native Library And Linux ABI Boundary
+Adopted 2026-10-31 from [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), which holds
+the semantic commitments each milestone implements. Every breaking milestone
+follows the charter's three-checkpoint bootstrap bridge, and evidence for each
+feature lands with the feature.
 
-- define auditable C imports/exports, link declarations, and FFI ownership
-- build reusable libraries as well as executables
+| Milestone | Scope |
+| --- | --- |
+| M58 | Corrective sweep: missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
+| M59 | Design records with Gate A (paper only): ownership, capabilities and effects, function types and contracts, scoped element access, tasks/channels, FFI |
+| M60 | Naming: case rule, constructor patterns, struct-like variants, qualified type annotations; compiler-source migration |
+| M61 | Ownership: `move` and must-consume resources |
+| M62 | Capabilities, may-effect inference, required `pub` contracts, termination evidence |
+| M63 | Function values with contract bounds; recursion through containers; scoped element access |
+| M64 | Evidence consolidation: generic-, function-value- and capability-aware consumers; one default format |
+| M65 | Tasks, task groups and channels |
+| M66 | FFI and library artifacts |
+| M67 | Standard library: layout and provenance, text, numbers, UTF-8, `Map`/`Set`, JSON |
+| M68 | Tooling (`nauqc test`, lock command, formatter write mode) and R10 measurements |
+| M69 | v1.0 charter audit and gate |
 
-### M59: Bounded Applications And Daily Tooling
-
-- add explicit task start/join/cancel and channel-style communication
-- avoid an implicit global executor and prove bounded shutdown behavior
-- add comment-preserving formatter write mode, editor semantic support,
-  workspace test ergonomics, checked API documentation, and enforceable
-  performance budgets
-- integrate the optional [model authoring kit](AUTHORING_KIT.md) only if its
-  corrected, version-pinned pilot demonstrates practical benefit; no live
-  model service becomes a compiler, CI, or release dependency, and a failed
-  pilot does not block the core milestone
-
-### M60: Linux Packaging And Compatibility Freeze
-
-- add versioned archives/package installation, relocation, uninstall, upgrade,
-  rollback, and supported-host contracts
-- add checksums/signatures, sanitizer/fuzz gates, and an explicit architecture,
-  libc, and host-compiler compatibility matrix
-
-### M61: v1.0 Stable Linux Gate
-
-- independently prove bootstrap, compiler, runtime, terminal/app corpus,
-  diagnostics, evidence schemas, FFI, performance, release layout,
-  installation, upgrade, and rollback
-- freeze and publish only the contracts that pass the stable matrix
+The former M58-M61 (native ABI, bounded applications and daily tooling, Linux
+packaging and compatibility freeze, stable Linux gate) are absorbed into
+M65-M68 where the charter keeps them; packaging, install/upgrade/rollback and
+the platform matrix are after v1.
 
 ## Feature Ordering
 
@@ -1172,7 +1159,9 @@ Features explicitly not required before first success:
 - M50: explicit `try` boundaries and expression-position propagation
 - M51: structured error sets
 - M51 stopped at its evidence gate because real mixed-error pressure was absent
-- the active post-M51 sequence is M52-M61 in [STABLE_RELEASE.md](STABLE_RELEASE.md)
+- the post-M51 sequence was M52-M61 in the archived
+  [STABLE_RELEASE.md](docs/history/STABLE_RELEASE_2026-10.md); since
+  2026-10-31 the sequence after M57.1 is the charter's M58-M69
 - typed obligations, methods / `impl`, labeled or valued `break` / `continue`,
   stronger borrow analysis, and direct native backend exploration remain
   outside the stable Linux critical path until real programs justify them

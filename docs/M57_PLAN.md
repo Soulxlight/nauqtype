@@ -1,7 +1,9 @@
 # M57 Plan: Collections And Data Interchange
 
 Status: planning record, 2026-10-31, compiler lead. Base: `675819b`. Not a
-contract. Each sub-milestone below gets its own contract and Gate A review.
+contract. M57.1 shipped; M57.2-M57.4 are superseded by
+[LANGUAGE_CHARTER.md](../LANGUAGE_CHARTER.md) (the standard library moves
+to M67, with generic maps built from function values). Each sub-milestone below gets its own contract and Gate A review.
 
 ROADMAP M57 asks for reusable map/set facilities with an explicit, checked key
 strategy, an in-repo standard library shipped with the compiler and copied

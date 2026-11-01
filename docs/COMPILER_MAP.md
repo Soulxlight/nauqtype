@@ -211,7 +211,7 @@ helpers can still change call-edge and review evidence.
 - Release construction/verification: [scripts/make_linux_release.sh](../scripts/make_linux_release.sh)
   and [scripts/verify_linux_release.sh](../scripts/verify_linux_release.sh).
 - Full milestone close: [scripts/check_milestone.sh](../scripts/check_milestone.sh).
-- Stable release requirements: [STABLE_RELEASE.md](../STABLE_RELEASE.md).
+- v1.0 definition: [LANGUAGE_CHARTER.md](../LANGUAGE_CHARTER.md).
 
 Choose the smallest focused evidence while iterating.
 Do not substitute a focused check for a required audited milestone/release gate.

@@ -17,11 +17,11 @@
 - [x] M57.1: implementation, focused checks, ownership-class trailing
   audits, milestone gate (2026-10-31;
   [evidence](AUDIT_REMEDIATION.md#m571-library-enabling-core-close))
-- [ ] Language charter: owner approval, then replace `STABLE_RELEASE.md`
-  and re-plan the roadmap (owner redirected the end goal 2026-10-31)
-- [ ] AGENTS.md audit policy names `gpt-5.5` for the independent
-  adversarial auditor; it is no longer offered on the Codex account
-  (M57.1 used `gpt-6.1-sol`). Update the policy text.
+- [x] Language charter approved by the owner and adopted (2026-10-31):
+  [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md) replaces `STABLE_RELEASE.md`
+- [ ] M58 corrective sweep: contract and Gate A review
+- [x] Audit policy now names `gpt-6.1-sol` for the independent adversarial
+  auditor (`gpt-5.5` withdrawn from the Codex account, 2026-10-31).
 - [ ] Pre-existing miscompile: `let mut x = x + 1;` in an inner scope reads
   the new zero-initialised `x` instead of the outer `x` (found in M57.1).
 - [x] Tutorial-found SPEC contradictions fixed in M57.1: assignment to a

@@ -39,10 +39,9 @@ defines its layout.
 - Complete through M57.1 (library-enabling core), including M56.2, M56.1,
   M56 and the PRE-M56 performance checkpoint. Full milestone gate is about
   29 minutes on the WSL2 Linux host.
-- End goal redirected by the owner (2026-10-31): a complete, coherent
-  language that follows its own principles, not a stable Linux release. A
-  language charter awaiting owner approval re-plans everything after M57.1.
-  Sequence and scope:
+- End goal (owner, 2026-10-31): the v1.0 language defined by
+  [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a stable Linux release.
+  Next: M58 corrective sweep. Sequence and scope:
   [ROADMAP.md](ROADMAP.md#current-position-and-resumption); open actions:
   [TODO.md](TODO.md#next-actions).
 
