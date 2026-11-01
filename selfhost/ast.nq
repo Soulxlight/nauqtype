@@ -148,6 +148,23 @@ pub enum body_binding_kind {
     bind_pattern,
 }
 
+// M58.1 initializer scope: `at` is the declaration position (identity, spans
+// and evidence); `visible_from` is the first source position at which a
+// reference sees the binding. Every lookup family selects candidates with
+// `visible_from <= reference.at`. The default `at + 1` keeps the strict
+// `at < reference.at` rule for forms whose visibility did not change
+// (parameters, pattern, `for` and let-else bindings); `let`-family locals
+// become visible at the end of their statement (the `;`).
+pub fn default_visible_from(at: i32) -> i32
+audit {
+    intent("Give a binding the strict after-its-declaration visibility position");
+    mutates();
+    effects();
+}
+{
+    return at + 1;
+}
+
 pub type body_binding {
     module: str,
     function_name: str,
@@ -155,6 +172,7 @@ pub type body_binding {
     name: str,
     at: i32,
     kind: body_binding_kind,
+    visible_from: i32,
 }
 
 pub fn make_body_binding(module: str, function_name: str, scope_id: i32, name: str, at: i32, kind: body_binding_kind) -> body_binding
@@ -171,7 +189,20 @@ audit {
         name: name,
         at: at,
         kind: kind,
+        visible_from: default_visible_from(at),
     };
+}
+
+pub fn body_binding_visible_from(value: body_binding, visible_from: i32) -> body_binding
+audit {
+    intent("Set the initializer-scope visibility position of a local binding");
+    mutates();
+    effects();
+}
+{
+    let mut binding = value;
+    binding.visible_from = visible_from;
+    return binding;
 }
 
 pub enum name_ref_kind {
@@ -270,6 +301,7 @@ pub type function_fact {
     return_arg2_name: str,
     return_is_borrow: bool,
     return_borrow_mutable: bool,
+    body_end: i32,
 }
 
 pub fn make_function_fact(module: str, name: str, at: i32, param_count: i32, return_name: str, return_arg1_name: str, return_arg2_name: str, return_is_borrow: bool, return_borrow_mutable: bool) -> function_fact
@@ -289,7 +321,21 @@ audit {
         return_arg2_name: return_arg2_name,
         return_is_borrow: return_is_borrow,
         return_borrow_mutable: return_borrow_mutable,
+        body_end: -1,
     };
+}
+
+// M58.1 (NQ-TYPE-053): the byte position of the function body's closing `}`.
+pub fn function_fact_with_body_end(value: function_fact, body_end: i32) -> function_fact
+audit {
+    intent("Record the closing-brace position of a function body");
+    mutates();
+    effects();
+}
+{
+    let mut fact = value;
+    fact.body_end = body_end;
+    return fact;
 }
 
 pub type function_param_fact {
@@ -547,6 +593,7 @@ pub type typed_binding_fact {
     is_mutable: bool,
     is_borrow: bool,
     borrow_mutable: bool,
+    visible_from: i32,
 }
 
 pub fn make_typed_binding_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, type_name: str, type_arg1_name: str, type_arg2_name: str, is_mutable: bool, is_borrow: bool, borrow_mutable: bool) -> typed_binding_fact
@@ -568,7 +615,22 @@ audit {
         is_mutable: is_mutable,
         is_borrow: is_borrow,
         borrow_mutable: borrow_mutable,
+        visible_from: default_visible_from(at),
     };
+}
+
+// M58.1: the same typed binding, visible from `visible_from` (a `let`-family
+// local passes the start of its statement's `;`).
+pub fn typed_binding_visible_from(value: typed_binding_fact, visible_from: i32) -> typed_binding_fact
+audit {
+    intent("Set the initializer-scope visibility position of a typed binding");
+    mutates();
+    effects();
+}
+{
+    let mut binding = value;
+    binding.visible_from = visible_from;
+    return binding;
 }
 
 pub type match_arm_fact {
@@ -787,6 +849,7 @@ pub type local_init_fact {
     expr_member_name: str,
     propagation_label: str,
     checked_error_name: str,
+    visible_from: i32,
 }
 
 pub fn make_local_init_fact(module: str, function_name: str, scope_id: i32, name: str, at: i32, expected_type_name: str, expected_is_borrow: bool, is_mutable: bool, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, propagation_label: str) -> local_init_fact
@@ -812,7 +875,20 @@ audit {
         expr_member_name: expr_member_name,
         propagation_label: propagation_label,
         checked_error_name: "",
+        visible_from: default_visible_from(at),
     };
+}
+
+pub fn local_init_visible_from(value: local_init_fact, visible_from: i32) -> local_init_fact
+audit {
+    intent("Set the initializer-scope visibility position of a local initializer fact");
+    mutates();
+    effects();
+}
+{
+    let mut local = value;
+    local.visible_from = visible_from;
+    return local;
 }
 
 pub type return_expr_fact {

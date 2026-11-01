@@ -36,12 +36,12 @@ defines its layout.
 ## Current Position
 
 - Organizational Linux alpha, `0.3.0-alpha.1`. Not stable or feature complete.
-- Complete through M57.1 (library-enabling core), including M56.2, M56.1,
-  M56 and the PRE-M56 performance checkpoint. Full milestone gate is about
-  29 minutes on the WSL2 Linux host.
+- Complete through M58.1 (correctness and diagnostics), including M57.1,
+  M56.2, M56.1, M56 and the PRE-M56 performance checkpoint. Full milestone
+  gate is about 33 minutes on the WSL2 Linux host.
 - End goal (owner, 2026-10-31): the v1.0 language defined by
   [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a stable Linux release.
-  Next: M58 corrective sweep. Sequence and scope:
+  Next: M58.2 and M58.3, the rest of the corrective sweep. Sequence and scope:
   [ROADMAP.md](ROADMAP.md#current-position-and-resumption); open actions:
   [TODO.md](TODO.md#next-actions).
 

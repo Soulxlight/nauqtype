@@ -477,6 +477,105 @@ fn emit_probe_backstop_cases() -> bool {
     return okay;
 }
 
+// M58.1 backstop for NQ-TYPE-053 at the IR level: `spin` (function 1, root
+// block 1) is shaped per mode; `main` always returns.
+// 0: `while true {}`                      terminates (control)
+// 1: `while true { break; }`              falls off
+// 2: `if c { return 1; }`                 falls off
+// 3: `if c { return 1; } else { return 1; }` terminates (control)
+// 4: `while true { while true { break; } }` terminates: the break targets the inner loop
+// 5: empty body                           falls off
+fn emit_probe_fall_off_stmt(id: i32, block_id: i32, kind: ir_stmt_kind, expr_id: i32, child_block_id: i32, alt_block_id: i32, exit_target_block_id: i32) -> ir_stmt {
+    return ir_stmt { id: id, function_id: 1, block_id: block_id, at: 20 + id, kind: kind, type_id: -1, target_local_id: -1, field_name: "", expr_id: expr_id, child_block_id: child_block_id, alt_block_id: alt_block_id, exit_target_block_id: exit_target_block_id };
+}
+
+fn emit_probe_fall_off_program(mode: i32, lines: mutref list<str>, diags: mutref list<diag>) -> unit {
+    let programs = [ir_program { entry_function: "main" }];
+    let mut shapes: list<ir_type_shape> = list();
+    list_push(mutref shapes, ir_type_shape { id: 1, kind: checked_type_i32, name: "i32", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    list_push(mutref shapes, ir_type_shape { id: 2, kind: checked_type_bool, name: "bool", origin_module: "", arg1_id: -1, arg2_id: -1, mutable: false, is_copy: true, needs_drop: false });
+    let mut sigs: list<ir_function_sig> = list();
+    list_push(mutref sigs, ir_function_sig { function_id: 1, module_name: "probe", name: "spin", internal_name: "spin", return_type_id: 1, param_count: 0 });
+    list_push(mutref sigs, ir_function_sig { function_id: 2, module_name: "probe", name: "main", internal_name: "main", return_type_id: 1, param_count: 0 });
+    let mut functions: list<ir_function> = list();
+    list_push(mutref functions, ir_function { id: 1, module_name: "probe", name: "spin", internal_name: "spin", return_type_id: 1, root_block_id: 1, at: 10 });
+    list_push(mutref functions, ir_function { id: 2, module_name: "probe", name: "main", internal_name: "main", return_type_id: 1, root_block_id: 4, at: 200 });
+    let locals: list<ir_local> = list();
+    let consts: list<ir_const_decl> = list();
+    let mut blocks: list<ir_block> = list();
+    list_push(mutref blocks, ir_block { id: 1, function_id: 1, parent_block_id: -1, depth: 0 });
+    list_push(mutref blocks, ir_block { id: 2, function_id: 1, parent_block_id: 1, depth: 1 });
+    list_push(mutref blocks, ir_block { id: 3, function_id: 1, parent_block_id: 1, depth: 1 });
+    list_push(mutref blocks, ir_block { id: 4, function_id: 2, parent_block_id: -1, depth: 0 });
+    let mut statements: list<ir_stmt> = list();
+    if mode == 0 or mode == 1 or mode == 4 {
+        list_push(mutref statements, emit_probe_fall_off_stmt(1, 1, ir_stmt_while, 1, 2, -1, -1));
+    }
+    if mode == 1 {
+        list_push(mutref statements, emit_probe_fall_off_stmt(2, 2, ir_stmt_break, -1, -1, -1, 2));
+    }
+    if mode == 2 or mode == 3 {
+        let mut alt = -1;
+        if mode == 3 { alt = 3; }
+        list_push(mutref statements, emit_probe_fall_off_stmt(1, 1, ir_stmt_if, 1, 2, alt, -1));
+        list_push(mutref statements, emit_probe_fall_off_stmt(2, 2, ir_stmt_return, 2, -1, -1, -1));
+        if mode == 3 {
+            list_push(mutref statements, emit_probe_fall_off_stmt(3, 3, ir_stmt_return, 2, -1, -1, -1));
+        }
+    }
+    if mode == 4 {
+        list_push(mutref statements, emit_probe_fall_off_stmt(2, 2, ir_stmt_while, 1, 3, -1, -1));
+        list_push(mutref statements, emit_probe_fall_off_stmt(3, 3, ir_stmt_break, -1, -1, -1, 3));
+    }
+    list_push(mutref statements, ir_stmt { id: 9, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    let arms: list<ir_match_arm> = list();
+    let patterns: list<ir_pattern> = list();
+    let pattern_children: list<ir_pattern_child> = list();
+    let mut expressions: list<ir_expr> = list();
+    list_push(mutref expressions, ir_expr { id: 1, function_id: 1, at: 30, start: 30, end: 31, kind: ir_expr_bool, type_id: 2, use_kind: checked_value_copy, local_id: -1, mutable: false, name: "true", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, ir_expr { id: 2, function_id: 1, at: 40, start: 40, end: 41, kind: ir_expr_i32, type_id: 1, use_kind: checked_value_copy, local_id: -1, mutable: false, name: "1", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    list_push(mutref expressions, ir_expr { id: 3, function_id: 2, at: 217, start: 217, end: 218, kind: ir_expr_i32, type_id: 1, use_kind: checked_value_copy, local_id: -1, mutable: false, name: "0", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" });
+    let children: list<ir_expr_child> = list();
+    let fields: list<ir_field_value> = list();
+    let structs: list<ir_struct_decl> = list();
+    let field_decls: list<ir_field_decl> = list();
+    let enums: list<ir_enum_decl> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let summary = emit_c_program(ref programs, ref sigs, ref functions, ref locals, ref consts, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref shapes, ref structs, ref field_decls, ref enums, ref variants, ref payloads, mutref lines, mutref diags);
+    return;
+}
+
+fn emit_probe_fall_off_cases() -> bool {
+    let mut okay = true;
+    let mut mode = 0;
+    while mode <= 5 {
+        let mut lines: list<str> = list();
+        let mut diags: list<diag> = list();
+        emit_probe_fall_off_program(mode, mutref lines, mutref diags);
+        let rendered = render_c_lines(ref lines);
+        let label = str_concat("fall-off backstop mode ", i32_to_str(mode));
+        let falls_off = mode == 1 or mode == 2 or mode == 5;
+        if falls_off {
+            let mut exact = list_len(ref diags) == 1;
+            match list_get(ref diags, 0) {
+                Some(found) => {
+                    exact = exact and found.code == "NQ-C-001" and found.message == "internal compiler error: function can fall off the end" and found.source_name == "probe" and found.start == 10 and found.end == 14 and found.help == "";
+                },
+                None => { exact = false; },
+            }
+            if not emit_probe_check(exact, str_concat(label, " diagnostic")) { okay = false; }
+            // Only the prototype of `spin` remains; `main` is still defined.
+            if not emit_probe_check(emit_probe_occurrences(rendered, "nq_fn_spin(") == 1 and emit_probe_occurrences(rendered, "nq_fn_main(void) {") == 1, str_concat(label, " suppresses only the offending definition")) { okay = false; eprint_line(rendered); }
+        } else {
+            if not emit_probe_check(list_len(ref diags) == 0, str_concat(label, " control diagnostics")) { okay = false; }
+            if not emit_probe_check(emit_probe_occurrences(rendered, "nq_fn_spin(") == 2, str_concat(label, " control keeps the definition")) { okay = false; eprint_line(rendered); }
+        }
+        mode = mode + 1;
+    }
+    return okay;
+}
+
 // M57.1: payload-free enum `==`/`!=` compare tags on both C lowering paths.
 fn emit_probe_tag_expr(id: i32, kind: ir_expr_kind, type_id: i32, local_id: i32) -> ir_expr {
     return ir_expr { id: id, function_id: 41, at: id, start: id, end: id + 1, kind: kind, type_id: type_id, use_kind: checked_value_copy, local_id: local_id, mutable: false, name: "", target_name: "", target_origin_module: "", field_owner_module: "", field_owner_type: "", field_name: "" };
@@ -574,9 +673,10 @@ audit {
     let cleanup_ok = emit_probe_cleanup_cases();
     let missing_ok = emit_probe_check(c_emit_index_probe_missing_child(), "missing-child");
     let backstop_ok = emit_probe_backstop_cases();
+    let fall_off_ok = emit_probe_fall_off_cases();
     let tag_ok = emit_probe_tag_cases();
     let qualified_ok = emit_probe_qualified_list_call_cases();
-    return collections_ok and cleanup_ok and missing_ok and backstop_ok and tag_ok and qualified_ok;
+    return collections_ok and cleanup_ok and missing_ok and backstop_ok and fall_off_ok and tag_ok and qualified_ok;
 }
 fn main() -> i32 {
     let membership_ok = c_emit_membership_index_cases();

@@ -120,10 +120,12 @@ fn generic_render_add(pieces: mutref list<str>, size: mutref i32, limit: i32, pi
     if str_len(piece) > limit - size { failure = 5; return; }
     size = size + str_len(piece);
     list_push(mutref pieces, piece);
+    return;
 }
 
 fn generic_render_reject(failure: mutref i32) -> unit {
     if failure == 0 { failure = 9; }
+    return;
 }
 
 fn generic_render_segment(key: str, cursor: mutref i32, colons: bool) -> str {
@@ -170,6 +172,7 @@ fn generic_render_owner(context: ref generic_render_context, word: str, module: 
     generic_render_add(mutref pieces, mutref size, limit, module, mutref failure);
     generic_render_add(mutref pieces, mutref size, limit, "::", mutref failure);
     generic_render_add(mutref pieces, mutref size, limit, name, mutref failure);
+    return;
 }
 
 fn generic_render_list(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32, depth: i32) -> i32 {
@@ -219,6 +222,7 @@ fn generic_render_head(context: ref generic_render_context, key: str, cursor: mu
         // A bare generic template names its template identity only at top level.
         if arity > 0 and not top { generic_render_reject(mutref failure); }
     }
+    return;
 }
 
 fn generic_render_variant(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32) -> unit {
@@ -242,6 +246,7 @@ fn generic_render_variant(context: ref generic_render_context, key: str, cursor:
     if context.workspace { generic_render_add(mutref pieces, mutref size, limit, "::variant:", mutref failure); }
     else { generic_render_add(mutref pieces, mutref size, limit, "::", mutref failure); }
     generic_render_add(mutref pieces, mutref size, limit, variant, mutref failure);
+    return;
 }
 
 fn generic_render_arg(context: ref generic_render_context, key: str, cursor: mutref i32, pieces: mutref list<str>, size: mutref i32, limit: i32, failure: mutref i32, depth: i32) -> unit {
@@ -259,6 +264,7 @@ fn generic_render_arg(context: ref generic_render_context, key: str, cursor: mut
     if head == "int" { atom = "i32"; }
     if not generic_render_atom(atom) { generic_render_reject(mutref failure); return; }
     generic_render_add(mutref pieces, mutref size, limit, atom, mutref failure);
+    return;
 }
 
 fn generic_render_run(context: ref generic_render_context, key: str, argument: bool, limit: i32, failure: mutref i32) -> str {
@@ -278,6 +284,7 @@ fn generic_render_run(context: ref generic_render_context, key: str, argument: b
 fn generic_render_failure(failure: i32, module: str, diags: mutref list<diag>) -> unit {
     if failure == 5 { list_push(mutref diags, make_error("NQ-GENERIC-005", diag_type, module, -1, -1, "generic evidence identity exceeds 32768 bytes")); return; }
     list_push(mutref diags, make_error("NQ-GENERIC-009", diag_internal, module, -1, -1, "generic identity metadata is malformed or names an unknown nominal"));
+    return;
 }
 
 fn generic_render_limit(key: str) -> i32 {
@@ -317,6 +324,7 @@ pub fn generic_report_missing_identity(diags: mutref list<diag>, module: str) ->
 audit { intent("Fail closed when valid metadata reaches an emitter with a generated item lacking source identity"); mutates(diags); effects(); }
 {
     list_push(mutref diags, make_error("NQ-GENERIC-010", diag_internal, module, -1, -1, "generated item reached evidence output with no source identity"));
+    return;
 }
 
 pub fn generic_render_generated_name(context: ref generic_render_context, name: str, module: str, diags: mutref list<diag>) -> str

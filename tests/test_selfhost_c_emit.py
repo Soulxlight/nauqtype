@@ -389,7 +389,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         returncode, output, emitted = self._run_stage1_emit(modules)
         self.assertNotEqual(returncode, 0)
         self.assertEqual(emitted, "")
-        self.assertIn("match expression must be exhaustive", output)
+        self.assertIn("match must be exhaustive; missing `None`", output)
 
     def test_stage1_rejects_match_expression_on_non_sum_scrutinee(self) -> None:
         modules = {
@@ -406,7 +406,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         returncode, output, emitted = self._run_stage1_emit(modules)
         self.assertNotEqual(returncode, 0)
         self.assertEqual(emitted, "")
-        self.assertIn("match expression scrutinee must be i32, option, result, or enum", output)
+        self.assertIn("cannot `match` on type `bool`", output)
 
     def test_stage1_rejects_let_else_binding_in_else_block(self) -> None:
         modules = {
@@ -469,7 +469,7 @@ class SelfhostCEmitTests(unittest.TestCase):
         returncode, output, emitted = self._run_stage1_emit(modules)
         self.assertNotEqual(returncode, 0)
         self.assertEqual(emitted, "")
-        self.assertIn("let-else `else` block must exit explicitly with `return` in V1", output)
+        self.assertIn("let-else `else` block must exit with `return`, `break` or `continue`", output)
 
     def test_stage1_c_emit_is_deterministic_on_locked_corpus(self) -> None:
         cases = {

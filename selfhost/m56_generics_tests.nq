@@ -149,12 +149,14 @@ fn m56_import_parse_order(driver: str, schema: str) -> bool {
         Ok(status) => {
             let parsed = m56_find(status.stdout, "\"code\": \"NQ-PARSE-003\"");
             let missing = m56_find(status.stdout, "\"code\": \"NQ-IO-001\"");
-            let resolved = m56_find(status.stdout, "\"code\": \"NQ-RESOLVE-010\"");
+            // M58.1: the parse error is reported once and the load/parse stop
+            // leaves no resolution cascade after the missing import.
             if status.exit_code == 1 and status.stderr == "" and schema_profile_accepts(schema, status.stdout) and
                 text_contains(status.stdout, "\"ok\": false") and parsed >= 0 and missing > parsed and
-                m56_count(status.stdout, "\"code\":") == 6 and m56_count(status.stdout, "\"severity\": \"error\"") == 6 and resolved > missing and
+                m56_count(status.stdout, "\"code\":") == 2 and m56_count(status.stdout, "\"severity\": \"error\"") == 2 and
+                not text_contains(status.stdout, "\"code\": \"NQ-RESOLVE-") and
                 m56_count(status.stdout, "\"code\": \"NQ-IO-001\"") == 1 and
-                m56_count(slice_text(status.stdout, 0, missing), "\"code\": \"NQ-PARSE-003\"") == 4 { return true; }
+                m56_count(slice_text(status.stdout, 0, missing), "\"code\": \"NQ-PARSE-003\"") == 1 { return true; }
             return m56_report("first imported parse error precedes later missing import", status);
         },
         Err(err) => { eprint_line(io_err_text(err)); return false; },

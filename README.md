@@ -7,10 +7,10 @@ compiler evidence, and changes that people can review.
 ## Current Status
 
 Nauqtype is an organizational Linux alpha, not a stable, feature-complete
-language or a distro package. Milestones through M57.1 are complete; the
+language or a distro package. Milestones through M58.1 are complete; the
 checkout roadmap holds their evidence. The definition of v1.0 is the
 [language charter](LANGUAGE_CHARTER.md): a complete, coherent language that
-follows its own principles, reached through milestones M58-M69.
+follows its own principles, reached through milestones M58.2-M69.
 
 The active compiler, tests, and proof runner are written in Nauqtype. A
 checked-in C seed and narrow C runtime remain part of the intentional

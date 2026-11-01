@@ -837,3 +837,39 @@ Full user generics and broader mutable-string/library growth remain deferred.
   implementation.
 - **Reversible later.** Charter changes need the owner; design records may
   refine details but not the commitments.
+
+## D070: Accepted programs mean what they say; diagnostics are honest
+
+- **Decision.** M58.1 ([docs/M58_1_CONTRACT.md](docs/M58_1_CONTRACT.md))
+  applies charter R1 (fail at check) and R2 (one canonical form) to the
+  existing language. A function body must not reach its closing `}`
+  (`NQ-TYPE-053`; `unit` functions end every path with `return;`; `while
+  true` with no same-loop `break` terminates). A `let` binding is visible from
+  the end of its statement, so `let mut x = x + 1;` reads the outer `x`.
+  Statement and expression `match` share one scrutinee rule (`NQ-TYPE-054`)
+  and one exhaustiveness rule (`NQ-TYPE-051`). Every source shape that used
+  to reach a "stage1 limitation" has a focused diagnostic, and back-end
+  invariant failures say "internal compiler error:"; a frozen producer ledger
+  and a checked test keep it that way. let-else `else` blocks may exit with
+  `break` or `continue`. Parse errors are reported once, load/parse errors
+  stop every command, and text output prints `help:`/`note:` lines.
+- **Alternatives rejected.** An implicit `unit` return (two spellings for one
+  exit); treating every `while` as possibly non-terminating (forces dead
+  trailing returns); keeping two exhaustiveness codes (R9); unreachable-code
+  diagnostics now (a separate lint with its own false positives); splitting
+  `NQ-TYPE-042` per message now (polish, not correctness).
+- **Reason.** A zero-initialized return slot, an initializer that read its
+  own uninitialized binding, and a statement `match` that accepted any
+  scrutinee were silent miscompiles or rule gaps; "stage1 limitation"
+  diagnostics blamed the compiler for ordinary source errors. A supervised
+  language has to reject these at `check` with a message a reader can act on.
+- **Consequences.** About 75 compiler functions and three fixtures gained
+  `return;`; the seed accepts that form, so no seed promotion. Programs that
+  fall off the end, `match` on `bool`/`str`, and `let x = x;` with no outer
+  `x` are newly rejected; let-else `break`/`continue` and `try { f()? + g()? }`
+  are newly accepted; `build -o <exe>` writes `<exe>.c` beside the
+  executable. Evidence schemas are unchanged.
+- **Reversible later.** The termination rule can widen (for example constant
+  loop conditions) without breaking accepted programs; the rejections fix
+  miscompiles and should stay. M58.2 replaces the D047 refined-pattern rule
+  with a real coverage check and adds `bool` patterns.

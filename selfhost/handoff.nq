@@ -140,6 +140,7 @@ pub type checked_binding {
     origin_stmt_id: i32,
     origin_arm_id: i32,
     param_index: i32,
+    visible_from: i32,
 }
 
 pub type checked_param {
@@ -414,13 +415,8 @@ type resolved_binding_lookup {
     function_id: i32,
     scope_id: i32,
     at: i32,
+    visible_from: i32,
     name_bucket: i32,
-}
-
-type scope_lookup {
-    function_id: i32,
-    scope_id: i32,
-    parent_scope_id: i32,
 }
 
 type resolved_binding_snapshot {
@@ -430,6 +426,7 @@ type resolved_binding_snapshot {
     type_arg2_name: str,
     is_borrow: bool,
     borrow_mutable: bool,
+    visible_from: i32,
 }
 
 type predicted_stmt_lookup {
@@ -476,12 +473,12 @@ fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit
 }
 
 fn push_handoff_limitation(diags: mutref list<diag>, file: str, at: i32) -> unit {
-    push_diag(mutref diags, file, at, "stage1 limitation: checked handoff could not export the current expression or binding shape");
+    push_diag(mutref diags, file, at, "internal compiler error: checked handoff could not export the current expression or binding shape");
     return;
 }
 
 fn push_handoff_limitation_detail(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
-    let prefix = "stage1 limitation: ";
+    let prefix = "internal compiler error: ";
     push_diag(mutref diags, file, at, str_concat(prefix, detail));
     return;
 }
@@ -494,6 +491,34 @@ fn consume_handoff_limitation(diags: mutref list<diag>, file: str, at: i32) -> i
 fn consume_handoff_limitation_detail(diags: mutref list<diag>, file: str, at: i32, detail: str) -> i32 {
     push_handoff_limitation_detail(mutref diags, file, at, detail);
     return -1;
+}
+
+// M58.1 producer-ledger evidence (docs/M58_1_PRODUCER_LEDGER.md): every
+// NQ-HANDOFF-001 invariant call site goes through these four producers; pin
+// their code, span and "internal compiler error:" prefix.
+pub fn handoff_internal_producer_cases() -> bool
+audit {
+    intent("Exercise the shared checked-handoff invariant producers and pin their code and prefix");
+    mutates();
+    effects();
+}
+{
+    let mut diags: list<diag> = list();
+    push_handoff_limitation(mutref diags, "probe", 3);
+    push_handoff_limitation_detail(mutref diags, "probe", 4, "direct detail");
+    let plain = consume_handoff_limitation(mutref diags, "probe", 5);
+    let detailed = consume_handoff_limitation_detail(mutref diags, "probe", 6, "consumed detail");
+    if plain != -1 or detailed != -1 or list_len(ref diags) != 4 { return false; }
+    let fixed = "internal compiler error: checked handoff could not export the current expression or binding shape";
+    let expected = [fixed, "internal compiler error: direct detail", fixed, "internal compiler error: consumed detail"];
+    let mut index = 0;
+    while index < 4 {
+        let Some(found) = list_get(ref diags, index) else { return false; };
+        let Some(message) = list_get(ref expected, index) else { return false; };
+        if found.code != "NQ-HANDOFF-001" or found.message != message or found.source_name != "probe" or found.start != index + 3 or found.end != index + 4 { return false; }
+        index = index + 1;
+    }
+    return true;
 }
 
 fn token_at(tokens: ref list<token>, index: i32) -> token {
@@ -1109,6 +1134,9 @@ fn token_can_end_expr(tok: token) -> bool {
             return true;
         },
         tk_rbracket => {
+            return true;
+        },
+        tk_question => {
             return true;
         },
         _ => {
@@ -2336,6 +2364,7 @@ fn build_resolved_binding_lookups(resolved_bindings: ref list<typed_binding_fact
                     function_id: cached_function_id,
                     scope_id: value.scope_id,
                     at: value.at,
+                    visible_from: value.visible_from,
                     name_bucket: handoff_name_bucket(value.name),
                 });
             },
@@ -2345,65 +2374,6 @@ fn build_resolved_binding_lookups(resolved_bindings: ref list<typed_binding_fact
         index = index + 1;
     }
     return lookups;
-}
-
-fn build_scope_lookups(scopes: ref list<body_scope>, functions: ref list<checked_function>) -> list<scope_lookup> {
-    let mut lookups: list<scope_lookup> = list();
-    let function_lookups = build_checked_function_lookups(ref functions);
-    let mut cached_module = "";
-    let mut cached_function = "";
-    let mut cached_function_id = -1;
-    let mut index = 0;
-    while index < list_len(ref scopes) {
-        let entry = list_get(ref scopes, index);
-        match entry {
-            Some(value) => {
-                if value.module != cached_module or value.function_name != cached_function {
-                    cached_module = value.module;
-                    cached_function = value.function_name;
-                    cached_function_id = lookup_function_id_indexed(ref function_lookups, ref functions, value.module, value.function_name);
-                }
-                list_push(mutref lookups, scope_lookup {
-                    function_id: cached_function_id,
-                    scope_id: value.scope_id,
-                    parent_scope_id: value.parent_scope_id,
-                });
-            },
-            None => {
-            },
-        }
-        index = index + 1;
-    }
-    return lookups;
-}
-
-fn lookup_scope_parent_by_function(scopes: ref list<scope_lookup>, function_id: i32, scope_id: i32) -> i32 {
-    let mut index = list_len(ref scopes) - 1;
-    while index >= 0 {
-        let entry = list_get(ref scopes, index);
-        match entry {
-            Some(value) => {
-                if value.function_id == function_id and value.scope_id == scope_id {
-                    return value.parent_scope_id;
-                }
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return -1;
-}
-
-fn scope_is_visible_by_function(scopes: ref list<scope_lookup>, function_id: i32, current_scope_id: i32, candidate_scope_id: i32) -> bool {
-    let mut scope_cursor = current_scope_id;
-    while scope_cursor >= 0 {
-        if scope_cursor == candidate_scope_id {
-            return true;
-        }
-        scope_cursor = lookup_scope_parent_by_function(ref scopes, function_id, scope_cursor);
-    }
-    return false;
 }
 
 fn local_declaration_name_at(statement: stmt_fact, tokens: ref list<token>) -> i32 {
@@ -2437,6 +2407,7 @@ fn empty_resolved_binding_snapshot() -> resolved_binding_snapshot {
         type_arg2_name: "",
         is_borrow: false,
         borrow_mutable: false,
+        visible_from: -1,
     };
 }
 
@@ -2448,6 +2419,7 @@ fn make_resolved_binding_snapshot(value: typed_binding_fact) -> resolved_binding
         type_arg2_name: value.type_arg2_name,
         is_borrow: value.is_borrow,
         borrow_mutable: value.borrow_mutable,
+        visible_from: value.visible_from,
     };
 }
 
@@ -2463,34 +2435,6 @@ fn exact_resolved_binding_snapshot(resolved_bindings: ref list<typed_binding_fac
                     match binding_entry {
                         Some(value) => {
                             if value.name == name {
-                                return make_resolved_binding_snapshot(value);
-                            }
-                        },
-                        None => {
-                        },
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return empty_resolved_binding_snapshot();
-}
-
-fn visible_resolved_binding_snapshot(resolved_bindings: ref list<typed_binding_fact>, lookups: ref list<resolved_binding_lookup>, scopes: ref list<scope_lookup>, function_id: i32, scope_id: i32, name: str, at: i32) -> resolved_binding_snapshot {
-    let target_bucket = handoff_name_bucket(name);
-    let mut index = list_len(ref lookups) - 1;
-    while index >= 0 {
-        let lookup_entry = list_get(ref lookups, index);
-        match lookup_entry {
-            Some(lookup) => {
-                if lookup.function_id == function_id and lookup.name_bucket == target_bucket and lookup.at < at {
-                    let binding_entry = list_get(ref resolved_bindings, lookup.source_index);
-                    match binding_entry {
-                        Some(value) => {
-                            if value.name == name and scope_is_visible_by_function(ref scopes, function_id, scope_id, lookup.scope_id) {
                                 return make_resolved_binding_snapshot(value);
                             }
                         },
@@ -2666,15 +2610,23 @@ fn scope_is_visible(scopes: ref list<body_scope>, module_name: str, function_nam
     return false;
 }
 
+// M58.1 repair: the binding a name denotes at byte offset `at` is the visible
+// candidate (`visible_from <= at`, declared in `scope_id` or an ancestor) with
+// the greatest declaration position, exactly as typecheck selects it. Storage
+// order is not lexical order (checked locals precede pattern bindings), so the
+// scan never stops at the first visible entry. Ties keep the later entry.
 fn visible_resolved_binding_ctx(resolved_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> expected_type_ctx {
+    let mut best = -1;
+    let mut best_at = -1;
     let mut index = list_len(ref resolved_bindings) - 1;
     while index >= 0 {
         let entry = list_get(ref resolved_bindings, index);
         match entry {
             Some(value) => {
-                if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
+                if value.module == module_name and value.function_name == function_name and value.name == name and value.visible_from <= at and (best < 0 or value.at > best_at) {
                     if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
-                        return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name);
+                        best = index;
+                        best_at = value.at;
                     }
                 }
             },
@@ -2683,47 +2635,10 @@ fn visible_resolved_binding_ctx(resolved_bindings: ref list<typed_binding_fact>,
         }
         index = index - 1;
     }
-    return empty_expected_type_ctx();
-}
-
-fn visible_resolved_binding_is_borrow(resolved_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
-    let mut index = list_len(ref resolved_bindings) - 1;
-    while index >= 0 {
-        let entry = list_get(ref resolved_bindings, index);
-        match entry {
-            Some(value) => {
-                if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
-                    if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
-                        return value.is_borrow;
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        index = index - 1;
+    match list_get(ref resolved_bindings, best) {
+        Some(value) => { return make_expected_type_ctx(value.type_name, value.type_arg1_name, value.type_arg2_name); },
+        None => { return empty_expected_type_ctx(); },
     }
-    return false;
-}
-
-fn visible_resolved_binding_borrow_mutable(resolved_bindings: ref list<typed_binding_fact>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> bool {
-    let mut index = list_len(ref resolved_bindings) - 1;
-    while index >= 0 {
-        let entry = list_get(ref resolved_bindings, index);
-        match entry {
-            Some(value) => {
-                if value.module == module_name and value.function_name == function_name and value.name == name and value.at < at {
-                    if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
-                        return value.borrow_mutable;
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return false;
 }
 
 fn lookup_type_decl_id(types: ref list<checked_type_decl>, module_name: str, name: str) -> i32 {
@@ -2798,15 +2713,21 @@ fn exact_binding_id(bindings: ref list<checked_binding>, module_name: str, funct
     return -1;
 }
 
+// Same nearest-declaration rule as visible_resolved_binding_ctx: locals are
+// appended before pattern bindings, so the first visible entry in reverse
+// storage order can be an outer pattern binding that a nearer local shadows.
 fn visible_binding_id(bindings: ref list<checked_binding>, scopes: ref list<body_scope>, module_name: str, function_name: str, scope_id: i32, name: str, at: i32) -> i32 {
+    let mut best_id = -1;
+    let mut best_at = -1;
     let mut index = list_len(ref bindings) - 1;
     while index >= 0 {
         let entry = list_get(ref bindings, index);
         match entry {
             Some(value) => {
-                if value.module_name == module_name and value.function_name == function_name and value.name == name and value.at < at {
+                if value.module_name == module_name and value.function_name == function_name and value.name == name and value.visible_from <= at and (best_id < 0 or value.at > best_at) {
                     if scope_is_visible(ref scopes, module_name, function_name, scope_id, value.scope_id) {
-                        return value.id;
+                        best_id = value.id;
+                        best_at = value.at;
                     }
                 }
             },
@@ -2815,7 +2736,7 @@ fn visible_binding_id(bindings: ref list<checked_binding>, scopes: ref list<body
         }
         index = index - 1;
     }
-    return -1;
+    return best_id;
 }
 
 fn lookup_binding_is_borrow(bindings: ref list<checked_binding>, binding_id: i32) -> bool {
@@ -3203,8 +3124,13 @@ fn intern_checked_type_id(visibility: ref visibility_index, type_name: str, type
         }
         let arg1_id = intern_checked_type_id(ref visibility, type_text_head(type_arg1_name), type_text_arg1(type_arg1_name), type_text_arg2(type_arg1_name), type_text_is_borrow(type_arg1_name), type_text_borrow_mutable(type_arg1_name), module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
         let arg2_id = intern_checked_type_id(ref visibility, type_text_head(type_arg2_name), type_text_arg1(type_arg2_name), type_text_arg2(type_arg2_name), type_text_is_borrow(type_arg2_name), type_text_borrow_mutable(type_arg2_name), module_name, ref uses, ref items, mutref type_shapes, mutref diags, at);
-        if arg1_id < 0 or arg2_id < 0 {
-            return consume_handoff_limitation_detail(mutref diags, module_name, at, "missing result argument type shapes in checked handoff");
+        // M58.1: like `list` and `option`, a failed argument already reported
+        // its own diagnostic (for example NQ-TYPE-001); add no cascade.
+        if arg1_id < 0 {
+            return arg1_id;
+        }
+        if arg2_id < 0 {
+            return arg2_id;
         }
         return push_type_shape(mutref type_shapes, checked_type_result, "", "", arg1_id, arg2_id, false);
     }
@@ -3824,7 +3750,20 @@ fn binary_expr_kind(op: token_kind) -> checked_expr_kind {
     }
 }
 
+// M58.1: the same postfix `?` precedence as type checking: a root binary
+// operator splits first, so `f()? + g()?` builds two propagation operands.
 fn handoff_trailing_question_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let question_index = handoff_trailing_question_candidate(ref tokens, start, end);
+    if question_index < 0 {
+        return -1;
+    }
+    if find_root_or_operator(ref tokens, start, end) >= 0 or find_root_and_operator(ref tokens, start, end) >= 0 or find_root_compare_operator(ref tokens, start, end) >= 0 or find_root_additive_operator(ref tokens, start, end) >= 0 or find_root_multiplicative_operator(ref tokens, start, end) >= 0 {
+        return -1;
+    }
+    return question_index;
+}
+
+fn handoff_trailing_question_candidate(tokens: ref list<token>, start: i32, end: i32) -> i32 {
     if end - start >= 4 {
         let close = token_at(ref tokens, end - 1);
         let label = token_at(ref tokens, end - 2);
@@ -4048,7 +3987,7 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
         tk_kw_ref => {
             let child_id = build_expr_tree(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let root_index = borrow_place_root_index(ref tokens, expr_start + 1, expr_end);
-            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start + 1);
+            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start);
             if child_id < 0 or binding_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for ref expression: ", token_at(ref tokens, root_index).text));
             }
@@ -4059,7 +3998,7 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
         tk_kw_mutref => {
             let child_id = build_expr_tree(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref bindings, ref resolved_bindings, ref field_facts, ref uses, ref items, function_id, module_name, function_name, scope_id, ref tokens, expr_start + 1, expr_end, current.start, empty_expected_type_ctx(), mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
             let root_index = borrow_place_root_index(ref tokens, expr_start + 1, expr_end);
-            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start + 1);
+            let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, token_at(ref tokens, root_index).text, current.start);
             if child_id < 0 or binding_id < 0 {
                 return consume_handoff_limitation_detail(mutref diags, module_name, current.start, str_concat("missing borrowed binding or child for mutref expression: ", token_at(ref tokens, root_index).text));
             }
@@ -4397,7 +4336,7 @@ fn build_expr_tree(visibility: ref visibility_index, functions: ref list<functio
                 let name_token = token_at(ref tokens, name_index);
                 let qualifier = span_data_qualifier(ref tokens, expr_start, expr_end);
                 if qualifier == "" {
-                    let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, name_token.text, name_token.start + 1);
+                    let binding_id = visible_binding_id(ref bindings, ref scopes, module_name, function_name, scope_id, name_token.text, name_token.start);
                     if binding_id >= 0 {
                         return push_expr_record(ref visibility, function_id, module_name, function_name, scope_id, at, expr_start, expr_end, checked_expr_name, exported_ctx, lookup_binding_is_borrow(ref bindings, binding_id), lookup_binding_borrow_mutable(ref bindings, binding_id), binding_id, name_token.text, checked_target_none, "", "", "", "", ref uses, ref items, mutref type_shapes, mutref expressions, mutref diags);
                     }
@@ -4599,6 +4538,25 @@ fn append_enum_decls(visibility: ref visibility_index, variant_facts: ref list<v
             },
         }
         variant_index = variant_index + 1;
+    }
+    // M58.1 repair: an enum declaration with no variants (`enum Empty {}`) is
+    // still a checked type. Append it after every variant-bearing enum so the
+    // ids of existing declarations do not move.
+    for item in items {
+        match item.kind {
+            item_enum => {
+                if lookup_enum_decl_id(ref enum_decls, item.module, item.name) < 0 {
+                    list_push(mutref enum_decls, checked_enum_decl {
+                        id: list_len(ref enum_decls) + 1,
+                        module_id: lookup_module_id(ref modules, item.module),
+                        module_name: item.module,
+                        name: item.name,
+                        at: item.at,
+                    });
+                }
+            },
+            _ => {},
+        }
     }
     return;
 }
@@ -4887,6 +4845,7 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
                         origin_stmt_id: -1,
                         origin_arm_id: -1,
                         param_index: param.index,
+                        visible_from: default_visible_from(param.at),
                     });
                 }
             },
@@ -4975,6 +4934,7 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
                             origin_stmt_id: lookup_predicted_stmt_id(ref predicted_stmt_ids, ref predicted_stmt_lookups, stmt_cached_function_id, current.scope_id, current.at, current.kind, current.name),
                             origin_arm_id: -1,
                             param_index: -1,
+                            visible_from: snapshot.visible_from,
                         });
                     }
                 }
@@ -5023,6 +4983,7 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
                         origin_stmt_id: -1,
                         origin_arm_id: lookup_predicted_arm_id(ref predicted_arm_lookups, pattern_cached_function_id, current.scope_id),
                         param_index: -1,
+                        visible_from: default_visible_from(current.at),
                     });
                 }
             },
@@ -5736,20 +5697,18 @@ fn append_statements_for_source(base_visibility: ref visibility_index, functions
                     let mut field_owner_type = "";
                     match current.kind {
                         stmt_local => {
-                            stmt_type_ctx = visible_resolved_binding_ctx(ref function_resolved_bindings, ref function_scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
-                            if stmt_type_ctx.head == "" and current.name != "" {
-                                stmt_type_ctx = visible_resolved_binding_ctx(ref function_resolved_bindings, ref function_scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
-                            }
+                            // M58.1 repair: the statement's type is the exact
+                            // declared binding (byte identity of its name), never
+                            // a visibility lookup (statement ranges are token
+                            // indexes) and never a future declaration.
+                            stmt_type_ctx = exact_resolved_binding_ctx(ref function_resolved_bindings, current.module, current.function_name, current.scope_id, current.name, local_declaration_name_at(current, ref tokens));
                             target_binding_id = exact_binding_id(ref function_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                             stmt_is_borrow = lookup_binding_is_borrow(ref function_bindings, target_binding_id);
                             stmt_borrow_mutable = lookup_binding_borrow_mutable(ref function_bindings, target_binding_id);
                             expr_expected_ctx = stmt_type_ctx;
                         },
                         stmt_let_else => {
-                            stmt_type_ctx = visible_resolved_binding_ctx(ref function_resolved_bindings, ref function_scopes, current.module, current.function_name, current.scope_id, current.name, current.expr_end + 1);
-                            if stmt_type_ctx.head == "" and current.name != "" {
-                                stmt_type_ctx = visible_resolved_binding_ctx(ref function_resolved_bindings, ref function_scopes, current.module, current.function_name, current.scope_id, current.name, 2147483647);
-                            }
+                            stmt_type_ctx = exact_resolved_binding_ctx(ref function_resolved_bindings, current.module, current.function_name, current.scope_id, current.name, local_declaration_name_at(current, ref tokens));
                             target_binding_id = exact_binding_id(ref function_bindings, current.module, current.function_name, current.scope_id, current.name, current.at);
                             stmt_is_borrow = lookup_binding_is_borrow(ref function_bindings, target_binding_id);
                             stmt_borrow_mutable = lookup_binding_borrow_mutable(ref function_bindings, target_binding_id);
@@ -6647,7 +6606,7 @@ fn p2_handoff_membership_cases(functions: ref list<checked_function>) -> bool {
         let mut binding_kind = checked_binding_local;
         if index == 2 { binding_kind = checked_binding_pattern; }
         if index == 4 { binding_kind = checked_binding_param; }
-        list_push(mutref bindings, checked_binding { id: 300 + index, function_id: owner, module_name: module_name, function_name: function_name, scope_id: 10 + index, name: "binding", at: 80 - index, kind: binding_kind, type_name: "result", type_arg1_name: "str", type_arg2_name: "i32", is_borrow: index == 2, borrow_mutable: index == 4, type_id: 31 + index, origin_stmt_id: 61 + index, origin_arm_id: 71 + index, param_index: index - 1 });
+        list_push(mutref bindings, checked_binding { id: 300 + index, function_id: owner, module_name: module_name, function_name: function_name, scope_id: 10 + index, name: "binding", at: 80 - index, kind: binding_kind, type_name: "result", type_arg1_name: "str", type_arg2_name: "i32", is_borrow: index == 2, borrow_mutable: index == 4, type_id: 31 + index, origin_stmt_id: 61 + index, origin_arm_id: 71 + index, param_index: index - 1, visible_from: 81 - index });
         list_push(mutref blocks, checked_block { id: 400 + index, function_id: owner, module_name: module_name, function_name: function_name, scope_id: 10 + index, parent_block_id: 399 + index, depth: index });
         let mut stmt_kind = checked_stmt_if;
         if index == 2 { stmt_kind = checked_stmt_match; }

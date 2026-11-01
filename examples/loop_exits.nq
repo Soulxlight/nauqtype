@@ -1,0 +1,83 @@
+fn show(label: str, value: i32) -> unit
+audit {
+    intent("Print one labeled count");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat(label, str_from_f64(f64_from_i32(value))));
+    return;
+}
+
+fn positive(n: i32) -> option<i32> {
+    if n > 0 {
+        return Some(n);
+    }
+    return None;
+}
+
+fn sum_positive(values: list<i32>) -> i32 {
+    let mut total = 0;
+    for value in values {
+        let Some(kept) = positive(value) else {
+            continue;
+        };
+        total = total + kept;
+    }
+    return total;
+}
+
+fn count_leading_positive(values: list<i32>) -> i32 {
+    let mut index = 0;
+    while index < list_len(ref values) {
+        let Some(value) = list_get(ref values, index) else {
+            break;
+        };
+        let Some(kept) = positive(value) else {
+            break;
+        };
+        index = index + 1;
+    }
+    return index;
+}
+
+fn first_square_above(limit: i32) -> i32 {
+    let mut n = 0;
+    while true {
+        n = n + 1;
+        if n * n > limit {
+            return n;
+        }
+    }
+}
+
+fn report_shadowing(n: i32) -> unit
+audit {
+    intent("Show that an inner let initializer reads the outer binding");
+    mutates();
+    effects(print);
+}
+{
+    let total = 10;
+    if n > 0 {
+        let mut total = total + n;
+        total = total * 2;
+        show("inner total: ", total);
+    }
+    show("outer total: ", total);
+    return;
+}
+
+fn main() -> i32
+audit {
+    intent("Leave loops from let-else blocks, return from while true, and shadow in an inner scope");
+    mutates();
+    effects(print);
+}
+{
+    show("sum of positives: ", sum_positive([4, -1, 6, 0, 3]));
+    show("leading positives: ", count_leading_positive([4, -1, 6, 0, 3]));
+    show("first square above 20: ", first_square_above(20));
+    report_shadowing(13);
+    return 0;
+}

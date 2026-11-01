@@ -42,8 +42,37 @@ fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit
 }
 
 fn push_c_error(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
-    push_diag(mutref diags, file, at, str_concat("stage1 c error: ", detail));
+    push_diag(mutref diags, file, at, str_concat("internal compiler error: ", detail));
     return;
+}
+
+// M58.1 producer-ledger evidence (docs/M58_1_PRODUCER_LEDGER.md): every
+// NQ-C-001 invariant call site goes through push_c_error. Pin the shared
+// producer, and one real emitter path (an expression id with no record).
+pub fn c_emit_internal_producer_cases() -> bool
+audit {
+    intent("Exercise the shared C-emitter invariant producer and pin its code and prefix");
+    mutates();
+    effects();
+}
+{
+    let mut diags: list<diag> = list();
+    push_c_error(mutref diags, "probe", 11, "probe detail");
+    let Some(found) = list_get(ref diags, 0) else { return false; };
+    if list_len(ref diags) != 1 or found.code != "NQ-C-001" or found.message != "internal compiler error: probe detail" or found.source_name != "probe" or found.start != 11 or found.end != 12 { return false; }
+    let shapes: list<ir_type_shape> = list();
+    let locals: list<ir_local> = list();
+    let expressions: list<ir_expr> = list();
+    let children: list<ir_expr_child> = list();
+    let statements: list<ir_stmt> = list();
+    let fields: list<ir_field_value> = list();
+    let variants: list<ir_variant_decl> = list();
+    let payloads: list<ir_variant_payload_decl> = list();
+    let membership = build_c_emit_membership_index(ref locals, ref children, ref statements);
+    let mut emitted: list<diag> = list();
+    let text_value = emit_expr(ref membership, ref shapes, ref locals, ref expressions, ref children, ref fields, ref variants, ref payloads, 99, mutref emitted);
+    let Some(missing) = list_get(ref emitted, 0) else { return false; };
+    return list_len(ref emitted) == 1 and missing.code == "NQ-C-001" and missing.message == "internal compiler error: missing expression record during C emission";
 }
 
 fn concat7(a: str, b: str, c: str, d: str, e: str, f: str, g: str) -> str {
@@ -1356,6 +1385,21 @@ fn emit_list_move_helpers(lines: mutref list<str>, type_shapes: ref list<ir_type
 fn emit_user_enum(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, enum_decl: ir_enum_decl, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>) -> unit {
     let type_name = named_type_name(enum_decl.module_name, enum_decl.name);
     let tag_name = concat3(type_name, "_Tag", "");
+    let mut variant_count = 0;
+    for counted in variant_decls {
+        if counted.enum_id == enum_decl.id { variant_count = variant_count + 1; }
+    }
+    if variant_count == 0 {
+        // M58.1 repair: an uninhabited enum keeps a tag-only representation.
+        // C11 has no empty enum, struct or union, so the tag type carries one
+        // reserved enumerator that no value of the type ever holds.
+        append_line(mutref lines, concat7("typedef enum ", tag_name, " { ", tag_name, "_nq_uninhabited } ", tag_name, ";"));
+        append_line(mutref lines, concat3("typedef struct ", type_name, " {"));
+        append_line(mutref lines, concat3("    ", tag_name, " tag;"));
+        append_line(mutref lines, concat4("} ", type_name, ";", ""));
+        append_line(mutref lines, "");
+        return;
+    }
     append_line(mutref lines, concat3("typedef enum ", tag_name, " {"));
     let mut variant_index = 0;
     while variant_index < list_len(ref variant_decls) {
@@ -4644,6 +4688,80 @@ fn report_nonexhaustive_stmt_matches(offenders: ref list<ir_stmt>, function: ir_
     return count;
 }
 
+// M58.1 backstop for NQ-TYPE-053: the checked body of every function must end
+// every path with `return`. Mirrors the typecheck termination rule over the
+// IR (`while` counts when its condition is the literal `true` and no `break`
+// targets its body), so it is unreachable from source once typecheck passes.
+// The zero-initialized return slot is never an observable result.
+fn ir_loop_has_break(statements: ref list<ir_stmt>, function_id: i32, body_block_id: i32) -> bool {
+    for stmt in statements {
+        if stmt.function_id == function_id and stmt.exit_target_block_id == body_block_id {
+            match stmt.kind {
+                ir_stmt_break => { return true; },
+                _ => {},
+            }
+        }
+    }
+    return false;
+}
+
+fn ir_condition_is_true_literal(expressions: ref list<ir_expr>, expr_id: i32) -> bool {
+    let Some(condition) = lookup_expression(ref expressions, expr_id) else { return false; };
+    match condition.kind {
+        ir_expr_bool => { return condition.name == "true"; },
+        _ => { return false; },
+    }
+}
+
+fn ir_stmt_terminates(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, expressions: ref list<ir_expr>, stmt: ir_stmt) -> bool {
+    match stmt.kind {
+        ir_stmt_return => {
+            return true;
+        },
+        ir_stmt_if => {
+            if stmt.alt_block_id < 0 {
+                return false;
+            }
+            return ir_block_terminates(ref membership, ref statements, ref match_arms, ref expressions, stmt.child_block_id) and ir_block_terminates(ref membership, ref statements, ref match_arms, ref expressions, stmt.alt_block_id);
+        },
+        ir_stmt_match => {
+            let arms = lookup_match_arms_for_stmt(ref match_arms, stmt.id);
+            for arm in arms {
+                if not ir_block_terminates(ref membership, ref statements, ref match_arms, ref expressions, arm.block_id) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        ir_stmt_while => {
+            return ir_condition_is_true_literal(ref expressions, stmt.expr_id) and not ir_loop_has_break(ref statements, stmt.function_id, stmt.child_block_id);
+        },
+        _ => {
+            return false;
+        },
+    }
+}
+
+fn ir_block_terminates(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, expressions: ref list<ir_expr>, block_id: i32) -> bool {
+    let block_statements = lookup_statements_for_block(ref membership, ref statements, block_id);
+    for stmt in block_statements {
+        if ir_stmt_terminates(ref membership, ref statements, ref match_arms, ref expressions, stmt) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Per-function preflight: a body that can fall off the end reports NQ-C-001
+// at the function name and emits no C definition.
+fn report_function_fall_off(membership: ref c_emit_membership_index, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, expressions: ref list<ir_expr>, function: ir_function, diags: mutref list<diag>) -> i32 {
+    if ir_block_terminates(ref membership, ref statements, ref match_arms, ref expressions, function.root_block_id) {
+        return 0;
+    }
+    list_push(mutref diags, make_error("NQ-C-001", diag_c, function.module_name, function.at, function.at + str_len(function.name), "internal compiler error: function can fall off the end"));
+    return 1;
+}
+
 fn emit_ordered_match_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, arms: ref list<ir_match_arm>, scrutinee_type_id: i32, temp_name: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let mut index = 0;
     while index < list_len(ref arms) {
@@ -4913,7 +5031,7 @@ fn emit_match_expr_assignment(membership: ref c_emit_membership_index, lines: mu
                             let temp_name = concat3("nq_tmp_", i32_to_str(temp_index), "");
                             let arms = lookup_match_arms_for_stmt(ref match_arms, stmt_id);
                             if not match_arms_exhaust_type(ref type_shapes, ref variant_decls, ref arms, ref patterns, scrutinee_expr.type_id) {
-                                push_c_error(mutref diags, "", match_expr.at, "match expression must be exhaustive");
+                                push_c_error(mutref diags, "", match_expr.at, "match must be exhaustive");
                                 return;
                             }
                             let scrutinee_value = lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, scrutinee_id, level, mutref temp_index, mutref diags);
@@ -5060,17 +5178,54 @@ fn emit_propagate_stmt(membership: ref c_emit_membership_index, lines: mutref li
     return;
 }
 
-fn emit_try_propagation_preludes(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, boundary_type_id: i32, target_expr: str, end_label: str, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+// M58.1 repair: a later `?` failure inside one `try` must release every
+// owned payload an earlier site already unwrapped and nothing has consumed yet
+// (the values recorded before the failing site's own operand subtree).
+fn emit_try_pending_drops(lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, pending_names: ref list<str>, pending_types: ref list<i32>, count: i32, level: i32) -> unit {
+    let mut index = count - 1;
+    while index >= 0 {
+        match list_get(ref pending_names, index) {
+            Some(name) => {
+                match list_get(ref pending_types, index) {
+                    Some(type_id) => { emit_drop_target(mutref lines, ref type_shapes, type_id, name, level); },
+                    None => {},
+                }
+            },
+            None => {},
+        }
+        index = index - 1;
+    }
+    return;
+}
+
+fn truncate_try_pending(pending_names: mutref list<str>, pending_types: mutref list<i32>, count: i32) -> unit {
+    let mut kept_names: list<str> = list();
+    let mut kept_types: list<i32> = list();
+    let mut index = 0;
+    while index < count {
+        match list_get(ref pending_names, index) { Some(name) => { list_push(mutref kept_names, name); }, None => {}, }
+        match list_get(ref pending_types, index) { Some(type_id) => { list_push(mutref kept_types, type_id); }, None => {}, }
+        index = index + 1;
+    }
+    pending_names = kept_names;
+    pending_types = kept_types;
+    return;
+}
+
+fn emit_try_propagation_preludes(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, expr_id: i32, boundary_type_id: i32, target_expr: str, end_label: str, level: i32, pending_names: mutref list<str>, pending_types: mutref list<i32>, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let expr_entry = lookup_expression(ref expressions, expr_id);
     match expr_entry {
         Some(expr) => {
             let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
+            // Successful owned `?` values recorded before this subtree; the
+            // subtree's own values are consumed by this site's operand.
+            let pending_mark = list_len(ref pending_names);
             let mut child_index = 0;
             while child_index < list_len(ref child_ids) {
                 let child_entry = list_get(ref child_ids, child_index);
                 match child_entry {
                     Some(child_id) => {
-                        emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+                        emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, boundary_type_id, target_expr, end_label, level, mutref pending_names, mutref pending_types, mutref temp_index, mutref diags);
                     },
                     None => {
                     },
@@ -5083,7 +5238,7 @@ fn emit_try_propagation_preludes(membership: ref c_emit_membership_index, lines:
                 match field_entry {
                     Some(value) => {
                         if value.expr_id == expr.id {
-                            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, boundary_type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+                            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, value.value_expr_id, boundary_type_id, target_expr, end_label, level, mutref pending_names, mutref pending_types, mutref temp_index, mutref diags);
                         }
                     },
                     None => {
@@ -5117,10 +5272,16 @@ fn emit_try_propagation_preludes(membership: ref c_emit_membership_index, lines:
                                     let err_value = emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, boundary_type_id, "Err", ref errors);
                                     append_line(mutref lines, concat5(indent(level + 1), target_expr, " = ", err_value, ";"));
                                     emit_drop_target(mutref lines, ref type_shapes, result_expr.type_id, result_temp, level + 1);
+                                    emit_try_pending_drops(mutref lines, ref type_shapes, ref pending_names, ref pending_types, pending_mark, level + 1);
                                     append_line(mutref lines, concat4(indent(level + 1), "goto ", end_label, ";"));
                                     append_line(mutref lines, concat3(indent(level), "}", ""));
                                     append_line(mutref lines, concat6(indent(level), c_type(ref type_shapes, expr.type_id), " ", value_temp, " = ", str_concat(pattern_payload_value(ref type_shapes, expr.type_id, str_concat(result_temp, ".data.Ok._0")), ";")));
                                     emit_drop_target(mutref lines, ref type_shapes, result_expr.type_id, result_temp, level);
+                                    truncate_try_pending(mutref pending_names, mutref pending_types, pending_mark);
+                                    if type_needs_drop(ref type_shapes, expr.type_id) {
+                                        list_push(mutref pending_names, value_temp);
+                                        list_push(mutref pending_types, expr.type_id);
+                                    }
                                 },
                                 None => {
                                     push_c_error(mutref diags, "", expr.at, "missing try propagation operand expression");
@@ -5158,7 +5319,9 @@ fn emit_try_expr_assignment(membership: ref c_emit_membership_index, lines: mutr
             }
             temp_index = temp_index + 1;
             let end_label = concat3("nq_try_end_", i32_to_str(temp_index), "");
-            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, try_expr.type_id, target_expr, end_label, level, mutref temp_index, mutref diags);
+            let mut pending_names: list<str> = list();
+            let mut pending_types: list<i32> = list();
+            emit_try_propagation_preludes(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, try_expr.type_id, target_expr, end_label, level, mutref pending_names, mutref pending_types, mutref temp_index, mutref diags);
             let mut successes: list<str> = list();
             list_push(mutref successes, lower_expr_transfer_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, child_id, level, mutref temp_index, mutref diags));
             let ok_value = emit_variant_constructor(ref type_shapes, ref variant_decls, ref variant_payload_decls, try_expr.type_id, "Ok", ref successes);
@@ -5470,7 +5633,7 @@ audit {
         let entry = list_get(ref functions, function_index);
         match entry {
             Some(value) => {
-                if report_nonexhaustive_stmt_matches(ref nonexhaustive_matches, value, mutref diags) == 0 {
+                if report_nonexhaustive_stmt_matches(ref nonexhaustive_matches, value, mutref diags) + report_function_fall_off(ref membership, ref statements, ref match_arms, ref expressions, value, mutref diags) == 0 {
                 append_line(mutref lines_out, concat3(function_signature(ref membership, value, ref locals, ref type_shapes), " {", ""));
                 emit_function_prelude(ref membership, mutref lines_out, ref type_shapes, ref locals, value);
                 let return_cleanups: list<str> = list();

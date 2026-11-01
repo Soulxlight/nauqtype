@@ -1,0 +1,150 @@
+// M58.1 repair: inside one `try`, a later `?` failure releases every owned
+// payload an earlier site already unwrapped and nothing has consumed yet, and
+// never releases a payload an enclosing site's operand already consumed. The
+// owned test runs this program with exact output and the same C under
+// ASan/UBSan (LeakSanitizer reports any payload left behind).
+
+type Holder {
+    left: str,
+    right: str,
+}
+
+fn show(label: str, passed: bool) -> unit
+audit {
+    intent("Print one labeled check");
+    mutates();
+    effects(print);
+}
+{
+    if passed {
+        print_line(str_concat(label, " ok"));
+    } else {
+        print_line(str_concat(label, " WRONG"));
+    }
+    return;
+}
+
+fn first() -> result<str, str> {
+    return Ok(str_concat("allocated", " payload"));
+}
+
+fn fails() -> result<str, str> {
+    return Err(str_concat("stop", "ped"));
+}
+
+fn wrap(text: str) -> result<str, str> {
+    return Ok(str_concat(text, "+"));
+}
+
+fn wrap_fail(text: str) -> result<str, str> {
+    return Err(text);
+}
+
+fn is_stopped(r: result<str, str>) -> bool {
+    match r {
+        Ok(value) => {
+            return false;
+        },
+        Err(e) => {
+            return e == "stopped";
+        },
+    }
+}
+
+fn compare_fails() -> bool {
+    let r: result<bool, str> = try {
+        first()? == fails()?
+    };
+    match r {
+        Ok(value) => {
+            return false;
+        },
+        Err(e) => {
+            return e == "stopped";
+        },
+    }
+}
+
+fn concat_fails() -> bool {
+    let r: result<str, str> = try {
+        str_concat(first()?, fails()?)
+    };
+    return is_stopped(r);
+}
+
+fn third_site_fails() -> bool {
+    let r: result<str, str> = try {
+        str_concat(str_concat(first()?, first()?), fails()?)
+    };
+    return is_stopped(r);
+}
+
+fn first_site_fails() -> bool {
+    let r: result<str, str> = try {
+        str_concat(fails()?, first()?)
+    };
+    return is_stopped(r);
+}
+
+fn field_fails() -> bool {
+    let r: result<Holder, str> = try {
+        Holder { left: first()?, right: fails()? }
+    };
+    match r {
+        Ok(value) => {
+            return false;
+        },
+        Err(e) => {
+            return e == "stopped";
+        },
+    }
+}
+
+// The inner payload moved into `wrap_fail`; the outer failure must not
+// release it a second time.
+fn enclosing_fails() -> bool {
+    let r: result<str, str> = try {
+        wrap_fail(first()?)?
+    };
+    match r {
+        Ok(value) => {
+            return false;
+        },
+        Err(e) => {
+            return e == "allocated payload";
+        },
+    }
+}
+
+fn nested_then_fails() -> bool {
+    let r: result<str, str> = try {
+        str_concat(wrap(first()?)?, fails()?)
+    };
+    return is_stopped(r);
+}
+
+fn all_succeed() -> bool {
+    let r: result<str, str> = try {
+        str_concat(first()?, wrap(first()?)?)
+    };
+    match r {
+        Ok(value) => {
+            return value == "allocated payloadallocated payload+";
+        },
+        Err(e) => {
+            return false;
+        },
+    }
+}
+
+fn main() -> i32 {
+    show("compare fails", compare_fails());
+    show("concat fails", concat_fails());
+    show("third site fails", third_site_fails());
+    show("first site fails", first_site_fails());
+    show("field fails", field_fails());
+    show("enclosing fails", enclosing_fails());
+    show("nested then fails", nested_then_fails());
+    show("all succeed", all_succeed());
+    return 0;
+}

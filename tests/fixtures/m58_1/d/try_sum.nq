@@ -1,0 +1,34 @@
+fn first() -> result<i32, str> {
+    return Ok(2);
+}
+
+fn second(fail: bool) -> result<i32, str> {
+    if fail {
+        return Err("second failed");
+    }
+    return Ok(3);
+}
+
+fn report(value: result<i32, str>) -> unit {
+    match value {
+        Ok(total) => {
+            if total == 5 {
+                print_line("sum: 5");
+            } else {
+                print_line("sum: other");
+            }
+        },
+        Err(message) => {
+            print_line(str_concat("error: ", message));
+        },
+    }
+    return;
+}
+
+fn main() -> i32 {
+    let sum: result<i32, str> = try { first()? + second(false)? };
+    report(sum);
+    let failed: result<i32, str> = try { first()? + second(true)? };
+    report(failed);
+    return 0;
+}

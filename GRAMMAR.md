@@ -34,7 +34,10 @@ with an optional `-` only. After `DIGITS "." DIGITS`, the lexer consumes an
 `e` or `E`, at most one `+` or `-`, and the following digits; unless that is
 `e`, an optional `-`, and at least one digit, the consumed span is one
 malformed token reported as `NQ-PARSE-004` (`1.0E5`, `1.0e+5`, `1.0e`,
-`1.0e-`). `1.`, `1.e5`, `.5`, and `1e5` are not float literals.
+`1.0e-`). `.5`, `1.`, `1e5`, `1E5`, and `1e-5` are not float literals: since
+M58.1 the lexer reads each as one malformed token reported as `NQ-PARSE-004`
+with a help line showing the canonical form. `1.e5` and `1.foo` remain an
+integer followed by field access.
 
 ### String Literals
 
@@ -145,6 +148,7 @@ borrow_type   = "ref" named_type
 
 named_type    = IDENT [ generic_args ]
               | "bool"
+              | "f64"
               | "i32"
               | "i64"
               | "str"
@@ -233,8 +237,9 @@ unary         = ( "-" | "not" ) unary
               | borrow_expr
               | postfix ;
 
-borrow_expr   = "ref" IDENT
-              | "mutref" IDENT ;
+borrow_expr   = ( "ref" | "mutref" ) borrow_place ;
+borrow_place  = IDENT { "." IDENT }
+              | "(" borrow_place ")" ;
 
 postfix       = primary { call_suffix | field_suffix | propagation_suffix } ;
 call_suffix   = "(" argument_list? ")" ;
@@ -280,8 +285,13 @@ Parser note:
 - `IDENT "{ from base, field: value }"` is a copy-only record update; `from` is contextual in this position and `base` must be a simple visible name that satisfies the record-update ownership and copy rules.
 - `[]` requires an expected `list<T>` context. Non-empty list literals infer from the first element unless an expected `list<T>` is available, and all elements must have one homogeneous type. Spreads, comprehensions, ranges, and const list initializers are not part of V1.
 - Statement `match` arms remain block-bodied; only `match_expr` arms are expression-bodied.
-- `let_else_stmt` is narrow in V1: only `Some(name)` and `Ok(name)` guard bindings are accepted, and the `else` block must exit explicitly.
-- `field_assign_stmt` is narrow in V1: its base is a direct owned `let mut` product binding, never a nested field, `mutref` parameter, enum, list element, or arbitrary expression.
+- `let_else_stmt` is narrow in V1: only `Some(name)` and `Ok(name)` guard bindings are accepted, and the `else` block must exit with `return`, `break;` or `continue;` (SPEC "Local Bindings").
+- `field_assign_stmt` is narrow in V1: its base is a `let mut` local or a `mutref` parameter of a product type, never a nested field (`NQ-TYPE-059`), enum, list element, or arbitrary expression.
+- A `let` binding is visible from the end of its statement; its initializer cannot see it (SPEC "Local Bindings").
+- Every function body must end each path in `return` (SPEC "Every path returns", `NQ-TYPE-053`); `while true` with no `break` targeting it counts as terminating, where the condition is exactly the token `true`.
+- `borrow_expr` is legal only as a direct call argument.
+- A call's callee must be a function name (`NQ-TYPE-058`); `field_init` is the only struct-literal field form (`NQ-TYPE-055`).
+- `propagation_suffix` is legal only in `let_propagate_stmt` and on direct call operands inside `try_expr` (`NQ-PROPAGATE-007`).
 
 ## Pattern Grammar
 
@@ -299,6 +309,7 @@ Pattern meaning is resolved semantically:
 - bare `IDENT` may be a binding or a unit-like constructor
 - `IDENT(...)` is a tuple-like constructor pattern
 - integer literals, including `-INT`, match only `i32` scrutinees
+- `true`/`false`, string literals, negated non-literals and other shapes are not patterns (`NQ-TYPE-056`); an unknown constructor is `NQ-RESOLVE-010`
 - float literals are never patterns, and an `f64` value is never a scrutinee (`NQ-TYPE-047`)
 - constructor patterns may nest recursively; a match containing a literal or nested constructor pattern requires a wildcard or binding fallback arm
 

@@ -60,6 +60,7 @@ These examples cover specific semantic features of Nauqtype.
 - [break_continue.nq](examples/break_continue.nq): Minimal `break` and `continue` statement usage within the nearest enclosing `while` loop.
 - [nested_break_continue.nq](examples/nested_break_continue.nq): Using nested `break` and `continue` inside `if` conditionals within a `while` loop.
 - [nested_patterns.nq](examples/nested_patterns.nq): Matching nested `option` constructors and an integer literal with an explicit fallback arm.
+- [loop_exits.nq](examples/loop_exits.nq): Every path returns (M58.1): let-else `else` blocks that exit with `continue;` and `break;`, a function whose body ends in a `while true` loop that exits only by `return`, `unit` functions ending in `return;`, and an inner `let mut total = total + n;` whose initializer reads the outer `total`.
 
 ## AI and Evidence Workflow Demos
 
@@ -99,6 +100,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 - `in_place_update.nq`
 - `list_literals.nq`
 - `list_sum.nq`
+- `loop_exits.nq`
 - `match_expr_let_else.nq`
 - `multi_file_main.nq`
 - `mutate_counter.nq`
@@ -168,3 +170,10 @@ To teach supervised failure to a model:
     `NQ-TYPE-052`), and `teaching_negative_borrow.nq` (a forwarded `mutref`
     parameter beside `mutref` of its own field in one call, `NQ-BORROW-006`).
     The `integer-policy` suite pins each exact diagnostic.
+11. **M58.1 Every Path Returns:** delete the final `return;` from any `unit`
+    function in `examples/loop_exits.nq`, or add a `break;` to its `while true`
+    loop, to see `NQ-TYPE-053` "function `<name>` can reach the end of its
+    body without returning" at the closing `}`. Replace a let-else
+    `continue;` with a `print_line(...)` call to see the let-else exit rule.
+    `tests/fixtures/m58_1/` holds the pinned rejection fixtures for every
+    M58.1 diagnostic.

@@ -50,9 +50,24 @@ fn push_borrow_error(diags: mutref list<diag>, file: str, at: i32, code: str, me
 }
 
 fn push_borrow_limitation(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
-    let prefix = "stage1 limitation: checked borrow pass ";
+    let prefix = "internal compiler error: checked borrow pass ";
     push_borrow_error(mutref diags, file, at, "NQ-BORROW-008", str_concat(prefix, detail));
     return;
+}
+
+// M58.1 producer-ledger evidence (docs/M58_1_PRODUCER_LEDGER.md): every
+// NQ-BORROW-008 invariant call site goes through push_borrow_limitation.
+pub fn borrow_internal_producer_cases() -> bool
+audit {
+    intent("Exercise the shared borrow-pass invariant producer and pin its code and prefix");
+    mutates();
+    effects();
+}
+{
+    let mut diags: list<diag> = list();
+    push_borrow_limitation(mutref diags, "probe", 7, "probe detail");
+    let Some(found) = list_get(ref diags, 0) else { return false; };
+    return list_len(ref diags) == 1 and found.code == "NQ-BORROW-008" and found.message == "internal compiler error: checked borrow pass probe detail" and found.source_name == "probe" and found.start == 7 and found.end == 8;
 }
 
 fn clone_string_list(items: ref list<str>) -> list<str> {
@@ -2155,7 +2170,16 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                             arm_index = arm_index + 1;
                                         }
                                         if not arm_found {
-                                            push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing checked match arms");
+                                            // M58.1 rule 3: a zero-arm match is exhaustive only over an
+                                            // uninhabited enum; its end is unreachable.
+                                            let mut uninhabited = false;
+                                            match scrutinee_entry {
+                                                Some(scrutinee) => { uninhabited = borrow_type_is_uninhabited_enum(ref enum_decls, ref variant_decls, scrutinee.type_name); },
+                                                None => {},
+                                            }
+                                            if not uninhabited {
+                                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing checked match arms");
+                                            }
                                         }
                                         current = merged;
                                     } else {
@@ -2181,6 +2205,19 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
         stmt_index = stmt_index + 1;
     }
     return current;
+}
+
+fn borrow_type_is_uninhabited_enum(enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, type_name: str) -> bool {
+    for decl in enum_decls {
+        if decl.name == type_name {
+            let mut has_variant = false;
+            for variant in variant_decls {
+                if variant.enum_id == decl.id { has_variant = true; }
+            }
+            if not has_variant { return true; }
+        }
+    }
+    return false;
 }
 
 fn check_checked_handoff_borrows_impl(functions: ref list<checked_function>, bindings: ref list<checked_binding>, params: ref list<checked_param>, type_properties: ref list<checked_type_property>, value_uses: ref list<checked_value_use>, use_value_plan: bool, type_decls: ref list<checked_type_decl>, field_decls: ref list<checked_field_decl>, enum_decls: ref list<checked_enum_decl>, variant_decls: ref list<checked_variant_decl>, variant_payload_decls: ref list<checked_variant_payload_decl>, blocks: ref list<checked_block>, statements: ref list<checked_stmt>, match_arms: ref list<checked_match_arm>, pattern_bindings: ref list<checked_pattern_binding>, expressions: ref list<checked_expr>, expr_children: ref list<checked_expr_child>, struct_fields: ref list<checked_struct_field_init>, diags: mutref list<diag>) -> borrow_summary {

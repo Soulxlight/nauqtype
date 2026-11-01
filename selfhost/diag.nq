@@ -271,6 +271,28 @@ audit {
 }
 {
     eprint_line(rendered_without_source(entry));
+    emit_diag_detail_lines(entry);
+    return;
+}
+
+// M58.1: text output carries the same note and help text JSON carries, one
+// `note: <text>` / `help: <text>` line each, after the message line.
+pub fn diagnostic_detail_lines(entry: diag) -> list<str>
+audit {
+    intent("Render the note and help lines that follow a text diagnostic's message line");
+    mutates();
+    effects();
+}
+{
+    let mut lines: list<str> = list();
+    if entry.note != "" { list_push(mutref lines, str_concat("note: ", entry.note)); }
+    if entry.help != "" { list_push(mutref lines, str_concat("help: ", entry.help)); }
+    return lines;
+}
+
+fn emit_diag_detail_lines(entry: diag) -> unit {
+    let lines = diagnostic_detail_lines(entry);
+    for line in lines { eprint_line(line); }
     return;
 }
 
@@ -282,6 +304,7 @@ audit {
 }
 {
     eprint_line(rendered_diag(entry, ref sources));
+    emit_diag_detail_lines(entry);
     return;
 }
 

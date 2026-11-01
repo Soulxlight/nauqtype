@@ -63,13 +63,13 @@ class SelfhostDifferentialTests(unittest.TestCase):
             return "BORROW"
         if "unknown name" in output or "unknown type" in output:
             return "RESOLVE"
-        if "nested field assignment is not supported in V1" in output:
+        if "nested field assignment is not supported" in output:  # M58.1 NQ-TYPE-059
             return "PARSE"
         type_markers = [
             "annotated local initializer does not match declared type",
             "return expression does not match function return type",
             "assignment value does not match target type",
-            "field assignment requires an owned mutable local product binding",
+            "field assignment requires a `let mut` local or a `mutref` parameter",
             "field assignment target must be a user-defined product type",
             "field assignment target field does not exist on product type",
             "field assignment value does not match target field type",

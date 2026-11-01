@@ -7,6 +7,8 @@ use lexer;
 use parser;
 use ast;
 use diag;
+use generic;
+use token;
 
 fn wct_expect(failures: mutref list<str>, condition: bool, label: str) -> unit
 audit {
@@ -16,6 +18,7 @@ audit {
 }
 {
     if not condition { list_push(mutref failures, label); }
+    return;
 }
 
 fn wct_parse(value: str, locked: bool) -> bool {
@@ -72,6 +75,7 @@ audit {
     wct_expect(mutref failures, not workspace_valid_relative_path("x\\file.nq", false), "backslash path rejected");
     wct_expect(mutref failures, not workspace_valid_relative_path("x\nfile.nq", false), "control path rejected");
     wct_expect(mutref failures, not workspace_valid_relative_path("C:/file.nq", false), "drive path rejected");
+    return;
 }
 
 fn wct_source(path: str, content: str) -> workspace_captured_source {
@@ -116,6 +120,7 @@ audit {
     let mut unsafe: list<workspace_captured_source> = list();
     list_push(mutref unsafe, wct_source("../a.nq", ""));
     wct_expect(mutref failures, not hash_captured_workspace_sources(ref unsafe).valid, "unsafe captured path rejected");
+    return;
 }
 
 fn wct_process(command: str, args: ref list<str>) -> bool
@@ -223,6 +228,7 @@ audit {
         },
         None => { list_push(mutref failures, "capture lost dependency record"); },
     }
+    return;
 }
 
 fn wct_replace(value: str, before: str, after: str) -> str {
@@ -268,6 +274,7 @@ audit {
     let mut rejected_sources: list<workspace_captured_source> = list();
     let mut rejected_deps: list<workspace_locked_dependency> = list();
     wct_expect(mutref failures, not capture_workspace(join_path(root, "src/main.nq"), mutref rejected_sources, mutref rejected_deps).valid, "non-ASCII enumerated path rejected");
+    return;
 }
 
 fn wct_negative_case(root: str, which: i32) -> bool
@@ -371,6 +378,168 @@ audit {
         return wct_process("ln", ref args);
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 slice D: parse_file is the single parse reporter. The driver runs the
+// three secondary token walkers (collect_typecheck_facts,
+// collect_value_type_facts, collect_stmt_facts) into a discarded list; this
+// oracle proves none of them reports a diagnostic (code, span and message)
+// that parse_file does not, over every non-generic repository source, crafted
+// programs for each walker-only producer, and every single-token deletion and
+// truncation of seed programs.
+// ---------------------------------------------------------------------------
+
+fn m58d_diag_key(entry: diag) -> str {
+    return concat6(entry.code, "|", i32_to_str(entry.start), "|", i32_to_str(entry.end), str_concat("|", entry.message));
+}
+
+fn m58d_parse_keys(file: str, tokens: ref list<token>) -> list<str> {
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut parse_diags: list<diag> = list();
+    let summary = parse_file(file, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref parse_diags);
+    let mut keys: list<str> = list();
+    for entry in parse_diags { list_push(mutref keys, m58d_diag_key(entry)); }
+    return keys;
+}
+
+// Returns how many walker diagnostics were compared.
+fn m58d_walker_parity(file: str, tokens: ref list<token>, failures: mutref list<str>) -> i32 {
+    let keys = m58d_parse_keys(file, ref tokens);
+    let mut functions: list<function_fact> = list();
+    let mut params: list<function_param_fact> = list();
+    let mut variants: list<variant_fact> = list();
+    let mut payloads: list<variant_payload_fact> = list();
+    let mut consts: list<const_fact> = list();
+    let mut calls: list<call_fact> = list();
+    let mut patterns: list<pattern_ctor_fact> = list();
+    let mut typed: list<typed_binding_fact> = list();
+    let mut fields: list<field_fact> = list();
+    let mut arms: list<match_arm_fact> = list();
+    let mut locals: list<local_init_fact> = list();
+    let mut returns: list<return_expr_fact> = list();
+    let mut conditions: list<condition_fact> = list();
+    let mut assignments: list<assignment_fact> = list();
+    let mut statements: list<stmt_fact> = list();
+    let mut walker_diags: list<diag> = list();
+    let typecheck_summary = collect_typecheck_facts(file, ref tokens, mutref functions, mutref params, mutref variants, mutref payloads, mutref consts, mutref calls, mutref patterns, mutref walker_diags);
+    let value_summary = collect_value_type_facts(file, ref tokens, mutref typed, mutref fields, mutref arms, mutref locals, mutref returns, mutref conditions, mutref assignments, mutref walker_diags);
+    let stmt_summary = collect_stmt_facts(file, ref tokens, mutref statements, mutref walker_diags);
+    for entry in walker_diags {
+        let key = m58d_diag_key(entry);
+        if not list_contains(ref keys, key) { list_push(mutref failures, concat3(file, ": walker-only diagnostic ", key)); }
+    }
+    return list_len(ref walker_diags);
+}
+
+// Every single-token deletion and every truncation of a seed program.
+fn m58d_walker_parity_mutations(label: str, source: str, failures: mutref list<str>) -> i32 {
+    let tokens = lex(source);
+    let count = list_len(ref tokens) - 1;
+    let mut compared = 0;
+    let mut index = 0;
+    while index < count {
+        let mut deleted: list<token> = list();
+        let mut truncated: list<token> = list();
+        let mut at = 0;
+        for current in tokens {
+            if at != index { list_push(mutref deleted, current); }
+            if at < index { list_push(mutref truncated, current); }
+            if at == index { list_push(mutref truncated, eof_token(current.start)); }
+            at = at + 1;
+        }
+        compared = compared + m58d_walker_parity(concat3(label, "-delete-", i32_to_str(index)), ref deleted, mutref failures);
+        compared = compared + m58d_walker_parity(concat3(label, "-truncate-", i32_to_str(index)), ref truncated, mutref failures);
+        index = index + 1;
+    }
+    return compared;
+}
+
+fn m58d_collect_sources(directory: str, out: mutref list<str>) -> unit {
+    match read_dir(directory) {
+        Ok(names) => {
+            for name in names {
+                let path = join_path(directory, name);
+                match path_metadata(path, false) {
+                    Ok(info) => {
+                        if info.is_directory {
+                            m58d_collect_sources(path, mutref out);
+                        } else {
+                            if str_ends_with(name, ".nq") { list_push(mutref out, path); }
+                        }
+                    },
+                    Err(_) => {},
+                }
+            }
+        },
+        Err(_) => {},
+    }
+    return;
+}
+
+// A program for a producer only the walkers used to have: parse_file must
+// now report it itself.
+fn m58d_parse_reports(label: str, source: str, code: str, message: str, failures: mutref list<str>) -> unit {
+    let tokens = lex(source);
+    let keys = m58d_parse_keys(label, ref tokens);
+    let mut found = false;
+    for key in keys {
+        if str_starts_with(key, str_concat(code, "|")) and str_ends_with(key, str_concat("|", message)) { found = true; }
+    }
+    if not found { list_push(mutref failures, concat4(label, ": parse_file did not report ", code, message)); }
+    let unused = m58d_walker_parity(label, ref tokens, mutref failures);
+    return;
+}
+
+pub fn parse_reporter_parity_cases() -> bool
+audit {
+    intent("Prove the secondary token walkers report no parse diagnostic that parse_file does not");
+    mutates();
+    effects(print, io);
+}
+{
+    let mut failures: list<str> = list();
+    m58d_parse_reports("match-arrow", "fn main() -> i32 {\n    let picked = match 1 { 1 };\n    return picked;\n}\n", "NQ-PARSE-003", "expected `=>` in match arm", mutref failures);
+    m58d_parse_reports("match-open", "fn main() -> i32 {\n    return match 1;\n", "NQ-PARSE-003", "expected `{` after match expression", mutref failures);
+    m58d_parse_reports("try-operand", "fn f() -> result<i32, str> {\n    return Ok(1);\n}\nfn main() -> i32 {\n    let v: result<i32, str> = try { (f() + f())? };\n    return 0;\n}\n", "NQ-TRY-002", "expression `?` inside `try` must apply to a direct function call in V1", mutref failures);
+    m58d_parse_reports("missing-semi", "fn main() -> i32 {\n    let total = 1\n}\n", "NQ-PARSE-003", "expected `;`", mutref failures);
+    let seeds = [
+        "use helper;\nconst LIMIT: i32 = 3;\ntype Pair {\n    left: i32,\n    right: ref list<str>,\n}\nenum Shape {\n    Dot,\n    Box(i32, str),\n}\nfn main() -> i32\naudit {\n    intent(\"probe\");\n    mutates();\n    effects();\n}\n{\n    let mut total: i32 = 1 + 2;\n    let picked = match total { 3 => 1, _ => 0 };\n    total = picked;\n    if total == 1 { total = 2; } else { total = 3; }\n    while total < 9 { total = total + 1; break; }\n    for item in [1, 2] { continue; }\n    match total {\n        3 => { return 1; },\n        _ => {},\n    }\n    return total;\n}\n",
+        "fn f() -> result<i32, str> {\n    return Ok(2);\n}\nfn g(value: option<i32>, p: mutref Pair) -> result<i32, str> {\n    let Some(inner) = value else { return Err(\"none\"); };\n    let first = f()?;\n    let sum: result<i32, str> = try { f()? + g(Some(inner), mutref p)? };\n    let both: result<i32, str> = try { (f() + 1)? };\n    p.count = first;\n    print_line(\"done\");\n    return Ok(first);\n}\n",
+    ];
+    let mut seed_index = 0;
+    for seed in seeds {
+        let compared = m58d_walker_parity_mutations(str_concat("seed", i32_to_str(seed_index)), seed, mutref failures);
+        if compared == 0 { list_push(mutref failures, "seed mutations produced no walker diagnostics"); }
+        seed_index = seed_index + 1;
+    }
+    let mut paths: list<str> = list();
+    m58d_collect_sources("examples", mutref paths);
+    m58d_collect_sources("tests/fixtures", mutref paths);
+    m58d_collect_sources("selfhost", mutref paths);
+    if list_len(ref paths) < 100 { list_push(mutref failures, "too few repository sources for the parse reporter parity oracle"); }
+    for path in paths {
+        match read_file(path) {
+            Ok(text_value) => {
+                let tokens = lex(text_value);
+                if not tokens_have_generic_syntax(ref tokens) {
+                    let compared = m58d_walker_parity(path, ref tokens, mutref failures);
+                }
+            },
+            Err(_) => { list_push(mutref failures, str_concat("unreadable source: ", path)); },
+        }
+    }
+    let mut shown = 0;
+    for failure in failures {
+        if shown < 20 { eprint_line(failure); }
+        shown = shown + 1;
+    }
+    return list_len(ref failures) == 0;
 }
 
 pub fn run_workspace_capture_tests(fixture_root: str) -> bool

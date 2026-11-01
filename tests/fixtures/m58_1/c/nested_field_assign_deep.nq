@@ -1,0 +1,25 @@
+// M58.1 rule 4 fixture: NQ-TYPE-059, reported once, for a three-level field assignment
+
+type Leaf {
+    value: i32,
+}
+
+type Inner {
+    leaf: Leaf,
+}
+
+type Outer {
+    inner: Inner,
+}
+
+fn main() -> i32
+audit {
+    intent("probe");
+    mutates();
+    effects();
+}
+{
+    let mut outer = Outer { inner: Inner { leaf: Leaf { value: 1 } } };
+    outer.inner.leaf.value = 0;
+    return 0;
+}

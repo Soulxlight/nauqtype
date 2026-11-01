@@ -1,7 +1,8 @@
 # M58.1: Correctness And Diagnostics
 
 Status: Gate A passed, 2026-10-31 (revision 4, approved with no findings).
-Compiler lead. Not implemented. The
+Compiler lead. Implemented 2026-11-01 (four slices plus integration; see
+Implementation Notes); trailing audit and milestone gate pending. The
 independent Gate A reviewer (gpt-5.6-sol xhigh) required changes on
 revision 1 (nine blocking, one should-fix), revision 2 (two blocking, three
 should-fix, one nit) and revision 3 (two blocking); all are addressed below. Two tutorial-site findings (a stale field-assignment message and a
@@ -94,7 +95,7 @@ Probed and traced against `4d80e70` (code-site survey 2026-10-31):
   without returning", spanning the function's closing `}`. Help: "end every
   path with `return`; a `unit` function ends with `return;`".
 - The C emitter keeps a backstop: a function whose checked body can reach the
-  end without a return is NQ-C-001 "internal: function can fall off the end"
+  end without a return is NQ-C-001 "internal compiler error: function can fall off the end"
   and emits no C definition (same preflight mechanism as M57.1's statement
   match backstop). The zero-initialized return slot remains only as the
   storage for `ret`, never as an observable result.
@@ -302,7 +303,7 @@ means the diagnostic carries no help line.
 | NQ-TYPE-058 | non-name callee | the callee's first token | ``only named functions can be called`` | none |
 | NQ-TYPE-059 | nested field assignment | the assignment target's first token | ``nested field assignment is not supported`` | ``pass `mutref <outer>.<field>` to a function that assigns the inner field`` |
 | NQ-TYPE-042 (code kept) | field assignment root that is neither a `let mut` local nor a `mutref` parameter | the root name token (unchanged) | ``field assignment requires a `let mut` local or a `mutref` parameter`` (was "requires an owned mutable local product binding") | none (unchanged) |
-| NQ-PROPAGATE-007 | `?` outside statement/`try` position | the `?` | ``` `?` is only allowed at statement position or inside `try` ``` | ``bind the result first: `let value = f()?;` `` |
+| NQ-PROPAGATE-007 | `?` outside statement/`try` position | the `?` | ``` `?` is only allowed in a `let name = expr?;` statement or inside `try` ``` (amended at integration, Implementation Note 4) | ``bind the result first: `let value = f()?;` `` |
 | NQ-RESOLVE-010 (code kept) | unknown constructor in a pattern | the constructor name | ``unknown variant `<name>` in pattern`` | none |
 | NQ-PARSE-003 | expected `;` | end of the statement's last token | ``expected `;` `` | none |
 | NQ-PARSE-004 (code kept) | malformed float literal, now also `.5`, `1.`, `1e5` | the literal | existing text | ``write floats as `<digits>.<digits>`, for example `0.5`, `1.0` or `1.0e5` `` |
@@ -436,3 +437,108 @@ M58.1 is complete when all of the above pass in the single milestone gate,
 both trailing audits have no open findings, SPEC and GRAMMAR describe the
 shipped rules, DECISIONS records D070, and no production source contains any
 of the three legacy prefixes.
+
+## Implementation Notes
+
+Recorded at integration (2026-11-01). Each note is either an interpretation
+of a rule the contract left open or a lead decision beyond the matrix.
+
+1. **Exhaustiveness (rule 3).**
+   - The missing list for open domains renders `_`. The message is the
+     matrix text for every supported scrutinee.
+   - An expression `match` with refined arms (literal or nested constructor)
+     and no fallback reports the D047 refined-pattern diagnostic, not
+     NQ-TYPE-051, the same as the statement form. D047 is checked first
+     because it names the actual fix.
+   - A scrutinee whose type could not be inferred (an earlier error already
+     reported) gets only the D047 check, so no cascade follows.
+   - Missing lists for generic enum instances print source variant names,
+     never internal `__nqg_` names.
+2. **Termination and let-else (rules 1 and 5).**
+   - `function_fact` gains `body_end` so NQ-TYPE-053 can span the closing
+     `}`. For a generic instance, NQ-C-001 names the source function.
+   - The let-else exit check moved from the parser into typecheck, because it
+     shares the termination predicate. It keeps NQ-PARSE-003 at the `else`
+     token with the matrix message. As a result, the stop-after-parse rule
+     (rule 6) does not stop on it; the program still fails `check` with that
+     one diagnostic.
+   - Migration size: 75 compiler functions (58 production, 17 in test
+     modules) plus three fixture functions gained `return;`. Gate A's
+     read-only estimate was about 23. No function added by the other slices
+     needed one.
+   - At the base, `let x = x;` with no outer `x` was already rejected, but by
+     four NQ-HANDOFF-001 "stage1 limitation" errors. The Migration section's
+     "previously read the new zero value" applies only to the inner-scope
+     shadowing case. It is now exactly NQ-RESOLVE-010.
+3. **Initializer scope (rule 2).** Forms other than `let` default to
+   `visible_from = at + 1`, which is exactly the old `at < ref.at` rule.
+   Statement-level assignment lookups still compare the statement position.
+   That is equivalent, because an assignment never sits inside an
+   initializer.
+   After the trailing audit, the type of a `let` or let-else statement is
+   taken from its exact declaration identity, never from a visibility lookup.
+   For a `let`, that identity is the byte offset of its name. For let-else,
+   it is the byte offset of its `;`, the identity let-else bindings have had
+   since before M58.1, which keeps their evidence unchanged. Every visibility lookup in handoff and facts selects
+   the visible candidate with the greatest declaration position (typecheck's
+   rule), independent of storage order, so a local declared inside a `match`
+   arm shadows the arm's pattern binding everywhere.
+4. **No reachable stage1 limitations (rule 4).** Lead decisions beyond the
+   matrix:
+   - **NQ-PARSE-005 "malformed expression".** The type checker's catch-all
+     was still reachable from ordinary malformed input (`1 2`, `+1`, `a[0]`,
+     `{ 1 }`, `if` in value position, `x.5`). It now reports a focused parse
+     code, as R1 requires.
+   - **A fourth NQ-TYPE-056 message, "this pattern form is not supported".**
+     It covers pattern shapes outside the three matrix rows (for example
+     `1 | 2`).
+   - **Expression statements are type-checked in the front end.** Before,
+     the handoff was the first phase to infer them, so `1 2;` and `(f)(1);`
+     surfaced as handoff limitations. The new pass reports only when the
+     rest of the front end is clean, which is exactly when the handoff used
+     to run. All 328 base fixtures and examples were compared: no accepted
+     program changed.
+   - **The NQ-PROPAGATE-007 message is amended** to "`?` is only allowed in a
+     `let name = expr?;` statement or inside `try`". The approved text said
+     "at statement position", which misdescribed `f()?;`: that is a
+     statement, but SPEC's only statement-boundary form is
+     `let name = expr?;`.
+   - The handoff no longer adds an error after a failed type argument. That
+     ledger site is *removed*. Two typecheck sites became internal errors.
+   - Ledger: 246 frozen sites (17 covered, 227 internal, 2 removed).
+5. **Diagnostics (rule 6).**
+   - Three match-expression syntax messages and NQ-TRY-002 for a non-direct
+     `?` inside `try` were produced only by secondary walkers. `parse_file`
+     now reports them itself, before the walkers were silenced. A parity
+     test checks that walker diagnostics are a subset of `parse_file`'s, by
+     code, span and message. It covers every non-generic source in
+     `examples/`, `tests/fixtures/` and `selfhost/`, plus every one-token
+     deletion and truncation of two seed programs.
+   - Fuzzing found that the base compiler looped until it ran out of memory
+     on `type P { f: ref < str > }` and the equivalent enum payload. The
+     type/enum declaration loops now have a progress guard, and the walkers
+     cap enum payloads at two, the same as `parse_file`.
+6. **Historical Python tests.** The expected texts in
+   `tests/test_selfhost_c_emit.py` (three cases) and
+   `tests/test_stage1_driver.py` were moved to the matrix wording, as rule 8
+   requires. These tests feed today's `selfhost/*.nq` to the frozen Python
+   stage0, which cannot parse `for` or let-else, so they do not execute on the
+   gate host. They are not part of any active gate.
+7. **Teaching corpus.** `examples/loop_exits.nq` is in the locked example and
+   formatter corpora. It shows let-else exits by `continue;` and `break;`, an
+   `i32` function ending in `while true { ... return n; }`, `unit` functions
+   ending in `return;`, and an inner `let mut total = total + n;` that reads
+   the outer `total`.
+8. **Audit repairs beyond the rules' text.**
+   - Empty enums (rule 3): an enum with no variants is exported as a checked
+     enum declaration and emitted as a tag-only C11 type, with one reserved
+     enumerator and no union. A zero-arm statement `match` over it
+     type-checks, builds and runs.
+   - Inside `try`, when a later `?` fails, earlier unwrapped owned payloads
+     are released on that error edge. This also covers forms accepted before
+     M58.1, such as `str_concat(f()?, g()?)`.
+   - `NQ-TRY-004` (no `?` under short-circuit `and`/`or` inside `try`) is
+     enforced at every depth of the success expression: parentheses, call
+     arguments, struct-literal fields and list elements. Before the repair it
+     checked only root operators, so a nested `false and f()?` was accepted
+     and called `f` unconditionally.

@@ -21,9 +21,19 @@ that have since shipped are historical, not current limitations.
   layouts through containers (`type Json { items: list<Json> }` is
   `NQ-TYPE-052`; M57 uses arena indexes); field-disjoint borrow checking
   (`f(mutref b.a, ref b.b)` is still one conflicting root); moving fields out
-  of owned products (destructuring); missing-return analysis; the `%` operator
-  and bitwise operators; and comparisons of `bool`, `str` or enums inside
-  `const` initializers (constant comparisons stay integer-only).
+  of owned products (destructuring); the `%` operator (M58.2) and bitwise
+  operators; and comparisons of `bool`, `str` or enums inside `const`
+  initializers (constant comparisons stay integer-only). Missing-return
+  analysis shipped in M58.1.
+- M58.1 deliberate exclusions (`docs/M58_1_CONTRACT.md`): unreachable-code
+  diagnostics after a terminating statement; splitting the shared
+  `NQ-TYPE-042` code into per-message codes; loop conditions other than the
+  exact token `true` (such as `(true)`) counting toward termination; `bool`
+  and string patterns (`bool` patterns arrive in M58.2); nested field
+  assignment (`o.inner.value = v`, `NQ-TYPE-059`); expression-position `?`
+  outside `try`.
+- Lints without a producer: `unused_mut` and discarded `result` values. SPEC
+  lists only lints the compiler reports.
 - Methods and `impl` blocks
 - Traits or interfaces
 - Loop families beyond `while` and list-only `for`, including iterator protocols

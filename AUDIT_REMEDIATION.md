@@ -948,3 +948,76 @@ Receipts are retained in the native gate clone
 completion documents changed after the gate, bound to the final commit by
 `close`/`verify-close`. No later M57 work, stable release or publication is
 claimed.
+
+## M58.1 Correctness And Diagnostics Close
+
+M58.1 passes on frozen candidate tree
+`9a67a9b8030029e4d5d0b1d30d8a1b82576aa36b`, 2026-11-01, based on `86368fc`
+(the Gate A contract commit). Native Ubuntu 24.04/ext4 WSL2, GCC 13.3.0 and
+unchanged serial milestone budgets are the acceptance boundary. Compiler
+lead: Claude Code; implementation by lead-directed workers in four parallel
+slices (scope/returns/let-else, exhaustiveness, stage1-limitation removal and
+producer ledger, diagnostics pipeline and driver), an integration slice and
+three repair rounds.
+
+`docs/M58_1_CONTRACT.md` (Gate A revision 4, `gpt-5.6-sol` xhigh, which
+required changes on revisions 1-3) and D070 record the milestone: every path
+returns (NQ-TYPE-053, with an NQ-C-001 emitter backstop; `unit` functions end
+with `return;`); `let` bindings visible from the end of their statement; one
+exhaustiveness rule for both `match` forms (NQ-TYPE-051, NQ-TYPE-054);
+focused diagnostics for every source shape that reached a "stage1
+limitation" (NQ-PARSE-004/005, NQ-TYPE-055..059, NQ-PROPAGATE-007,
+NQ-RESOLVE-010), with back-end invariants renamed "internal compiler error:"
+and a 246-site producer ledger checked by a test; let-else exits by
+`break`/`continue`; parse errors reported once; stop after load/parse errors
+for every command; `help:`/`note:` lines in text output; per-operand `?`
+inside `try`; driver `-o` paths. The compiler gained `return;` in 75
+functions. The contract's Implementation Notes record the interpretations
+and lead decisions, including an amended NQ-PROPAGATE-007 message.
+
+Ownership-class trailing audit, independent verdicts:
+
+| Round | Primary `gpt-5.6-sol` xhigh | Adversarial `gpt-6.1-sol` xhigh |
+| --- | --- | --- |
+| Frozen `d602347` | FAIL: statement type lookup compared token indexes with byte offsets and fell back to future declarations; load-stop coverage incomplete | FAIL: same lookup (wrong `i64` arithmetic, internal error from valid source); pattern binding chosen over an inner local by storage order; earlier `try` payload leaked on a later failure; empty enums rejected |
+| Repair `a058a68` | FAIL: let-else identity undocumented (the `;` identity was kept and the note corrected); stop-matrix assertions not exact | FAIL: `?` under nested `and`/`or` inside `try` escaped NQ-TRY-004 and ran unconditionally |
+| Repair `68d5c29` | PASS | FAIL: the new NQ-TRY-004 scan stopped at `::`, so a qualified right operand escaped |
+| Repair `dbd6bdd` | (passed `68d5c29`; the repair touches only that scan) | PASS |
+
+The repairs take a `let`'s type from its exact declaration identity, select
+the nearest visible declaration by position everywhere (handoff and facts),
+release earlier unwrapped `try` payloads on later error edges, export empty
+enums as tag-only C11 types, enforce NQ-TRY-004 at every depth with `::`
+paths kept inside operands, and compare complete outputs in the stop matrix.
+Each repair has a regression that failed before it, executed and sanitized
+where it runs.
+
+The bootstrap seed was not promoted; the compiler's own source changes
+(`return;` additions) are accepted by the existing seed.
+
+| Fresh Gate Phase | Seconds |
+| --- | ---: |
+| Stage1 driver | 350 |
+| Seed bootstrap | 384 |
+| Proof | 798 |
+| Linux alpha | 11 |
+| Stress leg | 5 |
+| Owned tests | 405 |
+| Ownership sanitizers | 9 |
+
+`scripts/check_milestone.sh` exits 0. GNU time records 1977 s wall and
+674488 KiB peak RSS, within the checked-in ceilings. Two earlier gate runs on
+the superseded candidates (`a058a68`, `68d5c29`) also passed; they are not
+acceptance evidence.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `c11d7c0b343ad9af85cb5452793bedfc2a8d5ffe34c18e86445ae2541fe0cddb` |
+| Performance summary | `0152d30cc768f9f13b0f1fe9058664d9bdcd4e4a531dc534460fcc3355451f4d` |
+| Proof summary | `6a6a1f84d867c3488d93816562e322ecf9ee784289ffb34567b8351becf591b8` |
+| Seed manifest (unchanged) | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Receipts are retained in the native gate clone
+(`~/nauqtype-work/m58-1-gate/build/verification/`). Only allowlisted
+completion documents changed after the gate, bound to the final commit by
+`close`/`verify-close`. M58.2 and M58.3 are not claimed.

@@ -253,10 +253,29 @@ type scanned_number {
 // an `e`/`E`, at most one sign byte, and the maximal digit run are consumed;
 // anything but `e`, an absent or `-` sign, and one or more digits makes the
 // whole consumed span one malformed-float token (reported as NQ-PARSE-004).
+//
+// M58.1: the near-miss shapes `1.`, `1e5`, `1E5`, `1e-5` (and `.5`, see
+// scan_leading_dot_number) are one malformed-float token too, so they reach
+// NQ-PARSE-004 instead of later stage1 diagnostics. `1.name` and `1.e5` stay
+// an integer followed by a field access (their existing diagnostic).
 fn scan_number(text: str, start: i32, length: i32) -> scanned_number {
     let int_end = scan_digit_end(text, start, length);
-    if lexer_byte_at(text, int_end, length) != 46 or not is_digit(lexer_byte_at(text, int_end + 1, length)) {
+    let after_int = lexer_byte_at(text, int_end, length);
+    if after_int == 101 or after_int == 69 {
+        let exponent_end = scan_bare_exponent_end(text, int_end, length);
+        if exponent_end > int_end {
+            return scanned_number { kind: tk_malformed_float_lit, end: exponent_end };
+        }
+    }
+    if after_int != 46 {
         return scanned_number { kind: tk_int_lit, end: int_end };
+    }
+    if not is_digit(lexer_byte_at(text, int_end + 1, length)) {
+        let after_dot = lexer_byte_at(text, int_end + 1, length);
+        if is_alpha(after_dot) or after_dot == 46 {
+            return scanned_number { kind: tk_int_lit, end: int_end };
+        }
+        return scanned_number { kind: tk_malformed_float_lit, end: int_end + 1 };
     }
     let fraction_end = scan_digit_end(text, int_end + 1, length);
     let marker = lexer_byte_at(text, fraction_end, length);
@@ -281,6 +300,42 @@ fn scan_number(text: str, start: i32, length: i32) -> scanned_number {
         return scanned_number { kind: tk_float_lit, end: cursor };
     }
     return scanned_number { kind: tk_malformed_float_lit, end: cursor };
+}
+
+// After DIGITS, an `e`/`E`, at most one `+`/`-`, and at least one digit: the
+// end of that exponent, or -1 when the bytes are not an exponent (then `1e`
+// stays an integer followed by a name).
+fn scan_bare_exponent_end(text: str, marker: i32, length: i32) -> i32 {
+    let mut cursor = marker + 1;
+    let sign = lexer_byte_at(text, cursor, length);
+    if sign == 43 or sign == 45 {
+        cursor = cursor + 1;
+    }
+    if is_digit(lexer_byte_at(text, cursor, length)) {
+        return scan_digit_end(text, cursor, length);
+    }
+    return -1;
+}
+
+// `.5` (a `.` directly followed by a digit, not after a name, number, `)` or
+// `]`) is one malformed-float token covering `.DIGITS` and any exponent.
+fn scan_leading_dot_number(text: str, start: i32, length: i32) -> i32 {
+    if lexer_byte_at(text, start, length) != 46 or not is_digit(lexer_byte_at(text, start + 1, length)) {
+        return -1;
+    }
+    let before = lexer_byte_at(text, start - 1, length);
+    if is_ident_continue(before) or before == 41 or before == 93 {
+        return -1;
+    }
+    let fraction_end = scan_digit_end(text, start + 1, length);
+    let marker = lexer_byte_at(text, fraction_end, length);
+    if marker == 101 or marker == 69 {
+        let exponent_end = scan_bare_exponent_end(text, fraction_end, length);
+        if exponent_end > fraction_end {
+            return exponent_end;
+        }
+    }
+    return fraction_end;
 }
 
 // Digit `ordinal` of DIGITS "." DIGITS (point skipped), or '0' past the mantissa.
@@ -595,6 +650,12 @@ audit {
     let length = str_len(text);
 
     while index < length {
+        let leading_dot_end = scan_leading_dot_number(text, index, length);
+        if leading_dot_end >= 0 {
+            push_token(mutref tokens, tk_malformed_float_lit, slice_text(text, index, leading_dot_end), index, leading_dot_end);
+            index = leading_dot_end;
+            continue;
+        }
         let current = str_get(text, index);
         match current {
             Some(ch) => {

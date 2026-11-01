@@ -659,23 +659,7 @@ fn binding_creates_local(binding: body_binding, items: ref list<top_item>, uses:
 }
 
 fn resolve_binding_identity(bindings: ref list<body_binding>, scopes: ref list<body_scope>, items: ref list<top_item>, uses: ref list<module_use>, reference: name_ref) -> str {
-    let mut index = list_len(ref bindings) - 1;
-    while index >= 0 {
-        let entry = list_get(ref bindings, index);
-        match entry {
-            Some(value) => {
-                if binding_creates_local(value, ref items, ref uses) and value.module == reference.module and value.function_name == reference.function_name and value.name == reference.name and value.at < reference.at {
-                    if scope_is_visible(ref scopes, reference.module, reference.function_name, reference.scope_id, value.scope_id) {
-                        return binding_identity(value);
-                    }
-                }
-            },
-            None => {
-            },
-        }
-        index = index - 1;
-    }
-    return "";
+    return resolve_binding_identity_in_range(ref bindings, ref scopes, ref items, ref uses, reference, 0, list_len(ref bindings) - 1);
 }
 
 fn first_binding_index_for_function(bindings: ref list<body_binding>, module: str, function_name: str) -> i32 {
@@ -718,14 +702,20 @@ fn resolve_binding_identity_in_range(bindings: ref list<body_binding>, scopes: r
     if end_index < start_index {
         return "";
     }
+    // M58.1 repair: the nearest visible declaration is the one with the
+    // greatest declaration position (the rule typecheck and handoff use), not
+    // the first visible entry in reverse storage order. Ties keep the later entry.
+    let mut best = -1;
+    let mut best_at = -1;
     let mut index = end_index;
     while index >= start_index {
         let entry = list_get(ref bindings, index);
         match entry {
             Some(value) => {
-                if binding_creates_local(value, ref items, ref uses) and value.module == reference.module and value.function_name == reference.function_name and value.name == reference.name and value.at < reference.at {
-                    if scope_is_visible(ref scopes, reference.module, reference.function_name, reference.scope_id, value.scope_id) {
-                        return binding_identity(value);
+                if value.module == reference.module and value.function_name == reference.function_name and value.name == reference.name and value.visible_from <= reference.at and (best < 0 or value.at > best_at) {
+                    if binding_creates_local(value, ref items, ref uses) and scope_is_visible(ref scopes, reference.module, reference.function_name, reference.scope_id, value.scope_id) {
+                        best = index;
+                        best_at = value.at;
                     }
                 }
             },
@@ -734,7 +724,10 @@ fn resolve_binding_identity_in_range(bindings: ref list<body_binding>, scopes: r
         }
         index = index - 1;
     }
-    return "";
+    match list_get(ref bindings, best) {
+        Some(value) => { return binding_identity(value); },
+        None => { return ""; },
+    }
 }
 
 fn evidence_for_target(target_kind: str, target_id: str) -> str {
@@ -2886,6 +2879,7 @@ audit {
         index = index + 1;
     }
     list_push(mutref lines, concat3(indent, "]", suffix));
+    return;
 }
 
 pub fn generic_evidence_kind_text(kind: i32) -> str
@@ -2973,6 +2967,7 @@ audit {
         list_push(mutref lines, concat4(indent, "  ", generic_evidence_text_at(ref first_rendered, index), item_suffix));
     }
     list_push(mutref lines, concat3(indent, "]", suffix));
+    return;
 }
 
 pub fn generic_evidence_template_order(view: ref generic_evidence_view, diags: mutref list<diag>) -> list<i32>
@@ -3034,6 +3029,7 @@ audit {
     append_span(mutref lines, "      ", template.name_start, true);
     generic_evidence_string_array(mutref lines, "      ", "instances", ref sorted, true);
     if more { list_push(mutref lines, "      \"evidence\": \"declared\","); } else { list_push(mutref lines, "      \"evidence\": \"declared\""); }
+    return;
 }
 
 fn facts_v5_append_templates(lines: mutref list<str>, view: ref generic_evidence_view, diags: mutref list<diag>) -> unit {
@@ -3050,6 +3046,7 @@ fn facts_v5_append_templates(lines: mutref list<str>, view: ref generic_evidence
         if emitted < list_len(ref order) { list_push(mutref lines, "    },"); } else { list_push(mutref lines, "    }"); }
     }
     list_push(mutref lines, "  ],");
+    return;
 }
 
 fn facts_v5_append_instances(lines: mutref list<str>, view: ref generic_evidence_view, diags: mutref list<diag>) -> unit {
@@ -3088,6 +3085,7 @@ fn facts_v5_append_instances(lines: mutref list<str>, view: ref generic_evidence
         }
     }
     list_push(mutref lines, "  ],");
+    return;
 }
 
 fn facts_v5_export_entry(id: str, legacy_id: str, kind: str, name: str, evidence: str, at: i32, template: str) -> facts_v5_export {
@@ -3175,6 +3173,7 @@ fn facts_v5_append_exports(lines: mutref list<str>, view: ref generic_evidence_v
         }
     }
     list_push(mutref lines, "  ],");
+    return;
 }
 
 fn facts_v5_append_call_graph(lines: mutref list<str>, capture: workspace_capture, dependencies: ref list<workspace_locked_dependency>, view: ref generic_evidence_view, sources: ref list<source_file>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>, diags: mutref list<diag>) -> unit {
@@ -3231,6 +3230,7 @@ fn facts_v5_append_call_graph(lines: mutref list<str>, capture: workspace_captur
         }
     }
     list_push(mutref lines, "  ]");
+    return;
 }
 
 pub fn emit_workspace_facts_v5(capture: workspace_capture, dependencies: ref list<workspace_locked_dependency>, entry_module: str, modules: ref list<str>, sources: ref list<source_file>, items: ref list<top_item>, uses: ref list<module_use>, variants: ref list<variant_fact>, fields: ref list<field_fact>, bindings: ref list<body_binding>, calls: ref list<call_fact>, diags: mutref list<diag>) -> facts_summary

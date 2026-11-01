@@ -1,0 +1,232 @@
+// M58.1 repair: binding identity. A local's initializer is typed by its exact
+// declaration, never by an earlier outer or a later enclosing declaration of
+// the same name, and every use names the nearest visible declaration in
+// whatever order the phases store bindings (a local that shadows a match-arm
+// pattern binding). Each check fails, mis-compiles, or trips ASan/UBSan when
+// a phase picks the wrong binding. The owned test runs this program with exact
+// output and the same C under ASan/UBSan.
+
+type Pair<T> {
+    first: T,
+    second: T,
+}
+
+fn show(label: str, passed: bool) -> unit
+audit {
+    intent("Print one labeled check");
+    mutates();
+    effects(print);
+}
+{
+    if passed {
+        print_line(str_concat(label, " ok"));
+    } else {
+        print_line(str_concat(label, " WRONG"));
+    }
+    return;
+}
+
+fn double_ok(value: i32) -> result<i32, str> {
+    return Ok(value * 2);
+}
+
+fn take(text: str) -> i32 {
+    return str_len(text);
+}
+
+fn bump(value: mutref i32) -> unit {
+    value = value + 1;
+    return;
+}
+
+fn make_pair<T>(first: T, second: T) -> Pair<T> {
+    return Pair::<T> { first: first, second: second };
+}
+
+// Contextual empty list: the later root `list<str>` must not type the inner
+// `list<i32>` initializer.
+fn future_list() -> bool {
+    if true {
+        let mut value: list<i32> = [];
+        list_push(mutref value, 3);
+        if list_len(ref value) != 1 {
+            return false;
+        }
+    }
+    let value: list<str> = [];
+    return list_len(ref value) == 0;
+}
+
+// Contextual integer arithmetic is `i64` from the exact declaration, neither
+// the later root `i32` nor the earlier outer `i32` of the same name.
+fn future_integer() -> bool {
+    if true {
+        let wide: i64 = 2147483647 + 1;
+        if wide != 2147483648 {
+            return false;
+        }
+    }
+    let wide = 0;
+    return wide == 0;
+}
+
+fn outer_integer() -> bool {
+    let x = 0;
+    if true {
+        let x: i64 = 2147483647 + 1 + 0 + 0 + 0 + 0;
+        if x != 2147483648 {
+            return false;
+        }
+    }
+    return x == 0;
+}
+
+// `try` boundaries are typed by their own declaration.
+fn future_try() -> bool {
+    if true {
+        let r: result<i32, str> = try {
+            double_ok(1)? + 0 + 0 + 0
+        };
+        match r {
+            Ok(n) => {
+                if n != 2 {
+                    return false;
+                }
+            },
+            Err(e) => {
+                return false;
+            },
+        }
+    }
+    let r = "later";
+    return r == "later";
+}
+
+fn outer_try() -> bool {
+    let x = 0;
+    if true {
+        let x: result<i32, str> = try {
+            1 + 0 + 0 + 0 + 0
+        };
+        match x {
+            Ok(n) => {
+                return n == 1;
+            },
+            Err(e) => {
+                return false;
+            },
+        }
+    }
+    return false;
+}
+
+// A let-else binding keeps its own type with a later root `str` of its name.
+fn future_let_else(maybe: option<i64>) -> bool {
+    if true {
+        let Some(n) = maybe else {
+            return false;
+        };
+        if n != 4294967296 {
+            return false;
+        }
+    }
+    let n: str = "later";
+    return n == "later";
+}
+
+// Owned values move exactly once; a later root `i32` of the same name must not
+// make the inner owned local a copy.
+fn future_move() -> bool {
+    if true {
+        let owned = str_concat("ab", "cd");
+        if take(owned) != 4 {
+            return false;
+        }
+        let typed: str = str_concat("ef", "g");
+        if take(typed) != 3 {
+            return false;
+        }
+    }
+    let owned: i32 = 7;
+    let typed: i32 = 8;
+    return owned + typed == 15;
+}
+
+// Generic instances keep their own instance type.
+fn future_generic() -> bool {
+    if true {
+        let p: Pair<str> = make_pair::<str>("x", "y");
+        if p.first != "x" or p.second != "y" {
+            return false;
+        }
+    }
+    let p: Pair<i32> = make_pair::<i32>(1, 2);
+    return p.first + p.second == 3;
+}
+
+// A local shadowing a match-arm pattern binding: every later use, assignment,
+// `mutref` argument and move names the local.
+fn pattern_shadow(v: option<i32>) -> i32 {
+    match v {
+        Some(x) => {
+            if true {
+                let x = x + 1;
+                if x == 5 {
+                    return 0;
+                }
+                return 1;
+            }
+            return 2;
+        },
+        None => {
+            return 3;
+        },
+    }
+}
+
+fn pattern_mutref(v: option<i32>) -> bool {
+    match v {
+        Some(x) => {
+            if true {
+                let mut x = x * 10;
+                x = x + 1;
+                bump(mutref x);
+                return x == 42;
+            }
+            return false;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn pattern_move(v: option<str>) -> bool {
+    match v {
+        Some(s) => {
+            if true {
+                let s = str_concat(s, "!");
+                return take(s) == 3;
+            }
+            return false;
+        },
+        None => {
+            return false;
+        },
+    }
+}
+
+fn main() -> i32 {
+    show("future list", future_list());
+    show("future integer", future_integer());
+    show("outer integer", outer_integer());
+    show("future try", future_try());
+    show("outer try", outer_try());
+    show("future let-else", future_let_else(Some(4294967296)));
+    show("future move", future_move());
+    show("future generic", future_generic());
+    show("pattern shadow", pattern_shadow(Some(4)) == 0);
+    show("pattern mutref", pattern_mutref(Some(4)));
+    show("pattern move", pattern_move(Some(str_concat("a", "b"))));
+    return 0;
+}

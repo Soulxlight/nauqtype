@@ -822,7 +822,7 @@ class Stage1DriverTests(unittest.TestCase):
             combined = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, combined)
             self.assertIn("const initializer does not match declared type", combined)
-            self.assertIn("stage1 limitation: unsupported const initializer expression", combined)
+            self.assertIn("constant initializers may contain only literals and operators", combined)  # M58.1 NQ-TYPE-057
             self.assertIn("top-level const supports only non-borrow i32, bool, or str in v1", combined)
             self.assertIn("const comparison operand must have integer type", combined)
 
@@ -3157,7 +3157,7 @@ class Stage1DriverTests(unittest.TestCase):
             result = self._run_driver(["check", "main.nq"], cwd=tmp)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stdout, "")
-            self.assertNotIn("match expression must be exhaustive", result.stdout + result.stderr)
+            self.assertNotIn("match must be exhaustive", result.stdout + result.stderr)
 
     def test_stage1_driver_m36_nested_patterns_run_and_export_constructor_evidence(self) -> None:
         source = self.root / "examples" / "nested_patterns.nq"

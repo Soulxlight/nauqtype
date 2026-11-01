@@ -1,0 +1,21 @@
+// M58.1 rule 4 fixture: NQ-TYPE-059, reported once, for a two-level field assignment
+
+type Inner {
+    value: i32,
+}
+
+type Outer {
+    inner: Inner,
+}
+
+fn main() -> i32
+audit {
+    intent("probe");
+    mutates();
+    effects();
+}
+{
+    let mut outer = Outer { inner: Inner { value: 1 } };
+    outer.inner.value = 0;
+    return 0;
+}

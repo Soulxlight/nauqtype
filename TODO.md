@@ -22,17 +22,22 @@
 - [x] M58 split into M58.1 (correctness and diagnostics), M58.2 (small
   language additions), M58.3 (rewrite tooling); M58.1 Gate A review of the
   [contract](docs/M58_1_CONTRACT.md) (approved 2026-10-31, revision 4)
-- [ ] M58.1: implementation, focused checks, ownership-class trailing
-  audits, milestone gate
+- [x] M58.1: implementation, focused checks, ownership-class trailing
+  audits, milestone gate (2026-11-01;
+  [evidence](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close))
+- [ ] M58.2: contract and Gate A review (integer `%`, `i64` and `bool`
+  patterns, a real pattern-coverage check replacing D047, range and indexed
+  `for`, the R9 position matrix)
+- [ ] M58.3: contract and Gate A review (source rewrite tooling for the
+  M60/M61 migrations)
 - [x] Audit policy now names `gpt-6.1-sol` for the independent adversarial
   auditor (`gpt-5.5` withdrawn from the Codex account, 2026-10-31).
-- [ ] Pre-existing miscompile: `let mut x = x + 1;` in an inner scope reads
-  the new zero-initialised `x` instead of the outer `x` (found in M57.1;
-  scheduled in M58.1).
+- [x] Pre-existing miscompile fixed in M58.1: `let mut x = x + 1;` in an
+  inner scope now reads the outer `x`.
 - [x] Tutorial-found SPEC contradictions fixed in M57.1: assignment to a
   plain `let` (NQ-TYPE-007), non-exhaustive statement `match` (NQ-TYPE-051),
   `str <` and enum `==` failing in C (NQ-TYPE-050).
-- [ ] Remaining tutorial-found defects (each pinned by a tutorial snippet):
+- [x] Remaining tutorial-found defects, fixed in M58.1 (each pinned by a tutorial snippet):
   parse errors are printed four times; `try { f()? + g()? }` reports
   NQ-TYPE-042 instead of an NQ-TRY code; a missing workspace lock reports
   NQ-IO-001 without a location; `nauqc run <src> -o <relative>` builds but

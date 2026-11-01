@@ -1,8 +1,12 @@
 use text;
+use borrow;
 use c_emit;
 use fixture_c;
+use handoff;
+use ir;
 use lexer;
 use token;
+use diag;
 
 fn integer_policy_path(name: str) -> str {
     return str_concat("tests/fixtures/m54_9_arithmetic/", name);
@@ -113,10 +117,10 @@ fn integer_policy_diagnostics(driver: str) -> bool {
     if not integer_policy_rejected(driver, "range_positive64.nq", "NQ-TYPE-043", range64, false) { return false; }
     if not integer_policy_rejected(driver, "range_negative64.nq", "NQ-TYPE-043", range64, false) { return false; }
     if not integer_policy_rejected(driver, "dead_range.nq", "NQ-TYPE-043", range32, false) { return false; }
-    let unsupported = "stage1 limitation: unsupported const initializer expression";
-    if not integer_policy_rejected(driver, "identifier_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
-    if not integer_policy_rejected(driver, "call_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
-    if not integer_policy_rejected(driver, "dead_call_rejected.nq", "NQ-TYPE-042", unsupported, false) { return false; }
+    let unsupported = "constant initializers may contain only literals and operators";
+    if not integer_policy_rejected(driver, "identifier_rejected.nq", "NQ-TYPE-057", unsupported, false) { return false; }
+    if not integer_policy_rejected(driver, "call_rejected.nq", "NQ-TYPE-057", unsupported, false) { return false; }
+    if not integer_policy_rejected(driver, "dead_call_rejected.nq", "NQ-TYPE-057", unsupported, false) { return false; }
     let borrow_binding = "borrow expression must name a binding or field path";
     if not integer_policy_rejected(driver, "ref_arithmetic32.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
     if not integer_policy_rejected(driver, "ref_arithmetic64.nq", "NQ-TYPE-042", borrow_binding, false) { return false; }
@@ -321,8 +325,8 @@ fn f64_lexer_cases() -> bool {
         and f64_lex_case("1.0e", "malformed:1.0e:0:4;") and f64_lex_case("1.0e-", "malformed:1.0e-:0:5;")
         and f64_lex_case("1.0e--5", "malformed:1.0e-:0:5;minus:-:5:6;int:5:6:7;") and f64_lex_case("1.0ex", "malformed:1.0e:0:4;ident:x:4:5;")
         and f64_lex_case("1.0E+", "malformed:1.0E+:0:5;")
-        and f64_lex_case("1.", "int:1:0:1;dot:.:1:2;") and f64_lex_case("1.e5", "int:1:0:1;dot:.:1:2;ident:e5:2:4;")
-        and f64_lex_case(".5", "dot:.:0:1;int:5:1:2;") and f64_lex_case("1e5", "int:1:0:1;ident:e5:1:3;")
+        and f64_lex_case("1.", "malformed:1.:0:2;") and f64_lex_case("1.e5", "int:1:0:1;dot:.:1:2;ident:e5:2:4;")
+        and f64_lex_case(".5", "malformed:.5:0:2;") and f64_lex_case("1e5", "malformed:1e5:0:3;") and f64_lex_case("1E5", "malformed:1E5:0:3;") and f64_lex_case("1e-5", "malformed:1e-5:0:4;") and f64_lex_case("1e", "int:1:0:1;ident:e:1:2;") and f64_lex_case("x.5", "ident:x:0:1;dot:.:1:2;int:5:2:3;")
         and f64_lex_case("1.foo", "int:1:0:1;dot:.:1:2;ident:foo:2:5;") and f64_lex_case("x.field", "ident:x:0:1;dot:.:1:2;ident:field:2:7;")
         and f64_lex_case("42", "int:42:0:2;") and f64_lex_case("2147483648", "int:2147483648:0:10;");
     if not ok { return false; }
@@ -436,7 +440,8 @@ fn f64_local(driver: str, directory: str, name: str, literal: str, code: str, me
 
 fn f64_parse_cases(driver: str, directory: str) -> bool {
     let malformed = "malformed float literal";
-    let help = "write the exponent as lowercase `e` with an optional `-` and digits, as in `1.0e5` or `1.0e-5`";
+    // M58.1: one NQ-PARSE-004 help for every malformed float shape.
+    let help = "write floats as `<digits>.<digits>`, for example `0.5`, `1.0` or `1.0e5`";
     if not f64_local(driver, directory, "parse_upper", "1.0E5", "NQ-PARSE-004", malformed, help, 0) { return false; }
     if not f64_local(driver, directory, "parse_plus", "1.0e+5", "NQ-PARSE-004", malformed, help, 0) { return false; }
     if not f64_local(driver, directory, "parse_bare", "1.0e", "NQ-PARSE-004", malformed, help, 0) { return false; }
@@ -445,32 +450,18 @@ fn f64_parse_cases(driver: str, directory: str) -> bool {
     let ident_source = f64_main("    let x = 1;\n    let probe = 1.0ex;");
     let ident_start = f64_find(ident_source, "1.0ex");
     if not f64_rejects_with(driver, directory, "parse_ident", ident_source, "NQ-PARSE-004", malformed, help, ident_start, ident_start + 4) { return false; }
-    // Forms that do not begin with digits.digit keep their M56.1 diagnostics.
-    let unsupported = "stage1 limitation: unsupported expression shape in recursive type checker";
-    let dot_source = f64_main("    let probe = 1.;");
-    if not f64_rejects(driver, directory, "pinned_trailing_dot", dot_source, "NQ-TYPE-042", unsupported, "probe = ", 1) { return false; }
+    // M58.1: `1.`, `.5` and `1e5` are malformed floats (NQ-PARSE-004); `1.e5`
+    // and `1.foo` stay a field access on an integer.
+    if not f64_local(driver, directory, "pinned_trailing_dot", "1.", "NQ-PARSE-004", malformed, help, 0) { return false; }
     let dot_e_source = f64_main("    let probe = 1.e5;");
     if not f64_rejects(driver, directory, "pinned_dot_exponent", dot_e_source, "NQ-TYPE-042", "field access base has integer type", "e5;", 1) { return false; }
-    let leading_source = f64_main("    let probe = .5;");
-    if not f64_rejects(driver, directory, "pinned_leading_dot", leading_source, "NQ-TYPE-042", unsupported, "probe = ", 1) { return false; }
+    if not f64_local(driver, directory, "pinned_leading_dot", ".5", "NQ-PARSE-004", malformed, help, 0) { return false; }
     let member_source = f64_main("    let probe = 1.foo;");
     if not f64_rejects(driver, directory, "pinned_int_member", member_source, "NQ-TYPE-042", "field access base has integer type", "foo;", 1) { return false; }
-    // `1e5` is the integer `1` followed by the identifier `e5`: two errors.
-    let exponent_source = f64_main("    let probe = 1e5;");
-    let exponent_path = str_concat(directory, "/pinned_bare_exponent.nq");
-    if not f64_write(exponent_path, exponent_source) { return false; }
-    match f64_run_check(driver, exponent_path, true) {
-        Ok(status) => {
-            let output = status.stdout;
-            let e5 = i32_to_str(f64_find(exponent_source, "e5;"));
-            let name = i32_to_str(f64_find(exponent_source, "probe = "));
-            let ok = status.exit_code == 1 and integer_policy_count(output, "\"severity\": \"error\"") == 2
-                and integer_policy_count(output, "\"code\": \"NQ-RESOLVE-010\"") == 1 and integer_policy_count(output, "\"code\": \"NQ-TYPE-042\"") == 1
-                and integer_policy_count(output, concat3("\"start\": { \"offset\": ", e5, ",")) == 1 and integer_policy_count(output, concat3("\"start\": { \"offset\": ", name, ",")) == 1;
-            if not ok { return f64_report("pinned_bare_exponent", status); }
-        },
-        Err(err) => { eprint_line(io_err_text(err)); return false; },
-    }
+    if not f64_local(driver, directory, "pinned_bare_exponent", "1e5", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "pinned_bare_exponent_upper", "1E5", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "pinned_bare_exponent_minus", "1e-5", "NQ-PARSE-004", malformed, help, 0) { return false; }
+    if not f64_local(driver, directory, "pinned_leading_dot_exponent", ".5e3", "NQ-PARSE-004", malformed, help, 0) { return false; }
     let shapes = "    let a = 0.5;\n    let b = 1.0;\n    let c = 2.5e-3;\n    let d = 6.02e23;\n    let e = 007.5;\n    let f = 1.0e0;\n    let g = -1.5;\n    let h: f64 = 12.75e-1;\n    let i = 42;\n    let j: i64 = 9223372036854775807;\n    let total = a + b + c + d + e + f + g + h;\n    if total < 0.0 or i != 42 or j < 0 {\n        return 1;\n    }";
     return f64_accepts(driver, directory, "legal_shapes", f64_main(shapes));
 }
@@ -1189,7 +1180,7 @@ fn a1_assignment_cases(driver: str, directory: str) -> bool {
 }
 
 fn a1_field_assignment_cases(driver: str, directory: str) -> bool {
-    let message = "field assignment requires an owned mutable local product binding";
+    let message = "field assignment requires a `let mut` local or a `mutref` parameter";
     let ref_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: ref Bag) -> unit", "", "    bag.count = 1;\n    return;"), f64_main("")));
     if not a1_rejects(driver, directory, "field_assign_ref_param", ref_param, "NQ-TYPE-042", message, "", "bag.count = 1", 0, 1) { return false; }
     let owned_param = str_concat(a1_bag(), str_concat(f64_function("probe(bag: Bag) -> unit", "", "    bag.count = 1;\n    return;"), f64_main("")));
@@ -1198,25 +1189,10 @@ fn a1_field_assignment_cases(driver: str, directory: str) -> bool {
     if not a1_rejects(driver, directory, "field_assign_immutable_local", local, "NQ-TYPE-042", message, "", "bag.count = 1", 0, 1) { return false; }
     let shadowed = str_concat(a1_bag(), f64_main("    let mut bag = Bag { items: list(), count: 0 };\n    bag.count = 1;\n    if bag.count > 0 {\n        let bag = Bag { items: list(), count: 2 };\n        bag.count = 3;\n    }"));
     if not a1_rejects(driver, directory, "field_assign_shadowed", shadowed, "NQ-TYPE-042", message, "", "bag.count = 3", 0, 1) { return false; }
-    // Nested field paths stay rejected, also under a `mutref` parameter. The
-    // two existing parser fact collectors each report it (unchanged).
+    // Nested field paths stay rejected, also under a `mutref` parameter:
+    // M58.1 reports NQ-TYPE-059 once (it was a parse error printed twice).
     let nested = str_concat(a1_bag(), str_concat(f64_function("probe(outer: mutref Outer) -> unit", "outer", "    outer.inner.count = 1;\n    return;"), f64_main("")));
-    let nested_path = str_concat(directory, "/field_assign_nested.nq");
-    if not f64_write(nested_path, nested) { return false; }
-    match f64_run_check(driver, nested_path, true) {
-        Ok(status) => {
-            let output = status.stdout;
-            let start = f64_find(nested, "outer.inner.count = 1");
-            let ok = status.exit_code == 1 and status.stderr == "" and integer_policy_count(output, "\"code\":") == 2
-                and integer_policy_count(output, "\"code\": \"NQ-PARSE-003\"") == 2
-                and integer_policy_count(output, "\"message\": \"nested field assignment is not supported in V1\",") == 2
-                and integer_policy_count(output, concat3("\"start\": { \"offset\": ", i32_to_str(start), ",")) == 2
-                and integer_policy_count(output, concat3("\"end\": { \"offset\": ", i32_to_str(start + 5), ",")) == 2;
-            if ok { return true; }
-            return f64_report("field_assign_nested", status);
-        },
-        Err(err) => { eprint_line(io_err_text(err)); return false; },
-    }
+    return a1_rejects(driver, directory, "field_assign_nested", nested, "NQ-TYPE-059", "nested field assignment is not supported", "pass `mutref outer.inner` to a function that assigns the inner field", "outer.inner.count = 1", 0, 5);
 }
 
 fn a1_reserved_cases(driver: str, directory: str) -> bool {
@@ -1364,13 +1340,292 @@ audit {
     let ok = integer_policy_gate_impl(driver);
     if not fixture_c_gate_end(lock) { eprint_line("integer policy: fixture gate lock release failed"); return false; }
     if not ok { return false; }
+    if not m58d_gate(driver) { eprint_line("integer policy: M58.1 diagnostics pipeline and driver cases failed"); return false; }
     if not f64_runtime_gate(driver) { eprint_line("integer policy: M56.2 f64 runtime cases failed"); return false; }
     if not m57_1_a1_gate(driver) { eprint_line("integer policy: M57.1 places/assignment/reservation cases failed"); return false; }
     if not m57b_gate(driver) { eprint_line("integer policy: M57.1 list and integer conversion builtin cases failed"); return false; }
     if not m57a2_gate(driver) { eprint_line("integer policy: M57.1 comparison, statement match, and layout cases failed"); return false; }
     if not m57c_gate(driver) { eprint_line("integer policy: M57.1 cross-slice field builtins, borrows, spelling, layout parity, and teaching cases failed"); return false; }
     if not m57r_gate(driver) { eprint_line("integer policy: M57.1 repair qualified builtin names, binding order, and parenthesized places cases failed"); return false; }
+    if not m58_1_c_gate(driver) { eprint_line("integer policy: M58.1 rule-4 focused diagnostics and producer ledger cases failed"); return false; }
+    if not m58a_gate(driver) { eprint_line("integer policy: M58.1 termination, let-else exits, and initializer scope cases failed"); return false; }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 slice D: diagnostics pipeline and driver. Parse errors are reported
+// once; load and parse errors stop every command before resolution in its
+// existing envelope; a missing `;` before `}` is NQ-PARSE-003 "expected `;`";
+// text diagnostics print `note:`/`help:` lines; the workspace-lock NQ-IO-001
+// names the manifest with a file-level span; `try { f()? + g()? }` propagates
+// per operand; `-o` resolves against the invocation directory and
+// `build -o <exe>` writes `<exe>.c` beside the executable.
+// ---------------------------------------------------------------------------
+
+fn m58d_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_1/d/", name);
+}
+
+fn m58d_absolute(path: str) -> str {
+    if str_starts_with(path, "/") { return path; }
+    match current_dir() {
+        Ok(directory) => { return concat3(directory, "/", path); },
+        Err(_) => { return path; },
+    }
+}
+
+fn m58d_missing(path: str) -> bool {
+    match path_metadata(path, false) {
+        Ok(_) => { return false; },
+        Err(_) => { return true; },
+    }
+}
+
+fn m58d_report(label: str, status: process_result) -> bool {
+    eprint_line(str_concat("M58.1 D case failed: ", label));
+    eprint_line(str_concat("exit: ", i32_to_str(status.exit_code)));
+    eprint_line(str_concat("stdout: ", status.stdout));
+    eprint_line(str_concat("stderr: ", status.stderr));
+    return false;
+}
+
+fn m58d_status(result: result<process_result, io_err>) -> option<process_result> {
+    match result {
+        Ok(status) => { return Some(status); },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+// The one text diagnostic for parse_stop.nq, rendered with its source path.
+fn m58d_parse_stop_line() -> str {
+    return "tests/fixtures/m58_1/d/parse_stop.nq:2:9: PARSE[NQ-PARSE-003]: expected identifier\n";
+}
+
+// One copy of the parse error (JSON), and a missing import reports only its
+// NQ-IO-001: no resolution diagnostic follows a load error.
+fn m58d_parse_once(driver: str) -> bool {
+    let path = m58d_fixture("parse_stop.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let at = f64_find(source, "let = 1;") + 4;
+    if not m57a2_expect_digest(driver, "M58.1 parse error once", path, m57a2_entry("NQ-PARSE-003", at, at + 1, "expected identifier", "")) { return false; }
+    let load_path = m58d_fixture("load_stop.nq");
+    match f64_run_check(driver, load_path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            if status.exit_code != 1 or status.stderr != "" or integer_policy_count(output, "\"code\":") != 1 or integer_policy_count(output, "\"code\": \"NQ-IO-001\"") != 1 or text_contains(output, "NQ-RESOLVE-") or not text_contains(output, "\"span\": null,") {
+                return m58d_report("load error stop", status);
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    return true;
+}
+
+// The text line a load error renders: the absent module is named, with no span.
+fn m58d_load_stop_line() -> str {
+    return "m58_1_d_absent_module: IO[NQ-IO-001]: read_file: failed to open file: No such file or directory\n";
+}
+
+// Every command that loads a module graph stops after a load or parse error
+// with exactly that diagnostic in its existing envelope: no C file,
+// executable, run, evidence document or edit plan, and no cascade. Table-driven
+// over both stop fixtures; `line` is what file-rendering commands print and
+// `module_line` what policy-check and refactor-rename print.
+fn m58d_stop_commands(driver: str, directory: str, tag: str, path: str, line: str, module_line: str, rename_id: str) -> bool {
+    let label = concat3("M58.1 ", tag, " stop ");
+    let check_args = ["check", path];
+    if not f64_rt_exact(str_concat(label, "check"), run_process(driver, ref check_args, "."), 1, "", line) { return false; }
+    let c_output = concat4(directory, "/", tag, "_stop.c");
+    let emit_args = ["emit-c", path, "-o", c_output];
+    if not f64_rt_exact(str_concat(label, "emit-c"), run_process(driver, ref emit_args, "."), 1, "", line) { return false; }
+    let exe_output = concat4(directory, "/", tag, "_stop_exe");
+    let build_args = ["build", path, "-o", exe_output];
+    if not f64_rt_exact(str_concat(label, "build"), run_process(driver, ref build_args, "."), 1, "", line) { return false; }
+    let run_output = concat4(directory, "/", tag, "_stop_run");
+    let run_args = ["run", path, "-o", run_output];
+    if not f64_rt_exact(str_concat(label, "run"), run_process(driver, ref run_args, "."), 1, "", line) { return false; }
+    for written in [c_output, exe_output, str_concat(exe_output, ".c"), run_output, str_concat(run_output, ".c")] {
+        if not m58d_missing(written) { eprint_line(concat3(label, "wrote an output: ", written)); return false; }
+    }
+    for command in ["facts", "review"] {
+        let plain = [command, path];
+        if not f64_rt_exact(str_concat(label, command), run_process(driver, ref plain, "."), 1, "", line) { return false; }
+        for version in ["v1", "v2", "v3", "v4", "v5"] {
+            let args = [command, path, "--format", version];
+            if not f64_rt_exact(concat4(label, command, " ", version), run_process(driver, ref args, "."), 1, "", line) { return false; }
+        }
+    }
+    let policy_args = ["policy-check", path, "nauqtype.policy.json"];
+    if not f64_rt_exact(str_concat(label, "policy-check"), run_process(driver, ref policy_args, "."), 1, "", module_line) { return false; }
+    let rename_args = ["refactor-rename", path, rename_id, "renamed"];
+    return f64_rt_exact(str_concat(label, "refactor-rename"), run_process(driver, ref rename_args, "."), 1, "", module_line);
+}
+
+// The complete failure envelope review-diff / change-report print on stdout
+// when one side fails to load or check: no comparison is produced.
+fn m58d_side_envelope(command: str, format: str, stage: str, code: str, message: str) -> str {
+    let head = concat5("{\n  \"version\": 1,\n  \"command\": \"", command, "\",\n  \"requested_format\": ", format, ",\n  \"ok\": false,\n");
+    let tail = concat6("  \"stage\": \"", stage, "\",\n  \"code\": \"", code, "\",\n  \"message\": \"", str_concat(message, "\"\n}\n"));
+    return str_concat(head, tail);
+}
+
+// Both stop fixtures on both comparison sides of review-diff (default, v1, v2)
+// and change-report (v1-v4): exit 1, exactly the failing side's envelope on
+// stdout with the side label the command already uses, and exactly that
+// side's one diagnostic on stderr.
+fn m58d_stop_sides(driver: str) -> bool {
+    let good = "examples/hello.nq";
+    for kind in ["parse", "load"] {
+        let path = m58d_fixture(str_concat(kind, "_stop.nq"));
+        for side in ["before", "after"] {
+            let mut before = path;
+            let mut after = good;
+            if side == "after" {
+                before = good;
+                after = path;
+            }
+            let mut stage = str_concat(side, "_check");
+            let mut code = "NQ-EVIDENCE-002";
+            let mut message = str_concat(side, " input failed checked compilation");
+            let mut stderr = m58d_parse_stop_line();
+            if kind == "load" {
+                stage = str_concat(side, "_load");
+                code = "NQ-EVIDENCE-001";
+                message = "read_file: failed to open file: No such file or directory";
+                stderr = m58d_load_stop_line();
+            }
+            let diff_default = ["review-diff", before, after];
+            if not f64_rt_exact(concat4("M58.1 review-diff ", side, " ", kind), run_process(driver, ref diff_default, "."), 1, m58d_side_envelope("review-diff", "1", stage, code, message), stderr) { return false; }
+            for version in ["v1", "v2"] {
+                let diff_args = ["review-diff", before, after, "--format", version];
+                if not f64_rt_exact(concat6("M58.1 review-diff ", side, " ", kind, " ", version), run_process(driver, ref diff_args, "."), 1, m58d_side_envelope("review-diff", slice_text(version, 1, 2), stage, code, message), stderr) { return false; }
+            }
+            for version in ["v1", "v2", "v3", "v4"] {
+                let change_args = ["change-report", before, after, "--format", version];
+                if not f64_rt_exact(concat6("M58.1 change-report ", side, " ", kind, " ", version), run_process(driver, ref change_args, "."), 1, m58d_side_envelope("change-report", slice_text(version, 1, 2), stage, code, message), stderr) { return false; }
+            }
+        }
+    }
+    return true;
+}
+
+// The no-argument legacy invocation (`run_pipeline`) stops the same way after
+// a parse or a load error: that diagnostic only, no "missing main" cascade,
+// and no C file.
+fn m58d_stop_legacy_case(driver: str, directory: str, tag: str, source: str, expected: str) -> bool {
+    let legacy = concat3(directory, "/legacy_", tag);
+    match create_dir_all(legacy) {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    if not f64_write(concat3(legacy, "/", "main.nq"), source) { return false; }
+    let none: list<str> = list();
+    if not f64_rt_exact(str_concat("M58.1 stop legacy ", tag), run_process(m58d_absolute(driver), ref none, legacy), 1, "", expected) { return false; }
+    if not m58d_missing(concat3(legacy, "/", "build/main.c")) { eprint_line(str_concat("M58.1 legacy stop wrote C: ", tag)); return false; }
+    return true;
+}
+
+fn m58d_stop_legacy(driver: str, directory: str) -> bool {
+    if not m58d_stop_legacy_case(driver, directory, "parse", "fn helper() -> i32 {\n    let = 1;\n    return 0;\n}\n", "main.nq:2:9: PARSE[NQ-PARSE-003]: expected identifier\n") { return false; }
+    return m58d_stop_legacy_case(driver, directory, "load", "use m58_1_d_absent_module;\n\nfn main() -> i32 {\n    return m58_1_d_absent_module::value();\n}\n", m58d_load_stop_line());
+}
+
+// A missing `;` before `}` stops at the brace: one NQ-PARSE-003 at the end of
+// the statement's last token instead of "unterminated block".
+fn m58d_missing_semi(driver: str) -> bool {
+    let path = m58d_fixture("missing_semi.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let at = f64_find(source, "let total = 1") + str_len("let total = 1");
+    return m57a2_expect_digest(driver, "M58.1 missing semicolon", path, m57a2_entry("NQ-PARSE-003", at, at, "expected `;`", ""));
+}
+
+// Text output prints `note:` and `help:` lines after the message line.
+fn m58d_help_lines(driver: str, directory: str) -> bool {
+    let detailed = make_diagnostic("NQ-TEST-001", diag_type, diag_error, "probe", 0, 1, "message", "a note", "a help");
+    let lines = diagnostic_detail_lines(detailed);
+    if list_len(ref lines) != 2 or f64_list_text(ref lines, 0) != "note: a note" or f64_list_text(ref lines, 1) != "help: a help" { eprint_line("M58.1 diagnostic detail lines"); return false; }
+    let plain = make_error("NQ-TEST-001", diag_type, "probe", 0, 1, "message");
+    let none = diagnostic_detail_lines(plain);
+    if list_len(ref none) != 0 { eprint_line("M58.1 diagnostic without detail lines"); return false; }
+    let path = concat3(directory, "/", "help_text.nq");
+    if not f64_write(path, f64_main("    let total = 1;\n    total = 2;")) { return false; }
+    let expected = concat3(path, ":9:5: TYPE[NQ-TYPE-007]: cannot assign to immutable binding `total`\n", "help: declare it with `let mut total` to allow assignment\n");
+    let args = ["check", path];
+    return f64_rt_exact("M58.1 text help line", run_process(driver, ref args, "."), 1, "", expected);
+}
+
+// A missing workspace lock keeps NQ-IO-001 and its text but names the
+// manifest the driver resolved (relative to the invocation directory) with a
+// file-level span.
+fn m58d_lock_diagnostic(driver: str) -> bool {
+    let message = "workspace dependencies require nauqtype.workspace.lock.json";
+    let source = "tests/fixtures/workspace_missing_lock/src/app/main.nq";
+    let text_args = ["check", source];
+    if not f64_rt_exact("M58.1 lock text", run_process(driver, ref text_args, "."), 1, "", concat3("tests/fixtures/workspace_missing_lock/nauqtype.workspace.json: IO[NQ-IO-001]: ", message, "\n")) { return false; }
+    match f64_run_check(driver, source, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let ok = status.exit_code == 1 and integer_policy_count(output, "\"code\":") == 1 and integer_policy_count(output, "\"code\": \"NQ-IO-001\"") == 1
+                and integer_policy_count(output, concat3("\"message\": ", json_quote(message), ",")) == 1 and integer_policy_count(output, "\"span\": null,") == 1
+                and text_contains(output, concat3("\"rendered\": \"tests/fixtures/workspace_missing_lock/nauqtype.workspace.json: IO[NQ-IO-001]: ", message, "\""));
+            if not ok { return m58d_report("M58.1 lock json", status); }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let relative_args = ["check", "workspace_missing_lock/src/app/main.nq"];
+    return f64_rt_exact("M58.1 lock relative", run_process(m58d_absolute(driver), ref relative_args, "tests/fixtures"), 1, "", concat3("workspace_missing_lock/nauqtype.workspace.json: IO[NQ-IO-001]: ", message, "\n"));
+}
+
+// Per-operand `?` inside `try` is accepted, lowered to the boundary per
+// operand (the second operand's error short-circuits the sum) and executed;
+// whole-expression `(f() + g())?` keeps its pinned NQ-TRY-002.
+fn m58d_try_operands(driver: str, directory: str) -> bool {
+    let path = m58d_fixture("try_sum.nq");
+    let run_args = ["run", path];
+    if not f64_rt_exact("M58.1 try per-operand run", run_process(driver, ref run_args, "."), 0, "sum: 5\nerror: second failed\n", "") { return false; }
+    let generated = concat3(directory, "/", "try_sum.c");
+    let emit_args = ["emit-c", path, "-o", generated];
+    if not f64_rt_exact("M58.1 try per-operand emit", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    let Some(text_value) = m57c_read(generated) else { return false; };
+    if integer_policy_count(text_value, "goto ") < 4 { eprint_line("M58.1 try per-operand: each operand needs its own boundary exit"); return false; }
+    let whole = m58d_fixture("try_whole.nq");
+    let Some(source) = m57c_read(whole) else { return false; };
+    let at = f64_find(source, "())?") + 3;
+    return m57a2_expect_digest(driver, "M58.1 whole-expression try propagation", whole, m57a2_entry("NQ-TRY-002", at, at + 1, "expression `?` inside `try` must apply to a direct function call in V1", ""));
+}
+
+// `-o` resolves against the invocation directory: `run` starts the program it
+// wrote, and both commands write `<exe>.c` beside the executable and nothing
+// into the source tree.
+fn m58d_driver_output(driver: str, directory: str) -> bool {
+    let source = m58d_fixture("driver_src/hello.nq");
+    let expected = "built from the driver fixture\n";
+    let run_exe = concat3(directory, "/", "out/run_hello");
+    let run_args = ["run", source, "-o", run_exe];
+    if not f64_rt_exact("M58.1 run -o relative", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let build_exe = concat3(directory, "/", "out/build_hello");
+    let build_args = ["build", source, "-o", build_exe];
+    if not f64_rt_exact("M58.1 build -o relative", run_process(driver, ref build_args, "."), 0, "", "") { return false; }
+    for written in [run_exe, str_concat(run_exe, ".c"), build_exe, str_concat(build_exe, ".c")] {
+        if m58d_missing(written) { eprint_line(str_concat("M58.1 driver output missing: ", written)); return false; }
+    }
+    if not m58d_missing(m58d_fixture("driver_src/build")) { eprint_line("M58.1 driver wrote into the source tree"); return false; }
+    let none: list<str> = list();
+    return f64_rt_exact("M58.1 built executable", run_process(m58d_absolute(build_exe), ref none, "."), 0, expected, "");
+}
+
+fn m58d_gate(driver: str) -> bool {
+    let Ok(directory) = create_temp_dir("build", "m58-1-d-") else { eprint_line("M58.1 D: temporary directory refused"); return false; };
+    if not m58d_parse_once(driver) { return false; }
+    if not m58d_stop_commands(driver, directory, "parse", m58d_fixture("parse_stop.nq"), m58d_parse_stop_line(), "parse_stop: PARSE[NQ-PARSE-003]: expected identifier\n", "fn:parse_stop::helper") { return false; }
+    if not m58d_stop_commands(driver, directory, "load", m58d_fixture("load_stop.nq"), m58d_load_stop_line(), m58d_load_stop_line(), "fn:load_stop::helper") { return false; }
+    if not m58d_stop_sides(driver) { return false; }
+    if not m58d_stop_legacy(driver, directory) { return false; }
+    if not m58d_missing_semi(driver) { return false; }
+    if not m58d_help_lines(driver, directory) { return false; }
+    if not m58d_lock_diagnostic(driver) { return false; }
+    if not m58d_try_operands(driver, directory) { return false; }
+    return m58d_driver_output(driver, directory);
 }
 
 // ---------------------------------------------------------------------------
@@ -1544,18 +1799,18 @@ fn f64_list_text(values: ref list<str>, index: i32) -> str {
 
 fn m57a2_match_cases(driver: str, directory: str) -> bool {
     let color = "enum Color {\n    Red,\n    Green,\n    Blue,\n}\n\n";
-    let help = "add an arm for each missing variant or a `_ => { ... }` fallback arm";
+    let help = "add an arm for each missing case or a `_ => { ... }` fallback arm";
     let enum_source = m57a2_program(color, "    let c = Red;\n    match c {\n        Green => {},\n    }");
-    if not m57a2_rejects_one(driver, directory, "m57a2_match_enum", enum_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Red`, `Blue`", help, "match c", 0, 5) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_enum", enum_source, "NQ-TYPE-051", "match must be exhaustive; missing `Red`, `Blue`", help, "match c", 0, 5) { return false; }
     let option_source = m57a2_program("", "    let v: option<i32> = Some(1);\n    match v {\n        Some(x) => {},\n    }");
-    if not m57a2_rejects_one(driver, directory, "m57a2_match_option", option_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `None`", help, "match v", 0, 5) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_option", option_source, "NQ-TYPE-051", "match must be exhaustive; missing `None`", help, "match v", 0, 5) { return false; }
     let result_source = m57a2_program("", "    let r: result<i32, str> = Err(\"e\");\n    match r {\n        Err(e) => {},\n    }");
-    if not m57a2_rejects_one(driver, directory, "m57a2_match_result", result_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Ok`", help, "match r", 0, 5) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_result", result_source, "NQ-TYPE-051", "match must be exhaustive; missing `Ok`", help, "match r", 0, 5) { return false; }
     let zero_source = m57a2_program(color, "    let c = Blue;\n    match c {\n    }");
-    if not m57a2_rejects_one(driver, directory, "m57a2_match_zero_arms", zero_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Red`, `Green`, `Blue`", help, "match c", 0, 5) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_zero_arms", zero_source, "NQ-TYPE-051", "match must be exhaustive; missing `Red`, `Green`, `Blue`", help, "match c", 0, 5) { return false; }
     // A function parameter scrutinee inside a non-main function.
     let param_source = str_concat(color, "fn name(c: Color) -> i32 {\n    match c {\n        Red => { return 1; },\n        Blue => { return 3; },\n    }\n    return 0;\n}\n\nfn main() -> i32 {\n    return name(Green);\n}\n");
-    if not m57a2_rejects_one(driver, directory, "m57a2_match_param", param_source, "NQ-TYPE-051", "match statement must be exhaustive; missing `Green`", help, "match c", 0, 5) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m57a2_match_param", param_source, "NQ-TYPE-051", "match must be exhaustive; missing `Green`", help, "match c", 0, 5) { return false; }
     // Exhaustive forms and fallbacks are unchanged.
     let exhaustive = "    let c = Red;\n    match c {\n        Red => {},\n        Green => {},\n        Blue => {},\n    }\n    match c {\n        Red => {},\n        _ => {},\n    }\n    match c {\n        other => {},\n    }\n    let v: option<i32> = None;\n    match v {\n        Some(x) => {},\n        None => {},\n    }\n    let r: result<i32, str> = Ok(1);\n    match r {\n        Ok(x) => {},\n        Err(e) => {},\n    }";
     if not f64_accepts(driver, directory, "m57a2_match_exhaustive", m57a2_program(color, exhaustive)) { return false; }
@@ -1567,11 +1822,175 @@ fn m57a2_match_cases(driver: str, directory: str) -> bool {
     let integer_source = m57a2_program("", "    let n = 2;\n    match n {\n        1 => {},\n    }");
     let integer_at = f64_find(integer_source, "match n");
     if not m57a2_rejects(driver, directory, "m57a2_match_integer", integer_source, m57a2_entry("NQ-TYPE-042", integer_at, integer_at + 1, refined, "")) { return false; }
-    // A zero-arm match over an empty enum has no missing variant. The empty
-    // enum itself still stops at the pre-existing value-plan limitation.
+    // A zero-arm match over an empty enum has no missing variant, and the
+    // empty enum is a checked type: the program checks and builds, and its
+    // executable runs (M58.1 repair; the A gate runs empty_enum_run.nq with
+    // exact output and under ASan/UBSan).
     let empty_source = "enum Empty {\n}\n\nfn drain(e: Empty) -> i32 {\n    match e {\n    }\n    return 0;\n}\n\nfn main() -> i32 {\n    return 0;\n}\n";
-    if not m57a2_rejects(driver, directory, "m57a2_match_empty_enum", empty_source, m57a2_entry("NQ-HANDOFF-002", -1, -1, "stage1 value plan cannot classify named type `Empty`", "")) { return false; }
+    if not f64_accepts(driver, directory, "m57a2_match_empty_enum", empty_source) { return false; }
+    let empty_exe = concat3(directory, "/", "m57a2_match_empty_enum_exe");
+    let empty_build = ["build", concat3(directory, "/", "m57a2_match_empty_enum.nq"), "-o", empty_exe];
+    if not f64_rt_exact("M58.1 empty enum build", run_process(driver, ref empty_build, "."), 0, "", "") { return false; }
+    let none: list<str> = list();
+    return f64_rt_exact("M58.1 empty enum executable", run_process(m58d_absolute(empty_exe), ref none, "."), 0, "", "");
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 slice B: one exhaustiveness rule (contract section 3). Statement and
+// expression `match` share the scrutinee check (NQ-TYPE-047 for `f64`,
+// NQ-TYPE-054 otherwise), the D047 refined-arm rule, and NQ-TYPE-051 with its
+// missing list. Each rejection is pinned by its complete diagnostic digest.
+// ---------------------------------------------------------------------------
+
+fn m58b_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_1/b/", name);
+}
+
+fn m58b_exhaustive_cases(driver: str, directory: str) -> bool {
+    let color = "enum Color {\n    Red,\n    Green,\n    Blue,\n}\n\n";
+    let generic = "enum Tag<T> {\n    First,\n    Second(T),\n    Third,\n}\n\n";
+    let help = "add an arm for each missing case or a `_ => { ... }` fallback arm";
+    // The expression form reports the same code, message and list as the
+    // statement form.
+    let enum_expr = m57a2_program(color, "    let c = Red;\n    let probe = match c {\n        Green => 1,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_enum", enum_expr, "NQ-TYPE-051", "match must be exhaustive; missing `Red`, `Blue`", help, "match c", 0, 5) { return false; }
+    let option_expr = m57a2_program("", "    let v: option<i32> = Some(1);\n    let probe = match v {\n        Some(x) => x,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_option", option_expr, "NQ-TYPE-051", "match must be exhaustive; missing `None`", help, "match v", 0, 5) { return false; }
+    let result_expr = m57a2_program("", "    let r: result<i32, str> = Ok(1);\n    let probe = match r {\n        Err(e) => 0,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_result", result_expr, "NQ-TYPE-051", "match must be exhaustive; missing `Ok`", help, "match r", 0, 5) { return false; }
+    // Concrete generic enum instances list their variants as written, in
+    // declaration order, in both forms; so does a plain enum declared in a
+    // module that also declares generics.
+    let generic_expr = m57a2_program(str_concat(color, generic), "    let t: Tag<i32> = First::<i32>;\n    let probe = match t {\n        Second::<i32>(x) => x,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_generic", generic_expr, "NQ-TYPE-051", "match must be exhaustive; missing `First`, `Third`", help, "match t", 0, 5) { return false; }
+    let generic_stmt = m57a2_program(str_concat(color, generic), "    let t: Tag<i32> = First::<i32>;\n    match t {\n        Third::<i32> => {},\n    }");
+    if not m57a2_rejects_one(driver, directory, "m58b_stmt_generic", generic_stmt, "NQ-TYPE-051", "match must be exhaustive; missing `First`, `Second`", help, "match t", 0, 5) { return false; }
+    let plain_beside_generic = m57a2_program(str_concat(color, generic), "    let c = Red;\n    match c {\n        Green => {},\n    }");
+    if not m57a2_rejects_one(driver, directory, "m58b_stmt_enum_beside_generic", plain_beside_generic, "NQ-TYPE-051", "match must be exhaustive; missing `Red`, `Blue`", help, "match c", 0, 5) { return false; }
+    // Zero-arm statements: a closed domain lists every variant, an open
+    // integer domain needs a fallback (`_`).
+    let zero_bodies = [
+        "    let n = 2;\n    match n {\n    }",
+        "    let n: i64 = 2;\n    match n {\n    }",
+        "    let v: option<i32> = None;\n    match v {\n    }",
+        "    let r: result<i32, str> = Ok(1);\n    match r {\n    }"
+    ];
+    let zero_missing = ["`_`", "`_`", "`Some`, `None`", "`Ok`, `Err`"];
+    let mut index = 0;
+    while index < list_len(ref zero_bodies) {
+        let source = m57a2_program("", f64_list_text(ref zero_bodies, index));
+        let message = str_concat("match must be exhaustive; missing ", f64_list_text(ref zero_missing, index));
+        if not m57a2_rejects_one(driver, directory, str_concat("m58b_stmt_zero_", i32_to_str(index)), source, "NQ-TYPE-051", message, help, "match ", 0, 5) { return false; }
+        index = index + 1;
+    }
+    // A zero-arm expression keeps its existing at-least-one-arm diagnostic.
+    let zero_expr = m57a2_program(color, "    let c = Red;\n    let probe: i32 = match c {\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_zero", zero_expr, "NQ-TYPE-042", "match expression must have at least one arm", "", "};", 0, 1) { return false; }
+    // Refined arms keep the D047 fallback rule in both forms (no NQ-TYPE-051).
+    let refined = "literal or nested constructor patterns require a wildcard or binding fallback arm";
+    let refined_expr = m57a2_program("", "    let n = 2;\n    let probe = match n {\n        1 => 10,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_refined", refined_expr, "NQ-TYPE-042", refined, "", "match n", 0, 1) { return false; }
+    let nested_expr = m57a2_program("", "    let v: option<i32> = Some(1);\n    let probe = match v {\n        Some(1) => 1,\n        None => 0,\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58b_expr_nested", nested_expr, "NQ-TYPE-042", refined, "", "match v", 0, 1) { return false; }
+    // Exhaustive and fallback forms are accepted in both forms.
+    let accepted = "    let c = Red;\n    let a = match c {\n        Red => 1,\n        Green => 2,\n        Blue => 3,\n    };\n    let b = match c {\n        Red => 1,\n        _ => 0,\n    };\n    let n = 4;\n    let d = match n {\n        1 => 1,\n        other => other,\n    };\n    let v: option<i32> = None;\n    let e = match v {\n        Some(x) => x,\n        None => 0,\n    };\n    let r: result<i32, str> = Ok(1);\n    let f = match r {\n        Ok(x) => x,\n        Err(m) => 0,\n    };\n    let t: Tag<i32> = Second::<i32>(5);\n    let g = match t {\n        First::<i32> => 1,\n        Second::<i32>(x) => x,\n        Third::<i32> => 3,\n    };\n    match t {\n        First::<i32> => {},\n        Second::<i32>(x) => {},\n        Third::<i32> => {},\n    }\n    if a + b + d + e + f + g == 0 { return 1; }";
+    return f64_accepts(driver, directory, "m58b_accepted", m57a2_program(str_concat(color, generic), accepted));
+}
+
+fn m58b_scrutinee_cases(driver: str, directory: str) -> bool {
+    let point = "type Point {\n    x: i32,\n}\n\n";
+    let help = "match on `i32`, `i64`, `option`, `result` or an enum; compare other values with `==` and `if`";
+    let f64_message = "f64 values cannot be matched; compare with `if`";
+    // Unsupported scrutinee types other than f64: NQ-TYPE-054 over the
+    // scrutinee expression (inside any parentheses), and nothing else; the
+    // last four are zero-arm matches in both forms.
+    let bodies = [
+        "    let b = true;\n    match b {\n        _ => {},\n    }",
+        "    let s = \"x\";\n    match (s) {\n        other => {},\n    }",
+        "    let s = \"x\";\n    let probe = match s {\n        _ => 1,\n    };",
+        "    let p = Point { x: 1 };\n    match p {\n        _ => {},\n    }",
+        "    let l: list<i32> = list();\n    let probe = match l {\n        _ => 1,\n    };",
+        "    let b = false;\n    match b {\n    }",
+        "    let s = \"x\";\n    match s {\n    }",
+        "    let b = true;\n    let probe: i32 = match b {\n    };",
+        "    let s = \"x\";\n    let probe: i32 = match s {\n    };"
+    ];
+    let markers = ["match b", "match (s", "match s", "match p", "match l", "match b", "match s", "match b", "match s"];
+    let skips = [6, 7, 6, 6, 6, 6, 6, 6, 6];
+    let types = ["bool", "str", "str", "Point", "list<i32>", "bool", "str", "bool", "str"];
+    let mut index = 0;
+    while index < list_len(ref bodies) {
+        let source = m57a2_program(point, f64_list_text(ref bodies, index));
+        let mut skip = 0;
+        match list_get(ref skips, index) {
+            Some(value) => { skip = value; },
+            None => {},
+        }
+        let message = concat3("cannot `match` on type `", f64_list_text(ref types, index), "`");
+        if not m57a2_rejects_one(driver, directory, str_concat("m58b_scrutinee_", i32_to_str(index)), source, "NQ-TYPE-054", message, help, f64_list_text(ref markers, index), skip, 1) { return false; }
+        index = index + 1;
+    }
+    // Zero-arm f64 matches in both forms and an f64 match with a refined arm
+    // keep NQ-TYPE-047 alone.
+    let f64_bodies = [
+        "    let f = 1.5;\n    match f {\n    }",
+        "    let f = 1.5;\n    let probe: i32 = match f {\n    };",
+        "    let f = 1.5;\n    match f {\n        1 => {},\n    }"
+    ];
+    index = 0;
+    while index < list_len(ref f64_bodies) {
+        let source = m57a2_program("", f64_list_text(ref f64_bodies, index));
+        if not m57a2_rejects_one(driver, directory, str_concat("m58b_scrutinee_f64_", i32_to_str(index)), source, "NQ-TYPE-047", f64_message, "", "match f", 6, 1) { return false; }
+        index = index + 1;
+    }
     return true;
+}
+
+// Compatibility fixtures: at 86368fc the bool/str matches were accepted by
+// `check` and the zero-arm i32/f64 matches passed type checking but stopped at
+// the borrow-phase stage1 limitation; each is now rejected by type checking
+// with exactly one diagnostic of its code.
+fn m58b_compat_cases(driver: str) -> bool {
+    let names = ["compat_match_bool", "compat_match_str", "compat_match_zero_i32", "compat_match_zero_f64"];
+    let codes = ["NQ-TYPE-054", "NQ-TYPE-054", "NQ-TYPE-051", "NQ-TYPE-047"];
+    let mut index = 0;
+    while index < list_len(ref names) {
+        let path = m58b_fixture(str_concat(f64_list_text(ref names, index), ".nq"));
+        match f64_run_check(driver, path, true) {
+            Ok(status) => {
+                let code = f64_list_text(ref codes, index);
+                if not (status.exit_code == 1 and integer_policy_count(status.stdout, "\"code\": ") == 1 and integer_policy_count(status.stdout, concat3("\"code\": \"", code, "\"")) == 1) { return f64_report(path, status); }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+// The retired expression-form message is gone from the production sources
+// that produced it (split here so this module does not contain it either).
+fn m58b_retired_message() -> bool {
+    let retired = str_concat("match expression must ", "be exhaustive");
+    for path in ["selfhost/typecheck.nq", "selfhost/c_emit.nq"] {
+        match read_file(path) {
+            Ok(text_value) => {
+                if f64_find(text_value, retired) >= 0 {
+                    eprint_line(str_concat("retired match message still present in ", path));
+                    return false;
+                }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+    }
+    return true;
+}
+
+fn m58b_match_cases(driver: str, directory: str) -> bool {
+    if not m58b_exhaustive_cases(driver, directory) { eprint_line("M58.1 B: exhaustiveness cases failed"); return false; }
+    if not m58b_scrutinee_cases(driver, directory) { eprint_line("M58.1 B: scrutinee cases failed"); return false; }
+    if not m58b_compat_cases(driver) { eprint_line("M58.1 B: compatibility fixtures failed"); return false; }
+    return m58b_retired_message();
 }
 
 fn m57a2_layout_message(name: str, path: str) -> str {
@@ -1692,6 +2111,7 @@ fn m57a2_gate(driver: str) -> bool {
     let Ok(directory) = create_temp_dir("build", "m57-1-a2-") else { eprint_line("M57.1 A2: temporary directory refused"); return false; };
     if not m57a2_comparison_cases(driver, directory) { return false; }
     if not m57a2_match_cases(driver, directory) { return false; }
+    if not m58b_match_cases(driver, directory) { return false; }
     if not m57a2_layout_cases(driver, directory) { return false; }
     if not m57a2_compat_cases(driver) { return false; }
     if not m57a2_run_fixture(driver, "comparisons") { return false; }
@@ -1838,7 +2258,7 @@ fn m57c_teaching_negative(driver: str) -> bool {
     let assign_at = f64_find(source, "total = 1;");
     let compare_at = f64_find(source, "< \"pear\"");
     let mut expected = m57a2_entry("NQ-RESOLVE-010", resolve_at, resolve_at + 8, "builtin callable names cannot be redeclared", "");
-    expected = str_concat(expected, m57a2_entry("NQ-TYPE-051", match_at, match_at + 5, "match statement must be exhaustive; missing `Amber`", "add an arm for each missing variant or a `_ => { ... }` fallback arm"));
+    expected = str_concat(expected, m57a2_entry("NQ-TYPE-051", match_at, match_at + 5, "match must be exhaustive; missing `Amber`", "add an arm for each missing case or a `_ => { ... }` fallback arm"));
     expected = str_concat(expected, m57a2_entry("NQ-TYPE-007", assign_at, assign_at + 5, "cannot assign to immutable binding `total`", "declare it with `let mut total` to allow assignment"));
     expected = str_concat(expected, m57a2_entry("NQ-TYPE-050", compare_at, compare_at + 1, "operator `<` is not defined for type `str`", "compare text with a library function; `str` supports only `==` and `!=`"));
     if not m57a2_expect_digest(driver, "teaching negative", path, expected) { return false; }
@@ -1962,7 +2382,7 @@ fn m57r_binding_order(driver: str) -> bool {
         let field_at = m57r_nth(source, "bag.count = 3;", occurrence);
         if assign_at < 0 or field_at < 0 { eprint_line("M57.1 repair: binding order markers missing"); return false; }
         expected = str_concat(expected, m57a2_entry("NQ-TYPE-007", assign_at, assign_at + 1, "cannot assign to immutable binding `x`", "declare it with `let mut x` to allow assignment"));
-        expected = str_concat(expected, m57a2_entry("NQ-TYPE-042", field_at, field_at + 1, "field assignment requires an owned mutable local product binding", ""));
+        expected = str_concat(expected, m57a2_entry("NQ-TYPE-042", field_at, field_at + 1, "field assignment requires a `let mut` local or a `mutref` parameter", ""));
         occurrence = occurrence + 1;
     }
     let type_at = f64_find(source, "let m: i32 = n;") + str_len("let m: i32 = ");
@@ -2017,4 +2437,705 @@ fn m57r_gate(driver: str) -> bool {
     let ok = m57r_gate_impl(driver);
     if not fixture_c_gate_end(lock) { eprint_line("M57.1 repair: fixture gate lock release failed"); return false; }
     return ok;
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 slice C: no reachable stage1 limitations (contract rule 4). Every
+// fixture under tests/fixtures/m58_1/c/ is pinned to its exact diagnostics,
+// and docs/M58_1_PRODUCER_LEDGER.md is checked against the tree.
+// ---------------------------------------------------------------------------
+
+fn m58c_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_1/c/", name);
+}
+
+fn m58c_clean(output: str) -> bool {
+    return not text_contains(output, "internal compiler error") and not text_contains(output, "stage1 limitation") and not text_contains(output, "stage1 ir error") and not text_contains(output, "stage1 c error") and not text_contains(output, "NQ-INTERNAL-");
+}
+
+// Exactly `count` error diagnostics; one has this code, message and help
+// ("" means no help), spanning `width` bytes from the first occurrence of
+// `marker` plus `skip`; nothing internal or legacy.
+fn m58c_expect(driver: str, name: str, count: i32, code: str, message: str, help: str, marker: str, skip: i32, width: i32) -> bool {
+    let path = m58c_fixture(name);
+    let Ok(source) = read_file(path) else { eprint_line(str_concat("M58.1 C fixture missing: ", path)); return false; };
+    let found = f64_find(source, marker);
+    if found < 0 {
+        eprint_line(str_concat("M58.1 C fixture has no marker: ", name));
+        return false;
+    }
+    let start = found + skip;
+    match f64_run_check(driver, path, true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let mut ok = status.exit_code == 1 and status.stderr == "" and m58c_clean(output);
+            ok = ok and integer_policy_count(output, "\"severity\": \"error\"") == count and integer_policy_count(output, "\"code\":") == count;
+            ok = ok and integer_policy_count(output, concat3("\"code\": \"", code, "\"")) == 1;
+            ok = ok and integer_policy_count(output, concat3("\"message\": ", json_quote(message), ",")) == 1;
+            if help != "" {
+                ok = ok and integer_policy_count(output, concat3("\"help\": ", json_quote(help), ",")) == 1;
+            } else {
+                if count == 1 { ok = ok and integer_policy_count(output, "\"help\": null,") == 1; }
+            }
+            ok = ok and integer_policy_count(output, concat3("\"start\": { \"offset\": ", i32_to_str(start), ",")) >= 1;
+            ok = ok and integer_policy_count(output, concat3("\"end\": { \"offset\": ", i32_to_str(start + width), ",")) >= 1;
+            if ok { return true; }
+            return f64_report(str_concat("M58.1 C ", name), status);
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+}
+
+fn m58c_one(driver: str, name: str, code: str, message: str, help: str, marker: str, skip: i32, width: i32) -> bool {
+    return m58c_expect(driver, name, 1, code, message, help, marker, skip, width);
+}
+
+fn m58c_float_cases(driver: str) -> bool {
+    let message = "malformed float literal";
+    let help = "write floats as `<digits>.<digits>`, for example `0.5`, `1.0` or `1.0e5`";
+    if not m58c_one(driver, "float_leading_dot.nq", "NQ-PARSE-004", message, help, "= .5;", 2, 2) { return false; }
+    if not m58c_one(driver, "float_trailing_dot.nq", "NQ-PARSE-004", message, help, "= 1.;", 2, 2) { return false; }
+    if not m58c_one(driver, "float_exponent_lower.nq", "NQ-PARSE-004", message, help, "= 1e5;", 2, 3) { return false; }
+    if not m58c_one(driver, "float_exponent_upper.nq", "NQ-PARSE-004", message, help, "= 1E5;", 2, 3) { return false; }
+    return m58c_one(driver, "float_exponent_minus.nq", "NQ-PARSE-004", message, help, "= 1e-5;", 2, 4);
+}
+
+fn m58c_struct_and_callee_cases(driver: str) -> bool {
+    let field = "struct literal fields are written `name: value`";
+    if not m58c_one(driver, "struct_field_positional.nq", "NQ-TYPE-055", field, "", "{ 1,", 2, 1) { return false; }
+    if not m58c_one(driver, "struct_field_shorthand.nq", "NQ-TYPE-055", field, "", "{ left,", 2, 4) { return false; }
+    if not m58c_one(driver, "struct_field_string_key.nq", "NQ-TYPE-055", field, "", "\"left\":", 0, 6) { return false; }
+    let callee = "only named functions can be called";
+    if not m58c_one(driver, "callee_parenthesized.nq", "NQ-TYPE-058", callee, "", "(value)(1)", 0, 1) { return false; }
+    if not m58c_one(driver, "callee_call_result.nq", "NQ-TYPE-058", callee, "", "identity(1)(2)", 0, 8) { return false; }
+    if not m58c_one(driver, "callee_field.nq", "NQ-TYPE-058", callee, "", "pair.left(1)", 0, 4) { return false; }
+    if not m58c_one(driver, "expression_statement_callee.nq", "NQ-TYPE-058", callee, "", "(value)(1);", 0, 1) { return false; }
+    let malformed = "malformed expression";
+    let help = "an expression is a literal, a name, a call, a struct or list literal, a field access, `match`, `try`, `ref`/`mutref`, `not`, or an operator expression";
+    if not m58c_one(driver, "expression_malformed.nq", "NQ-PARSE-005", malformed, help, "1 2;", 0, 3) { return false; }
+    if not m58c_one(driver, "expression_field_number.nq", "NQ-PARSE-005", malformed, help, "value.5", 0, 7) { return false; }
+    return m58c_one(driver, "expression_statement_malformed.nq", "NQ-PARSE-005", malformed, help, "1 2;", 0, 3);
+}
+
+fn m58c_pattern_and_const_cases(driver: str) -> bool {
+    if not m58c_one(driver, "pattern_unknown_call.nq", "NQ-RESOLVE-010", "unknown variant `Nope` in pattern", "", "Nope(value)", 0, 4) { return false; }
+    if not m58c_one(driver, "pattern_qualified_call.nq", "NQ-RESOLVE-010", "unknown variant `Nope` in pattern", "", "Nope(value)", 0, 4) { return false; }
+    if not m58c_one(driver, "pattern_qualified_name.nq", "NQ-RESOLVE-010", "unknown variant `Gone` in pattern", "", "Gone =>", 0, 4) { return false; }
+    let bool_message = "bool patterns are not supported yet";
+    let bool_help = "use `if`, or bind the value with a name";
+    if not m58c_one(driver, "pattern_true.nq", "NQ-TYPE-056", bool_message, bool_help, "true =>", 0, 4) { return false; }
+    if not m58c_one(driver, "pattern_false_expression.nq", "NQ-TYPE-056", bool_message, bool_help, "false =>", 0, 5) { return false; }
+    if not m58c_one(driver, "pattern_string.nq", "NQ-TYPE-056", "string patterns are not supported", "compare strings with `==` and `if`", "\"one\" =>", 0, 5) { return false; }
+    if not m58c_one(driver, "pattern_negated_name.nq", "NQ-TYPE-056", "only integer literals can be negated in patterns", "", "-limit =>", 0, 6) { return false; }
+    if not m58c_one(driver, "pattern_other_form.nq", "NQ-TYPE-056", "this pattern form is not supported", "patterns are `_`, a name, an integer literal, or a variant such as `Some(x)`", "1 | 2 =>", 0, 5) { return false; }
+    let constant = "constant initializers may contain only literals and operators";
+    let constant_help = "compute the value in a function, or repeat the literal";
+    if not m58c_one(driver, "const_name.nq", "NQ-TYPE-057", constant, constant_help, "LIMIT + 1", 0, 5) { return false; }
+    if not m58c_one(driver, "const_call.nq", "NQ-TYPE-057", constant, constant_help, "identity(1);", 0, 8) { return false; }
+    return m58c_one(driver, "const_list.nq", "NQ-TYPE-057", constant, constant_help, "[1, 2]", 0, 1);
+}
+
+fn m58c_propagate_and_assign_cases(driver: str) -> bool {
+    let message = "`?` is only allowed in a `let name = expr?;` statement or inside `try`";
+    let help = "bind the result first: `let value = f()?;`";
+    if not m58c_one(driver, "propagate_let_operand.nq", "NQ-PROPAGATE-007", message, help, "()? +", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_call_argument.nq", "NQ-PROPAGATE-007", message, help, "()?)", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_if_condition.nq", "NQ-PROPAGATE-007", message, help, "()? {", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_while_condition.nq", "NQ-PROPAGATE-007", message, help, "()? {", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_for_iterable.nq", "NQ-PROPAGATE-007", message, help, "()? {", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_return.nq", "NQ-PROPAGATE-007", message, help, "()?)", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_field_assign.nq", "NQ-PROPAGATE-007", message, help, "()?;", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_assign.nq", "NQ-PROPAGATE-007", message, help, "()?;", 2, 1) { return false; }
+    if not m58c_one(driver, "propagate_expr_stmt.nq", "NQ-PROPAGATE-007", message, help, "()?;", 2, 1) { return false; }
+    let nested = "nested field assignment is not supported";
+    let nested_help = "pass `mutref outer.inner` to a function that assigns the inner field";
+    if not m58c_one(driver, "nested_field_assign.nq", "NQ-TYPE-059", nested, nested_help, "outer.inner.value = 0", 0, 5) { return false; }
+    return m58c_one(driver, "nested_field_assign_deep.nq", "NQ-TYPE-059", nested, nested_help, "outer.inner.leaf.value = 0", 0, 5);
+}
+
+fn m58c_quiet_and_cascade_cases(driver: str) -> bool {
+    match f64_run_check(driver, m58c_fixture("accepted.nq"), false) {
+        Ok(status) => {
+            if status.exit_code != 0 or status.stdout != "" or status.stderr != "" { return f64_report("M58.1 C accepted", status); }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    // A failed nested type argument reports NQ-TYPE-001 and no handoff cascade.
+    match f64_run_check(driver, "tests/fixtures/m55_process/compiler_type_arguments.nq", true) {
+        Ok(status) => {
+            let output = status.stdout;
+            let ok = status.exit_code == 1 and m58c_clean(output) and integer_policy_count(output, "\"code\":") == 4 and integer_policy_count(output, "\"code\": \"NQ-TYPE-001\"") == 4;
+            if not ok { return f64_report("M58.1 C type-argument cascade", status); }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    return true;
+}
+
+fn m58c_fixture_cases(driver: str) -> bool {
+    if not m58c_float_cases(driver) { return false; }
+    if not m58c_struct_and_callee_cases(driver) { return false; }
+    if not m58c_pattern_and_const_cases(driver) { return false; }
+    if not m58c_propagate_and_assign_cases(driver) { return false; }
+    return m58c_quiet_and_cascade_cases(driver);
+}
+
+// Split on one ASCII byte; every piece is kept (also empty ones).
+fn m58c_split(value: str, separator: i32) -> list<str> {
+    let mut pieces: list<str> = list();
+    let mut start = 0;
+    let mut index = 0;
+    while index <= str_len(value) {
+        if index == str_len(value) or char_at(value, index) == separator {
+            match str_slice(value, start, index) {
+                Some(piece) => { list_push(mutref pieces, piece); },
+                None => { list_push(mutref pieces, ""); },
+            }
+            start = index + 1;
+        }
+        index = index + 1;
+    }
+    return pieces;
+}
+
+fn m58c_trim(value: str) -> str {
+    let mut start = 0;
+    let mut end = str_len(value);
+    while start < end and char_at(value, start) == 32 { start = start + 1; }
+    while end > start and char_at(value, end - 1) == 32 { end = end - 1; }
+    match str_slice(value, start, end) {
+        Some(piece) => { return piece; },
+        None => { return ""; },
+    }
+}
+
+fn m58c_function_defined(path: str, name: str) -> option<bool> {
+    let Ok(text_value) = read_file(path) else { return None; };
+    return Some(text_contains(text_value, concat3("fn ", name, "(")));
+}
+
+// `path`, `path#function` (must exist) or `path!function` (must be gone).
+fn m58c_evidence_ok(token_text: str) -> bool {
+    let present = m58c_split(token_text, 35);
+    if list_len(ref present) == 2 {
+        let Some(path) = list_get(ref present, 0) else { return false; };
+        let Some(name) = list_get(ref present, 1) else { return false; };
+        match m58c_function_defined(path, name) {
+            Some(defined) => { return defined; },
+            None => { return false; },
+        }
+    }
+    let absent = m58c_split(token_text, 33);
+    if list_len(ref absent) == 2 {
+        let Some(path) = list_get(ref absent, 0) else { return false; };
+        let Some(name) = list_get(ref absent, 1) else { return false; };
+        match m58c_function_defined(path, name) {
+            Some(defined) => { return not defined; },
+            None => { return false; },
+        }
+    }
+    match read_file(token_text) {
+        Ok(_) => { return true; },
+        Err(_) => { return false; },
+    }
+}
+
+fn m58c_production_sources() -> list<str> {
+    let mut texts: list<str> = list();
+    match read_dir("selfhost") {
+        Ok(entries) => {
+            for name in entries {
+                if str_ends_with(name, ".nq") and not str_ends_with(name, "_tests.nq") and not str_ends_with(name, "_probe.nq") {
+                    match read_file(str_concat("selfhost/", name)) {
+                        Ok(text_value) => { list_push(mutref texts, text_value); },
+                        Err(err) => { eprint_line(io_err_text(err)); },
+                    }
+                }
+            }
+        },
+        Err(err) => { eprint_line(io_err_text(err)); },
+    }
+    return texts;
+}
+
+fn m58c_ledger_row_ok(cells: ref list<str>, sources: ref list<str>) -> bool {
+    let Some(disposition) = list_get(ref cells, 4) else { return false; };
+    let Some(rule) = list_get(ref cells, 5) else { return false; };
+    let Some(evidence) = list_get(ref cells, 6) else { return false; };
+    let kind = m58c_trim(disposition);
+    if kind != "covered" and kind != "internal" and kind != "removed" { return false; }
+    let tokens = m58c_split(evidence, 96);
+    let mut index = 1;
+    let mut checked = 0;
+    while index < list_len(ref tokens) {
+        let Some(token_text) = list_get(ref tokens, index) else { return false; };
+        if not m58c_evidence_ok(token_text) {
+            eprint_line(str_concat("M58.1 ledger evidence missing: ", token_text));
+            return false;
+        }
+        checked = checked + 1;
+        index = index + 2;
+    }
+    if checked == 0 { return false; }
+    if kind == "covered" {
+        for code in m58c_split(m58c_trim(rule), 44) {
+            let wanted = concat3("\"", m58c_trim(code), "\"");
+            let mut produced = false;
+            for source in sources {
+                if text_contains(source, wanted) { produced = true; }
+            }
+            if not produced {
+                eprint_line(str_concat("M58.1 ledger rule has no producer: ", wanted));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+fn m58c_ledger_cases() -> bool {
+    if not handoff_internal_producer_cases() { eprint_line("M58.1 ledger: handoff producer case failed"); return false; }
+    if not borrow_internal_producer_cases() { eprint_line("M58.1 ledger: borrow producer case failed"); return false; }
+    if not ir_internal_producer_cases() { eprint_line("M58.1 ledger: IR producer case failed"); return false; }
+    if not c_emit_internal_producer_cases() { eprint_line("M58.1 ledger: C producer case failed"); return false; }
+    let sources = m58c_production_sources();
+    if list_len(ref sources) < 40 { eprint_line("M58.1 ledger: production sources not found"); return false; }
+    // No production string literal begins with a legacy prefix.
+    for source in sources {
+        if text_contains(source, "\"stage1 limitation") or text_contains(source, "\"stage1 ir error") or text_contains(source, "\"stage1 c error") {
+            eprint_line("M58.1 ledger: a production source still carries a legacy stage1 prefix");
+            return false;
+        }
+    }
+    let Ok(ledger) = read_file("docs/M58_1_PRODUCER_LEDGER.md") else { eprint_line("M58.1 ledger: docs/M58_1_PRODUCER_LEDGER.md missing"); return false; };
+    let mut ids: list<str> = list();
+    for line in m58c_split(ledger, 10) {
+        if str_starts_with(line, "| `") {
+            let cells = m58c_split(line, 124);
+            if list_len(ref cells) != 8 { eprint_line(str_concat("M58.1 ledger: malformed row ", line)); return false; }
+            let Some(id_cell) = list_get(ref cells, 1) else { return false; };
+            let id = m58c_trim(id_cell);
+            for seen in ids {
+                if seen == id { eprint_line(str_concat("M58.1 ledger: duplicate id ", id)); return false; }
+            }
+            if not m58c_ledger_row_ok(ref cells, ref sources) { eprint_line(str_concat("M58.1 ledger: bad row ", id)); return false; }
+            list_push(mutref ids, id);
+        }
+    }
+    if list_len(ref ids) != 246 {
+        eprint_line(str_concat("M58.1 ledger: expected 246 rows, found ", i32_to_str(list_len(ref ids))));
+        return false;
+    }
+    return true;
+}
+
+fn m58_1_c_gate(driver: str) -> bool {
+    if not m58c_ledger_cases() { return false; }
+    return m58c_fixture_cases(driver);
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 slice A: every path returns (NQ-TYPE-053), initializer scope
+// (`visible_from`), and let-else exits. Rejections are pinned by their
+// complete diagnostic digest; the run fixtures execute with exact output and
+// under ASan/UBSan; evidence for a shadowing program names the right binding
+// and evidence for an unaffected program is byte-identical to the base.
+// ---------------------------------------------------------------------------
+
+fn m58a_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_1/a/", name);
+}
+
+fn m58a_output(name: str) -> str {
+    return str_concat("build/m58_1_a/", name);
+}
+
+// Run with exact output, emit C, and run the same C under ASan/UBSan.
+fn m58a_run_emit_sanitized(driver: str, name: str) -> bool {
+    let Some(expected) = m57c_read(m58a_fixture(str_concat(name, ".expected"))) else { return false; };
+    let source = m58a_fixture(str_concat(name, ".nq"));
+    let run_args = ["run", source];
+    if not f64_rt_exact(str_concat("nauqc run ", name), run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let generated = m58a_output(str_concat(name, ".c"));
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact(str_concat("emit ", name), run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    return m58a_sanitized_run(generated, m58a_output(str_concat(name, "-asan-ubsan")), expected);
+}
+
+// Compile emitted C under ASan/UBSan (LeakSanitizer included) and run it with
+// exact output.
+fn m58a_sanitized_run(generated: str, output: str, expected: str) -> bool {
+    let args =["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", generated, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(generated, output, ref args, "runtime-h", "build/m58_1_a/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M58.1 A: sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+fn m58a_with_main(function_text: str) -> str {
+    return str_concat(function_text, "\n\nfn main() -> i32 {\n    return 0;\n}\n");
+}
+
+// NQ-TYPE-053 for the first function `probe`, spanning its closing `}`.
+fn m58a_falls_off(driver: str, directory: str, name: str, function_text: str) -> bool {
+    let source = m58a_with_main(function_text);
+    let at = f64_find(source, "\n}\n") + 1;
+    return m57a2_rejects(driver, directory, name, source, m57a2_entry("NQ-TYPE-053", at, at + 1, "function `probe` can reach the end of its body without returning", "end every path with `return`; a `unit` function ends with `return;`"));
+}
+
+fn m58a_termination_cases(driver: str, directory: str) -> bool {
+    if not m58a_falls_off(driver, directory, "m58a_if_without_else", "fn probe(c: bool) -> i32 {\n    if c {\n        return 1;\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_unit_without_return", "fn probe() -> unit {\n    print_line(\"x\");\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_empty_unit", "fn probe() -> unit {\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_nested_else_if", "fn probe(c: bool) -> i32 {\n    if c {\n        return 1;\n    } else {\n        if c {\n            return 2;\n        }\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_match_arm_open", "fn probe(v: option<i32>) -> i32 {\n    match v {\n        Some(x) => {\n            return x;\n        },\n        None => {\n        },\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_while_true_break", "fn probe() -> i32 {\n    while true {\n        break;\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_while_true_nested_break", "fn probe(c: i32) -> i32 {\n    while true {\n        match c {\n            1 => {\n                return 1;\n            },\n            _ => {\n                if c > 2 {\n                    break;\n                }\n            },\n        }\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_while_true_let_else_break", "fn probe(v: option<i32>) -> i32 {\n    while true {\n        let Some(x) = v else {\n            break;\n        };\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_while_paren_true", "fn probe() -> i32 {\n    while (true) {\n        return 1;\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_while_condition", "fn probe(c: bool) -> i32 {\n    while c {\n        return 1;\n    }\n}") { return false; }
+    if not m58a_falls_off(driver, directory, "m58a_for_loop", "fn probe() -> i32 {\n    for x in [1] {\n        return x;\n    }\n}") { return false; }
+    // `main` follows the same rule.
+    let main_source = "fn main() -> i32 {\n    print_line(\"x\");\n}\n";
+    let main_at = f64_find(main_source, "\n}\n") + 1;
+    if not m57a2_rejects(driver, directory, "m58a_main_falls_off", main_source, m57a2_entry("NQ-TYPE-053", main_at, main_at + 1, "function `main` can reach the end of its body without returning", "end every path with `return`; a `unit` function ends with `return;`")) { return false; }
+    // Accepted forms that the run fixture does not cover: an empty
+    // `while true`, a `break` that targets a `while` nested in `while true`,
+    // and a `continue` in `while true`.
+    let accepted = "fn spin() -> i32 {\n    while true {\n    }\n}\n\nfn inner(c: bool) -> i32 {\n    while true {\n        while c {\n            break;\n        }\n        continue;\n    }\n}\n\nfn main() -> i32 {\n    return 0;\n}\n";
+    return f64_accepts(driver, directory, "m58a_accepted_loops", accepted);
+}
+
+fn m58a_let_else_cases(driver: str, directory: str) -> bool {
+    let message = "let-else `else` block must exit with `return`, `break` or `continue`";
+    let falls = f64_main("    let v: option<i32> = None;\n    let Some(x) = v else {\n        print_line(\"none\");\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58a_let_else_falls", falls, "NQ-PARSE-003", message, "", "else {", 0, 4) { return false; }
+    let partial = f64_main("    let v: option<i32> = None;\n    let c = true;\n    let Some(x) = v else {\n        if c {\n            return 1;\n        }\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58a_let_else_partial", partial, "NQ-PARSE-003", message, "", "else {", 0, 4) { return false; }
+    // A `break` inside a loop nested in the `else` block leaves that loop only.
+    let nested = f64_main("    let v: option<i32> = None;\n    let c = true;\n    while c {\n        let Some(x) = v else {\n            while c {\n                break;\n            }\n        };\n    }");
+    if not m57a2_rejects_one(driver, directory, "m58a_let_else_nested_loop", nested, "NQ-PARSE-003", message, "", "else {", 0, 4) { return false; }
+    // `break` outside a loop keeps its own diagnostic and nothing else.
+    let outside = f64_main("    let v: option<i32> = None;\n    let Some(x) = v else {\n        break;\n    };");
+    if not m57a2_rejects_one(driver, directory, "m58a_let_else_break_outside", outside, "NQ-PARSE-003", "`break` is only valid inside a loop", "", "break;", 0, 5) { return false; }
+    let accepted = f64_main("    let v: option<i32> = None;\n    let mut n = 0;\n    while n < 3 {\n        n = n + 1;\n        let Some(x) = v else {\n            continue;\n        };\n        let Some(y) = v else {\n            break;\n        };\n    }\n    for m in [1, 2] {\n        let Some(z) = v else {\n            if m == 1 {\n                continue;\n            } else {\n                break;\n            }\n        };\n    }\n    let Some(w) = v else {\n        return 0;\n    };");
+    return f64_accepts(driver, directory, "m58a_let_else_accepted", accepted);
+}
+
+fn m58a_scope_cases(driver: str, directory: str) -> bool {
+    // `let x = x;` with no outer `x` is the existing unknown-name diagnostic.
+    let unknown = f64_main("    let x = x;");
+    if not m57a2_rejects_one(driver, directory, "m58a_self_initializer", unknown, "NQ-RESOLVE-010", "unknown name in function body", "", "= x;", 2, 1) { return false; }
+    let typed = f64_main("    let x: i32 = x + 1;");
+    if not m57a2_rejects_one(driver, directory, "m58a_self_initializer_typed", typed, "NQ-RESOLVE-010", "unknown name in function body", "", "= x + 1;", 2, 1) { return false; }
+    // The outer binding's type decides the initializer, so an inner `str`
+    // binding initialized from an outer `i32` of the same name is a mismatch.
+    let mismatch = f64_main("    let x = 1;\n    if true {\n        let x: str = x;\n    }");
+    let at = f64_find(mismatch, "str = x;") + 6;
+    return m57a2_rejects(driver, directory, "m58a_outer_type", mismatch, m57a2_entry("NQ-TYPE-042", at, at + 1, "annotated local initializer does not match declared type", ""));
+}
+
+fn m58a_gate_impl(driver: str) -> bool {
+    match create_dir_all("build/m58_1_a") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let Ok(directory) = create_temp_dir("build", "m58-1-a-") else { eprint_line("M58.1 A: temporary directory refused"); return false; };
+    if not m58a_termination_cases(driver, directory) { return false; }
+    if not m58a_let_else_cases(driver, directory) { return false; }
+    if not m58a_scope_cases(driver, directory) { return false; }
+    if not m58a_compat_cases(driver) { return false; }
+    if not m58a_run_emit_sanitized(driver, "termination_run") { return false; }
+    if not m58a_run_emit_sanitized(driver, "initializer_scope_run") { return false; }
+    if not m58r_gate_cases(driver, directory) { return false; }
+    return m58a_evidence_cases(driver);
+}
+
+// ---------------------------------------------------------------------------
+// M58.1 audit repair. Binding identity: a local's initializer is typed by its
+// exact declaration (never an earlier outer or later enclosing one of the same
+// name), and every phase names the nearest visible declaration whatever its
+// storage order. A later `?` failure in one `try` releases earlier unwrapped
+// owned payloads. An empty enum is a checked type that builds and runs. Each
+// program runs with exact output and again under ASan/UBSan; the compact
+// programs also run with every space spread into a line break, since the
+// defect depended on byte offsets lining up with token indexes.
+// ---------------------------------------------------------------------------
+
+fn m58r_spread(text: str) -> str {
+    let mut out = "";
+    let mut index = 0;
+    while index < str_len(text) {
+        let piece = slice_text(text, index, index + 1);
+        if piece == " " {
+            out = str_concat(out, "\n    ");
+        } else {
+            out = str_concat(out, piece);
+        }
+        index = index + 1;
+    }
+    return out;
+}
+
+// Write `source`, run it (exit 0, no output), then run its C under ASan/UBSan.
+fn m58r_run_text(driver: str, directory: str, name: str, source: str) -> bool {
+    let path = concat4(directory, "/", name, ".nq");
+    if not f64_write(path, source) { return false; }
+    let run_args = ["run", path];
+    if not f64_rt_exact(str_concat("M58.1 repair run ", name), run_process(driver, ref run_args, "."), 0, "", "") { return false; }
+    let generated = m58a_output(str_concat(name, ".c"));
+    let emit_args = ["emit-c", path, "-o", generated];
+    if not f64_rt_exact(str_concat("M58.1 repair emit ", name), run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    return m58a_sanitized_run(generated, m58a_output(str_concat(name, "-asan-ubsan")), "");
+}
+
+fn m58r_pattern_source() -> str {
+    return "fn main() -> i32 { let v: option<i32> = Some(4); match v { Some(x) => { if true { let x = x + 1; if x == 5 { return 0; } return 1; } return 2; }, None => { return 3; }, } }";
+}
+
+fn m58r_compact_cases(driver: str, directory: str) -> bool {
+    let programs = [
+        "fn main() -> i32 { let x = 0; if true { let x: i64 = 2147483647 + 1 + 0 + 0 + 0 + 0; if x != 2147483648 { return 1; } } return 0; }",
+        "fn main() -> i32 { let x = 0; if true { let x: result<i32, str> = try { 1 + 0 + 0 + 0 + 0 }; return 0; } return 0; }",
+        "fn main() -> i32 { if true { let mut value: list<i32> = []; list_push(mutref value, 3); if list_len(ref value) != 1 { return 1; } } let value: list<str> = []; return 0; }",
+        "fn main() -> i32 { if true { let w: i64 = 2147483647 + 1; if w != 2147483648 { return 1; } } let w = 0; return w; }",
+        m58r_pattern_source(),
+        "fn first() -> result<str, str> { return Ok(str_concat(\"allocated\", \"payload\")); } fn second() -> result<str, str> { return Err(\"stop\"); } fn main() -> i32 { let r: result<bool, str> = try { first()? == second()? }; return 0; }",
+        "enum Empty {} fn drain(e: Empty) -> i32 { match e {} } fn main() -> i32 { return 0; }",
+    ];
+    let mut index = 0;
+    for program in programs {
+        let name = str_concat("m58r_compact_", i32_to_str(index));
+        if not m58r_run_text(driver, directory, name, program) { return false; }
+        if not m58r_run_text(driver, directory, str_concat(name, "_spread"), m58r_spread(program)) { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+// The `@<offset>` of every `"target_id": "binding:...:<name>@<offset>"`, in order.
+fn m58r_name_targets(output: str, name: str) -> str {
+    let marker = "\"target_id\": \"binding:";
+    let key = concat3(":", name, "@");
+    let mut sequence = "";
+    let mut cursor = m57a2_find_from(output, marker, 0);
+    while cursor >= 0 {
+        let value = m57a2_field(output, marker, cursor);
+        let at = m57a2_find_from(value, key, 0);
+        if at >= 0 {
+            sequence = concat3(sequence, slice_text(value, at + str_len(key), str_len(value) - 1), ";");
+        }
+        cursor = m57a2_find_from(output, marker, cursor + 1);
+    }
+    return sequence;
+}
+
+// Evidence names the binding the executed program used: the initializer
+// `x + 1` reads the pattern binding and `x == 5` the local that shadows it.
+fn m58r_pattern_evidence(driver: str, directory: str) -> bool {
+    let source = m58r_pattern_source();
+    let path = concat3(directory, "/", "m58r_pattern_evidence.nq");
+    if not f64_write(path, source) { return false; }
+    let pattern_at = i32_to_str(f64_find(source, "Some(x)") + 5);
+    let local_at = i32_to_str(f64_find(source, "let x") + 4);
+    let expected = concat4(pattern_at, ";", local_at, ";");
+    for format in ["v1", "v2"] {
+        let Some(output) = m58a_evidence_output(driver, "facts", path, format) else { return false; };
+        let actual = m58r_name_targets(output, "x");
+        if actual != expected {
+            eprint_line(concat6("M58.1 repair: facts ", format, " pattern shadow targets ", actual, " expected ", expected));
+            return false;
+        }
+    }
+    return true;
+}
+
+// NQ-TRY-004 holds for every `and`/`or` in a `try` success expression at any
+// depth: a `?` in either operand is rejected (exact digest: one diagnostic on
+// the local's name). `?` outside a short-circuit operand and short-circuit
+// logic without `?` are accepted and executed.
+fn m58r_try_short_circuit_cases(driver: str, directory: str) -> bool {
+    let decls = "type Packet {\n    text: str,\n    flag: bool,\n}\n\nfn first() -> result<str, str> {\n    return Ok(\"x\");\n}\n\nfn fails() -> result<bool, str> {\n    return Err(\"stop\");\n}\n\nfn keep(flag: bool) -> bool {\n    return flag;\n}\n\n";
+    let message = "expression propagation inside short-circuit logic is not supported in `try` V1";
+    let names = ["m58r_try_and_paren", "m58r_try_and_field", "m58r_try_and_call_arg", "m58r_try_or_list_element", "m58r_try_nested_and_or", "m58r_try_or_left_operand", "m58r_try_root_and"];
+    let bodies = [
+        "    let r: result<bool, str> = try {\n        (false and fails()?)\n    };",
+        "    let r: result<Packet, str> = try {\n        Packet { text: first()?, flag: false and fails()? }\n    };",
+        "    let r: result<bool, str> = try {\n        keep(false and fails()?)\n    };",
+        "    let r: result<list<bool>, str> = try {\n        [true, false or fails()?]\n    };",
+        "    let r: result<bool, str> = try {\n        keep(true) == (true or (false and fails()?))\n    };",
+        "    let r: result<bool, str> = try {\n        keep(fails()? or true)\n    };",
+        "    let r: result<bool, str> = try {\n        false and fails()?\n    };",
+    ];
+    let mut index = 0;
+    for body in bodies {
+        let Some(name) = list_get(ref names, index) else { return false; };
+        if not m57a2_rejects_one(driver, directory, name, m57a2_program(decls, body), "NQ-TRY-004", message, "", "let r", 4, 1) { return false; }
+        index = index + 1;
+    }
+    let accepted = "fn ok_i() -> result<i32, str> { return Ok(2); } fn ok_b() -> result<bool, str> { return Ok(true); } fn keep(flag: bool) -> bool { return flag; } fn main() -> i32 { let sum: result<i32, str> = try { ok_i()? + ok_i()? }; let logic: result<bool, str> = try { (keep(true) and false) == ok_b()? }; let plain: result<bool, str> = try { keep(true and false) or true }; match sum { Ok(n) => { if n != 4 { return 1; } }, Err(e) => { return 2; }, } match logic { Ok(b) => { if b { return 3; } }, Err(e) => { return 4; }, } match plain { Ok(b) => { if not b { return 5; } }, Err(e) => { return 6; }, } return 0; }";
+    return m58r_run_text(driver, directory, "m58r_try_short_circuit_accepted", accepted);
+}
+
+// `::` is lexed as two `:` tokens; neither may end a short-circuit operand.
+// Qualified (and generic qualified) `?` calls in either operand of `and`/`or`
+// are NQ-TRY-004 at every depth; the cases import the two-file fixture's
+// helper module. Qualified calls with every `?` outside an `and`/`or`
+// operand stay accepted and execute.
+fn m58r_try_qualified_cases(driver: str, directory: str) -> bool {
+    let fixture = "tests/fixtures/m58_1/try_qualified/";
+    let message = "expression propagation inside short-circuit logic is not supported in `try` V1";
+    let right_path = str_concat(fixture, "qualified_right.nq");
+    let Some(right_source) = m57c_read(right_path) else { return false; };
+    let right_at = f64_find(right_source, "let r") + 4;
+    if not m57a2_expect_digest(driver, "M58.1 try qualified right operand", right_path, m57a2_entry("NQ-TRY-004", right_at, right_at + 1, message, "")) { return false; }
+    let qualified = concat3(directory, "/", "try_qualified");
+    match create_dir_all(qualified) {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let Some(helper) = m57c_read(str_concat(fixture, "helper.nq")) else { return false; };
+    if not f64_write(concat3(qualified, "/", "helper.nq"), helper) { return false; }
+    let decls = "use helper;\n\ntype Packet {\n    text: str,\n    flag: bool,\n}\n\nfn keep(flag: bool) -> bool {\n    return flag;\n}\n\nfn ready() -> result<bool, str> {\n    return Ok(true);\n}\n\n";
+    let names = ["m58r_qualified_site", "m58r_qualified_left", "m58r_qualified_call_arg", "m58r_qualified_field", "m58r_qualified_element", "m58r_qualified_generic", "m58r_qualified_generic_left"];
+    let bodies = [
+        "    let r: result<bool, str> = try {\n        false or helper::fails()?[site]\n    };",
+        "    let r: result<bool, str> = try {\n        ready()? == helper::plain() and true\n    };",
+        "    let r: result<bool, str> = try {\n        keep(false and helper::fails()?)\n    };",
+        "    let r: result<Packet, str> = try {\n        Packet { text: \"x\", flag: false and helper::fails()? }\n    };",
+        "    let r: result<list<bool>, str> = try {\n        [true, false or helper::fails()?]\n    };",
+        "    let r: result<bool, str> = try {\n        false and helper::wrap::<bool>(true)?\n    };",
+        "    let r: result<bool, str> = try {\n        helper::wrap::<bool>(true)? or true\n    };",
+    ];
+    let mut index = 0;
+    for body in bodies {
+        let Some(name) = list_get(ref names, index) else { return false; };
+        if not m57a2_rejects_one(driver, qualified, name, m57a2_program(decls, body), "NQ-TRY-004", message, "", "let r", 4, 1) { return false; }
+        index = index + 1;
+    }
+    let Some(expected) = m57c_read(str_concat(fixture, "accepted_run.expected")) else { return false; };
+    let source = str_concat(fixture, "accepted_run.nq");
+    let run_args = ["run", source];
+    if not f64_rt_exact("M58.1 try qualified accepted run", run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let generated = m58a_output("try_qualified_accepted_run.c");
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact("M58.1 try qualified accepted emit", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    return m58a_sanitized_run(generated, m58a_output("try_qualified_accepted_run-asan-ubsan"), expected);
+}
+
+fn m58r_gate_cases(driver: str, directory: str) -> bool {
+    if not m58r_try_short_circuit_cases(driver, directory) { return false; }
+    if not m58r_try_qualified_cases(driver, directory) { return false; }
+    if not m58a_run_emit_sanitized(driver, "binding_identity_run") { return false; }
+    if not m58a_run_emit_sanitized(driver, "try_cleanup_run") { return false; }
+    if not m58a_run_emit_sanitized(driver, "empty_enum_run") { return false; }
+    if not m58r_compact_cases(driver, directory) { return false; }
+    return m58r_pattern_evidence(driver, directory);
+}
+
+fn m58a_gate(driver: str) -> bool {
+    let lock = "build/m58_1_a/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m58_1_a", lock) { eprint_line("M58.1 A: fixture gate lock refused"); return false; }
+    let ok = m58a_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M58.1 A: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
+// Evidence: facts v1/v2 carry name references with binding targets; inside
+// the inner initializer they name the outer `total`, afterwards the inner one,
+// and the final `return` the outer one again. Facts v3-v5 and review v1-v5
+// expose no local binding identity; they must still succeed and stay free of
+// any `total@` binding id. The unaffected M57.1 width-shadow program's facts
+// and review v1-v5 are byte-identical to goldens captured with the base
+// compiler (86368fc).
+fn m58a_evidence_output(driver: str, command: str, path: str, format: str) -> option<str> {
+    let args = [command, path, "--format", format];
+    match run_process(driver, ref args, ".") {
+        Ok(status) => {
+            if status.exit_code == 0 and status.stderr == "" { return Some(status.stdout); }
+            eprint_line(concat6("M58.1 A evidence failed: ", command, " ", format, " ", path));
+            eprint_line(status.stdout);
+            eprint_line(status.stderr);
+            return None;
+        },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+// The `@<offset>` of every `"target_id": "binding:...:total@<offset>"`, in order.
+fn m58a_total_targets(output: str) -> str {
+    let marker = "\"target_id\": \"binding:";
+    let mut sequence = "";
+    let mut cursor = m57a2_find_from(output, marker, 0);
+    while cursor >= 0 {
+        let value = m57a2_field(output, marker, cursor);
+        let at = m57a2_find_from(value, "total@", 0);
+        if at >= 0 {
+            sequence = concat3(sequence, slice_text(value, at + 6, str_len(value) - 1), ";");
+        }
+        cursor = m57a2_find_from(output, marker, cursor + 1);
+    }
+    return sequence;
+}
+
+fn m58a_evidence_cases(driver: str) -> bool {
+    let path = m58a_fixture("shadow_evidence.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let outer = i32_to_str(f64_find(source, "let total = 1;") + 4);
+    let inner = i32_to_str(f64_find(source, "let mut total =") + 8);
+    let expected = concat6(outer, ";", outer, ";", inner, concat6(";", inner, ";", outer, ";", ""));
+    for format in ["v1", "v2"] {
+        let Some(output) = m58a_evidence_output(driver, "facts", path, format) else { return false; };
+        let actual = m58a_total_targets(output);
+        if actual != expected {
+            eprint_line(concat6("M58.1 A: facts ", format, " shadow targets ", actual, " expected ", expected));
+            return false;
+        }
+    }
+    for command in ["facts", "review"] {
+        for format in ["v1", "v2", "v3", "v4", "v5"] {
+            let Some(output) = m58a_evidence_output(driver, command, path, format) else { return false; };
+            let exposes = command == "facts" and (format == "v1" or format == "v2");
+            if not exposes and text_contains(output, "total@") {
+                eprint_line(concat4("M58.1 A: unexpected binding identity in ", command, " ", format));
+                return false;
+            }
+        }
+    }
+    let unaffected = "tests/fixtures/m57_1_core/repair/width_shadow_run.nq";
+    for command in ["facts", "review"] {
+        for format in ["v1", "v2", "v3", "v4", "v5"] {
+            let Some(output) = m58a_evidence_output(driver, command, unaffected, format) else { return false; };
+            let Some(golden) = m57c_read(m58a_fixture(concat5("evidence/width_shadow_run.", command, "-", format, ".json"))) else { return false; };
+            if output != golden {
+                eprint_line(concat4("M58.1 A: unaffected evidence changed: ", command, " ", format));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Compatibility fixtures: each class M58.1 rejects (accepted at 86368fc) and
+// the let-else `break` form it newly accepts (rejected at 86368fc).
+fn m58a_compat_cases(driver: str) -> bool {
+    let help = "end every path with `return`; a `unit` function ends with `return;`";
+    let value_path = m58a_fixture("compat/fall_off_value.nq");
+    let Some(value_source) = m57c_read(value_path) else { return false; };
+    let value_at = f64_find(value_source, "\n}\n\nfn main") + 1;
+    if not m57a2_expect_digest(driver, "compat fall-off value", value_path, m57a2_entry("NQ-TYPE-053", value_at, value_at + 1, "function `positive` can reach the end of its body without returning", help)) { return false; }
+    let unit_path = m58a_fixture("compat/fall_off_unit.nq");
+    let Some(unit_source) = m57c_read(unit_path) else { return false; };
+    let unit_at = f64_find(unit_source, "\n}\n\nfn main") + 1;
+    if not m57a2_expect_digest(driver, "compat fall-off unit", unit_path, m57a2_entry("NQ-TYPE-053", unit_at, unit_at + 1, "function `greet` can reach the end of its body without returning", help)) { return false; }
+    let self_path = m58a_fixture("compat/self_initializer.nq");
+    let Some(self_source) = m57c_read(self_path) else { return false; };
+    let self_at = f64_find(self_source, "    let x = x;\n") + 12;
+    if not m57a2_expect_digest(driver, "compat self initializer", self_path, m57a2_entry("NQ-RESOLVE-010", self_at, self_at + 1, "unknown name in function body", "")) { return false; }
+    let break_args = ["run", m58a_fixture("compat/let_else_break.nq")];
+    return f64_rt_exact("compat let-else break", run_process(driver, ref break_args, "."), 0, "", "");
 }

@@ -34,6 +34,7 @@ audit {
 }
 {
     list_push(mutref failures, label);
+    return;
 }
 
 fn spt_expect(failures: mutref list<str>, label: str, expected: bool, schema_text: str, data_text: str) -> unit
@@ -47,6 +48,7 @@ audit {
     if actual != expected {
         spt_record_failure(mutref failures, label);
     }
+    return;
 }
 
 fn spt_expect_accept(failures: mutref list<str>, label: str, schema_text: str, data_text: str) -> unit
@@ -57,6 +59,7 @@ audit {
 }
 {
     spt_expect(mutref failures, label, true, schema_text, data_text);
+    return;
 }
 
 fn spt_expect_reject(failures: mutref list<str>, label: str, schema_text: str, data_text: str) -> unit
@@ -67,6 +70,7 @@ audit {
 }
 {
     spt_expect(mutref failures, label, false, schema_text, data_text);
+    return;
 }
 
 fn spt_deep_array_text(depth: i32) -> str {
@@ -156,6 +160,7 @@ audit {
     spt_expect_reject(mutref failures, "duplicate escaped schema key rejected", "{\"type\":\"object\",\"\\u0074ype\":\"object\"}", "{}");
     spt_expect_reject(mutref failures, "excessive data depth rejected", "{\"type\":\"array\"}", spt_deep_array_text(100));
     spt_expect_reject(mutref failures, "excessive schema depth rejected", spt_deep_items_schema_text(100), "[]");
+    return;
 }
 
 fn spt_schema_positive_path(name: str) -> str {
@@ -304,6 +309,7 @@ audit {
     if schema_profile_accepts(schema_text, data_text) {
         spt_record_failure(mutref failures, label);
     }
+    return;
 }
 
 fn spt_expect_schema_golden_reject(failures: mutref list<str>, schema_path: str, label: str, document_path: str) -> unit
@@ -323,6 +329,7 @@ audit {
         return;
     }
     spt_expect_schema_file_reject(mutref failures, schema_path, label, document_text);
+    return;
 }
 
 fn spt_collect_v5_schema_negatives(failures: mutref list<str>) -> unit
@@ -347,6 +354,7 @@ audit {
     spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a template with inferred evidence", str_concat(dir, "review-v5-negative-template-inferred-evidence.json"));
     spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a null template audit declared as present", str_concat(dir, "review-v5-negative-template-audit-coherence.json"));
     spt_expect_schema_golden_reject(mutref failures, review_schema, "review-v5 rejects a function instance with a non-template audit source", str_concat(dir, "review-v5-negative-instance-audit-source.json"));
+    return;
 }
 
 fn spt_collect_real_schema_negatives(failures: mutref list<str>) -> unit
@@ -381,6 +389,7 @@ audit {
         spt_expect_reject(mutref failures, "error envelope rejects review-diff v4", error_schema, str_concat("{\"version\":1,\"command\":\"review-diff\",\"requested_format\":4", suffix));
         spt_expect_reject(mutref failures, "error envelope rejects change-report v5", error_schema, str_concat("{\"version\":1,\"command\":\"change-report\",\"requested_format\":5", suffix));
     }
+    return;
 }
 
 fn spt_read_text(path: str, label: str, out: mutref str, failures: mutref list<str>) -> bool
@@ -428,6 +437,7 @@ audit {
     if not schema_profile_accepts(schema_text, data_text) {
         spt_record_failure(mutref failures, str_concat(str_concat("positive evidence rejected for ", schema_name), str_concat(" -> ", positive_path)));
     }
+    return;
 }
 
 fn spt_expect_schema_present(names: ref list<str>, expected: str, failures: mutref list<str>) -> unit
@@ -440,6 +450,7 @@ audit {
     if not spt_string_list_contains(ref names, expected) {
         spt_record_failure(mutref failures, str_concat("known schema missing from read_dir: ", expected));
     }
+    return;
 }
 
 fn spt_check_known_schemas_present(names: ref list<str>, failures: mutref list<str>) -> unit
@@ -474,6 +485,7 @@ audit {
     spt_expect_schema_present(ref names, "review-v3.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "review-v4.schema.json", mutref failures);
     spt_expect_schema_present(ref names, "review-v5.schema.json", mutref failures);
+    return;
 }
 
 fn spt_emit_failures(title: str, failures: ref list<str>) -> bool

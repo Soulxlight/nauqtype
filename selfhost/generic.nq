@@ -130,12 +130,14 @@ fn generic_emit(fragment: str, source_index: i32, at: i32, end: i32, context: st
             },
         }
     }
+    return;
 }
 
 fn generic_copy(inv: ref generic_inventory, sources: ref list<source_file>, source_index: i32, position: i32, context: str, generated: bool, output: mutref list<generic_output_token>, generated_count: mutref i32, text_count: mutref i32, diags: mutref list<diag>) -> unit {
     let current = generic_tok(ref inv.tokens, position);
     let file = generic_source(ref sources, source_index);
     generic_emit(slice_text(file.text, current.start, current.end), source_index, current.start, current.end, context, generated, mutref output, mutref generated_count, mutref text_count, file.name, mutref diags);
+    return;
 }
 
 fn generic_variant_name(inv: ref generic_inventory, variant: i32, enum_key: str, file: str, at: i32, diags: mutref list<diag>) -> str {
@@ -169,7 +171,7 @@ fn generic_local_at(validation: ref generic_validation, inv: ref generic_invento
     }
     while scope >= 0 {
         for binding in validation.bindings {
-            if binding.module == module and binding.function_name == function_name and binding.scope_id == scope and binding.name == name and binding.at < at {
+            if binding.module == module and binding.function_name == function_name and binding.scope_id == scope and binding.name == name and binding.visible_from <= at {
                 let mut creates_local = true;
                 match binding.kind {
                     bind_pattern => {
@@ -295,6 +297,7 @@ fn generic_project_value(inv: ref generic_inventory, sources: ref list<source_fi
     }
     generic_emit(replacement, entry.source_index, name_token.start, name_token.end, context, instance >= 0, mutref output, mutref generated_count, mutref text_count, file.name, mutref diags);
     cursor = next;
+    return;
 }
 
 fn generic_project_body(inv: ref generic_inventory, sources: ref list<source_file>, validation: ref generic_validation, owner: i32, instance: i32, start: i32, end: i32, nodes: mutref list<generic_type_node>, edges: mutref list<generic_type_edge>, instances: mutref list<generic_instance>, arguments: mutref list<generic_instance_arg>, dependencies: mutref list<generic_dependency>, applications: mutref list<generic_application>, output: mutref list<generic_output_token>, generated_count: mutref i32, text_count: mutref i32, diags: mutref list<diag>) -> unit {
@@ -341,6 +344,7 @@ fn generic_project_body(inv: ref generic_inventory, sources: ref list<source_fil
             }
         }
     }
+    return;
 }
 
 fn generic_take(inv: ref generic_inventory, sources: ref list<source_file>, owner: i32, cursor: mutref i32, expected: str, context: str, generated: bool, output: mutref list<generic_output_token>, generated_count: mutref i32, text_count: mutref i32, diags: mutref list<diag>) -> bool {
@@ -496,6 +500,7 @@ fn generic_project_members(inv: ref generic_inventory, sources: ref list<source_
         if cursor < entry.body_end { if not generic_take(ref inv, ref sources, owner, mutref cursor, ",", context, generated, mutref output, mutref generated_count, mutref text_count, mutref diags) { return; } }
     }
     let closed = generic_take(ref inv, ref sources, owner, mutref cursor, "}", context, generated, mutref output, mutref generated_count, mutref text_count, mutref diags);
+    return;
 }
 
 fn generic_project_decl(inv: ref generic_inventory, sources: ref list<source_file>, validation: ref generic_validation, owner: i32, instance: i32, nodes: mutref list<generic_type_node>, edges: mutref list<generic_type_edge>, instances: mutref list<generic_instance>, arguments: mutref list<generic_instance_arg>, dependencies: mutref list<generic_dependency>, applications: mutref list<generic_application>, output: mutref list<generic_output_token>, generated_count: mutref i32, text_count: mutref i32, diags: mutref list<diag>) -> unit {
@@ -524,6 +529,7 @@ fn generic_project_decl(inv: ref generic_inventory, sources: ref list<source_fil
             generic_project_body(ref inv, ref sources, ref validation, owner, instance, cursor, entry.end, mutref nodes, mutref edges, mutref instances, mutref arguments, mutref dependencies, mutref applications, mutref output, mutref generated_count, mutref text_count, mutref diags);
         }
     }
+    return;
 }
 
 fn generic_project_roots(inv: ref generic_inventory, sources: ref list<source_file>, validation: ref generic_validation, checking: bool, nodes: mutref list<generic_type_node>, edges: mutref list<generic_type_edge>, instances: mutref list<generic_instance>, arguments: mutref list<generic_instance_arg>, dependencies: mutref list<generic_dependency>, applications: mutref list<generic_application>, output: mutref list<generic_output_token>, generated_count: mutref i32, text_count: mutref i32, diags: mutref list<diag>) -> unit {
@@ -551,6 +557,7 @@ fn generic_project_roots(inv: ref generic_inventory, sources: ref list<source_fi
         }
         source_index = source_index + 1;
     }
+    return;
 }
 
 fn generic_explicit_at(inv: ref generic_inventory, source_index: i32, at: i32) -> bool {
@@ -617,6 +624,7 @@ fn generic_validate_bindings(inv: ref generic_inventory, sources: ref list<sourc
         if local and explicit { generic_error(mutref diags, "NQ-GENERIC-003", reference.module, reference.at, reference.at + str_len(reference.name), "a local value is not a generic application target"); }
         if not local and target >= 0 and entry.arity > 0 and not explicit { generic_error(mutref diags, "NQ-GENERIC-002", reference.module, reference.at, reference.at + str_len(reference.name), "generic references require every explicit argument"); }
     }
+    return;
 }
 
 fn generic_binary_precedence(value: token) -> i32 {
@@ -818,6 +826,7 @@ fn generic_syntax_statements(tokens: ref list<token>, file: str, diags: mutref l
             }
         }
     }
+    return;
 }
 
 fn generic_validate_templates(inv: ref generic_inventory, sources: ref list<source_file>, diags: mutref list<diag>) -> generic_validation {
@@ -865,6 +874,7 @@ fn generic_metadata(parts: mutref list<str>, row: ref list<str>, metadata_count:
     if value == "" { return; }
     metadata_count = metadata_count + str_len(value);
     list_push(mutref parts, value);
+    return;
 }
 
 fn generic_bound_error_is_005(diags: ref list<diag>) -> bool {
@@ -921,6 +931,7 @@ fn generic_origin_record(parts: mutref list<str>, tag: str, fields: ref list<str
     }
     list_push(mutref row, ";");
     generic_metadata(mutref parts, ref row, mutref metadata_count, file, at, mutref diags);
+    return;
 }
 
 fn generic_template_key(inv: ref generic_inventory, sources: ref list<source_file>, owner: i32, diags: mutref list<diag>) -> str {
@@ -940,6 +951,7 @@ fn generic_registry_add(names: mutref list<str>, origins: mutref list<str>, name
     generic_origin_record(mutref origins, "D", ref fields, mutref metadata_count, file, at, mutref diags);
     if diagnostics_have_errors(ref diags) { return; }
     list_push(mutref names, name);
+    return;
 }
 
 fn generic_add_enum_names(inv: ref generic_inventory, sources: ref list<source_file>, owner: i32, key: str, names: mutref list<str>, origins: mutref list<str>, metadata_count: mutref i32, diags: mutref list<diag>) -> unit {
@@ -958,6 +970,7 @@ fn generic_add_enum_names(inv: ref generic_inventory, sources: ref list<source_f
         }
         index = index + 1;
     }
+    return;
 }
 
 // One T record per generic declaration, used or unused:
@@ -994,6 +1007,7 @@ fn generic_retain_template(inv: ref generic_inventory, sources: ref list<source_
         index = index + 1;
     }
     generic_origin_record(mutref origins, "T", ref fields, mutref metadata_count, file.name, 0, mutref diags);
+    return;
 }
 
 fn generic_file_registry(inv: ref generic_inventory, sources: ref list<source_file>, source_index: i32, instances: ref list<generic_instance>, arguments: ref list<generic_instance_arg>, nodes: ref list<generic_type_node>, applications: ref list<generic_application>, names: mutref list<str>, origins: mutref list<str>, metadata_count: mutref i32, diags: mutref list<diag>) -> unit {
@@ -1050,6 +1064,7 @@ fn generic_file_registry(inv: ref generic_inventory, sources: ref list<source_fi
         }
         instance_index = instance_index + 1;
     }
+    return;
 }
 
 fn generic_map_row(parts: mutref list<str>, start: i32, end: i32, original_start: i32, original_end: i32, context: str, metadata_count: mutref i32, file: str, diags: mutref list<diag>) -> unit {
@@ -1060,6 +1075,7 @@ fn generic_map_row(parts: mutref list<str>, start: i32, end: i32, original_start
     list_push(mutref row, i32_to_str(original_end)); list_push(mutref row, ":");
     list_push(mutref row, context); list_push(mutref row, ";");
     generic_metadata(mutref parts, ref row, mutref metadata_count, file, original_start, mutref diags);
+    return;
 }
 
 fn generic_finish_sources(inv: ref generic_inventory, sources: ref list<source_file>, output: ref list<generic_output_token>, instances: ref list<generic_instance>, arguments: ref list<generic_instance_arg>, nodes: ref list<generic_type_node>, applications: ref list<generic_application>, diags: mutref list<diag>) -> list<source_file> {
@@ -1348,6 +1364,7 @@ fn generic_require_type(inv: ref generic_inventory, sources: ref list<source_fil
         let entry = generic_declaration(ref inv, value.declaration);
         if entry.arity > 0 { let demanded = generic_require_instance(ref inv, ref sources, value.declaration, ref children, ref nodes, parent, source_index, at, end, mutref instances, mutref arguments, mutref dependencies, mutref applications, mutref diags); }
     }
+    return;
 }
 
 fn generic_tok(tokens: ref list<token>, index: i32) -> token {
@@ -1363,6 +1380,7 @@ fn generic_tok(tokens: ref list<token>, index: i32) -> token {
 
 fn generic_error(diags: mutref list<diag>, code: str, file: str, at: i32, end: i32, message: str) -> unit {
     list_push(mutref diags, make_error(code, diag_type, file, at, end, message));
+    return;
 }
 
 fn generic_clone_sources(sources: ref list<source_file>) -> list<source_file> {
@@ -1487,6 +1505,7 @@ fn generic_collect_import(tokens: ref list<token>, cursor: mutref i32, end: i32,
     if not generic_symbol(generic_tok(ref tokens, cursor), ";") { generic_error(mutref diags, "NQ-GENERIC-003", file, at, at + 1, "expected import terminator"); cursor = end; return; }
     cursor = cursor + 1;
     list_push(mutref imports, make_module_use(file, name, alias, at));
+    return;
 }
 
 fn generic_add_variant_inventory(tokens: ref list<token>, declaration: generic_decl, owner: i32, file: str, declarations: mutref list<generic_decl>, items: mutref list<top_item>, diags: mutref list<diag>) -> unit {
@@ -1509,6 +1528,7 @@ fn generic_add_variant_inventory(tokens: ref list<token>, declaration: generic_d
         list_push(mutref items, make_top_item(file, current.text, item_variant, declaration.is_public, current.start));
         if generic_symbol(generic_tok(ref tokens, cursor), ",") { cursor = cursor + 1; }
     }
+    return;
 }
 
 fn generic_inventory_file(tokens: ref list<token>, start: i32, end: i32, source_index: i32, file: str, declarations: mutref list<generic_decl>, parameters: mutref list<generic_parameter>, imports: mutref list<module_use>, items: mutref list<top_item>, diags: mutref list<diag>) -> unit {
@@ -1564,6 +1584,7 @@ fn generic_inventory_file(tokens: ref list<token>, start: i32, end: i32, source_
             if kind == 3 { generic_add_variant_inventory(ref tokens, declaration, owner, file, mutref declarations, mutref items, mutref diags); }
         }
     }
+    return;
 }
 
 fn generic_build_inventory(sources: ref list<source_file>, diags: mutref list<diag>) -> generic_inventory {
@@ -1690,6 +1711,7 @@ fn generic_parameter_alias_conflicts(inv: ref generic_inventory, sources: ref li
             if entry.module == file.name and (entry.alias == parameter.name or entry.name == parameter.name) { generic_error(mutref diags, "NQ-GENERIC-004", file.name, parameter.at, parameter.at + str_len(parameter.name), "type parameter shadows an import qualifier"); }
         }
     }
+    return;
 }
 
 pub fn tokens_have_generic_syntax(tokens: ref list<token>) -> bool

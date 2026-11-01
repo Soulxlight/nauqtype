@@ -154,6 +154,18 @@ audit {
     return make_workspace_entry(true, source_root, module_name, "");
 }
 
+pub fn workspace_manifest_path(source_path: str) -> str
+audit {
+    intent("Name the workspace manifest an explicit source path resolves to, as the driver spelled it, or nothing for a legacy source");
+    mutates();
+    effects(io);
+}
+{
+    let manifest = wc_find_root_manifest(source_path);
+    if not manifest.valid or not manifest.captured { return ""; }
+    return manifest.source_path;
+}
+
 fn wc_failure(message: str) -> workspace_capture {
     return workspace_capture { valid: false, source_root: "", module_name: "", workspace_root: "", workspace_name: "", manifest_text: "", lock_text: "", error_message: message };
 }

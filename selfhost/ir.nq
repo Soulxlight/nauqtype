@@ -291,9 +291,24 @@ fn push_diag(diags: mutref list<diag>, file: str, at: i32, message: str) -> unit
 }
 
 fn push_ir_limitation(diags: mutref list<diag>, file: str, at: i32, detail: str) -> unit {
-    let prefix = "stage1 ir error: ";
+    let prefix = "internal compiler error: ";
     push_diag(mutref diags, file, at, str_concat(prefix, detail));
     return;
+}
+
+// M58.1 producer-ledger evidence (docs/M58_1_PRODUCER_LEDGER.md): every
+// NQ-IR-012 invariant call site goes through push_ir_limitation.
+pub fn ir_internal_producer_cases() -> bool
+audit {
+    intent("Exercise the shared IR-lowering invariant producer and pin its code and prefix");
+    mutates();
+    effects();
+}
+{
+    let mut diags: list<diag> = list();
+    push_ir_limitation(mutref diags, "probe", 9, "probe detail");
+    let Some(found) = list_get(ref diags, 0) else { return false; };
+    return list_len(ref diags) == 1 and found.code == "NQ-IR-012" and found.message == "internal compiler error: probe detail" and found.source_name == "probe" and found.start == 9 and found.end == 10;
 }
 
 fn binding_kind_is_param(kind: checked_binding_kind) -> bool {

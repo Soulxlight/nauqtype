@@ -1,0 +1,36 @@
+// M58.1 rule 3 (empty enums): an enum with no variants is a checked type with
+// a tag-only C representation, a zero-arm statement `match` over it is
+// exhaustive and terminating, and it composes inside `option`. The owned test
+// runs this program with exact output and the same C under ASan/UBSan.
+
+enum Empty {}
+
+enum Never {
+}
+
+fn drain(e: Empty) -> i32 {
+    match e {}
+}
+
+fn drain_unit(n: Never) -> unit {
+    match n {
+    }
+}
+
+fn forward(e: Empty) -> option<Empty> {
+    return Some(e);
+}
+
+fn main() -> i32 {
+    let maybe: option<Empty> = None;
+    match maybe {
+        Some(e) => {
+            return drain(e);
+        },
+        None => {
+            print_line("no empty value");
+        },
+    }
+    print_line("empty enum ok");
+    return 0;
+}

@@ -282,7 +282,7 @@ fn load_module_graph(name: str, capture: workspace_capture, captured_sources: re
     }
     let loaded_file = read_module_source(name, capture, ref captured_sources, ref dependencies, entry_module, entry_path);
     if not loaded_file.valid {
-        push_driver_error(mutref diags, "NQ-IO-001", diag_io, name, -1, -1, loaded_file.error_message);
+        push_driver_error(mutref diags, "NQ-IO-001", diag_io, module_load_error_file(name, capture, entry_path), -1, -1, loaded_file.error_message);
         return;
     }
     let file = loaded_file.file;
@@ -320,9 +320,12 @@ fn load_module_graph(name: str, capture: workspace_capture, captured_sources: re
     if not tokens_have_generic_syntax(ref tokens) {
         let mut provisional_index = list_len(ref diags);
         parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-        collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
-        collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
-        collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref diags);
+        // M58.1: parse_file is the single parse reporter; the secondary
+        // token walkers report into a discarded list.
+        let mut walker_diags: list<diag> = list();
+        collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref walker_diags);
+        collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref walker_diags);
+        collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref walker_diags);
         while provisional_index < list_len(ref diags) {
             list_push(mutref provisional_diags, provisional_index);
             provisional_index = provisional_index + 1;
@@ -333,7 +336,9 @@ fn load_module_graph(name: str, capture: workspace_capture, captured_sources: re
 
 fn prepare_loaded_sources(allow_generics: bool, sources: mutref list<source_file>, items: mutref list<top_item>, uses: mutref list<module_use>, scopes: mutref list<body_scope>, bindings: mutref list<body_binding>, refs: mutref list<name_ref>, type_refs: mutref list<type_ref>, function_facts: mutref list<function_fact>, function_param_facts: mutref list<function_param_fact>, variant_facts: mutref list<variant_fact>, variant_payload_facts: mutref list<variant_payload_fact>, const_facts: mutref list<const_fact>, call_facts: mutref list<call_fact>, pattern_facts: mutref list<pattern_ctor_fact>, typed_bindings: mutref list<typed_binding_fact>, field_facts: mutref list<field_fact>, match_arms: mutref list<match_arm_fact>, local_inits: mutref list<local_init_fact>, return_facts: mutref list<return_expr_fact>, condition_facts: mutref list<condition_fact>, assignment_facts: mutref list<assignment_fact>, stmt_facts: mutref list<stmt_fact>, provisional_diags: ref list<i32>, diags: mutref list<diag>) -> bool {
     let has_generics = sources_have_generic_syntax(ref sources);
-    if not has_generics { return true; }
+    // M58.1: a load or parse error stops every command here, before
+    // resolution, so no cascade (for example "missing main") follows.
+    if not has_generics { return not diagnostics_have_errors(ref diags); }
     if not discard_provisional_parse_diagnostics(ref provisional_diags, mutref diags) { return false; }
     if has_generics {
         if diagnostics_have_errors(ref diags) { return false; }
@@ -360,12 +365,23 @@ fn prepare_loaded_sources(allow_generics: bool, sources: mutref list<source_file
     for file in sources {
         let tokens = lex(file.text);
         parse_file(file.name, ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-        collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref diags);
-        collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref diags);
-        collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref diags);
+        let mut walker_diags: list<diag> = list();
+        collect_typecheck_facts(file.name, ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref walker_diags);
+        collect_value_type_facts(file.name, ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arms, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref walker_diags);
+        collect_stmt_facts(file.name, ref tokens, mutref stmt_facts, mutref walker_diags);
     }
     if has_generics { authenticate_generic_items(ref sources, mutref items, mutref diags); }
-    return true;
+    return not diagnostics_have_errors(ref diags);
+}
+
+// M58.1: a capture failure (for example a missing or stale workspace lock)
+// names the workspace manifest the driver resolved, with a file-level span;
+// any other unreadable module keeps its module name.
+fn module_load_error_file(name: str, capture: workspace_capture, entry_path: str) -> str {
+    if capture.valid or entry_path == "" { return name; }
+    let manifest_path = workspace_manifest_path(entry_path);
+    if manifest_path == "" { return name; }
+    return manifest_path;
 }
 
 fn discard_provisional_parse_diagnostics(positions: ref list<i32>, diags: mutref list<diag>) -> bool {
@@ -447,9 +463,14 @@ fn default_build_exe_path(source_path: str) -> str {
     return join_path(default_build_dir(source_path), path_stem(source_path));
 }
 
+// M58.1: `build -o <exe>` writes its C file beside the executable
+// (`<exe>.c`), never inside the source tree; `-o <file>.c` is unchanged.
 fn build_c_output_path(source_path: str, explicit_output: str) -> str {
     if explicit_output != "" and str_ends_with(explicit_output, ".c") {
         return explicit_output;
+    }
+    if explicit_output != "" {
+        return str_concat(explicit_output, ".c");
     }
     return default_build_c_path(source_path);
 }
@@ -1762,7 +1783,18 @@ fn run_build_command(request: driver_request, execute_program: bool) -> i32 {
 
     let empty_args: list<str> = list();
     let run_cwd = path_dir(request.entry_path);
-    let run_path = path_relative_to_cwd(exe_path, run_cwd);
+    let mut run_path = path_relative_to_cwd(exe_path, run_cwd);
+    // M58.1: an explicit `-o` path resolves against the invocation directory,
+    // so the program the compiler just wrote is started by its absolute path.
+    if request.output_path != "" and not str_starts_with(exe_path, "/") {
+        match current_dir() {
+            Ok(invocation_dir) => { run_path = join_path(invocation_dir, exe_path); },
+            Err(err) => {
+                eprint_line(io_err_text(err));
+                return 1;
+            },
+        }
+    }
     let run_result = run_process(run_path, ref empty_args, run_cwd);
     match run_result {
         Ok(run_status) => {

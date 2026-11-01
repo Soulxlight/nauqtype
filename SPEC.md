@@ -84,7 +84,8 @@ Its source language priorities are:
 These are style expectations, not parser rules:
 
 - types and enum variants: `UpperCamel`
-- functions, locals, fields, modules, constants: `snake_case`
+- functions, locals, fields, modules: `snake_case`
+- constants: `UPPER_SNAKE` per [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md); the compiler enforces the charter's naming rules from M60, and existing `snake_case` constants are migrated then
 
 This style is recommended because it improves human scanability and reduces type/value confusion.
 
@@ -101,7 +102,9 @@ Reserved keywords in v0.1:
 - `enum`
 - `false`
 - `fn`
+- `for`
 - `if`
+- `in`
 - `let`
 - `match`
 - `mut`
@@ -169,8 +172,10 @@ drop. The decision record is D067; the full contract is
 `DIGITS "." DIGITS [ "e" [ "-" ] DIGITS ]`: `0.5`, `1.0`, `2.5e-3`,
 `6.02e23`. A float literal always has type `f64`; negative values use unary
 `-`. There is no suffix, no `.5`, `1.`, `1e5`, `1E5`, `1e+5`, hexadecimal
-float, digit separator, or `inf`/`nan` spelling. `1.`, `1.e5`, `.5`, and `1e5`
-are not float literals and keep their earlier diagnostics. A float literal
+float, digit separator, or `inf`/`nan` spelling. Since M58.1, `.5`, `1.`,
+`1e5`, `1E5` and `1e-5` are `NQ-PARSE-004` with help "write floats as
+`<digits>.<digits>`, for example `0.5`, `1.0` or `1.0e5`"; `1.e5` and
+`1.foo` stay field-access errors. A float literal
 followed by a malformed exponent (`1.0E5`, `1.0e+5`, `1.0e`, `1.0e-`) is
 `NQ-PARSE-004` "malformed float literal". A literal whose decimal value is at
 least 2^1024 − 2^970 (it would round to infinity) is `NQ-TYPE-046`; the
@@ -340,6 +345,16 @@ let mut count: i32 = 0;
 
 Type annotation on locals is optional when the initializer is sufficient.
 
+A `let` binding becomes visible at the end of its statement (the `;`), so its
+initializer sees only bindings declared before it. `let mut x = x + 1;` in an
+inner scope reads the outer `x`; `let x = x;` with no outer `x` is the
+unknown-name diagnostic `NQ-RESOLVE-010`. The same holds for typed `let`,
+`let name = f()?;` and `let name: result<T, E> = try { ... };` locals. Other
+binding forms: parameters are visible from the start of the body, let-else
+bindings after the let-else statement, `match` arm bindings from the start of
+the arm body, and a `for` binding from the start of the loop body (the
+iterable sees only outer bindings).
+
 Narrow guard binding with `let-else`:
 
 ```nauq
@@ -356,7 +371,7 @@ Rules:
 
 - V1 supports only `Some(name)` for `option<T>` and `Ok(name)` for `result<T, E>`.
 - The success pattern introduces the payload binding after the statement.
-- The `else` block must exit explicitly, such as with `return`.
+- The `else` block must exit: it must terminate (see Functions, "Every path returns") or end with `break;` or `continue;` targeting an enclosing loop. Otherwise `check` reports `NQ-PARSE-003` "let-else `else` block must exit with `return`, `break` or `continue`" at the `else` token.
 - Pattern guards, chained `if let`, and hidden propagation are not part of `let-else` V1. Statement-boundary `?` is a separate evidence-backed propagation feature.
 
 ### Local `try` Boundaries
@@ -373,7 +388,8 @@ Rules:
 
 - V1 permits `try { value_expr }` only as the direct initializer of an explicitly annotated `result<T, E>` local.
 - The success expression must have type `T`; the boundary wraps it in `Ok(...)`.
-- Each postfix `?` must apply to a direct function call returning `result<U, E>` with the exact same `E`.
+- Each postfix `?` must apply to a direct function call returning `result<U, E>` with the exact same `E`. In a binary expression each `?` applies to its own call operand, so `try { f()? + g()? }` propagates from each call separately; `(f() + g())?` is not a direct call and stays rejected.
+- `?` anywhere else (`return f()?;`, `g(f()?);`, `if f()? { ... }`, `f()?;`) is `NQ-PROPAGATE-007` "`?` is only allowed in a `let name = expr?;` statement or inside `try`".
 - A failed site stores `Err(error)` in the local boundary and skips the remaining success expression; it does not return from the function.
 - Sites are evaluated depth-first and left-to-right before the final success expression, making their order deterministic and visible in evidence.
 - Local-boundary sites appear in facts v2 and review v2, but do not add to function-level inferred `propagates(...)` because the error does not leave the function.
@@ -396,7 +412,7 @@ Rules:
 - `pub const` is visible through flat-root `use`
 - v1 constants support only non-borrow `i32`, `i64`, `f64`, `bool`, and `str`; an `f64` constant is a single float literal, optionally negated (see Scalar `f64`)
 - v1 initializers support literals, parentheses, unary `-` / `not`, arithmetic and integer comparison operators, and boolean `and` / `or`
-- calls, constructors, lists, borrows, I/O, and const-to-const initializer references are intentionally rejected for now
+- calls, constructors, lists, borrows, I/O, and const-to-const initializer references are intentionally rejected for now: `NQ-TYPE-057` "constant initializers may contain only literals and operators" at the offending token
 - constants can be referenced in function bodies as values, but cannot be called, borrowed, or assigned
 
 ### Functions
@@ -431,8 +447,25 @@ Rules:
 - `return` is the only return form
 - there is no implicit last-expression return
 - `return;` is allowed only in functions returning `unit`
+- every path returns: a function body, including a `unit` function's and `main`'s, must not be able to reach its closing `}`; a `unit` function ends every path with `return;` (see below)
 - `audit` blocks are optional in the AI Contracts alpha
 - `pub fn` without `audit` emits a warning in the current compiler
+
+Every path returns:
+
+- A block terminates if any statement in it terminates; analysis stops at the
+  first terminating statement (later statements are not diagnosed).
+- A statement terminates when it is `return ...;`; an `if` with an `else`
+  where both blocks terminate (there is no `else if`; a nested `if` inside
+  the `else` block is that block's statement); a statement `match` whose arm
+  blocks all terminate; or `while true { ... }` whose condition is exactly
+  the token `true` and whose body has no `break` targeting that loop (a
+  `break` inside a nested `while` or `for` targets the nested loop).
+- `for`, any other `while`, assignments, `let` statements and expression
+  statements never terminate.
+- Violation: `NQ-TYPE-053` "function `<name>` can reach the end of its body
+  without returning" at the function's closing `}`, with help "end every path
+  with `return`; a `unit` function ends with `return;`".
 
 ### AI Contracts
 
@@ -511,6 +544,9 @@ let user = User {
 };
 ```
 
+Each field is written `name: value`; anything else is `NQ-TYPE-055` "struct
+literal fields are written `name: value`" at the field's first token.
+
 ### List Literals
 
 ```nauq
@@ -542,6 +578,7 @@ Batch B rules:
 - Defaults, overloading, mixed positional/named calls, and named enum constructor payloads are not supported.
 - `module::function(...)` calls a public function from a directly imported flat-root module.
 - Qualified calls are not member calls, methods, package paths, constructors, or qualified type syntax.
+- The callee is a function name (`f` or `module::f`); any other callee, such as `(f)(1)` or `f(1)(2)`, is `NQ-TYPE-058` "only named functions can be called".
 
 ### Borrow Expressions
 
@@ -568,12 +605,13 @@ Supported statements:
 - statement-boundary propagation binding: `let name = result_expr?;`
 - `let-else` guard binding for `option` / `result` success patterns
 - assignment to a mutable local or a `mutref` parameter
-- direct field assignment through an owned mutable local product binding or a `mutref` product parameter
+- direct field assignment through a `let mut` local or a `mutref` product parameter
 - `if`
 - `while`
+- `for`
 - `match`
 - `return`
-- `break` and `continue` inside `while`
+- `break` and `continue` inside `while` or `for`
 - expression statement
 
 ### Assignment
@@ -588,7 +626,8 @@ Rules:
 - `name = value;` requires the nearest visible binding of `name` to be a `let mut` local or a `mutref` parameter; plain `let`, `let-else` and pattern bindings and `ref` or owned parameters are `NQ-TYPE-007` "cannot assign to immutable binding `<name>`" (shadowing is respected in both directions; `for` bindings keep their existing `NQ-TYPE-042` message)
 - `binding.field = value;` requires the nearest visible binding to be an owned `let mut` local or a `mutref` parameter of a user-defined product type, including a concrete generic product instance
 - field assignment through a `mutref` parameter writes through the borrow (C `(*p).member`); the overwritten field value is dropped exactly once, as for an owned local
-- field assignment rejects `ref` parameters, owned non-`mut` locals and parameters, enum values, list elements, nested field paths (`p.a.b = v`), and arbitrary assignment targets
+- any other root is `NQ-TYPE-042` "field assignment requires a `let mut` local or a `mutref` parameter" at the root name
+- field assignment rejects `ref` parameters, owned non-`mut` locals and parameters, enum values, list elements, and arbitrary assignment targets; a nested field path (`p.a.b = v`) is `NQ-TYPE-059` "nested field assignment is not supported" (help: pass `mutref p.a` to a function that assigns the inner field)
 - assigning to a `mutref` parameter writes through the borrow
 
 ### If
@@ -619,9 +658,28 @@ Rules:
 - `while` is a statement, not an expression
 - condition type must be `bool`
 - loop bodies are explicit blocks
-- Batch B adds only `break;` and `continue;` for the nearest enclosing `while`
-- `break;` and `continue;` are valid inside nested `if`, `match`, or `let-else` only when the nested construct is inside a `while`
-- loop exits have no value, no labels, and do not make `while` an expression
+- `while true { ... }` with no `break` targeting it terminates for the every-path-returns rule; the condition must be exactly the token `true`
+
+### For
+
+```nauq
+for item in items {
+    print_line(item);
+}
+```
+
+Rules (D051):
+
+- the iterable must be a `list<T>` expression; it is evaluated once
+- the loop binding is immutable, scoped to the body, and cannot be assigned or escape the body
+- the iterable expression sees only bindings declared before the loop, not the loop binding
+- ranges, custom iterables, loop values and implicit element borrowing are not supported
+
+### Loop Control
+
+- `break;` and `continue;` apply to the nearest enclosing `while` or `for`
+- they are valid inside nested `if`, `match`, or `let-else` only when the nested construct is inside a loop
+- loop exits have no value, no labels, and do not make loops expressions
 - loop move checking is conservative across iterations; if a non-copy value may be moved on one iteration and reused on a later one, the compiler rejects the loop
 
 ### Match
@@ -641,8 +699,12 @@ Rules:
 
 - each arm body is a block
 - arm patterns are matched top to bottom
-- a `match` must be exhaustive for its scrutinee type
-- a statement `match` over a user enum, `option<T>`, or `result<T, E>` with no wildcard or binding fallback arm must cover every variant with a top-level variant arm; otherwise `check` reports `NQ-TYPE-051` "match statement must be exhaustive; missing `<V1>`, `<V2>`" at the `match` keyword (variants in declaration order; `Some`, `None`; `Ok`, `Err`). A zero-arm statement `match` over such a type lists every variant. Integer scrutinees and literal or nested-constructor arms keep the refined-pattern fallback rule (see Patterns)
+- statement and expression `match` share one scrutinee rule and one exhaustiveness rule:
+  - the scrutinee must be `i32`, `i64`, `option<T>`, `result<T, E>`, or a user enum (including a concrete generic enum instance); an `f64` scrutinee is `NQ-TYPE-047`, any other type is `NQ-TYPE-054` "cannot `match` on type `<type>`", and no other diagnostic follows for that `match`
+  - an enum, `option` or `result` scrutinee needs every variant covered by a top-level arm or a wildcard/binding fallback; `i32` and `i64` need a fallback
+  - otherwise `check` reports `NQ-TYPE-051` "match must be exhaustive; missing `<C1>`, `<C2>`" at the `match` keyword (variants in declaration order; `Some`, `None`; `Ok`, `Err`; `_` for integers)
+  - a zero-arm statement `match` is exhaustive only over an empty enum; a zero-arm expression `match` is rejected because an expression needs an arm
+  - literal or nested-constructor arms keep the refined-pattern fallback rule (see Patterns)
 - statement `match` arms do not produce values
 
 ### Match Expressions
@@ -658,8 +720,8 @@ Rules:
 
 - expression arms use `pattern => expr`, separated by commas
 - all arm result types must agree exactly
-- the scrutinee must be `i32`, `option<T>`, `result<T, E>`, or a user enum
-- match expression arms do not fall through; V1 requires either a wildcard/binding fallback arm or coverage of every visible variant for the scrutinee type
+- the scrutinee and exhaustiveness rules are the statement `match` rules above
+- match expression arms do not fall through
 - block expressions, implicit final-expression returns, and fallthrough are not supported
 
 ## Patterns
@@ -674,6 +736,14 @@ Supported pattern forms:
 - nested constructor: `Some(Some(value))`
 
 Any match containing a literal or nested constructor pattern must include a wildcard or binding fallback arm. This keeps the first refined-pattern form conservative and exhaustiveness visible. Guards, ranges, string or boolean literals, and or-patterns remain deferred.
+
+Unsupported pattern forms have focused diagnostics:
+
+- an unknown constructor (`Nope(x)`, `m::Nope`): `NQ-RESOLVE-010` "unknown variant `<name>` in pattern"
+- `true` / `false`: `NQ-TYPE-056` "bool patterns are not supported yet" (M58.2 adds them)
+- a string literal: `NQ-TYPE-056` "string patterns are not supported"
+- a negated non-literal (`-x`): `NQ-TYPE-056` "only integer literals can be negated in patterns"
+- any other unsupported shape (for example `1 | 2`): `NQ-TYPE-056` "this pattern form is not supported"
 
 ## Operators
 
@@ -916,6 +986,22 @@ Every diagnostic should contain:
 
 Diagnostics should be stable enough for snapshot testing and future editor integration.
 
+- Text output prints `note:` and `help:` lines after the message whenever the
+  diagnostic carries them; JSON output carries the same fields.
+- Each parse error is reported once.
+- If loading the module graph or parsing any module reports an error, the
+  command stops before name resolution and reports only those diagnostics in
+  its usual envelope (for `review-diff` and `change-report`, per side). No
+  cascade such as "missing main" follows.
+- A malformed expression the parser cannot read (for example `1 2` or
+  `+1`) is `NQ-PARSE-005` "malformed expression"; a missing statement
+  terminator is `NQ-PARSE-003` "expected `;`" at the end of the statement's
+  last token.
+- Diagnostics whose message begins "internal compiler error:" report a
+  compiler invariant failure, never a property of the source; every source
+  shape the compiler does not support has a focused diagnostic
+  (docs/M58_1_PRODUCER_LEDGER.md records the inventory).
+
 The compiler also supports:
 
 ```text
@@ -926,15 +1012,14 @@ nauqc review <file>
 
 ## Initial Lints
 
-Planned v0.1 lints:
+Current lints, all warnings:
 
-- `unused_mut`
-- discarded `result` value
-- public function missing `audit`
-- overdeclared `mutates(...)`
-- overdeclared `effects(print)` / `effects(io)`
+- public function missing `audit` (`NQ-CONTRACT-001`)
+- overdeclared `mutates(...)` (`NQ-CONTRACT-006`)
+- overdeclared `effects(print)` / `effects(io)` (`NQ-CONTRACT-009`)
 
-These are warnings, not hard errors.
+Planned lints without a producer (`unused_mut`, discarded `result` value) are
+listed in DEFERRED.md. The charter makes `pub` contracts required from M62.
 
 ## Explicit v0.1 Omissions
 

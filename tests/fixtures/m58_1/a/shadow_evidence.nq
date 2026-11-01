@@ -1,0 +1,30 @@
+// M58.1 rule 2 evidence: the initializer of the inner `total` reads, borrows
+// and mutates through the outer `total`; facts and review name the outer
+// binding for those references and the inner binding afterwards.
+
+fn bump(value: mutref i32) -> unit
+audit {
+    intent("Add one through a mutable borrow");
+    mutates(value);
+    effects();
+}
+{
+    value = value + 1;
+    return;
+}
+
+fn read(value: ref i32) -> i32 {
+    return value + 0;
+}
+
+fn main() -> i32 {
+    let total = 1;
+    if true {
+        let mut total = read(ref total) + total;
+        bump(mutref total);
+        if total != 3 {
+            return 1;
+        }
+    }
+    return total - 1;
+}

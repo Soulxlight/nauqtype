@@ -530,7 +530,7 @@ class SelfhostHandoffTests(unittest.TestCase):
         }
         returncode, output = self._run_probe(modules, [])
         self.assertNotEqual(returncode, 0, output)
-        self.assertIn("stage1 limitation", output)
+        self.assertIn("NQ-TYPE-058", output)  # M58.1: was a stage1 limitation
 
     def test_selfhost_tree_builds_handoff_without_limitations(self) -> None:
         result = run_copied_selfhost()

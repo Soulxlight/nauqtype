@@ -11,6 +11,7 @@ type resolver_binding {
     scope_id: i32,
     name: str,
     at: i32,
+    visible_from: i32,
     creates_local: bool,
 }
 
@@ -18,6 +19,7 @@ type resolver_binding_key {
     binding_index: i32,
     scope_id: i32,
     at: i32,
+    visible_from: i32,
     name_bucket: i32,
     creates_local: bool,
 }
@@ -732,6 +734,7 @@ fn build_binding_keys(bindings: ref list<resolver_binding>) -> list<resolver_bin
                     binding_index: index,
                     scope_id: value.scope_id,
                     at: value.at,
+                    visible_from: value.visible_from,
                     name_bucket: resolver_name_bucket(value.name),
                     creates_local: value.creates_local,
                 });
@@ -751,7 +754,7 @@ fn has_visible_binding(bindings: ref list<resolver_binding>, binding_keys: ref l
         let entry = list_get(ref binding_keys, index);
         match entry {
             Some(key) => {
-                if key.name_bucket == target_bucket and key.at < at and key.creates_local {
+                if key.name_bucket == target_bucket and key.visible_from <= at and key.creates_local {
                     let binding_entry = list_get(ref bindings, key.binding_index);
                     match binding_entry {
                         Some(value) => {
@@ -809,6 +812,7 @@ fn take_bindings_for_function(source: ref list<body_binding>, items: ref list<to
                         scope_id: value.scope_id,
                         name: value.name,
                         at: value.at,
+                        visible_from: value.visible_from,
                         creates_local: binding_creates_local(value, ref items, ref uses),
                     });
                     cursor = cursor + 1;
@@ -1075,7 +1079,8 @@ fn resolve_function_refs(scopes: ref list<resolver_scope>, bindings: ref list<re
                                 push_diag(mutref diags, module, current.at, "pattern constructor exists in an imported module but is not `pub`");
                             },
                             _ => {
-                                push_diag(mutref diags, module, current.at, "unknown pattern constructor in function body");
+                                // M58.1: the matrix wording, spanning the constructor name.
+                                list_push(mutref diags, make_error("NQ-RESOLVE-010", diag_resolve, module, current.at, current.at + str_len(current.name), str_concat(str_concat("unknown variant `", current.name), "` in pattern")));
                             },
                         }
                     },

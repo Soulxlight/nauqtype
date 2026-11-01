@@ -3,17 +3,18 @@
 ## Current Position And Resumption
 
 Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
-complete. Complete through M57.1 library-enabling core, including M56.2
-scalar `f64`, M56.1 generic-aware facts/review v5, M56 explicit generic reuse
-and the PRE-M56 P1-P4 performance checkpoint (full milestone gate about 29
-minutes at M57.1; the 10-minute cold working target remains unmet and open).
+complete. Complete through M58.1 correctness and diagnostics, including
+M57.1 library-enabling core, M56.2 scalar `f64`, M56.1 generic-aware
+facts/review v5, M56 explicit generic reuse and the PRE-M56 P1-P4
+performance checkpoint (full milestone gate about 33 minutes at M58.1; the
+10-minute cold working target remains unmet and open).
 Evidence for each milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md)
 and its contract documents.
 
 End goal (owner, 2026-10-31): NauqType v1.0 is the complete, coherent
 language defined by [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a
-stable Linux release. Next: M58 corrective sweep, then the charter's
-sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+stable Linux release. Next: M58.2 (small language additions) and M58.3
+(rewrite tooling), then the charter's sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -1111,9 +1112,17 @@ the semantic commitments each milestone implements. Every breaking milestone
 follows the charter's three-checkpoint bootstrap bridge, and evidence for each
 feature lands with the feature.
 
+M58.1 complete 2026-11-01 per the [M58.1 contract](docs/M58_1_CONTRACT.md)
+(Gate A revision 4; D070): every path returns, initializer scope, one
+exhaustiveness rule, no reachable stage1-limitation diagnostics, let-else
+exits, diagnostics pipeline and driver repairs. Evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close).
+M58.2 adds `%`, `i64`/`bool` patterns, a real coverage check, range/indexed
+`for` and the R9 matrix; M58.3 adds rewrite tooling.
+
 | Milestone | Scope |
 | --- | --- |
-| M58 | Corrective sweep: missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
+| M58 | Corrective sweep (M58.1 complete; M58.2, M58.3 open): missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
 | M59 | Design records with Gate A (paper only): ownership, capabilities and effects, function types and contracts, scoped element access, tasks/channels, FFI |
 | M60 | Naming: case rule, constructor patterns, struct-like variants, qualified type annotations; compiler-source migration |
 | M61 | Ownership: `move` and must-consume resources |

@@ -1,0 +1,92 @@
+// Accepted: qualified and generic qualified calls inside `try`, with every `?`
+// outside any `and`/`or` operand (a separate argument, field, list element or
+// comparison side). The owned test runs this program with exact output and
+// the same C under ASan/UBSan.
+use helper;
+
+type Packet {
+    text: str,
+    flag: bool,
+}
+
+fn keep(flag: bool) -> bool {
+    return flag;
+}
+
+fn show(label: str, passed: bool) -> unit
+audit {
+    intent("Print one labeled check");
+    mutates();
+    effects(print);
+}
+{
+    if passed {
+        print_line(str_concat(label, " ok"));
+    } else {
+        print_line(str_concat(label, " WRONG"));
+    }
+    return;
+}
+
+fn is_ok_true(r: result<bool, str>) -> bool {
+    match r {
+        Ok(value) => {
+            return value;
+        },
+        Err(e) => {
+            return false;
+        },
+    }
+}
+
+fn main() -> i32 {
+    let logic: result<bool, str> = try {
+        helper::plain() and true
+    };
+    show("qualified and", is_ok_true(logic));
+    let sum: result<i32, str> = try {
+        helper::wrap::<i32>(2)? + helper::wrap::<i32>(3)?
+    };
+    let mut sum_ok = false;
+    match sum {
+        Ok(n) => {
+            sum_ok = n == 5;
+        },
+        Err(e) => {
+        },
+    }
+    show("generic sum", sum_ok);
+    let packet: result<Packet, str> = try {
+        Packet { text: helper::text()?, flag: helper::plain() and true }
+    };
+    let mut packet_ok = false;
+    match packet {
+        Ok(p) => {
+            packet_ok = p.text == "t" and p.flag;
+        },
+        Err(e) => {
+        },
+    }
+    show("separate field", packet_ok);
+    let compared: result<bool, str> = try {
+        keep(helper::plain() or false) == helper::wrap::<bool>(true)?
+    };
+    show("comparison side", is_ok_true(compared));
+    let argument: result<bool, str> = try {
+        keep(helper::wrap::<bool>(true)?) == keep(true and helper::plain())
+    };
+    show("separate argument", is_ok_true(argument));
+    let items: result<list<bool>, str> = try {
+        [helper::wrap::<bool>(true)?, helper::plain() and false]
+    };
+    let mut items_ok = false;
+    match items {
+        Ok(values) => {
+            items_ok = list_len(ref values) == 2;
+        },
+        Err(e) => {
+        },
+    }
+    show("separate element", items_ok);
+    return 0;
+}
