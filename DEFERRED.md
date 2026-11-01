@@ -29,7 +29,7 @@ that have since shipped are historical, not current limitations.
   diagnostics after a terminating statement; splitting the shared
   `NQ-TYPE-042` code into per-message codes; loop conditions other than the
   exact token `true` (such as `(true)`) counting toward termination; `bool`
-  and string patterns (`bool` patterns arrive in M58.2); nested field
+  and string patterns (`bool` and `str` patterns arrive in M58.3); nested field
   assignment (`o.inner.value = v`, `NQ-TYPE-059`); expression-position `?`
   outside `try`.
 - Lints without a producer: `unused_mut` and discarded `result` values. SPEC

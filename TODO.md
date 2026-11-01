@@ -19,16 +19,21 @@
   [evidence](AUDIT_REMEDIATION.md#m571-library-enabling-core-close))
 - [x] Language charter approved by the owner and adopted (2026-10-31):
   [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md) replaces `STABLE_RELEASE.md`
-- [x] M58 split into M58.1 (correctness and diagnostics), M58.2 (small
-  language additions), M58.3 (rewrite tooling); M58.1 Gate A review of the
+- [x] M58 split into M58.1 (correctness and diagnostics) and the rest of
+  the sweep (re-split 2026-11-01 into M58.2-M58.5); M58.1 Gate A review of the
   [contract](docs/M58_1_CONTRACT.md) (approved 2026-10-31, revision 4)
 - [x] M58.1: implementation, focused checks, ownership-class trailing
   audits, milestone gate (2026-11-01;
   [evidence](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close))
-- [ ] M58.2: contract and Gate A review (integer `%`, `i64` and `bool`
-  patterns, a real pattern-coverage check replacing D047, range and indexed
-  `for`, the R9 position matrix)
-- [ ] M58.3: contract and Gate A review (source rewrite tooling for the
+- [ ] M58.2: Gate A review of the [contract](docs/M58_2_CONTRACT.md)
+  (integer `%`, range and indexed `for`), then implementation
+- [ ] M58.3: contract and Gate A review (`i64`, `bool` and `str` literal
+  patterns, an exact coverage check replacing D047, unreachable-arm errors,
+  `match` expression positions incl. NQ Learn finding 19:
+  `match n + 1 { ... }` as an expression)
+- [ ] M58.4: contract and Gate A review (nested field assignment, constant
+  comparisons, the R9 position matrix in SPEC)
+- [ ] M58.5: contract and Gate A review (source rewrite tooling for the
   M60/M61 migrations)
 - [x] Audit policy now names `gpt-6.1-sol` for the independent adversarial
   auditor (`gpt-5.5` withdrawn from the Codex account, 2026-10-31).

@@ -740,7 +740,7 @@ Any match containing a literal or nested constructor pattern must include a wild
 Unsupported pattern forms have focused diagnostics:
 
 - an unknown constructor (`Nope(x)`, `m::Nope`): `NQ-RESOLVE-010` "unknown variant `<name>` in pattern"
-- `true` / `false`: `NQ-TYPE-056` "bool patterns are not supported yet" (M58.2 adds them)
+- `true` / `false`: `NQ-TYPE-056` "bool patterns are not supported yet" (M58.3 adds them)
 - a string literal: `NQ-TYPE-056` "string patterns are not supported"
 - a negated non-literal (`-x`): `NQ-TYPE-056` "only integer literals can be negated in patterns"
 - any other unsupported shape (for example `1 | 2`): `NQ-TYPE-056` "this pattern form is not supported"

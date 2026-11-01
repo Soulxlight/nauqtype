@@ -13,8 +13,8 @@ and its contract documents.
 
 End goal (owner, 2026-10-31): NauqType v1.0 is the complete, coherent
 language defined by [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a
-stable Linux release. Next: M58.2 (small language additions) and M58.3
-(rewrite tooling), then the charter's sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
+stable Linux release. Next: the rest of the corrective sweep (M58.2-M58.5,
+below), then the charter's sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
 [documentation guide](docs/README.md) for authoritative contracts. The
@@ -1117,12 +1117,17 @@ M58.1 complete 2026-11-01 per the [M58.1 contract](docs/M58_1_CONTRACT.md)
 exhaustiveness rule, no reachable stage1-limitation diagnostics, let-else
 exits, diagnostics pipeline and driver repairs. Evidence:
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close).
-M58.2 adds `%`, `i64`/`bool` patterns, a real coverage check, range/indexed
-`for` and the R9 matrix; M58.3 adds rewrite tooling.
+The rest of M58 is split by size (2026-11-01, after Gate A judged one
+milestone too broad): M58.2 integer `%` and range/indexed `for`
+([contract](docs/M58_2_CONTRACT.md)); M58.3 `i64`/`bool`/`str` literal
+patterns, an exact coverage check replacing D047, unreachable-arm errors and
+`match` expression positions; M58.4 nested field assignment, constant
+comparisons and the R9 position matrix; M58.5 rewrite tooling for the
+M60/M61 migrations.
 
 | Milestone | Scope |
 | --- | --- |
-| M58 | Corrective sweep (M58.1 complete; M58.2, M58.3 open): missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
+| M58 | Corrective sweep (M58.1 complete; M58.2-M58.5 open): missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
 | M59 | Design records with Gate A (paper only): ownership, capabilities and effects, function types and contracts, scoped element access, tasks/channels, FFI |
 | M60 | Naming: case rule, constructor patterns, struct-like variants, qualified type annotations; compiler-source migration |
 | M61 | Ownership: `move` and must-consume resources |

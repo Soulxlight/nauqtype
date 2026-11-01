@@ -41,7 +41,7 @@ defines its layout.
   gate is about 33 minutes on the WSL2 Linux host.
 - End goal (owner, 2026-10-31): the v1.0 language defined by
   [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a stable Linux release.
-  Next: M58.2 and M58.3, the rest of the corrective sweep. Sequence and scope:
+  Next: M58.2-M58.5, the rest of the corrective sweep. Sequence and scope:
   [ROADMAP.md](ROADMAP.md#current-position-and-resumption); open actions:
   [TODO.md](TODO.md#next-actions).
 
