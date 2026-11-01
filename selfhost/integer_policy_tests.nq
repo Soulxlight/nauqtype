@@ -1340,6 +1340,8 @@ audit {
     let ok = integer_policy_gate_impl(driver);
     if not fixture_c_gate_end(lock) { eprint_line("integer policy: fixture gate lock release failed"); return false; }
     if not ok { return false; }
+    if not m58_2a_gate(driver) { eprint_line("integer policy: M58.2 remainder cases failed"); return false; }
+    if not m58_2b_gate(driver) { eprint_line("integer policy: M58.2 range and indexed for-loop cases failed"); return false; }
     if not m58d_gate(driver) { eprint_line("integer policy: M58.1 diagnostics pipeline and driver cases failed"); return false; }
     if not f64_runtime_gate(driver) { eprint_line("integer policy: M56.2 f64 runtime cases failed"); return false; }
     if not m57_1_a1_gate(driver) { eprint_line("integer policy: M57.1 places/assignment/reservation cases failed"); return false; }
@@ -1350,6 +1352,699 @@ audit {
     if not m58_1_c_gate(driver) { eprint_line("integer policy: M58.1 rule-4 focused diagnostics and producer ledger cases failed"); return false; }
     if not m58a_gate(driver) { eprint_line("integer policy: M58.1 termination, let-else exits, and initializer scope cases failed"); return false; }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// M58.2 slice A: integer `%` (contract section 1). The lexer token; constant
+// folding and both NQ-TYPE-045 errors for both widths; `f64 % f64` is
+// NQ-TYPE-050; every other operand shape reports byte for byte what `/`
+// reports (operator character substituted); run-time results, precedence,
+// evaluation order, short-circuit and both failures for both widths, at the
+// default `build` flags, -O0, -O2, -O2 UBSan and -O2 ASan+UBSan.
+// ---------------------------------------------------------------------------
+
+fn m58_2a_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_2/a/", name);
+}
+
+fn m58_2a_output(name: str) -> str {
+    return str_concat("build/m58_2_a/", name);
+}
+
+fn m58_2a_lock() -> str {
+    return "build/m58_2_a/.fixture-c-gate-lock";
+}
+
+fn m58_2a_swap(value: str, from: str, to: str) -> str {
+    let mut out = "";
+    let mut index = 0;
+    let mut copied = 0;
+    while index + str_len(from) <= str_len(value) {
+        if starts_with_at(value, index, from) {
+            out = concat3(out, slice_text(value, copied, index), to);
+            index = index + str_len(from);
+            copied = index;
+        } else {
+            index = index + 1;
+        }
+    }
+    return str_concat(out, slice_text(value, copied, str_len(value)));
+}
+
+fn m58_2a_token_is(value: option<token>, percent: bool, start: i32) -> bool {
+    let Some(current) = value else { return false; };
+    if current.start != start { return false; }
+    match current.kind {
+        tk_percent => { return percent and current.text == "%" and current.end == start + 1; },
+        tk_ident => { return not percent; },
+        tk_int_lit => { return not percent; },
+        tk_minus => { return not percent; },
+        _ => { return false; },
+    }
+}
+
+fn m58_2a_lex_cases() -> bool {
+    let tokens = lex("a%b % -1");
+    if list_len(ref tokens) != 7 { eprint_line("M58.2 A: `%` token count"); return false; }
+    let ok = m58_2a_token_is(list_get(ref tokens, 0), false, 0) and m58_2a_token_is(list_get(ref tokens, 1), true, 1) and m58_2a_token_is(list_get(ref tokens, 2), false, 2) and m58_2a_token_is(list_get(ref tokens, 3), true, 4) and m58_2a_token_is(list_get(ref tokens, 4), false, 6) and m58_2a_token_is(list_get(ref tokens, 5), false, 7);
+    if not ok { eprint_line("M58.2 A: `%` token stream"); }
+    return ok;
+}
+
+fn m58_2a_const_case(driver: str, directory: str, name: str, declaration: str, message: str) -> bool {
+    let help = "Change the evaluated constant remainder; a zero divisor and the minimum integer with divisor -1 are not defined results.";
+    let source = str_concat(str_concat(declaration, "\n\n"), f64_main(""));
+    let at = f64_find(source, "%");
+    return m57a2_rejects(driver, directory, name, source, m57a2_entry("NQ-TYPE-045", at, at + 1, message, help));
+}
+
+fn m58_2a_const_cases(driver: str, directory: str) -> bool {
+    let zero = "constant integer remainder by zero";
+    let overflow = "constant integer remainder overflow";
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_zero32", "const BAD: i32 = 7 % 0;", zero) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_zero64", "const BAD: i64 = 7 % 0;", zero) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_overflow32", "const BAD: i32 = -2147483648 % -1;", overflow) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_overflow64", "const BAD: i64 = -9223372036854775808 % -1;", overflow) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_wrapped_zero32", "const BAD: i32 = 7 % (2147483647 + 2147483647 + 2);", zero) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_wrapped_zero64", "const BAD: i64 = 7 % (9223372036854775807 + 9223372036854775807 + 2);", zero) { return false; }
+    if not m58_2a_const_case(driver, directory, "m58_2a_const_live_and", "const BAD: bool = true and (1 % 0 == 0);", zero) { return false; }
+    return m58_2a_const_case(driver, directory, "m58_2a_const_live_or", "const BAD: bool = false or (-2147483648 % -1 == 0);", overflow);
+}
+
+fn m58_2a_f64_cases(driver: str, directory: str) -> bool {
+    let message = "operator `%` is not defined for type `f64`";
+    let help = "`f64` supports `+`, `-`, `*` and `/`, not `%`";
+    let names = f64_main("    let a = 1.5;\n    let b = 2.0;\n    let c = a % b;");
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_names", names, "NQ-TYPE-050", message, help, "% b;", 0, 1) { return false; }
+    let literals = f64_main("    let c = 1.5 % 2.0;");
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_literals", literals, "NQ-TYPE-050", message, help, "% 2.0", 0, 1) { return false; }
+    let returned = "fn probe(a: f64, b: f64) -> f64 {\n    return a % b;\n}\n\n";
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_return", str_concat(returned, f64_main("")), "NQ-TYPE-050", message, help, "% b;", 0, 1) { return false; }
+    // Audit repair (Diagnostics Matrix): a constant whose root `%` joins two
+    // `f64` literals reports the expression form's NQ-TYPE-050 at the `%` and
+    // nothing else, whatever its declared type; `/` keeps NQ-TYPE-048.
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_const_rem", str_concat("const BAD: f64 = 1.0 % 2.0;\n\n", f64_main("")), "NQ-TYPE-050", message, help, "% 2.0", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_const_rem_i32", str_concat("const BAD: i32 = 1.0 % 2.0;\n\n", f64_main("")), "NQ-TYPE-050", message, help, "% 2.0", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2a_f64_const_rem_wrapped", str_concat("const BAD: f64 = ((-1.5) % (2.0));\n\n", f64_main("")), "NQ-TYPE-050", message, help, "% (2.0)", 0, 1) { return false; }
+    let div_source = str_concat("const BAD: f64 = 1.0 / 2.0;\n\n", f64_main(""));
+    let div_at = f64_find(div_source, "1.0 / 2.0");
+    return m57a2_rejects(driver, directory, "m58_2a_f64_const_div", div_source, m57a2_entry("NQ-TYPE-048", div_at, div_at + 9, "f64 constants must be a literal; compute the value at runtime", ""));
+}
+
+fn m58_2a_check_digest(driver: str, directory: str, name: str, source: str) -> option<process_result> {
+    let path = concat4(directory, "/", name, ".nq");
+    if not f64_write(path, source) { return None; }
+    match f64_run_check(driver, path, true) {
+        Ok(status) => { return Some(status); },
+        Err(err) => { eprint_line(io_err_text(err)); return None; },
+    }
+}
+
+// `%` reports exactly what `/` reports for the same operands: the same exit
+// status and the same complete diagnostic digest once "operator `/`" reads
+// "operator `%`" (the NQ-PARSE-005 help itself spells "`ref`/`mutref`").
+fn m58_2a_same_as_div(driver: str, directory: str, name: str, template: str) -> bool {
+    let Some(div) = m58_2a_check_digest(driver, directory, str_concat(name, "_div"), m58_2a_swap(template, "@", "/")) else { return false; };
+    let Some(rem) = m58_2a_check_digest(driver, directory, str_concat(name, "_rem"), m58_2a_swap(template, "@", "%")) else { return false; };
+    let div_digest = m57a2_digest(div.stdout);
+    let rem_digest = m57a2_digest(rem.stdout);
+    let ok = div.exit_code == 1 and rem.exit_code == 1 and div.stderr == "" and rem.stderr == "" and div_digest != "" and m58_2a_swap(div_digest, "operator `/`", "operator `%`") == rem_digest and not text_contains(rem.stdout, "NQ-INTERNAL-");
+    if ok { return true; }
+    eprint_line(str_concat("M58.2 A: `%` differs from `/`: ", name));
+    eprint_line(str_concat("`/` digest:\n", div_digest));
+    eprint_line(str_concat("`%` digest:\n", rem_digest));
+    return f64_report(name, rem);
+}
+
+fn m58_2a_operand_type(index: i32) -> str {
+    let types = ["i32", "i64", "f64", "bool", "str", "Point", "Light", "list<i32>", "option<i32>"];
+    return f64_list_text(ref types, index);
+}
+
+fn m58_2a_equivalence_cases(driver: str, directory: str) -> bool {
+    let declarations = "type Point {\n    x: i32,\n}\n\nenum Light {\n    Red,\n    Amber,\n}\n\n";
+    let mut left = 0;
+    while left < 9 {
+        let mut right = 0;
+        while right < 9 {
+            // Two i32, two i64 and two f64 operands are not `/` rejections.
+            if left != right or left > 2 {
+                let probe = concat5("fn probe(a: ", m58_2a_operand_type(left), ", b: ", m58_2a_operand_type(right), ") -> i32 {\n    let r = a @ b;\n    return 0;\n}\n\n");
+                let name = concat4("m58_2a_pair_", i32_to_str(left), "_", i32_to_str(right));
+                if not m58_2a_same_as_div(driver, directory, name, concat3(declarations, probe, f64_main(""))) { return false; }
+            }
+            right = right + 1;
+        }
+        left = left + 1;
+    }
+    // Mismatched widths keep the `/` text, which this pins as well.
+    let mixed = f64_main("    let a = 1;\n    let b: i64 = 2;\n    let c = a % b;");
+    let Some(status) = m58_2a_check_digest(driver, directory, "m58_2a_mixed_widths", mixed) else { return false; };
+    if not text_contains(status.stdout, "arithmetic operands must have matching types") { return f64_report("m58_2a_mixed_widths", status); }
+    let mut shapes: list<str> = list();
+    list_push(mutref shapes, f64_main("    let r = 1 @ 2.0;"));
+    list_push(mutref shapes, f64_main("    let r = 1.5 @ 2;"));
+    list_push(mutref shapes, f64_main("    let r = true @ 1;"));
+    list_push(mutref shapes, f64_main("    let r = \"a\" @ \"b\";"));
+    list_push(mutref shapes, f64_main("    let r = 1 @ ;"));
+    list_push(mutref shapes, f64_main("    let r = @ 1;"));
+    list_push(mutref shapes, f64_main("    let r: i32 = 1 @ 2;\n    let s: bool = r;"));
+    list_push(mutref shapes, str_concat("fn probe(a: i32, b: i64) -> i64 {\n    return a @ b;\n}\n\n", f64_main("")));
+    list_push(mutref shapes, str_concat("const BAD: i32 = 1 @ true;\n\n", f64_main("")));
+    list_push(mutref shapes, str_concat("const BAD: i32 = 1 @ 2.0;\n\n", f64_main("")));
+    // A constant whose root operator joins two `f64` literals is pinned in
+    // m58_2a_f64_cases (NQ-TYPE-050 for `%`, NQ-TYPE-048 for `/`); a
+    // non-root `%` keeps the `/` text.
+    list_push(mutref shapes, str_concat("const BAD: f64 = 1.0 @ 2.0 + 1.0;\n\n", f64_main("")));
+    list_push(mutref shapes, str_concat("const BAD: f64 = 1.0 @ 2;\n\n", f64_main("")));
+    list_push(mutref shapes, str_concat("const BAD: i64 = 1 @ \"x\";\n\n", f64_main("")));
+    let mut index = 0;
+    while index < list_len(ref shapes) {
+        if not m58_2a_same_as_div(driver, directory, str_concat("m58_2a_shape_", i32_to_str(index)), f64_list_text(ref shapes, index)) { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+fn m58_2a_compile(source: str, output: str, profile: i32) -> bool {
+    let mut args: list<str> = list();
+    list_push(mutref args, "-std=c11");
+    list_push(mutref args, "-D_POSIX_C_SOURCE=200809L");
+    list_push(mutref args, "-Istdlib");
+    if profile == 0 { list_push(mutref args, "-O0"); }
+    else { list_push(mutref args, "-O2"); }
+    if profile == 2 {
+        list_push(mutref args, "-fsanitize=undefined");
+        list_push(mutref args, "-fno-sanitize-recover=all");
+    }
+    if profile == 3 {
+        list_push(mutref args, "-fsanitize=address,undefined");
+        list_push(mutref args, "-fno-sanitize-recover=all");
+    }
+    list_push(mutref args, source);
+    list_push(mutref args, "stdlib/runtime.c");
+    list_push(mutref args, "-o");
+    list_push(mutref args, output);
+    let status = fixture_c_compile(source, output, ref args, "runtime-h", m58_2a_lock());
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code == 0 and status.stdout == "" and status.stderr == "" { return true; }
+    eprint_line(concat4("M58.2 A: compile failed: ", output, " ", status.stderr));
+    return false;
+}
+
+fn m58_2a_mode(executable: str, mode: str, code: i32, stdout: str, stderr: str) -> bool {
+    let args = [mode, "edge"];
+    return f64_rt_exact(concat3(executable, " ", mode), run_process(executable, ref args, "."), code, stdout, stderr);
+}
+
+fn m58_2a_runtime_modes(executable: str) -> bool {
+    let ok = "remainder ok\n";
+    let mut modes: list<str> = list();
+    list_push(mutref modes, "signs32");
+    list_push(mutref modes, "signs64");
+    list_push(mutref modes, "boundaries32");
+    list_push(mutref modes, "boundaries64");
+    list_push(mutref modes, "precedence32");
+    list_push(mutref modes, "precedence64");
+    list_push(mutref modes, "order32");
+    list_push(mutref modes, "order64");
+    list_push(mutref modes, "short");
+    let mut index = 0;
+    while index < list_len(ref modes) {
+        if not m58_2a_mode(executable, f64_list_text(ref modes, index), 0, ok, "") { return false; }
+        index = index + 1;
+    }
+    if not m58_2a_mode(executable, "snapshot32", 0, "snapshot32:rem\nremainder ok\n", "") { return false; }
+    if not m58_2a_mode(executable, "snapshot64", 0, "snapshot64:rem\nremainder ok\n", "") { return false; }
+    let trace = "left\nright\n";
+    let zero = "nauqtype runtime: integer remainder by zero\n";
+    let overflow = "nauqtype runtime: integer remainder overflow\n";
+    if not m58_2a_mode(executable, "zero32", 1, trace, zero) { return false; }
+    if not m58_2a_mode(executable, "zero64", 1, trace, zero) { return false; }
+    if not m58_2a_mode(executable, "overflow32", 1, trace, overflow) { return false; }
+    return m58_2a_mode(executable, "overflow64", 1, trace, overflow);
+}
+
+fn m58_2a_runtime_cases(driver: str) -> bool {
+    let macro_args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-pedantic-errors", "-Istdlib", "-fsyntax-only", m58_2a_fixture("rem_macros.c")];
+    if not f64_rt_exact("M58.2 A: strict C11 remainder macros", run_process("cc", ref macro_args, "."), 0, "", "") { return false; }
+    let runtime_c = m58_2a_output("rem_runtime.c");
+    let constants_c = m58_2a_output("rem_constants.c");
+    let emit_runtime = ["emit-c", m58_2a_fixture("rem_runtime.nq"), "-o", runtime_c];
+    if not f64_rt_exact("M58.2 A: emit rem_runtime", run_process(driver, ref emit_runtime, "."), 0, "", "") { return false; }
+    let emit_constants = ["emit-c", m58_2a_fixture("rem_constants.nq"), "-o", constants_c];
+    if not f64_rt_exact("M58.2 A: emit rem_constants", run_process(driver, ref emit_constants, "."), 0, "", "") { return false; }
+    let Some(runtime_text) = m57c_read(runtime_c) else { return false; };
+    // Every run-time `%` lowers to the checked carriers; C's `%` never appears
+    // outside them, so no optimization level can evaluate an undefined remainder.
+    if integer_policy_count(runtime_text, "nq_i32_rem(") == 0 or integer_policy_count(runtime_text, "nq_i64_rem(") == 0 or integer_policy_count(runtime_text, ") % (") != 0 {
+        eprint_line("M58.2 A: emitted run-time remainder does not use the checked carriers");
+        return false;
+    }
+    if not integer_policy_carriers(constants_c, true) { return false; }
+    // The default `build` route.
+    let built = m58_2a_output("rem_runtime-build");
+    let build_args = ["build", m58_2a_fixture("rem_runtime.nq"), "-o", built];
+    if not f64_rt_exact("M58.2 A: build rem_runtime", run_process(driver, ref build_args, "."), 0, "", "") { return false; }
+    if not m58_2a_runtime_modes(m58d_absolute(built)) { return false; }
+    let mut profile = 0;
+    while profile < 4 {
+        let mut suffix = "O0";
+        if profile == 1 { suffix = "O2"; }
+        if profile == 2 { suffix = "O2-ubsan"; }
+        if profile == 3 { suffix = "O2-asan-ubsan"; }
+        let runtime_exe = m58_2a_output(str_concat("rem_runtime-", suffix));
+        let constants_exe = m58_2a_output(str_concat("rem_constants-", suffix));
+        if not m58_2a_compile(runtime_c, runtime_exe, profile) { return false; }
+        if not m58_2a_runtime_modes(runtime_exe) { return false; }
+        if not m58_2a_compile(constants_c, constants_exe, profile) { return false; }
+        let none: list<str> = list();
+        if not f64_rt_exact(constants_exe, run_process(constants_exe, ref none, "."), 0, "remainder constants ok\n", "") { return false; }
+        profile = profile + 1;
+    }
+    return true;
+}
+
+fn m58_2a_gate_impl(driver: str) -> bool {
+    if not m58_2a_lex_cases() { return false; }
+    let Ok(directory) = create_temp_dir("build", "m58-2-a-") else { eprint_line("M58.2 A: temporary directory refused"); return false; };
+    if not m58_2a_const_cases(driver, directory) { eprint_line("M58.2 A: constant remainder cases failed"); return false; }
+    if not m58_2a_f64_cases(driver, directory) { eprint_line("M58.2 A: f64 remainder cases failed"); return false; }
+    if not m58_2a_equivalence_cases(driver, directory) { eprint_line("M58.2 A: `/` equivalence cases failed"); return false; }
+    return m58_2a_runtime_cases(driver);
+}
+
+fn m58_2a_gate(driver: str) -> bool {
+    let lock = m58_2a_lock();
+    if not fixture_c_gate_begin("build/m58_2_a", lock) { eprint_line("M58.2 A: fixture gate lock refused"); return false; }
+    let ok = m58_2a_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M58.2 A: fixture gate lock release failed"); return false; }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// M58.2 slice B: range `for i in a..b` and indexed `for i, item in items`
+// (docs/M58_2_CONTRACT.md sections 2-4 and 6). The `..` token table; the run
+// fixtures with exact output, their C at -O2 under ASan/UBSan; every
+// NQ-PARSE-006 row and the one-diagnostic header precedence; NQ-TYPE-062;
+// immutability, duplicates, `?` in a bound and the termination rule; loop
+// binding identity in facts; byte-identical evidence and C for a list-loop
+// program; `fmt --check`; the reserved-word list.
+// ---------------------------------------------------------------------------
+
+fn m58_2b_fixture(name: str) -> str {
+    return str_concat("tests/fixtures/m58_2/b/", name);
+}
+
+fn m58_2b_output(name: str) -> str {
+    return str_concat("build/m58_2_b/", name);
+}
+
+fn m58_2b_token_tag(value: token) -> str {
+    match value.kind {
+        tk_int_lit => { return "int"; },
+        tk_float_lit => { return "float"; },
+        tk_malformed_float_lit => { return "bad"; },
+        tk_dotdot => { return "range"; },
+        tk_dot => { return "dot"; },
+        tk_eq => { return "eq"; },
+        tk_ident => { return "id"; },
+        tk_eof => { return "eof"; },
+        _ => { return "other"; },
+    }
+}
+
+// `kind:text` of every token before end of file, space separated.
+fn m58_2b_token_stream(source: str) -> str {
+    let tokens = lex(source);
+    let mut out = "";
+    for value in tokens {
+        match value.kind {
+            tk_eof => {},
+            _ => {
+                if out != "" { out = str_concat(out, " "); }
+                out = concat4(out, m58_2b_token_tag(value), ":", value.text);
+            },
+        }
+    }
+    return out;
+}
+
+fn m58_2b_lex_case(source: str, expected: str) -> bool {
+    let actual = m58_2b_token_stream(source);
+    if actual == expected { return true; }
+    eprint_line(concat6("M58.2 B lexing ", json_quote(source), ": ", actual, " expected ", expected));
+    return false;
+}
+
+fn m58_2b_lexing_cases() -> bool {
+    if not m58_2b_lex_case("0..10", "int:0 range:.. int:10") { return false; }
+    if not m58_2b_lex_case("a..b", "id:a range:.. id:b") { return false; }
+    if not m58_2b_lex_case("a .. b", "id:a range:.. id:b") { return false; }
+    if not m58_2b_lex_case("x.len..y.len", "id:x dot:. id:len range:.. id:y dot:. id:len") { return false; }
+    if not m58_2b_lex_case("1...2", "int:1 range:.. dot:. int:2") { return false; }
+    if not m58_2b_lex_case("1....2", "int:1 range:.. range:.. int:2") { return false; }
+    if not m58_2b_lex_case("1..=2", "int:1 range:.. eq:= int:2") { return false; }
+    if not m58_2b_lex_case("1.0..2.0", "float:1.0 range:.. float:2.0") { return false; }
+    // Unchanged shapes.
+    if not m58_2b_lex_case("1.foo", "int:1 dot:. id:foo") { return false; }
+    if not m58_2b_lex_case("1.e5", "int:1 dot:. id:e5") { return false; }
+    if not m58_2b_lex_case(".5", "bad:.5") { return false; }
+    if not m58_2b_lex_case("1.0", "float:1.0") { return false; }
+    // Only a `.` directly after `..` is a plain `.`.
+    return m58_2b_lex_case("a .. .5", "id:a range:.. bad:.5");
+}
+
+// Run with exact output (default flags), emit C, and run that C at -O2
+// under ASan/UBSan.
+fn m58_2b_run_emit_sanitized(driver: str, name: str) -> bool {
+    let Some(expected) = m57c_read(m58_2b_fixture(str_concat(name, ".expected"))) else { return false; };
+    let source = m58_2b_fixture(str_concat(name, ".nq"));
+    let run_args = ["run", source, "-o", m58_2b_output(name)];
+    if not f64_rt_exact(str_concat("M58.2 B run ", name), run_process(driver, ref run_args, "."), 0, expected, "") { return false; }
+    let generated = m58_2b_output(str_concat(name, ".c"));
+    let emit_args = ["emit-c", source, "-o", generated];
+    if not f64_rt_exact(str_concat("M58.2 B emit ", name), run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    let output = m58_2b_output(str_concat(name, "-asan-ubsan"));
+    let args = ["-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Istdlib", "-O2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all", generated, "stdlib/runtime.c", "-o", output];
+    let status = fixture_c_compile(generated, output, ref args, "runtime-h", "build/m58_2_b/.fixture-c-gate-lock");
+    if not status.completed { eprint_line(concat3("compile ", output, status.error_message)); return false; }
+    if status.exit_code != 0 or status.stdout != "" or status.stderr != "" {
+        eprint_line(concat4("M58.2 B: sanitized compile failed: ", output, " ", status.stderr));
+        return false;
+    }
+    let none: list<str> = list();
+    return f64_rt_exact(output, run_process(output, ref none, "."), 0, expected, "");
+}
+
+fn m58_2b_parse_six(driver: str, directory: str, name: str, body: str, message: str, marker: str, skip: i32, width: i32) -> bool {
+    return m57a2_rejects_one(driver, directory, name, f64_main(body), "NQ-PARSE-006", message, "", marker, skip, width);
+}
+
+// Every NQ-PARSE-006 row, each the only diagnostic, and the one-diagnostic
+// precedence for a `for` header.
+fn m58_2b_parse_cases(driver: str, directory: str) -> bool {
+    let decls = "    let items = [1, 2];\n    let n = 2;\n";
+    let dots = "ranges are written `a..b`; there is no `...` or `..=` form";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_three_dots", str_concat(decls, "    for i in 1...3 {\n    }"), dots, "...3", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_inclusive", str_concat(decls, "    for i in 1..=3 {\n    }"), dots, "..=3", 0, 2) { return false; }
+    let start = "a range needs a start bound: `a..b`";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_no_start", str_concat(decls, "    for i in ..n {\n    }"), start, "..n {", 0, 2) { return false; }
+    let end = "a range needs an end bound: `a..b`";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_no_end", str_concat(decls, "    for i in 0.. {\n    }"), end, ".. {", 0, 2) { return false; }
+    let two = "a range has exactly two bounds: `a..b`";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_two_ranges", str_concat(decls, "    for i in 0..1..2 {\n    }"), two, "..2 {", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_four_dots", str_concat(decls, "    for i in 1....2 {\n    }"), two, "....2", 2, 2) { return false; }
+    let paren = "write the range without parentheses: `for i in a..b`";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_parenthesized", str_concat(decls, "    for i in (0..n) {\n    }"), paren, "..n)", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_parenthesized_open", str_concat(decls, "    for i in (0..) {\n    }"), paren, "..)", 0, 2) { return false; }
+    let indexed = "an indexed `for` iterates a list; a range already provides its index";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_indexed_range", str_concat(decls, "    for i, x in 0..n {\n    }"), indexed, ", x in", 0, 1) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_indexed_open_range", str_concat(decls, "    for i, x in 0.. {\n    }"), indexed, ", x in", 0, 1) { return false; }
+    let value = "a range `a..b` is only allowed as the iterable of a `for` loop";
+    if not m58_2b_parse_six(driver, directory, "m58_2b_range_local", str_concat(decls, "    let r = 0..3;"), value, "..3;", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_range_argument", str_concat(decls, "    print_line(str_from_f64(f64_from_i32(0..3)));"), value, "..3)", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_range_condition", str_concat(decls, "    if 0..n {\n    }"), value, "..n {", 0, 2) { return false; }
+    if not m58_2b_parse_six(driver, directory, "m58_2b_range_nested_iterable", str_concat(decls, "    for i in [0..n] {\n    }"), value, "..n]", 0, 2) { return false; }
+    // Binding syntax comes first.
+    let ident = "expected identifier";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_missing_index_name", f64_main(str_concat(decls, "    for i, in 0..n {\n    }")), "NQ-PARSE-003", ident, "", "in 0..n", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_missing_item_name", f64_main(str_concat(decls, "    for i, in items {\n    }")), "NQ-PARSE-003", ident, "", "in items", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_missing_first_name", f64_main(str_concat(decls, "    for , x in items {\n    }")), "NQ-PARSE-003", ident, "", ", x in", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_missing_in", f64_main(str_concat(decls, "    for i 0..n {\n    }")), "NQ-PARSE-003", "expected `in` after `for` binding", "", "0..n {", 0, 1) { return false; }
+    return m58_2b_combined_header_cases(driver, directory);
+}
+
+// Audit repair: a header with several malformations reports only its first
+// binding-syntax diagnostic, and an invalid header (binding syntax or a
+// malformed range) reports no subordinate placement diagnostic for `?`.
+fn m58_2b_combined_header_cases(driver: str, directory: str) -> bool {
+    let decls = "    let items = [1, 2];\n    let n = 2;\n";
+    let ident = "expected identifier";
+    let missing_in = "expected `in` after `for` binding";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_comma_then_in", f64_main(str_concat(decls, "    for , in items {\n    }")), "NQ-PARSE-003", ident, "", ", in items", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_comma_no_in", f64_main(str_concat(decls, "    for , x items {\n    }")), "NQ-PARSE-003", ident, "", ", x items", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_comma_then_block", f64_main(str_concat(decls, "    for i, {\n    }")), "NQ-PARSE-003", ident, "", ", {", 2, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_no_binding", f64_main(str_concat(decls, "    for in items {\n    }")), "NQ-PARSE-003", ident, "", "in items {", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_two_names_no_comma", f64_main(str_concat(decls, "    for i x in items {\n    }")), "NQ-PARSE-003", missing_in, "", "x in items", 0, 1) { return false; }
+    let propagate = "fn f() -> result<i32, str> {\n    return Ok(2);\n}\n\n";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_no_start_question", m57a2_program(propagate, "    for i in ..f()? {\n    }"), "NQ-PARSE-006", "a range needs a start bound: `a..b`", "", "..f()?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_indexed_range_question", m57a2_program(propagate, "    for i, x in 0..f()? {\n    }"), "NQ-PARSE-006", "an indexed `for` iterates a list; a range already provides its index", "", ", x in", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_missing_in_question", m57a2_program(propagate, "    for i 0..f()? {\n    }"), "NQ-PARSE-003", missing_in, "", "0..f()?", 0, 1) { return false; }
+    // A range used as a value is its statement's only diagnostic, with or
+    // without a misplaced `?`.
+    let value = "a range `a..b` is only allowed as the iterable of a `for` loop";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_if_question", m57a2_program(propagate, "    if 0..f()? {\n    }"), "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_while_question", m57a2_program(propagate, "    while 0..f()? {\n    }"), "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_call_question", m57a2_program(propagate, "    print_line(str_from_f64(f64_from_i32(0..f()?)));"), "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    // ... and with a `try` whose `?` operand is the range: no NQ-TRY-002, in
+    // a plain or a generic body, annotated or not, nested or not.
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_try", m57a2_program(propagate, "    let r: result<i32, str> = try { (0..2)? };"), "NQ-PARSE-006", value, "", "..2)?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_try_generic", str_concat(str_concat(propagate, "fn probe<T>(value: T) -> i32 {\n    let r: result<i32, str> = try { (0..2)? };\n    return 0;\n}\n\n"), f64_main("")), "NQ-PARSE-006", value, "", "..2)?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_try_call", m57a2_program(propagate, "    let r: result<i32, str> = try { 0..f()? };"), "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_try_unannotated", m57a2_program(propagate, "    let r = try { (0..f())? };"), "NQ-PARSE-006", value, "", "..f())?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_try_nested", m57a2_program(propagate, "    let r: result<i32, str> = try { f()? + try { (0..2)? } };"), "NQ-PARSE-006", value, "", "..2)?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_let_question", m57a2_program(propagate, "    let r = 0..f()?;"), "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    // A `try { ... }` in an `if`/`while` head (or a `for` iterable) is part of
+    // the head, not the body: the head is delimited past its block, a range
+    // inside it is the only diagnostic, and otherwise the misplaced `try` is
+    // (a `?` inside `try` is not a misplaced `?`).
+    let try_message = "`try` V1 is only supported as the direct initializer of an explicitly annotated local";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_if_try_range", m57a2_program(propagate, "    if try { (0..2)? } {\n    }"), "NQ-PARSE-006", value, "", "..2)?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_while_try_range", m57a2_program(propagate, "    while try { (0..2)? } {\n    }"), "NQ-PARSE-006", value, "", "..2)?", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_if_try_call", m57a2_program(propagate, "    if try { f()? } {\n    }"), "NQ-TRY-006", try_message, "", "try { f()? }", 0, 3) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_while_try_call", m57a2_program(propagate, "    while try { f()? } {\n    }"), "NQ-TRY-006", try_message, "", "try { f()? }", 0, 3) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_for_try_call", m57a2_program(propagate, "    for x in try { f()? } {\n    }"), "NQ-TRY-006", try_message, "", "try { f()? }", 0, 3) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_return_try_call", str_concat(propagate, "fn g() -> i32 {\n    return try { f()? };\n}\n\nfn main() -> i32 {\n    return g();\n}\n"), "NQ-TRY-006", try_message, "", "try { f()? }", 0, 3) { return false; }
+    if not f64_accepts(driver, directory, "m58_2b_if_after_try_local", m57a2_program(propagate, "    let r: result<i32, str> = try { f()? };\n    let mut n = 0;\n    if 1 < 2 {\n        n = 1;\n    }\n    while n > 5 {\n        n = 0;\n    }")) { return false; }
+    // Only a `..` at paren, bracket and brace depth zero separates a range;
+    // a `..` inside a `try { ... }` iterable is a range used as a value and
+    // the header's only diagnostic (no NQ-TRY-006, no indexed-over-range).
+    if not m57a2_rejects_one(driver, directory, "m58_2b_for_try_range", m57a2_program(propagate, "    for i in try { 0..2 } {\n    }"), "NQ-PARSE-006", value, "", "..2 }", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_for_indexed_try_range", m57a2_program(propagate, "    for i, x in try { 0..2 } {\n    }"), "NQ-PARSE-006", value, "", "..2 }", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_for_nested_try_range", m57a2_program(propagate, "    for i in try { try { 0..2 } } {\n    }"), "NQ-PARSE-006", value, "", "..2 }", 0, 2) { return false; }
+    if not f64_accepts(driver, directory, "m58_2b_for_forms_unchanged", f64_main("    let xs = [1, 2];\n    let mut n = 0;\n    for i in 0..2 {\n        n = n + i;\n    }\n    for x in xs {\n        n = n + x;\n    }\n    for i, x in xs {\n        n = n + i + x;\n    }\n    if n != 8 {\n        return 1;\n    }")) { return false; }
+    // Lead decision: a malformed float is a lexical error reported once on
+    // its own (M58.1), independent of header arbitration, so a malformed
+    // header over `[.5]` reports exactly NQ-PARSE-004 and its one header
+    // diagnostic.
+    let float_source = f64_main("    for , in [.5] {\n    }");
+    let float_at = f64_find(float_source, ".5]");
+    let comma_at = f64_find(float_source, ", in [");
+    let float_help = "write floats as `<digits>.<digits>`, for example `0.5`, `1.0` or `1.0e5`";
+    if not m57a2_rejects(driver, directory, "m58_2b_header_malformed_float", float_source, str_concat(m57a2_entry("NQ-PARSE-004", float_at, float_at + 2, "malformed float literal", float_help), m57a2_entry("NQ-PARSE-003", comma_at, comma_at + 1, ident, ""))) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_range_value_return_question","fn f() -> result<i32, str> {\n    return Ok(2);\n}\n\nfn g() -> i32 {\n    return 0..f()?;\n}\n\nfn main() -> i32 {\n    return g();\n}\n", "NQ-PARSE-006", value, "", "..f()?", 0, 2) { return false; }
+    // Progress: a malformed header at end of file or before a stray closing
+    // delimiter still terminates and reports its header diagnostic first.
+    let eof_source = "fn main() -> i32 {\n    for , in";
+    let Some(eof) = m58_2a_check_digest(driver, directory, "m58_2b_header_eof", eof_source) else { return false; };
+    let eof_at = f64_find(eof_source, ", in");
+    if eof.exit_code != 1 or not str_starts_with(m57a2_digest(eof.stdout), m57a2_entry("NQ-PARSE-003", eof_at, eof_at + 1, ident, "")) { return f64_report("m58_2b_header_eof", eof); }
+    let close_source = "fn main() -> i32 {\n    for i, )\n    return 0;\n}\n";
+    let Some(close) = m58_2a_check_digest(driver, directory, "m58_2b_header_close", close_source) else { return false; };
+    let close_at = f64_find(close_source, "i, )") + 3;
+    if close.exit_code != 1 or not str_starts_with(m57a2_digest(close.stdout), m57a2_entry("NQ-PARSE-003", close_at, close_at + 1, ident, "")) { return f64_report("m58_2b_header_close", close); }
+    return true;
+}
+
+fn m58_2b_type_cases(driver: str, directory: str) -> bool {
+    let mixed = "    let a = 1;\n    let b: i64 = 2;\n    for i in a..b {\n    }";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bounds_i32_i64", f64_main(mixed), "NQ-TYPE-062", "range bounds must both be `i32` or both be `i64`; found `i32` and `i64`", "", "..b {", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bounds_i32_bool", f64_main("    for i in 0..true {\n    }"), "NQ-TYPE-062", "range bounds must both be `i32` or both be `i64`; found `i32` and `bool`", "", "..true", 0, 2) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bounds_f64", f64_main("    for i in 0.5..2.5 {\n    }"), "NQ-TYPE-062", "range bounds must both be `i32` or both be `i64`; found `f64` and `f64`", "", "..2.5", 0, 2) { return false; }
+    // A bound that fails to type-check reports only its own diagnostic.
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_unknown", f64_main("    for i in 0..missing {\n    }"), "NQ-RESOLVE-010", "unknown name in function body", "", "missing", 0, 1) { return false; }
+    // Audit repair: a bound whose inference reports a diagnostic but still
+    // returns a known recovery type (`f64` for `f64 % f64`) gets no NQ-TYPE-062.
+    let rem_message = "operator `%` is not defined for type `f64`";
+    let rem_help = "`f64` supports `+`, `-`, `*` and `/`, not `%`";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_end_f64_rem", f64_main("    for i in 0..(1.0 % 2.0) {\n    }"), "NQ-TYPE-050", rem_message, rem_help, "% 2.0", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_start_f64_rem", f64_main("    for i in (1.0 % 2.0)..3 {\n    }"), "NQ-TYPE-050", rem_message, rem_help, "% 2.0", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_i64_f64_rem", f64_main("    let w: i64 = 1;\n    for i in w..(1.5 % 2.5) {\n    }"), "NQ-TYPE-050", rem_message, rem_help, "% 2.5", 0, 1) { return false; }
+    // An integer literal bound takes the other bound's integer type.
+    if not f64_accepts(driver, directory, "m58_2b_literal_i64", f64_main("    let limit: i64 = 3;\n    let mut sum: i64 = 0;\n    for w in 0..limit {\n        sum = sum + w;\n    }\n    for w in limit..9 {\n        sum = sum + w;\n    }\n    if sum != 36 {\n        return 1;\n    }")) { return false; }
+    let propagate = "fn f() -> result<i32, str> {\n    return Ok(2);\n}\n\n";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_question", m57a2_program(propagate, "    for i in 0..f()? {\n    }"), "NQ-PROPAGATE-007", "`?` is only allowed in a `let name = expr?;` statement or inside `try`", "bind the result first: `let value = f()?;`", "()? {", 2, 1) { return false; }
+    // Audit repair: a `for` loop's list iterable and range bounds run once,
+    // before the first iteration, so they may consume owned values (the run
+    // fixture bound_moves_run covers execution); their moves persist after
+    // the loop, and one value consumed by both bounds is still a double use.
+    let consume = "fn take_len(xs: list<i32>) -> i32 {\n    return list_len(ref xs);\n}\n\nfn doubled(xs: list<i32>) -> list<i32> {\n    return xs;\n}\n\n";
+    if not f64_accepts(driver, directory, "m58_2b_bound_consumes", m57a2_program(consume, "    let xs = [1, 2];\n    let ys = [3];\n    for i in take_len(xs)..take_len(ys) {\n    }\n    let zs = [4];\n    for x in doubled(zs) {\n    }")) { return false; }
+    let moved_source = m57a2_program(consume, "    let xs = [1, 2];\n    for i in 0..take_len(xs) {\n    }\n    let n = list_len(ref xs);");
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bound_move_persists", moved_source, "NQ-BORROW-003", "cannot borrow moved value `xs`", "", "n = list_len", 4, 1) { return false; }
+    let moved_list = m57a2_program(consume, "    let xs = [1, 2];\n    for x in doubled(xs) {\n    }\n    let n = list_len(ref xs);");
+    if not m57a2_rejects_one(driver, directory, "m58_2b_iterable_move_persists", moved_list, "NQ-BORROW-003", "cannot borrow moved value `xs`", "", "n = list_len", 4, 1) { return false; }
+    let twice = m57a2_program(consume, "    let xs = [1, 2];\n    for i in take_len(xs)..take_len(xs) {\n    }");
+    if not m57a2_rejects_one(driver, directory, "m58_2b_bounds_move_twice", twice, "NQ-BORROW-001", "use of moved value `xs`", "", "take_len(xs) {", 0, 1) { return false; }
+    let immutable = "`for` loop bindings are immutable";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_assign_counter", f64_main("    for i in 0..3 {\n        i = 1;\n    }"), "NQ-TYPE-042", immutable, "", "i = 1;", 0, 1) { return false; }
+    let items = "    let items = [1, 2];\n";
+    if not m57a2_rejects_one(driver, directory, "m58_2b_assign_index", f64_main(str_concat(items, "    for i, item in items {\n        i = 1;\n    }")), "NQ-TYPE-042", immutable, "", "i = 1;", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_assign_item", f64_main(str_concat(items, "    for i, item in items {\n        item = 1;\n    }")), "NQ-TYPE-042", immutable, "", "item = 1;", 0, 1) { return false; }
+    if not m57a2_rejects_one(driver, directory, "m58_2b_duplicate_names", f64_main(str_concat(items, "    for i, i in items {\n    }")), "NQ-RESOLVE-010", "duplicate local binding in one scope", "", "i in items", 0, 1) { return false; }
+    // The loop binding is not visible after the body.
+    if not m57a2_rejects_one(driver, directory, "m58_2b_counter_escapes", f64_main("    for i in 0..3 {\n    }\n    let after = i;"), "NQ-RESOLVE-010", "unknown name in function body", "", "i;", 0, 1) { return false; }
+    // A function ending in a range or indexed loop can fall off its end.
+    if not m58a_falls_off(driver, directory, "m58_2b_range_falls_off", "fn probe() -> i32 {\n    for i in 0..3 {\n        return i;\n    }\n}") { return false; }
+    return m58a_falls_off(driver, directory, "m58_2b_indexed_falls_off", "fn probe(items: list<i32>) -> i32 {\n    for i, item in items {\n        return item;\n    }\n}");
+}
+
+// Facts v1/v2 name each loop binding by its own declaration; every facts and
+// review format succeeds for the program.
+fn m58_2b_evidence_cases(driver: str) -> bool {
+    let path = m58_2b_fixture("loop_evidence.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let i_at = i32_to_str(f64_find(source, "i, item"));
+    let item_at = i32_to_str(f64_find(source, "i, item") + 3);
+    let k_at = i32_to_str(f64_find(source, "k in 0..2"));
+    for format in ["v1", "v2"] {
+        let Some(output) = m58a_evidence_output(driver, "facts", path, format) else { return false; };
+        let index_targets = m58r_name_targets(output, "i");
+        let item_targets = m58r_name_targets(output, "item");
+        let counter_targets = m58r_name_targets(output, "k");
+        if index_targets != str_concat(i_at, ";") or item_targets != str_concat(item_at, ";") or counter_targets != concat4(k_at, ";", k_at, ";") {
+            eprint_line(concat6("M58.2 B: facts ", format, " loop targets ", concat5(index_targets, " ", item_targets, " ", counter_targets), " expected ", concat5(i_at, " ", item_at, " ", k_at)));
+            return false;
+        }
+    }
+    if not m58_2b_no_loop_identity(driver, path) { return false; }
+    return m58_2b_shadow_evidence_cases(driver);
+}
+
+// Facts v3-v5 and review v1-v5 expose no local binding identity (as for
+// M58.1 shadowing): each succeeds and names no loop binder by offset.
+fn m58_2b_no_loop_identity(driver: str, path: str) -> bool {
+    for command in ["facts", "review"] {
+        for format in ["v1", "v2", "v3", "v4", "v5"] {
+            let Some(output) = m58a_evidence_output(driver, command, path, format) else { return false; };
+            let exposes = command == "facts" and (format == "v1" or format == "v2");
+            if not exposes and (text_contains(output, ":i@") or text_contains(output, ":item@") or text_contains(output, ":k@")) {
+                eprint_line(concat6("M58.2 B: unexpected loop binding identity in ", command, " ", format, " ", path));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+fn m58_2b_at(source: str, marker: str, skip: i32) -> str {
+    return i32_to_str(f64_find(source, marker) + skip);
+}
+
+// Audit repair: loop bindings that shadow outer locals, a range bound that
+// reads the outer name its binding shadows, and nested loops reusing the
+// same binder names; facts v1/v2 name the binding each read resolves to.
+fn m58_2b_shadow_evidence_cases(driver: str) -> bool {
+    let path = m58_2b_fixture("loop_shadow_evidence.nq");
+    let Some(source) = m57c_read(path) else { return false; };
+    let outer_i = m58_2b_at(source, "let i = 100", 4);
+    let outer_item = m58_2b_at(source, "let item = 200", 4);
+    let outer_k = m58_2b_at(source, "let k = 7", 4);
+    let loop_i = m58_2b_at(source, "    for i, item", 8);
+    let loop_item = m58_2b_at(source, "    for i, item", 11);
+    let nested_i = m58_2b_at(source, "        for i, item", 12);
+    let nested_item = m58_2b_at(source, "        for i, item", 15);
+    let loop_k = m58_2b_at(source, "for k in 0..k", 4);
+    let nested_k = m58_2b_at(source, "for k in k..3", 4);
+    let expected_i = concat5(concat4(outer_i, ";", loop_i, ";"), nested_i, ";", loop_i, concat3(";", outer_i, ";"));
+    let expected_item = concat5(concat4(outer_item, ";", loop_item, ";"), nested_item, ";", loop_item, concat3(";", outer_item, ";"));
+    let expected_k = concat6(concat4(outer_k, ";", loop_k, ";"), concat4(loop_k, ";", loop_k, ";"), concat4(nested_k, ";", nested_k, ";"), outer_k, ";", concat3(outer_k, ";", ""));
+    for format in ["v1", "v2"] {
+        let Some(output) = m58a_evidence_output(driver, "facts", path, format) else { return false; };
+        let actual_i = m58r_name_targets(output, "i");
+        let actual_item = m58r_name_targets(output, "item");
+        let actual_k = m58r_name_targets(output, "k");
+        if actual_i != expected_i or actual_item != expected_item or actual_k != expected_k {
+            eprint_line(concat6("M58.2 B: facts ", format, " shadow targets i ", actual_i, " expected ", expected_i));
+            eprint_line(concat4("item ", actual_item, " expected ", expected_item));
+            eprint_line(concat4("k ", actual_k, " expected ", expected_k));
+            return false;
+        }
+    }
+    let run_args = ["run", path, "-o", m58_2b_output("loop_shadow_evidence")];
+    if not f64_rt_exact("M58.2 B run loop_shadow_evidence", run_process(driver, ref run_args, "."), 0, "", "") { return false; }
+    return m58_2b_no_loop_identity(driver, path);
+}
+
+// A list-loop program's facts, review and emitted C are byte-identical to
+// goldens captured with the base compiler (c56f857).
+fn m58_2b_unaffected_cases(driver: str) -> bool {
+    let path = "examples/for_list.nq";
+    for command in ["facts", "review"] {
+        for format in ["v1", "v2", "v3", "v4", "v5"] {
+            let Some(output) = m58a_evidence_output(driver, command, path, format) else { return false; };
+            let Some(golden) = m57c_read(m58_2b_fixture(concat5("unaffected/for_list.", command, "-", format, ".json"))) else { return false; };
+            if output != golden {
+                eprint_line(concat4("M58.2 B: unaffected evidence changed: ", command, " ", format));
+                return false;
+            }
+        }
+    }
+    let generated = m58_2b_output("for_list.c");
+    let emit_args = ["emit-c", path, "-o", generated];
+    if not f64_rt_exact("M58.2 B emit for_list", run_process(driver, ref emit_args, "."), 0, "", "") { return false; }
+    let Some(emitted) = m57c_read(generated) else { return false; };
+    let Some(golden_c) = m57c_read(m58_2b_fixture("unaffected/for_list.c")) else { return false; };
+    if emitted != golden_c {
+        eprint_line("M58.2 B: unaffected emitted C changed: examples/for_list.nq");
+        return false;
+    }
+    return true;
+}
+
+// `fmt --check` accepts canonical sources with `..` and indexed loops, and
+// refactor-rename rejects every reserved keyword as a new name.
+fn m58_2b_tooling_cases(driver: str) -> bool {
+    for name in ["range_run.nq", "indexed_run.nq", "generic_loops_run.nq", "loop_evidence.nq", "rem_range_run.nq", "owned_cleanup_run.nq", "bound_moves_run.nq", "loop_shadow_evidence.nq"] {
+        let args = ["fmt", "--check", m58_2b_fixture(name)];
+        if not f64_rt_exact(str_concat("M58.2 B fmt --check ", name), run_process(driver, ref args, "."), 0, "", "") { return false; }
+    }
+    let target = "binding:fn:main::apply:1:bonus@25";
+    let path = "tests/fixtures/supervised_workflow/after/main.nq";
+    for word in ["and", "break", "continue", "for", "in", "not", "or", "try"] {
+        let args = ["refactor-rename", path, target, word];
+        match run_process(driver, ref args, ".") {
+            Ok(status) => {
+                if status.exit_code != 1 or integer_policy_count(status.stdout, "NQ-REFACTOR-001") != 1 {
+                    return f64_report(str_concat("M58.2 B reserved word ", word), status);
+                }
+            },
+            Err(err) => { eprint_line(io_err_text(err)); return false; },
+        }
+    }
+    return true;
+}
+
+fn m58_2b_gate_impl(driver: str) -> bool {
+    match create_dir_all("build/m58_2_b") {
+        Ok(_) => {},
+        Err(err) => { eprint_line(io_err_text(err)); return false; },
+    }
+    let Ok(directory) = create_temp_dir("build", "m58-2-b-") else { eprint_line("M58.2 B: temporary directory refused"); return false; };
+    if not m58_2b_lexing_cases() { return false; }
+    if not m58_2b_run_emit_sanitized(driver, "range_run") { return false; }
+    if not m58_2b_run_emit_sanitized(driver, "indexed_run") { return false; }
+    if not m58_2b_run_emit_sanitized(driver, "generic_loops_run") { return false; }
+    // Integration: `%` in range bounds and range-loop bodies (slices A and B).
+    if not m58_2b_run_emit_sanitized(driver, "rem_range_run") { return false; }
+    // Audit repair: owned cleanup on every loop exit, and iterables/bounds
+    // that consume owned values are evaluated once.
+    if not m58_2b_run_emit_sanitized(driver, "owned_cleanup_run") { return false; }
+    if not m58_2b_run_emit_sanitized(driver, "bound_moves_run") { return false; }
+    if not m58_2b_parse_cases(driver, directory) { return false; }
+    if not m58_2b_type_cases(driver, directory) { return false; }
+    if not m58_2b_evidence_cases(driver) { return false; }
+    if not m58_2b_unaffected_cases(driver) { return false; }
+    return m58_2b_tooling_cases(driver);
+}
+
+fn m58_2b_gate(driver: str) -> bool {
+    let lock = "build/m58_2_b/.fixture-c-gate-lock";
+    if not fixture_c_gate_begin("build/m58_2_b", lock) { eprint_line("M58.2 B: fixture gate lock refused"); return false; }
+    let ok = m58_2b_gate_impl(driver);
+    if not fixture_c_gate_end(lock) { eprint_line("M58.2 B: fixture gate lock release failed"); return false; }
+    return ok;
 }
 
 // ---------------------------------------------------------------------------

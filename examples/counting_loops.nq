@@ -1,0 +1,76 @@
+// Counting loops: `for i in a..b` counts from `a` up to `b - 1`,
+// `for i, item in items` also binds each element's position, and `%` is the
+// integer remainder.
+
+fn text(n: i32) -> str {
+    return str_from_f64(f64_from_i32(n));
+}
+
+fn sum_below(n: i32) -> i32 {
+    let mut total = 0;
+    for i in 0..n {
+        total = total + i;
+    }
+    return total;
+}
+
+fn evens_below(n: i32) -> str {
+    let mut line = "evens:";
+    for i in 0..n {
+        if i % 2 == 0 {
+            line = str_concat(line, str_concat(" ", text(i)));
+        }
+    }
+    return line;
+}
+
+fn print_numbered(names: list<str>) -> unit
+audit {
+    intent("Print each name after its position in the list");
+    mutates();
+    effects(print);
+}
+{
+    for i, name in names {
+        print_line(str_concat(text(i), str_concat(": ", name)));
+    }
+    return;
+}
+
+fn sum_wide(start: i64, count: i64) -> i64 {
+    let mut total: i64 = 0;
+    for value in start..start + count {
+        total = total + value;
+    }
+    return total;
+}
+
+fn first_multiple(start: i32, divisor: i32) -> i32 {
+    let mut found = -1;
+    for i in start..start + divisor {
+        if i % divisor == 0 {
+            found = i;
+            break;
+        }
+    }
+    return found;
+}
+
+fn main() -> i32
+audit {
+    intent("Count with range loops, number list items with an indexed loop, and pick values with %");
+    mutates();
+    effects(print);
+}
+{
+    print_line(str_concat("sum of 0..10: ", text(sum_below(10))));
+    print_line(evens_below(10));
+    print_numbered(["apple", "pear", "plum"]);
+    let start: i64 = 3000000000;
+    let Some(wide) = f64_from_i64(sum_wide(start, 3)) else {
+        return 1;
+    };
+    print_line(str_concat("wide sum: ", str_from_f64(wide)));
+    print_line(str_concat("first multiple of 7 from 50: ", text(first_multiple(50, 7))));
+    return 0;
+}

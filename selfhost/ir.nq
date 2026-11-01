@@ -39,6 +39,7 @@ pub enum ir_expr_kind {
     ir_expr_sub,
     ir_expr_mul,
     ir_expr_div,
+    ir_expr_rem,
     ir_expr_eq,
     ir_expr_ne,
     ir_expr_lt,
@@ -113,6 +114,48 @@ pub type ir_block {
     depth: i32,
 }
 
+// M58.2: the lowered `for` forms; every other statement is `ir_for_list`
+// with `index_local_id` and `end_expr_id` absent (-1).
+pub enum ir_for_kind {
+    ir_for_list,
+    ir_for_indexed,
+    ir_for_range,
+}
+
+pub fn ir_for_is_indexed(kind: ir_for_kind) -> bool
+audit {
+    intent("Report whether a lowered for statement is the indexed list loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        ir_for_indexed => { return true; },
+        _ => { return false; },
+    }
+}
+
+pub fn ir_for_is_range(kind: ir_for_kind) -> bool
+audit {
+    intent("Report whether a lowered for statement is the half-open range loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        ir_for_range => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn checked_for_to_ir_kind(kind: checked_for_kind) -> ir_for_kind {
+    match kind {
+        checked_for_indexed => { return ir_for_indexed; },
+        checked_for_range => { return ir_for_range; },
+        _ => { return ir_for_list; },
+    }
+}
+
 pub type ir_stmt {
     id: i32,
     function_id: i32,
@@ -126,6 +169,9 @@ pub type ir_stmt {
     child_block_id: i32,
     alt_block_id: i32,
     exit_target_block_id: i32,
+    for_kind: ir_for_kind,
+    index_local_id: i32,
+    end_expr_id: i32,
 }
 
 pub type ir_match_arm {
@@ -457,6 +503,9 @@ fn checked_expr_to_ir_kind(expr: checked_expr) -> ir_expr_kind {
         },
         checked_expr_div => {
             return ir_expr_div;
+        },
+        checked_expr_rem => {
+            return ir_expr_rem;
         },
         checked_expr_eq => {
             return ir_expr_eq;
@@ -964,6 +1013,12 @@ audit {
                 if requires_expr and value.expr_id < 0 {
                     push_ir_limitation(mutref diags, value.module_name, value.at, "missing statement expression id in checked handoff");
                 }
+                if checked_for_is_range(value.for_kind) and value.end_expr_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing range end bound expression id in checked handoff");
+                }
+                if checked_for_is_indexed(value.for_kind) and value.index_binding_id < 0 {
+                    push_ir_limitation(mutref diags, value.module_name, value.at, "missing for-loop index binding id in checked handoff");
+                }
                 let mut exit_target_block_id = -1;
                 match value.kind {
                     checked_stmt_break => {
@@ -991,6 +1046,9 @@ audit {
                     child_block_id: value.child_block_id,
                     alt_block_id: value.alt_block_id,
                     exit_target_block_id: exit_target_block_id,
+                    for_kind: checked_for_to_ir_kind(value.for_kind),
+                    index_local_id: value.index_binding_id,
+                    end_expr_id: value.end_expr_id,
                 });
             },
             None => {

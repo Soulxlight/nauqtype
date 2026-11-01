@@ -60,6 +60,7 @@ These examples cover specific semantic features of Nauqtype.
 - [break_continue.nq](examples/break_continue.nq): Minimal `break` and `continue` statement usage within the nearest enclosing `while` loop.
 - [nested_break_continue.nq](examples/nested_break_continue.nq): Using nested `break` and `continue` inside `if` conditionals within a `while` loop.
 - [nested_patterns.nq](examples/nested_patterns.nq): Matching nested `option` constructors and an integer literal with an explicit fallback arm.
+- [counting_loops.nq](examples/counting_loops.nq): Counting loops and remainder (M58.2): `for i in 0..n` sums a half-open range, `i % 2 == 0` picks even numbers, `for i, name in names` prints each element with its index, an `i64` range sums wide values, and `break` leaves a range loop at the first multiple found with `%`.
 - [loop_exits.nq](examples/loop_exits.nq): Every path returns (M58.1): let-else `else` blocks that exit with `continue;` and `break;`, a function whose body ends in a `while true` loop that exits only by `return`, `unit` functions ending in `return;`, and an inner `let mut total = total + n;` whose initializer reads the outer `total`.
 
 ## AI and Evidence Workflow Demos
@@ -88,6 +89,7 @@ The following runnable `.nq` examples make up the core locked corpus. They parti
 
 - `break_continue.nq`
 - `composite_field_backend.nq`
+- `counting_loops.nq`
 - `enum_match.nq`
 - `f64_basics.nq`
 - `fallible_function.nq`

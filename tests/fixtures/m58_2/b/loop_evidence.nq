@@ -1,0 +1,29 @@
+// M58.2 slice B: evidence names each loop binding by its own declaration.
+// Inside both loops a local is passed `mutref` and the loop bindings are
+// call arguments.
+
+fn add(total: mutref i32, left: i32, right: i32) -> unit
+audit {
+    intent("Add two values to a running total");
+    mutates(total);
+    effects();
+}
+{
+    total = total + left + right;
+    return;
+}
+
+fn main() -> i32 {
+    let items = [3, 4];
+    let mut total = 0;
+    for i, item in items {
+        add(mutref total, i, item);
+    }
+    for k in 0..2 {
+        add(mutref total, k, k);
+    }
+    if total != 10 {
+        return 1;
+    }
+    return 0;
+}

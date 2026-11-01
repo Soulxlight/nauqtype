@@ -5,7 +5,7 @@
 - The grammar is intentionally small and suitable for a hand-written lexer plus recursive-descent / Pratt parser.
 - Whitespace is insignificant except as a token separator.
 - Newlines are not syntactic separators.
-- The frozen stage0 reference includes statement-form `while`; the active stage1 surface also includes list-only `for` iteration and nearest-loop control.
+- The frozen stage0 reference includes statement-form `while`; the active stage1 surface also includes list, indexed and range `for` iteration and nearest-loop control.
 
 ## Lexical Grammar
 
@@ -62,12 +62,19 @@ LINE_COMMENT = "//" { any character except newline } ;
 Punctuation and operators:
 
 - `(` `)` `{` `}` `[` `]`
-- `,` `;` `:` `.`
+- `,` `;` `:` `.` `..`
 - `::`
 - `->` `=>`
 - `=` `==` `!=`
 - `<` `<=` `>` `>=`
-- `+` `-` `*` `/`
+- `+` `-` `*` `/` `%`
+
+`..` is one token (maximal munch, left to right): `0..10` is `0`, `..`, `10`,
+and a single `.` directly after `..` is a plain `.`, never the start of a
+leading-dot float. `..` is legal only between the two bounds of a `for`
+iterable; the range splits at the depth-zero `..` and binds more loosely than
+every operator (`0..n + 1` is `0..(n + 1)`). Malformed ranges and `..`
+elsewhere are `NQ-PARSE-006` (M58.2).
 
 ## High-Level Grammar
 
@@ -209,7 +216,8 @@ expr_stmt     = expr ";" ;
 
 if_stmt       = "if" expr block [ "else" block ] ;
 while_stmt    = "while" expr block ;
-for_stmt      = "for" IDENT "in" expr block ;
+for_stmt      = "for" IDENT [ "," IDENT ] "in" for_iterable block ;
+for_iterable  = expr ".." expr | expr ;
 break_stmt    = "break" ";" ;
 continue_stmt = "continue" ";" ;
 
@@ -231,7 +239,7 @@ logical_and   = equality { "and" equality } ;
 equality      = comparison { ( "==" | "!=" ) comparison } ;
 comparison    = additive { ( "<" | "<=" | ">" | ">=" ) additive } ;
 additive      = multiplicative { ( "+" | "-" ) multiplicative } ;
-multiplicative = unary { ( "*" | "/" ) unary } ;
+multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
 
 unary         = ( "-" | "not" ) unary
               | borrow_expr
@@ -322,7 +330,7 @@ Pattern meaning is resolved semantically:
 | 3 | `==`, `!=` | left |
 | 4 | `<`, `<=`, `>`, `>=` | left |
 | 5 | `+`, `-` | left |
-| 6 | `*`, `/` | left |
+| 6 | `*`, `/`, `%` | left |
 | 7 | unary `-`, `not`, `ref`, `mutref` | right |
 | 8 | qualified name, call, field access | left |
 
@@ -331,6 +339,6 @@ Pattern meaning is resolved semantically:
 - No newline significance
 - No implicit last-expression returns
 - No general block expressions
-- No loop grammar beyond `while`, list-only `for`, and nearest-loop `break;` / `continue;`
+- No loop grammar beyond `while`, list and indexed `for`, half-open range `for`, and nearest-loop `break;` / `continue;`; a range is not an expression
 - AI Contracts use a fixed clause order instead of free-form annotations
 - Explicit M56 generic parameters only; no inference, constraints or generic constants

@@ -18,6 +18,7 @@ or a copied-release manifest.
 | Work on M56.2 | [Scalar `f64` contract](M56_2_CONTRACT.md) | [D067](../DECISIONS.md#d067-scalar-f64), [Spec](../SPEC.md), [grammar](../GRAMMAR.md), [teaching corpus](../TEACHING_CORPUS.md) |
 | Work on M57.1 | [Library-enabling core contract](M57_1_CONTRACT.md) | [D068](../DECISIONS.md#d068-library-enabling-core), [Spec](../SPEC.md) |
 | Work on M58.1 | [Correctness and diagnostics contract](M58_1_CONTRACT.md) | [D070](../DECISIONS.md#d070-accepted-programs-mean-what-they-say-diagnostics-are-honest), [producer ledger](M58_1_PRODUCER_LEDGER.md), [Spec](../SPEC.md), [grammar](../GRAMMAR.md) |
+| Work on M58.2 | [Remainder and counting loops contract](M58_2_CONTRACT.md) | [D071](../DECISIONS.md#d071-remainder-and-counting-loops), [Spec](../SPEC.md), [grammar](../GRAMMAR.md) |
 | Propose syntax | [Syntax Identity](../SYNTAX_IDENTITY.md), [deferrals](../DEFERRED.md) | [Decisions](../DECISIONS.md), [Grammar](../GRAMMAR.md) |
 | Consume evidence | [AI Contracts](../AI_CONTRACTS.md) | [schemas](../schemas/), [schema profile](../EVIDENCE_SCHEMA_PROFILE.md), [workspace locks](../WORKSPACE_LOCK.md) |
 | Choose a gate | [Verification](../VERIFICATION.md) | [performance checkpoint](../PERFORMANCE_CHECKPOINT.md), [budgets](../PERFORMANCE_BUDGETS.md) |
@@ -35,7 +36,8 @@ recorded Linux acceptance; none is a stable-release claim. M56.1 adds
 generic-aware `facts`/`review` v5 (acceptance in the roadmap); every other
 evidence format rejects generic graphs. M56.2 adds scalar `f64` (acceptance in
 the roadmap). M57.1 adds the library-enabling core and M58.1 the
-correctness and diagnostics sweep; M58.2-M69 are not complete. This is an organizational
+correctness and diagnostics sweep, and M58.2 `%` with range and indexed
+`for`; M58.3-M69 are not complete. This is an organizational
 alpha, not a stable or feature-complete application language. Current sequencing
 lives in [ROADMAP](../ROADMAP.md#current-position-and-resumption); open actions
 live in [TODO](../TODO.md#next-actions).

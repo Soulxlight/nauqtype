@@ -21,8 +21,8 @@ that have since shipped are historical, not current limitations.
   layouts through containers (`type Json { items: list<Json> }` is
   `NQ-TYPE-052`; M57 uses arena indexes); field-disjoint borrow checking
   (`f(mutref b.a, ref b.b)` is still one conflicting root); moving fields out
-  of owned products (destructuring); the `%` operator (M58.2) and bitwise
-  operators; and comparisons of `bool`, `str` or enums inside `const`
+  of owned products (destructuring); bitwise operators (`%`
+  shipped in M58.2); and comparisons of `bool`, `str` or enums inside `const`
   initializers (constant comparisons stay integer-only). Missing-return
   analysis shipped in M58.1.
 - M58.1 deliberate exclusions (`docs/M58_1_CONTRACT.md`): unreachable-code
@@ -36,7 +36,7 @@ that have since shipped are historical, not current limitations.
   lists only lints the compiler reports.
 - Methods and `impl` blocks
 - Traits or interfaces
-- Loop families beyond `while` and list-only `for`, including iterator protocols
+- Loop families beyond `while`, list/indexed `for` and half-open range `for`, including iterator protocols, inclusive, stepped or descending ranges, and range values
 - labeled or valued `break` / `continue`
 - Stored references
 - Reference returns
@@ -89,7 +89,7 @@ Near-term language ergonomics resume only after the corrective prerequisites in
 with stage1-owned coverage. Top-level `const`, list literals, match expressions,
 let-else, formatter-lite, named arguments, qualified function/data names,
 copy-only record update, owned-local field assignment, nested patterns,
-manifest-governed nested modules, list-only `for`, and nearest-loop
+manifest-governed nested modules, list, indexed and range `for`, and nearest-loop
 `break`/`continue` have already shipped in deliberately narrow forms.
 
 The shipped `?` path is intentionally narrow rather than Rustlike: statement-boundary `let name = result_expr?;` forwards exact errors with explicit `propagates(...)`, while an annotated local `try { expression }` captures expression-position propagation without returning from the function. Both forms emit versioned evidence. Function-scoped expression `?`, multi-statement `try`, short-circuit/match propagation inside a boundary, `option<T>?`, implicit conversions, and custom propagation protocols remain deferred.

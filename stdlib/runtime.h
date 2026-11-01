@@ -67,8 +67,14 @@ _Static_assert(sizeof(double) == 8, "nauqtype f64 requires an 8-byte double");
     ((int32_t)(a) / (((b) == 0 || ((a) == INT32_MIN && (b) == -1)) ? INT32_C(1) : (int32_t)(b)))
 #define NQ_I64_CONST_DIV(a, b) \
     ((int64_t)(a) / (((b) == 0 || ((a) == INT64_MIN && (b) == -1)) ? INT64_C(1) : (int64_t)(b)))
+/* M58.2: truncated remainder, guarded exactly like the _DIV macros. */
+#define NQ_I32_CONST_REM(a, b) \
+    ((int32_t)(a) % (((b) == 0 || ((a) == INT32_MIN && (b) == -1)) ? INT32_C(1) : (int32_t)(b)))
+#define NQ_I64_CONST_REM(a, b) \
+    ((int64_t)(a) % (((b) == 0 || ((a) == INT64_MIN && (b) == -1)) ? INT64_C(1) : (int64_t)(b)))
 
 _Noreturn void nq_integer_division_fail(bool zero);
+_Noreturn void nq_integer_remainder_fail(bool zero);
 
 static inline int32_t nq_i32_add(int32_t a, int32_t b) { return NQ_I32_CONST_ADD(a, b); }
 static inline int32_t nq_i32_sub(int32_t a, int32_t b) { return NQ_I32_CONST_SUB(a, b); }
@@ -87,6 +93,17 @@ static inline int32_t nq_i32_div(int32_t a, int32_t b) {
 static inline int64_t nq_i64_div(int64_t a, int64_t b) {
     if (b == 0 || (a == INT64_MIN && b == -1)) nq_integer_division_fail(b == 0);
     return a / b;
+}
+
+/* M58.2: C's `%` is never evaluated with a zero divisor or with MIN and -1. */
+static inline int32_t nq_i32_rem(int32_t a, int32_t b) {
+    if (b == 0 || (a == INT32_MIN && b == -1)) nq_integer_remainder_fail(b == 0);
+    return a % b;
+}
+
+static inline int64_t nq_i64_rem(int64_t a, int64_t b) {
+    if (b == 0 || (a == INT64_MIN && b == -1)) nq_integer_remainder_fail(b == 0);
+    return a % b;
 }
 
 /* C emitter support only. Failfast on invalid sizes, before arithmetic.

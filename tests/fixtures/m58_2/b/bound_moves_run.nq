@@ -1,0 +1,114 @@
+// M58.2 audit repair: a `for` loop evaluates its list iterable, or its start
+// and then its end bound, exactly once before the first iteration, so each
+// may consume an owned value. Both bounds consume separate owned lists,
+// including empty ranges; list and indexed loops iterate a list produced by
+// a call that consumes an owned list. The owned test runs this program with
+// exact output, emits its C and runs that C at -O2 under ASan (LeakSanitizer
+// included) and UBSan.
+
+fn digit(d: i32) -> str {
+    let mut text = "9";
+    if d == 0 {
+        text = "0";
+    }
+    if d == 1 {
+        text = "1";
+    }
+    if d == 2 {
+        text = "2";
+    }
+    if d == 3 {
+        text = "3";
+    }
+    if d == 4 {
+        text = "4";
+    }
+    if d == 5 {
+        text = "5";
+    }
+    if d == 6 {
+        text = "6";
+    }
+    if d == 7 {
+        text = "7";
+    }
+    if d == 8 {
+        text = "8";
+    }
+    return text;
+}
+
+fn show(n: i32) -> str {
+    if n < 0 {
+        return str_concat("-", show(0 - n));
+    }
+    if n < 10 {
+        return digit(n);
+    }
+    return str_concat(show(n / 10), digit(n % 10));
+}
+
+fn take_len(xs: list<i32>) -> i32 {
+    print_line(str_concat("take ", show(list_len(ref xs))));
+    return list_len(ref xs);
+}
+
+fn take_wide(xs: list<i32>) -> i64 {
+    return i64_from_i32(list_len(ref xs));
+}
+
+fn doubled(xs: list<i32>) -> list<i32> {
+    print_line("doubled");
+    let mut out: list<i32> = list();
+    for x in xs {
+        list_push(mutref out, x * 2);
+    }
+    return out;
+}
+
+fn main() -> i32 {
+    let low = [1];
+    let high = [1, 2, 3, 4];
+    let mut line = "range:";
+    for i in take_len(low)..take_len(high) {
+        line = str_concat(line, str_concat(" ", show(i)));
+    }
+    print_line(line);
+    let a = [1, 2];
+    let b = [5];
+    let mut runs = 0;
+    for i in take_len(a)..take_len(b) {
+        runs = runs + 1;
+    }
+    let c = [3, 3];
+    let d = [9, 9];
+    for i in take_len(c)..take_len(d) {
+        runs = runs + 1;
+    }
+    print_line(str_concat("empty runs: ", show(runs)));
+    let e = [7];
+    let f = [7, 7, 7];
+    let mut wide: i64 = 0;
+    for w in take_wide(e)..take_wide(f) {
+        wide = wide + w;
+    }
+    if wide != 3 {
+        return 1;
+    }
+    let source = [1, 2, 3];
+    let mut listed = "list:";
+    for x in doubled(source) {
+        listed = str_concat(listed, str_concat(" ", show(x)));
+    }
+    print_line(listed);
+    let more = [4, 5];
+    let mut indexed = "indexed:";
+    for i, x in doubled(more) {
+        if i == 1 {
+            break;
+        }
+        indexed = str_concat(indexed, str_concat(" ", str_concat(show(i), str_concat("=", show(x)))));
+    }
+    print_line(indexed);
+    return 0;
+}

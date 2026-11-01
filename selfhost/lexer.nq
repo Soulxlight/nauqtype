@@ -489,6 +489,40 @@ fn try_comment_or_slash(text: str, tokens: mutref list<token>, index: i32, lengt
     }
 }
 
+// M58.2: `..` at `index` pushes one `..` token; a single `.` directly after a
+// `..` token (no space between) pushes a plain `.`. Returns the next index,
+// or -1 when neither applies.
+fn scan_range_dots(tokens: mutref list<token>, text: str, index: i32, length: i32) -> i32 {
+    if lexer_byte_at(text, index, length) != 46 {
+        return -1;
+    }
+    if lexer_byte_at(text, index + 1, length) == 46 {
+        push_token(mutref tokens, tk_dotdot, "..", index, index + 2);
+        return index + 2;
+    }
+    let count = list_len(ref tokens);
+    if count > 0 {
+        let previous = list_get(ref tokens, count - 1);
+        match previous {
+            Some(value) => {
+                match value.kind {
+                    tk_dotdot => {
+                        if value.end == index {
+                            push_token(mutref tokens, tk_dot, ".", index, index + 1);
+                            return index + 1;
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            },
+            None => {
+            },
+        }
+    }
+    return -1;
+}
+
 fn try_single_char(tokens: mutref list<token>, index: i32, ch: i32) -> i32 {
     if ch == 40 {
         push_token(mutref tokens, tk_lparen, "(", index, index + 1);
@@ -536,6 +570,10 @@ fn try_single_char(tokens: mutref list<token>, index: i32, ch: i32) -> i32 {
     }
     if ch == 42 {
         push_token(mutref tokens, tk_star, "*", index, index + 1);
+        return index + 1;
+    }
+    if ch == 37 {
+        push_token(mutref tokens, tk_percent, "%", index, index + 1);
         return index + 1;
     }
     if ch == 63 {
@@ -650,6 +688,15 @@ audit {
     let length = str_len(text);
 
     while index < length {
+        // M58.2: two adjacent dots are always one `..` token (maximal munch,
+        // before any other rule that starts with `.`), and a lone `.` that
+        // directly follows a `..` token is a plain `.`, never a leading-dot
+        // float (`1...2` is `1`, `..`, `.`, `2`).
+        let dot_end = scan_range_dots(mutref tokens, text, index, length);
+        if dot_end >= 0 {
+            index = dot_end;
+            continue;
+        }
         let leading_dot_end = scan_leading_dot_number(text, index, length);
         if leading_dot_end >= 0 {
             push_token(mutref tokens, tk_malformed_float_lit, slice_text(text, index, leading_dot_end), index, leading_dot_end);

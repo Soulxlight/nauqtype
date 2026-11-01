@@ -168,6 +168,12 @@ _Noreturn void nq_integer_division_fail(bool zero) {
     exit(1);
 }
 
+_Noreturn void nq_integer_remainder_fail(bool zero) {
+    fputs(zero ? "nauqtype runtime: integer remainder by zero\n" :
+                 "nauqtype runtime: integer remainder overflow\n", stderr);
+    exit(1);
+}
+
 struct NQStrOwner {
     size_t ref_count;
     char* storage;

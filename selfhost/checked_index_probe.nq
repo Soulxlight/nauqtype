@@ -74,6 +74,9 @@ fn p2_probe_stmt(id: i32, function_id: i32) -> checked_stmt {
         expr_id: -1,
         child_block_id: -1,
         alt_block_id: -1,
+        for_kind: checked_for_list,
+        index_binding_id: -1,
+        end_expr_id: -1,
     };
 }
 
@@ -369,6 +372,77 @@ fn p2_probe_blocks_members_case(source: ref list<checked_block>, owner: i32) -> 
     return p2_probe_blocks_equal(ref expected, ref actual) and p2_probe_blocks_equal(ref snapshot, ref source);
 }
 
+fn p2_probe_for_kind_key(kind: checked_for_kind) -> i32 {
+    match kind { checked_for_list => { return 1; }, checked_for_indexed => { return 2; }, checked_for_range => { return 3; }, }
+}
+
+fn p2_probe_ir_for_kind_key(kind: ir_for_kind) -> i32 {
+    match kind { ir_for_list => { return 1; }, ir_for_indexed => { return 2; }, ir_for_range => { return 3; }, }
+}
+
+// Every checked_stmt field, including the M58.2 `for_kind`,
+// `index_binding_id` and `end_expr_id`.
+fn p2_probe_stmt_equal(a: checked_stmt, b: checked_stmt) -> bool {
+    return a.id == b.id and a.function_id == b.function_id and a.module_name == b.module_name and a.function_name == b.function_name and a.block_id == b.block_id and a.scope_id == b.scope_id and a.at == b.at and p2_probe_stmt_kind_key(a.kind) == p2_probe_stmt_kind_key(b.kind) and a.name == b.name and a.field_owner_module == b.field_owner_module and a.field_owner_type == b.field_owner_type and a.field_name == b.field_name and a.type_name == b.type_name and a.type_arg1_name == b.type_arg1_name and a.type_arg2_name == b.type_arg2_name and a.is_borrow == b.is_borrow and a.borrow_mutable == b.borrow_mutable and a.type_id == b.type_id and a.target_binding_id == b.target_binding_id and a.expr_id == b.expr_id and a.child_block_id == b.child_block_id and a.alt_block_id == b.alt_block_id and p2_probe_for_kind_key(a.for_kind) == p2_probe_for_kind_key(b.for_kind) and a.index_binding_id == b.index_binding_id and a.end_expr_id == b.end_expr_id;
+}
+
+// A lowered IR statement carries its checked statement's identities: in this
+// probe IR local IDs equal the checked binding IDs they lower.
+fn p2_cleanup_ir_matches(value: ir_stmt, source: checked_stmt) -> bool {
+    return value.id == source.id and value.function_id == source.function_id and value.block_id == source.block_id and value.target_local_id == source.target_binding_id and value.child_block_id == source.child_block_id and value.alt_block_id == source.alt_block_id and p2_probe_ir_for_kind_key(value.for_kind) == p2_probe_for_kind_key(source.for_kind) and value.index_local_id == source.index_binding_id and value.end_expr_id == source.end_expr_id;
+}
+
+fn p2_probe_one_stmt_equal(a: checked_stmt, b: checked_stmt) -> bool {
+    let mut left: list<checked_stmt> = list();
+    let mut right: list<checked_stmt> = list();
+    list_push(mutref left, a);
+    list_push(mutref right, b);
+    return p2_probe_statements_equal(ref left, ref right);
+}
+
+// Audit repair: each M58.2 field is compared; changing any one of them alone
+// makes the record comparison and the IR identity comparison fail.
+fn p2_probe_for_field_mutation_cases() -> bool {
+    let mut indexed = p2_probe_stmt(61, 41);
+    indexed.kind = checked_stmt_for;
+    indexed.for_kind = checked_for_indexed;
+    indexed.target_binding_id = 19;
+    indexed.index_binding_id = 18;
+    indexed.expr_id = 3;
+    let mut range = p2_probe_stmt(62, 41);
+    range.kind = checked_stmt_for;
+    range.for_kind = checked_for_range;
+    range.target_binding_id = 20;
+    range.expr_id = 4;
+    range.end_expr_id = 5;
+    for base in [indexed, range] {
+        if not p2_probe_one_stmt_equal(base, base) { return false; }
+        let mut kind = base;
+        kind.for_kind = checked_for_list;
+        let mut index_binding = base;
+        index_binding.index_binding_id = base.index_binding_id + 7;
+        let mut end_expr = base;
+        end_expr.end_expr_id = base.end_expr_id + 7;
+        for changed in [kind, index_binding, end_expr] {
+            if p2_probe_one_stmt_equal(base, changed) or p2_probe_one_stmt_equal(changed, base) { return false; }
+        }
+        let mut ir_kind = ir_for_indexed;
+        if p2_probe_for_kind_key(base.for_kind) == 3 { ir_kind = ir_for_range; }
+        let lowered = ir_stmt { id: base.id, function_id: base.function_id, block_id: base.block_id, at: base.at, kind: ir_stmt_for, type_id: base.type_id, target_local_id: base.target_binding_id, field_name: "", expr_id: base.expr_id, child_block_id: base.child_block_id, alt_block_id: base.alt_block_id, exit_target_block_id: -1, for_kind: ir_kind, index_local_id: base.index_binding_id, end_expr_id: base.end_expr_id };
+        if not p2_cleanup_ir_matches(lowered, base) { return false; }
+        let mut ir_list = lowered;
+        ir_list.for_kind = ir_for_list;
+        let mut ir_index = lowered;
+        ir_index.index_local_id = lowered.index_local_id + 7;
+        let mut ir_end = lowered;
+        ir_end.end_expr_id = lowered.end_expr_id + 7;
+        for changed in [ir_list, ir_index, ir_end] {
+            if p2_cleanup_ir_matches(changed, base) { return false; }
+        }
+    }
+    return true;
+}
+
 fn p2_probe_statements_equal(left: ref list<checked_stmt>, right: ref list<checked_stmt>) -> bool {
     if list_len(ref left) != list_len(ref right) { return false; }
     let mut index = 0;
@@ -376,7 +450,7 @@ fn p2_probe_statements_equal(left: ref list<checked_stmt>, right: ref list<check
         match list_get(ref left, index) {
             Some(a) => {
                 match list_get(ref right, index) {
-                    Some(b) => { if a.id != b.id or a.function_id != b.function_id or a.module_name != b.module_name or a.function_name != b.function_name or a.block_id != b.block_id or a.scope_id != b.scope_id or a.at != b.at or p2_probe_stmt_kind_key(a.kind) != p2_probe_stmt_kind_key(b.kind) or a.name != b.name or a.field_owner_module != b.field_owner_module or a.field_owner_type != b.field_owner_type or a.field_name != b.field_name or a.type_name != b.type_name or a.type_arg1_name != b.type_arg1_name or a.type_arg2_name != b.type_arg2_name or a.is_borrow != b.is_borrow or a.borrow_mutable != b.borrow_mutable or a.type_id != b.type_id or a.target_binding_id != b.target_binding_id or a.expr_id != b.expr_id or a.child_block_id != b.child_block_id or a.alt_block_id != b.alt_block_id { return false; } },
+                    Some(b) => { if not p2_probe_stmt_equal(a, b) { return false; } },
                     None => { return false; },
                 }
             },
@@ -504,7 +578,7 @@ fn p2_cleanup_lower_case(functions: ref list<checked_function>, bindings: ref li
                 if value.exit_target_block_id != expected_target { return false; }
                 match list_get(ref statements, index) {
                     Some(source) => {
-                        if value.id != source.id or value.function_id != source.function_id or value.block_id != source.block_id or value.target_local_id != source.target_binding_id or value.child_block_id != source.child_block_id or value.alt_block_id != source.alt_block_id { return false; }
+                        if not p2_cleanup_ir_matches(value, source) { return false; }
                     },
                     None => { return false; },
                 }
@@ -526,6 +600,7 @@ audit {
     effects();
 }
 {
+    if not p2_probe_for_field_mutation_cases() { return false; }
     let mut functions: list<checked_function> = list();
     list_push(mutref functions, p2_probe_function(41, "probe", "target"));
     list_push(mutref functions, p2_probe_function(7, "foreign", "target"));

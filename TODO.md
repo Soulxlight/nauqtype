@@ -25,8 +25,10 @@
 - [x] M58.1: implementation, focused checks, ownership-class trailing
   audits, milestone gate (2026-11-01;
   [evidence](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close))
-- [ ] M58.2: Gate A review of the [contract](docs/M58_2_CONTRACT.md)
-  (integer `%`, range and indexed `for`), then implementation
+- [x] M58.2: Gate A review of the [contract](docs/M58_2_CONTRACT.md)
+  (integer `%`, range and indexed `for`), implementation, ownership-class
+  trailing audits, milestone gate (2026-11-01;
+  [evidence](AUDIT_REMEDIATION.md#m582-remainder-and-counting-loops-close))
 - [ ] M58.3: contract and Gate A review (`i64`, `bool` and `str` literal
   patterns, an exact coverage check replacing D047, unreachable-arm errors,
   `match` expression positions incl. NQ Learn finding 19:

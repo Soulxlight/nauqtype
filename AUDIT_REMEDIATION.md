@@ -1021,3 +1021,74 @@ Receipts are retained in the native gate clone
 (`~/nauqtype-work/m58-1-gate/build/verification/`). Only allowlisted
 completion documents changed after the gate, bound to the final commit by
 `close`/`verify-close`. M58.2 and M58.3 are not claimed.
+
+## M58.2 Remainder And Counting Loops Close
+
+M58.2 passes on frozen candidate tree
+`34cc38de776d485fa3966b590eb222b3c62503c5`, 2026-11-01, based on `c56f857`
+(the Gate A contract commit, which also split the rest of the corrective
+sweep into M58.2-M58.5). Native Ubuntu 24.04/ext4 WSL2, GCC 13.3.0 and
+unchanged serial milestone budgets are the acceptance boundary. Compiler
+lead: Claude Code; implementation by lead-directed workers in two parallel
+slices (remainder, loops), an integration slice and five repair rounds.
+
+`docs/M58_2_CONTRACT.md` (Gate A revision 3, `gpt-5.6-sol` xhigh, which
+judged revision 1 too broad and required changes on revisions 1-2) and D071
+record the milestone: integer `%` (truncated; `x % 0` and `MIN % -1` terminate
+exactly as `/` does, with remainder messages; `NQ-TYPE-045` for invalid
+constants; `NQ-TYPE-050` for `f64`); range `for i in a..b` (half-open,
+`i32`/`i64`, bounds evaluated once, no overflow) and indexed
+`for i, item in items`; `..` as one token legal only in a `for` header, with
+`NQ-PARSE-006` for every malformed or misplaced range and `NQ-TYPE-062` for
+bound types. Programs accepted before M58.2 keep their facts, review and
+emitted C. The contract's Implementation Notes record the interpretations,
+including that lexical diagnostics inside a malformed header stay
+independent of its one-diagnostic rule.
+
+Ownership-class trailing audit, independent verdicts:
+
+| Round | Primary `gpt-5.6-sol` xhigh | Adversarial `gpt-6.1-sol` xhigh |
+| --- | --- | --- |
+| Frozen `5106555` | FAIL: malformed `for` headers emitted several diagnostics; `f64` constant `%` reported `NQ-TYPE-048`; probe comparisons and review assertions incomplete | FAIL: range bounds re-walked by the loop's ownership fixed point (valid consuming bounds rejected); a failing bound added `NQ-TYPE-062`; header and `?` diagnostics compounded; review assertions were smoke checks |
+| Repair `bb62bbf` | PASS | FAIL: a range used as a value inside `try` added `NQ-TRY-002`; a malformed float inside a header added a diagnostic (kept by contract amendment) |
+| Repair `80065c4` | (unaffected) | FAIL: a `try` block in an `if`/`while` head was taken for the body |
+| Repair `fe1d0cb` | (unaffected) | FAIL: range classifiers ignored brace depth, so a `..` inside a head's `try` block was taken for the range separator |
+| Repair `9e64157` | (unaffected) | PASS |
+
+The repairs latch the first header diagnostic and suppress subordinate
+placement diagnostics for a statement with an invalid range, check a loop's
+iterable and end bound once before the body's ownership fixed point (which
+also newly accepts list loops whose iterable consumes an owned value), keep a
+`try` block in a control-flow head inside the head, count brace depth when
+locating the range separator, and compare every new loop field in the
+checked/IR probes. Each repair has a regression that failed before it.
+
+The bootstrap seed was not promoted; `stdlib/runtime.{h,c}` gained the
+remainder helpers, and `bootstrap/seed/**` is unchanged.
+
+| Fresh Gate Phase | Seconds |
+| --- | ---: |
+| Stage1 driver | 367 |
+| Seed bootstrap | 403 |
+| Proof | 850 |
+| Linux alpha | 11 |
+| Stress leg | 3 |
+| Owned tests | 455 |
+| Ownership sanitizers | 8 |
+
+`scripts/check_milestone.sh` exits 0. GNU time records 2113 s wall and
+682280 KiB peak RSS, within the checked-in ceilings. Four earlier gate runs
+on superseded candidates (`5106555`, `bb62bbf`, `80065c4`, `fe1d0cb`) also
+passed; they are not acceptance evidence.
+
+| Frozen Artifact | SHA-256 |
+| --- | --- |
+| Milestone attestation | `2e8990ae0c32d4778ec4cf3f4e51ceeba471495f61066313f243099548e14fad` |
+| Performance summary | `b542959f5195978e3ccc592e86050d78fbc98710363088c80eb15baa7a2a448b` |
+| Proof summary | `d1c69d7cd9e77f626c10c8f011931382f04dc5f30a0134ee43ac4c1a8f571f72` |
+| Seed manifest (unchanged) | `f3ca0e192e3e5e88901b9c2a645219a1eb580b2181d218f7cde6095820c3b4a1` |
+
+Receipts are retained in the native gate clone
+(`~/nauqtype-work/m58-2-gate/build/verification/`). Only allowlisted
+completion documents changed after the gate, bound to the final commit by
+`close`/`verify-close`. M58.3-M58.5 are not claimed.

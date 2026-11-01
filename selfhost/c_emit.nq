@@ -2458,6 +2458,7 @@ fn integer_operator_suffix(kind: ir_expr_kind, constant: bool) -> str {
         ir_expr_sub => { if constant { return "SUB"; } return "sub"; },
         ir_expr_mul => { if constant { return "MUL"; } return "mul"; },
         ir_expr_div => { if constant { return "DIV"; } return "div"; },
+        ir_expr_rem => { if constant { return "REM"; } return "rem"; },
         ir_expr_neg => { if constant { return "NEG"; } return "neg"; },
         _ => { return ""; },
     }
@@ -2469,6 +2470,11 @@ fn integer_operation_text(type_shapes: ref list<ir_type_shape>, type_id: i32, ki
         // integer helper, no trap. Operands are already ordered by the caller.
         match kind {
             ir_expr_neg => { return concat3("(-(", left, "))"); },
+            ir_expr_rem => {
+                // M58.2: `%` is integer-only (typecheck NQ-TYPE-050).
+                push_c_error(mutref diags, "", at, "f64 remainder has no operation truth");
+                return "0";
+            },
             _ => {
                 let operator = binary_operator_text(kind);
                 if operator != "" { return concat5("((", left, ") ", operator, str_concat(" (", str_concat(right, "))"))); }
@@ -2595,6 +2601,12 @@ fn fold_c_const(membership: ref c_emit_membership_index, type_shapes: ref list<i
                             ir_expr_mul => { out.bits = const_word_mul(left.bits, right.bits, width); },
                             ir_expr_div => {
                                 match const_word_div(left.bits, right.bits, width) {
+                                    Ok(value) => { out.bits = value; },
+                                    Err(_) => { return invalid_c_const(expr.at, mutref diags); },
+                                }
+                            },
+                            ir_expr_rem => {
+                                match const_word_rem(left.bits, right.bits, width) {
                                     Ok(value) => { out.bits = value; },
                                     Err(_) => { return invalid_c_const(expr.at, mutref diags); },
                                 }
@@ -3298,6 +3310,26 @@ fn emit_expr(membership: ref c_emit_membership_index, type_shapes: ref list<ir_t
                     push_c_error(mutref diags, "", expr.at, "missing binary child expression");
                     return "0";
                 },
+                ir_expr_rem => {
+                    let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
+                    let left_entry = list_get(ref child_ids, 0);
+                    let right_entry = list_get(ref child_ids, 1);
+                    match left_entry {
+                        Some(left_id) => {
+                            match right_entry {
+                                Some(right_id) => {
+                                    return integer_operation_text(ref type_shapes, expr.type_id, expr.kind, emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, left_id, mutref diags), emit_expr(ref membership, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, right_id, mutref diags), false, expr.at, mutref diags);
+                                },
+                                None => {
+                                },
+                            }
+                        },
+                        None => {
+                        },
+                    }
+                    push_c_error(mutref diags, "", expr.at, "missing binary child expression");
+                    return "0";
+                },
                 ir_expr_eq => {
                     let child_ids = lookup_expr_child_ids(ref membership, ref expr_children, expr.id);
                     let left_entry = list_get(ref child_ids, 0);
@@ -3770,6 +3802,7 @@ fn binary_operator_text(kind: ir_expr_kind) -> str {
         ir_expr_sub => { return "-"; },
         ir_expr_mul => { return "*"; },
         ir_expr_div => { return "/"; },
+        ir_expr_rem => { return "%"; },
         ir_expr_eq => { return "=="; },
         ir_expr_ne => { return "!="; },
         ir_expr_lt => { return "<"; },
@@ -5366,6 +5399,43 @@ fn emit_replace_expr_target(membership: ref c_emit_membership_index, lines: mutr
     return;
 }
 
+// M58.2 range `for i in a..b`: the start then the end bound are evaluated
+// once each into hidden locals; the hidden induction variable is incremented
+// only while it is below the end bound, so it never overflows; the prelude
+// local of `i` is assigned from it at the top of each iteration.
+fn emit_range_for_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
+    let prefix = indent(level);
+    let Some(local_value) = lookup_local(ref locals, stmt.target_local_id) else {
+        push_c_error(mutref diags, "", stmt.at, "missing local identity for range for-loop binding");
+        return;
+    };
+    if stmt.expr_id <= 0 or stmt.end_expr_id <= 0 {
+        push_c_error(mutref diags, "", stmt.at, "missing range for-loop bound expression");
+        return;
+    }
+    let counter_type = c_type(ref type_shapes, local_value_type_id(ref type_shapes, local_value));
+    if counter_type != "int32_t" and counter_type != "int64_t" {
+        push_c_error(mutref diags, "", stmt.at, "range for-loop counter IR type is not an integer");
+        return;
+    }
+    temp_index = temp_index + 1;
+    let suffix = i32_to_str(temp_index);
+    let lo = str_concat("nq_range_lo_", suffix);
+    let hi = str_concat("nq_range_hi_", suffix);
+    let counter = str_concat("nq_range_i_", suffix);
+    let start_value = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.expr_id, level, mutref temp_index, mutref diags);
+    append_line(mutref lines, concat6(prefix, counter_type, " ", lo, " = ", str_concat(start_value, ";")));
+    let end_value = lower_expr_value(ref membership, mutref lines, ref type_shapes, ref locals, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, stmt.end_expr_id, level, mutref temp_index, mutref diags);
+    append_line(mutref lines, concat6(prefix, counter_type, " ", hi, " = ", str_concat(end_value, ";")));
+    let mut loop_line = concat7(prefix, "for (", counter_type, " ", counter, " = ", lo);
+    loop_line = str_concat(loop_line, concat7("; ", counter, " < ", hi, "; ", counter, " += 1) {"));
+    append_line(mutref lines, loop_line);
+    append_line(mutref lines, concat5(indent(level + 1), binding_name(local_value), " = ", counter, ";"));
+    emit_block(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt.child_block_id, level + 1, mutref temp_index, mutref diags);
+    append_line(mutref lines, concat3(prefix, "}", ""));
+    return;
+}
+
 fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, type_shapes: ref list<ir_type_shape>, locals: ref list<ir_local>, blocks: ref list<ir_block>, statements: ref list<ir_stmt>, match_arms: ref list<ir_match_arm>, patterns: ref list<ir_pattern>, pattern_children: ref list<ir_pattern_child>, expressions: ref list<ir_expr>, expr_children: ref list<ir_expr_child>, field_values: ref list<ir_field_value>, variant_decls: ref list<ir_variant_decl>, variant_payload_decls: ref list<ir_variant_payload_decl>, function: ir_function, active_return_cleanups: ref list<str>, active_jump_cleanups: ref list<str>, stmt: ir_stmt, level: i32, temp_index: mutref i32, diags: mutref list<diag>) -> unit {
     let prefix = indent(level);
     match stmt.kind {
@@ -5442,6 +5512,10 @@ fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, t
             append_line(mutref lines, concat3(prefix, "}", ""));
         },
         ir_stmt_for => {
+            if ir_for_is_range(stmt.for_kind) {
+                emit_range_for_stmt(ref membership, mutref lines, ref type_shapes, ref locals, ref blocks, ref statements, ref match_arms, ref patterns, ref pattern_children, ref expressions, ref expr_children, ref field_values, ref variant_decls, ref variant_payload_decls, function, ref active_return_cleanups, ref active_jump_cleanups, stmt, level, mutref temp_index, mutref diags);
+                return;
+            }
             let expr_entry = lookup_expression(ref expressions, stmt.expr_id);
             let local_entry = lookup_local(ref locals, stmt.target_local_id);
             match expr_entry {
@@ -5464,6 +5538,19 @@ fn emit_stmt(membership: ref c_emit_membership_index, lines: mutref list<str>, t
                                             loop_line = str_concat(loop_line, concat6("_len(&", list_temp, "); ", index_temp, " += 1) {", ""));
                                             append_line(mutref lines, loop_line);
                                             let item_value = concat6(helper, "_get(&", list_temp, ", ", index_temp, ").data.Some._0");
+                                            if ir_for_is_indexed(stmt.for_kind) {
+                                                // M58.2: the index binding is a prelude local
+                                                // assigned before the element at the top of
+                                                // each iteration.
+                                                match lookup_local(ref locals, stmt.index_local_id) {
+                                                    Some(index_local) => {
+                                                        append_line(mutref lines, concat5(indent(level + 1), binding_name(index_local), " = ", index_temp, ";"));
+                                                    },
+                                                    None => {
+                                                        push_c_error(mutref diags, "", stmt.at, "missing local identity for for-loop index binding");
+                                                    },
+                                                }
+                                            }
                                             emit_drop_local(mutref lines, ref type_shapes, local_value, level + 1);
                                             append_line(mutref lines, concat5(indent(level + 1), binding_name(local_value), " = ", item_value, ";"));
                                             let mut loop_return_cleanups = clone_cleanup_lines(ref active_return_cleanups);
@@ -5783,7 +5870,7 @@ audit { intent("Observe actual private C emission for independent membership pro
     let mut kind = ir_stmt_break;
     if mode == 6 { kind = ir_stmt_continue; }
     if mode == 7 { kind = ir_stmt_return; }
-    let stmt = ir_stmt { id: 8, function_id: function.id, block_id: 40, at: 9, kind: kind, type_id: 3, target_local_id: -1, field_name: "", expr_id: -1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: 20 };
+    let stmt = ir_stmt { id: 8, function_id: function.id, block_id: 40, at: 9, kind: kind, type_id: 3, target_local_id: -1, field_name: "", expr_id: -1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: 20, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 };
     emit_stmt(ref membership, mutref lines, ref shapes, ref locals, ref blocks, ref statements, ref arms, ref patterns, ref pattern_children, ref expressions, ref children, ref fields, ref variants, ref payloads, function, ref return_cleanups, ref jump_cleanups, stmt, 1, mutref temp, mutref diags);
     return;
 }

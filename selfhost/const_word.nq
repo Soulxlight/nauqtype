@@ -184,6 +184,24 @@ audit {
     return Ok(quotient);
 }
 
+pub fn const_word_rem(left: const_word, right: const_word, width: i32) -> result<const_word, i32>
+audit {
+    intent("Take the truncated signed remainder of compiler constants or report zero and minimum-value overflow");
+    mutates();
+    effects();
+}
+{
+    // C99 truncated remainder: left - (left / right) * right, sign of left.
+    match const_word_div(left, right, width) {
+        Ok(quotient) => {
+            return Ok(const_word_add(left, const_word_neg(const_word_mul(quotient, right, width), width), width));
+        },
+        Err(reason) => {
+            return Err(reason);
+        },
+    }
+}
+
 pub fn const_word_signed_text(value: const_word, width: i32) -> str
 audit {
     intent("Render a signed compiler constant using bounded base-256 division by ten");

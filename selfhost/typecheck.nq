@@ -2631,6 +2631,17 @@ fn visible_assignment_target_is_for_binding(statements: ref list<stmt_fact>, sco
         let entry = list_get(ref statements, index);
         match entry {
             Some(value) => {
+                // M58.2: an indexed loop's index binding is a `for` binding
+                // declared at its own name.
+                match value.kind {
+                    stmt_for => {
+                        if value.module == module and value.function_name == function_name and value.index_name == name and value.index_at >= 0 and value.index_at < at and value.index_at > best_at and scope_is_visible(ref scopes, module, function_name, scope_id, value.child_scope_id) {
+                            best_at = value.index_at;
+                            best_is_for = true;
+                        }
+                    },
+                    _ => {},
+                }
                 if value.module == module and value.function_name == function_name and value.name == name and value.at < at {
                     let mut declaration_scope_id = -1;
                     let mut declaration_is_for = false;
@@ -4742,6 +4753,11 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
                 }
             },
             tk_slash => {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    found = index;
+                }
+            },
+            tk_percent => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     found = index;
                 }
@@ -7111,6 +7127,17 @@ audit {
         if has_known_type_ctx(left_type_ctx) and has_known_type_ctx(right_type_ctx) and is_numeric_like(left_type_ctx.head) and is_numeric_like(right_type_ctx.head) and not type_ctx_matches(left_type_ctx, right_type_ctx) {
             push_mismatch_at(mutref diags, module, at, "arithmetic operands must have matching types", mixed_numeric_operand_help(left_type_ctx.head, right_type_ctx.head));
         }
+        // M58.2: `%` is integer-only. Two `f64` operands are NQ-TYPE-050 at the
+        // `%`; every other operand shape reports exactly what `/` reports.
+        let op_token = token_at(ref tokens, multiplicative_index);
+        match op_token.kind {
+            tk_percent => {
+                if left_type_ctx.head == "f64" and right_type_ctx.head == "f64" {
+                    push_token_error_with_help(mutref diags, module, op_token, "NQ-TYPE-050", "operator `%` is not defined for type `f64`", "`f64` supports `+`, `-`, `*` and `/`, not `%`");
+                }
+            },
+            _ => {},
+        }
         return arithmetic_result_ctx(expected_ctx, left_type_ctx, right_type_ctx);
     }
 
@@ -7662,6 +7689,17 @@ fn evaluate_typed_const(tokens: ref list<token>, start: i32, end: i32, width: i3
                     },
                 }
             },
+            tk_percent => {
+                match const_word_rem(left.bits, right.bits, width) {
+                    Ok(value) => { out.bits = value; },
+                    Err(reason) => {
+                        let mut message = "constant integer remainder by zero";
+                        if reason == 2 { message = "constant integer remainder overflow"; }
+                        push_token_error_with_help(mutref diags, module, op, "NQ-TYPE-045", message, "Change the evaluated constant remainder; a zero divisor and the minimum integer with divisor -1 are not defined results.");
+                        out.failed = true;
+                    },
+                }
+            },
             _ => {},
         }
         return out;
@@ -7711,6 +7749,14 @@ audit {
                 }
                 let text = module_source_text(ref sources, value.module);
                 let tokens = lex(text);
+                let f64_remainder = const_f64_remainder_index(ref tokens, value.expr_start, value.expr_end);
+                if f64_remainder >= 0 {
+                    // M58.2 Diagnostics Matrix: a root `%` with two `f64`
+                    // operands is NQ-TYPE-050 at the `%`, as in an expression,
+                    // and the constant reports nothing else (`/` keeps the
+                    // NQ-TYPE-048 literal-shape rule).
+                    push_token_error_with_help(mutref diags, value.module, token_at(ref tokens, f64_remainder), "NQ-TYPE-050", "operator `%` is not defined for type `f64`", "`f64` supports `+`, `-`, `*` and `/`, not `%`");
+                } else {
                 if value.type_name == "f64" or const_span_has_float_token(ref tokens, value.expr_start, value.expr_end) {
                     // M56.2: f64_const_expr = FLOAT_LIT | "-" FLOAT_LIT, with no
                     // folding; any other f64 constant shape, and any f64 operand in
@@ -7728,6 +7774,7 @@ audit {
                         let evaluated = evaluate_typed_const(ref tokens, value.expr_start, value.expr_end, width, value.module, mutref diags);
                     }
                 }
+                }
             },
             None => {
             },
@@ -7735,6 +7782,63 @@ audit {
         index = index + 1;
     }
     return make_typecheck_summary(0, 0, 0, list_len(ref diags) - start_diag_count);
+}
+
+// An `f64` constant operand: FLOAT_LIT or "-" FLOAT_LIT (the f64 constant
+// grammar), with any parentheses around it or around the literal.
+fn const_span_is_f64_literal(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut lo = start;
+    let mut hi = end;
+    while span_is_wrapped_in_parens(ref tokens, lo, hi) {
+        lo = lo + 1;
+        hi = hi - 1;
+    }
+    match token_at(ref tokens, lo).kind {
+        tk_minus => {
+            lo = lo + 1;
+            while span_is_wrapped_in_parens(ref tokens, lo, hi) {
+                lo = lo + 1;
+                hi = hi - 1;
+            }
+        },
+        _ => {},
+    }
+    if lo + 1 != hi {
+        return false;
+    }
+    match token_at(ref tokens, lo).kind {
+        tk_float_lit => { return true; },
+        _ => { return false; },
+    }
+}
+
+// M58.2: the index of a constant initializer's root `%` when both of its
+// operands are `f64` literals, or -1.
+fn const_f64_remainder_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut lo = expr_content_start(ref tokens, start, end);
+    let mut hi = end;
+    while span_is_wrapped_in_parens(ref tokens, lo, hi) {
+        lo = lo + 1;
+        hi = hi - 1;
+    }
+    if lo >= hi {
+        return -1;
+    }
+    if find_root_or_operator(ref tokens, lo, hi) >= 0 or find_root_and_operator(ref tokens, lo, hi) >= 0 or find_root_compare_operator(ref tokens, lo, hi) >= 0 or find_root_additive_operator(ref tokens, lo, hi) >= 0 {
+        return -1;
+    }
+    let root = find_root_multiplicative_operator(ref tokens, lo, hi);
+    if root < 0 {
+        return -1;
+    }
+    match token_at(ref tokens, root).kind {
+        tk_percent => {},
+        _ => { return -1; },
+    }
+    if const_span_is_f64_literal(ref tokens, lo, root) and const_span_is_f64_literal(ref tokens, root + 1, hi) {
+        return root;
+    }
+    return -1;
 }
 
 fn pattern_payload_ctx(visibility: ref visibility_index, variant_payloads: ref list<variant_payload_fact>, variants: ref list<variant_fact>, uses: ref list<module_use>, items: ref list<top_item>, module: str, variant_name: str, scrutinee_ctx: expected_type_ctx, index: i32) -> expected_type_ctx {
@@ -8212,12 +8316,92 @@ fn list_iteration_element_ctx(list_ctx: expected_type_ctx, module: str, at: i32,
     return expected_type_ctx_from_text(list_ctx.arg1_name);
 }
 
+// M58.2: the integer type both range bounds share ("i32" or "i64"), or "".
+fn range_bound_type_name(start_ctx: expected_type_ctx, end_ctx: expected_type_ctx) -> str {
+    if start_ctx.arg1_name != "" or end_ctx.arg1_name != "" {
+        return "";
+    }
+    let start_i32 = start_ctx.head == "i32" or start_ctx.head == "int";
+    let end_i32 = end_ctx.head == "i32" or end_ctx.head == "int";
+    if start_i32 and end_i32 {
+        return "i32";
+    }
+    if start_ctx.head == "i64" and end_ctx.head == "i64" {
+        return "i64";
+    }
+    return "";
+}
+
+// M58.2 range `for i in a..b`: the bounds are typed in the enclosing scope
+// (an integer literal bound takes the other bound's integer type, as for
+// comparison operands); both `i32` or both `i64` types the binding, any
+// other pair of known types is NQ-TYPE-062 at the `..`, and a bound that
+// fails to type-check reports only its own diagnostic.
+fn typecheck_range_for_binding(visibility: ref visibility_index, functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, tokens: ref list<token>, current: stmt_fact, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
+    let mut start_ctx = empty_expected_type_ctx();
+    let mut end_ctx = empty_expected_type_ctx();
+    // The bounds' own diagnostics are collected apart so that a bound which
+    // reported one (even one already in `diags`) suppresses NQ-TYPE-062: an
+    // inference that fails can still return a known recovery type.
+    let mut bound_diags: list<diag> = list();
+    if span_is_contextual_integer_expr(ref tokens, current.expr_start, current.expr_end) {
+        end_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.bound_end_start, current.bound_end_end, current.at, empty_expected_type_ctx(), mutref bound_diags);
+        start_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, integer_expected_ctx(end_ctx), mutref bound_diags);
+    } else {
+        start_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, empty_expected_type_ctx(), mutref bound_diags);
+        end_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.bound_end_start, current.bound_end_end, current.at, integer_expected_ctx(start_ctx), mutref bound_diags);
+    }
+    let bound_failed = list_len(ref bound_diags) > 0;
+    let mut bound_index = 0;
+    while bound_index < list_len(ref bound_diags) {
+        match list_get(ref bound_diags, bound_index) {
+            Some(entry) => { push_diagnostic_once(mutref diags, entry); },
+            None => {},
+        }
+        bound_index = bound_index + 1;
+    }
+    if not has_known_type_ctx(start_ctx) or not has_known_type_ctx(end_ctx) {
+        return;
+    }
+    let type_name = range_bound_type_name(start_ctx, end_ctx);
+    if type_name == "" and bound_failed {
+        return;
+    }
+    if type_name == "" {
+        let dotdot = token_at(ref tokens, current.expr_end);
+        let message = concat5("range bounds must both be `i32` or both be `i64`; found `", comparison_ctx_spelling(start_ctx), "` and `", comparison_ctx_spelling(end_ctx), "`");
+        push_diagnostic_once(mutref diags, make_error("NQ-TYPE-062", diag_type, current.module, dotdot.start, dotdot.end, message));
+        return;
+    }
+    if current.name != "" {
+        let body_start = token_at(ref tokens, current.bound_end_end).start;
+        list_push(mutref resolved_bindings, typed_binding_visible_from(make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, type_name, "", "", false, false, false), body_start));
+    }
+    return;
+}
+
 fn typecheck_for_binding(visibility: ref visibility_index, functions: ref list<function_fact>, function_params: ref list<function_param_fact>, variants: ref list<variant_fact>, variant_payloads: ref list<variant_payload_fact>, consts: ref list<const_fact>, scopes: ref list<body_scope>, field_facts: ref list<field_fact>, uses: ref list<module_use>, items: ref list<top_item>, tokens: ref list<token>, current: stmt_fact, resolved_bindings: mutref list<typed_binding_fact>, diags: mutref list<diag>) -> unit {
+    if for_kind_is_range(current.for_kind) {
+        typecheck_range_for_binding(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref field_facts, ref uses, ref items, ref tokens, current, mutref resolved_bindings, mutref diags);
+        return;
+    }
     let iterable_ctx = infer_expr_type_ctx_indexed(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref scopes, ref resolved_bindings, ref field_facts, ref uses, ref items, current.module, current.function_name, current.scope_id, ref tokens, current.expr_start, current.expr_end, current.at, empty_expected_type_ctx(), mutref diags);
     let element_ctx = list_iteration_element_ctx(iterable_ctx, current.module, current.at, mutref diags);
     let visiting: list<str> = list();
     if has_known_type_ctx(element_ctx) and not type_ctx_is_copy(ref visibility, element_ctx, current.module, ref variants, ref variant_payloads, ref field_facts, ref uses, ref items, ref visiting) {
         push_diag(mutref diags, current.module, current.at, "for over list<T> requires a copy element type in V1");
+    }
+    if for_kind_is_indexed(current.for_kind) {
+        // M58.2 `for i, item in items`: `i` is an `i32`; both bindings are
+        // visible from the start of the body.
+        let body_start = token_at(ref tokens, current.expr_end).start;
+        if current.index_name != "" {
+            list_push(mutref resolved_bindings, typed_binding_visible_from(make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.index_name, current.index_at, "i32", "", "", false, false, false), body_start));
+        }
+        if current.name != "" and has_known_type_ctx(element_ctx) {
+            list_push(mutref resolved_bindings, typed_binding_visible_from(make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false, false), body_start));
+        }
+        return;
     }
     if current.name != "" and has_known_type_ctx(element_ctx) {
         list_push(mutref resolved_bindings, make_typed_binding_fact(current.module, current.function_name, current.child_scope_id, current.name, current.at, element_ctx.head, element_ctx.arg1_name, element_ctx.arg2_name, false, false, false));

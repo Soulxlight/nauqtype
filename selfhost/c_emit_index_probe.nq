@@ -1,9 +1,17 @@
+use ast;
+use borrow;
 use c_emit;
 use c_emit_index;
 use diag;
 use handoff;
 use ir;
+use lexer;
+use parser;
+use resolve;
+use source;
 use text;
+use token;
+use typecheck;
 use value_plan;
 
 fn emit_probe_failure(label: str) -> unit {
@@ -39,7 +47,31 @@ fn emit_probe_local_equal(a: ir_local, b: ir_local) -> bool {
     return a.binding_id == b.binding_id and a.function_id == b.function_id and a.module_name == b.module_name and a.function_name == b.function_name and a.name == b.name and a.at == b.at and emit_probe_binding_key(a.binding_kind) == emit_probe_binding_key(b.binding_kind) and a.param_index == b.param_index and a.type_id == b.type_id and a.owner_block_id == b.owner_block_id and a.is_ref_param == b.is_ref_param and a.ref_mutable == b.ref_mutable;
 }
 fn emit_probe_stmt_equal(a: ir_stmt, b: ir_stmt) -> bool {
-    return a.id == b.id and a.function_id == b.function_id and a.block_id == b.block_id and a.at == b.at and emit_probe_stmt_key(a.kind) == emit_probe_stmt_key(b.kind) and a.type_id == b.type_id and a.target_local_id == b.target_local_id and a.field_name == b.field_name and a.expr_id == b.expr_id and a.child_block_id == b.child_block_id and a.alt_block_id == b.alt_block_id and a.exit_target_block_id == b.exit_target_block_id;
+    return a.id == b.id and a.function_id == b.function_id and a.block_id == b.block_id and a.at == b.at and emit_probe_stmt_key(a.kind) == emit_probe_stmt_key(b.kind) and a.type_id == b.type_id and a.target_local_id == b.target_local_id and a.field_name == b.field_name and a.expr_id == b.expr_id and a.child_block_id == b.child_block_id and a.alt_block_id == b.alt_block_id and a.exit_target_block_id == b.exit_target_block_id and m58_2_ir_kind_key(a.for_kind) == m58_2_ir_kind_key(b.for_kind) and a.index_local_id == b.index_local_id and a.end_expr_id == b.end_expr_id;
+}
+
+// Audit repair: changing any one M58.2 field alone makes the IR statement
+// comparison (and the list comparison built on it) fail.
+fn emit_probe_for_field_mutation_cases() -> bool {
+    let mut base = emit_probe_stmt(90, 41, 20, ir_stmt_for);
+    base.for_kind = ir_for_indexed;
+    base.index_local_id = 21;
+    let mut range_base = emit_probe_stmt(91, 41, 20, ir_stmt_for);
+    range_base.for_kind = ir_for_range;
+    range_base.end_expr_id = 195;
+    for original in [base, range_base] {
+        if not emit_probe_stmt_equal(original, original) { emit_probe_failure("M58.2 stmt self comparison"); return false; }
+        let mut kind = original;
+        kind.for_kind = ir_for_list;
+        let mut index_local = original;
+        index_local.index_local_id = original.index_local_id + 7;
+        let mut end_expr = original;
+        end_expr.end_expr_id = original.end_expr_id + 7;
+        for changed in [kind, index_local, end_expr] {
+            if emit_probe_stmt_equal(original, changed) or emit_probe_stmt_equal(changed, original) { emit_probe_failure("M58.2 stmt comparison missed a for-loop field"); return false; }
+        }
+    }
+    return true;
 }
 fn emit_probe_child_equal(a: ir_expr_child, b: ir_expr_child) -> bool {
     return a.parent_expr_id == b.parent_expr_id and a.index == b.index and a.child_expr_id == b.child_expr_id;
@@ -125,7 +157,7 @@ fn emit_probe_locals() -> list<ir_local> {
     return source;
 }
 fn emit_probe_stmt(id: i32, owner: i32, block: i32, kind: ir_stmt_kind) -> ir_stmt {
-    return ir_stmt { id: id, function_id: owner, block_id: block, at: id + 100, kind: kind, type_id: id + 101, target_local_id: id + 102, field_name: i32_to_str(id), expr_id: id + 103, child_block_id: id + 104, alt_block_id: id + 105, exit_target_block_id: id + 106 };
+    return ir_stmt { id: id, function_id: owner, block_id: block, at: id + 100, kind: kind, type_id: id + 101, target_local_id: id + 102, field_name: i32_to_str(id), expr_id: id + 103, child_block_id: id + 104, alt_block_id: id + 105, exit_target_block_id: id + 106, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 };
 }
 
 // These scans deliberately know nothing about the index or its sort order.
@@ -363,7 +395,13 @@ fn emit_probe_collection_cases() -> bool {
     list_push(mutref statements, emit_probe_stmt(8, 7, 40, ir_stmt_continue));
     list_push(mutref statements, emit_probe_stmt(9, 41, 10, ir_stmt_while));
     list_push(mutref statements, emit_probe_stmt(9, 7, 40, ir_stmt_return));
-    list_push(mutref statements, emit_probe_stmt(90, 41, 20, ir_stmt_for));
+    // M58.2: membership copies carry every for-loop field unchanged (the
+    // values are arbitrary non-defaults, not a well-formed loop).
+    let mut counted_loop = emit_probe_stmt(90, 41, 20, ir_stmt_for);
+    counted_loop.for_kind = ir_for_range;
+    counted_loop.index_local_id = 21;
+    counted_loop.end_expr_id = 195;
+    list_push(mutref statements, counted_loop);
     if not emit_probe_collection_case(ref locals, ref children, ref statements, "full") { okay = false; }
     let mut filtered_locals: list<ir_local> = list();
     let mut filtered_children: list<ir_expr_child> = list();
@@ -413,9 +451,9 @@ fn emit_probe_backstop_program(covering: bool, lines: mutref list<str>, diags: m
     list_push(mutref blocks, ir_block { id: 3, function_id: 1, parent_block_id: 1, depth: 1 });
     list_push(mutref blocks, ir_block { id: 4, function_id: 2, parent_block_id: -1, depth: 0 });
     let mut statements: list<ir_stmt> = list();
-    list_push(mutref statements, ir_stmt { id: 1, function_id: 1, block_id: 1, at: 50, kind: ir_stmt_match, type_id: -1, target_local_id: -1, field_name: "", expr_id: 1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
-    list_push(mutref statements, ir_stmt { id: 2, function_id: 1, block_id: 1, at: 90, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 2, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
-    list_push(mutref statements, ir_stmt { id: 3, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 1, function_id: 1, block_id: 1, at: 50, kind: ir_stmt_match, type_id: -1, target_local_id: -1, field_name: "", expr_id: 1, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 2, function_id: 1, block_id: 1, at: 90, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 2, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 3, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 });
     let mut arms: list<ir_match_arm> = list();
     list_push(mutref arms, ir_match_arm { id: 1, stmt_id: 1, block_id: 2, pattern_id: 1, result_expr_id: -1, at: 60 });
     let mut patterns: list<ir_pattern> = list();
@@ -486,7 +524,7 @@ fn emit_probe_backstop_cases() -> bool {
 // 4: `while true { while true { break; } }` terminates: the break targets the inner loop
 // 5: empty body                           falls off
 fn emit_probe_fall_off_stmt(id: i32, block_id: i32, kind: ir_stmt_kind, expr_id: i32, child_block_id: i32, alt_block_id: i32, exit_target_block_id: i32) -> ir_stmt {
-    return ir_stmt { id: id, function_id: 1, block_id: block_id, at: 20 + id, kind: kind, type_id: -1, target_local_id: -1, field_name: "", expr_id: expr_id, child_block_id: child_block_id, alt_block_id: alt_block_id, exit_target_block_id: exit_target_block_id };
+    return ir_stmt { id: id, function_id: 1, block_id: block_id, at: 20 + id, kind: kind, type_id: -1, target_local_id: -1, field_name: "", expr_id: expr_id, child_block_id: child_block_id, alt_block_id: alt_block_id, exit_target_block_id: exit_target_block_id, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 };
 }
 
 fn emit_probe_fall_off_program(mode: i32, lines: mutref list<str>, diags: mutref list<diag>) -> unit {
@@ -527,7 +565,7 @@ fn emit_probe_fall_off_program(mode: i32, lines: mutref list<str>, diags: mutref
         list_push(mutref statements, emit_probe_fall_off_stmt(2, 2, ir_stmt_while, 1, 3, -1, -1));
         list_push(mutref statements, emit_probe_fall_off_stmt(3, 3, ir_stmt_break, -1, -1, -1, 3));
     }
-    list_push(mutref statements, ir_stmt { id: 9, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1 });
+    list_push(mutref statements, ir_stmt { id: 9, function_id: 2, block_id: 4, at: 210, kind: ir_stmt_return, type_id: 1, target_local_id: -1, field_name: "", expr_id: 3, child_block_id: -1, alt_block_id: -1, exit_target_block_id: -1, for_kind: ir_for_list, index_local_id: -1, end_expr_id: -1 });
     let arms: list<ir_match_arm> = list();
     let patterns: list<ir_pattern> = list();
     let pattern_children: list<ir_pattern_child> = list();
@@ -662,6 +700,313 @@ fn emit_probe_qualified_list_call_cases() -> bool {
     return okay;
 }
 
+// ---------------------------------------------------------------------------
+// M58.2 slice B: the Representation table for the three `for` forms. One
+// source runs through the front end, the checked handoff, the value plan,
+// the borrow check, IR lowering and C emission in process; the statement
+// fact, checked statement and IR statement of each loop map exactly as the
+// contract table says, and the C prelude declares every loop binding once.
+// ---------------------------------------------------------------------------
+
+fn m58_2_loop_source() -> str {
+    return "fn main() -> i32 {\n    let items = [10, 20];\n    let mut total = 0;\n    for x in items {\n        total = total + x;\n    }\n    for i, item in items {\n        total = total + i + item;\n    }\n    for k in 0..3 {\n        total = total + k;\n    }\n    if total == 0 {\n        return 1;\n    }\n    return 0;\n}\n";
+}
+
+fn m58_2_find(value: str, marker: str) -> i32 {
+    let mut index = 0;
+    while index + str_len(marker) <= str_len(value) {
+        if starts_with_at(value, index, marker) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+// The token index whose byte offset is `at`, or -1.
+fn m58_2_token_index(tokens: ref list<token>, at: i32) -> i32 {
+    let mut index = 0;
+    for current in tokens {
+        if current.start == at { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn m58_2_token_text(tokens: ref list<token>, index: i32) -> str {
+    match list_get(ref tokens, index) {
+        Some(value) => { return value.text; },
+        None => { return ""; },
+    }
+}
+
+fn m58_2_stmt_fact_kind_key(kind: for_loop_kind) -> i32 {
+    match kind { for_list => { return 1; }, for_indexed => { return 2; }, for_range => { return 3; }, }
+}
+
+fn m58_2_checked_kind_key(kind: checked_for_kind) -> i32 {
+    match kind { checked_for_list => { return 1; }, checked_for_indexed => { return 2; }, checked_for_range => { return 3; }, }
+}
+
+fn m58_2_ir_kind_key(kind: ir_for_kind) -> i32 {
+    match kind { ir_for_list => { return 1; }, ir_for_indexed => { return 2; }, ir_for_range => { return 3; }, }
+}
+
+fn m58_2_checked_binding(bindings: ref list<checked_binding>, id: i32) -> option<checked_binding> {
+    for value in bindings {
+        if value.id == id { return Some(value); }
+    }
+    return None;
+}
+
+fn m58_2_checked_expr(expressions: ref list<checked_expr>, id: i32) -> option<checked_expr> {
+    for value in expressions {
+        if value.id == id { return Some(value); }
+    }
+    return None;
+}
+
+fn m58_2_ir_local(locals: ref list<ir_local>, id: i32) -> option<ir_local> {
+    for value in locals {
+        if value.binding_id == id { return Some(value); }
+    }
+    return None;
+}
+
+// The checked binding `id` is named `name` and declared at byte `at`.
+fn m58_2_binding_is(bindings: ref list<checked_binding>, id: i32, name: str, at: i32) -> bool {
+    match m58_2_checked_binding(ref bindings, id) {
+        Some(value) => { return value.name == name and value.at == at; },
+        None => { return false; },
+    }
+}
+
+// The checked expression `id` spans exactly tokens [start, end).
+fn m58_2_expr_spans(expressions: ref list<checked_expr>, id: i32, start: i32, end: i32) -> bool {
+    match m58_2_checked_expr(ref expressions, id) {
+        Some(value) => { return value.start == start and value.end == end; },
+        None => { return false; },
+    }
+}
+
+// The C prelude declares the local of binding `id` exactly once.
+fn m58_2_prelude_declares_once(lines: ref list<str>, locals: ref list<ir_local>, id: i32) -> bool {
+    let Some(local) = m58_2_ir_local(ref locals, id) else { return false; };
+    let suffix = concat5(" nqv_", i32_to_str(local.binding_id), "_", local.name, " = {0};");
+    let mut count = 0;
+    for line in lines {
+        if str_ends_with(line, suffix) { count = count + 1; }
+    }
+    return count == 1;
+}
+
+fn m58_2_loop_representation_cases() -> bool {
+    let source = m58_2_loop_source();
+    let mut sources: list<source_file> = list();
+    list_push(mutref sources, make_source_file("main", source));
+    let tokens = lex(source);
+    let mut items: list<top_item> = list();
+    let mut uses: list<module_use> = list();
+    let mut scopes: list<body_scope> = list();
+    let mut bindings: list<body_binding> = list();
+    let mut refs: list<name_ref> = list();
+    let mut type_refs: list<type_ref> = list();
+    let mut function_facts: list<function_fact> = list();
+    let mut function_param_facts: list<function_param_fact> = list();
+    let mut variant_facts: list<variant_fact> = list();
+    let mut variant_payload_facts: list<variant_payload_fact> = list();
+    let mut const_facts: list<const_fact> = list();
+    let mut call_facts: list<call_fact> = list();
+    let mut pattern_facts: list<pattern_ctor_fact> = list();
+    let mut typed_bindings: list<typed_binding_fact> = list();
+    let mut field_facts: list<field_fact> = list();
+    let mut match_arm_facts: list<match_arm_fact> = list();
+    let mut local_inits: list<local_init_fact> = list();
+    let mut return_facts: list<return_expr_fact> = list();
+    let mut condition_facts: list<condition_fact> = list();
+    let mut assignment_facts: list<assignment_fact> = list();
+    let mut stmt_facts: list<stmt_fact> = list();
+    let mut diags: list<diag> = list();
+    let mut walker_diags: list<diag> = list();
+    let parsed = parse_file("main", ref tokens, mutref items, mutref uses, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+    let collected_calls = collect_typecheck_facts("main", ref tokens, mutref function_facts, mutref function_param_facts, mutref variant_facts, mutref variant_payload_facts, mutref const_facts, mutref call_facts, mutref pattern_facts, mutref walker_diags);
+    let collected_values = collect_value_type_facts("main", ref tokens, mutref typed_bindings, mutref field_facts, mutref match_arm_facts, mutref local_inits, mutref return_facts, mutref condition_facts, mutref assignment_facts, mutref walker_diags);
+    let collected_stmts = collect_stmt_facts("main", ref tokens, mutref stmt_facts, mutref walker_diags);
+    let loaded = ["main"];
+    let resolved_modules = resolve_modules(ref loaded, ref uses, ref items, mutref diags);
+    let resolved_types = resolve_types(ref type_refs, ref uses, ref items, mutref diags);
+    let resolved_bodies = resolve_bodies(ref scopes, ref bindings, ref refs, ref uses, ref items, mutref diags);
+    let checked_modules_summary = typecheck_modules_for_entry(ref function_facts, ref variant_facts, ref call_facts, ref pattern_facts, ref uses, ref items, "main", true, mutref diags);
+    let checked_consts_summary = typecheck_const_facts(ref const_facts, ref sources, mutref diags);
+    let value_summary = typecheck_value_facts_with_stmt_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arm_facts, ref local_inits, ref return_facts, ref condition_facts, ref assignment_facts, ref stmt_facts, ref uses, ref items, ref sources, mutref diags);
+    let mut resolved_bindings: list<typed_binding_fact> = list();
+    let mut pattern_bindings: list<pattern_binding_fact> = list();
+    let resolved_summary = collect_resolved_binding_facts(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref typed_bindings, ref field_facts, ref match_arm_facts, ref local_inits, ref stmt_facts, ref uses, ref items, ref sources, mutref resolved_bindings, mutref pattern_bindings, mutref diags);
+    if list_len(ref walker_diags) != 0 or diagnostics_have_errors(ref diags) {
+        emit_probe_failure("M58.2 loop source front end reported diagnostics");
+        return false;
+    }
+    let mut checked_modules: list<checked_module> = list();
+    let mut checked_functions: list<checked_function> = list();
+    let mut checked_bindings: list<checked_binding> = list();
+    let mut checked_params: list<checked_param> = list();
+    let mut checked_consts: list<checked_const_decl> = list();
+    let mut checked_type_shapes: list<checked_type_shape> = list();
+    let mut checked_type_decls: list<checked_type_decl> = list();
+    let mut checked_field_decls: list<checked_field_decl> = list();
+    let mut checked_enum_decls: list<checked_enum_decl> = list();
+    let mut checked_variant_decls: list<checked_variant_decl> = list();
+    let mut checked_variant_payload_decls: list<checked_variant_payload_decl> = list();
+    let mut checked_blocks: list<checked_block> = list();
+    let mut checked_statements: list<checked_stmt> = list();
+    let mut checked_match_arms: list<checked_match_arm> = list();
+    let mut checked_patterns: list<checked_pattern> = list();
+    let mut checked_pattern_children: list<checked_pattern_child> = list();
+    let mut checked_pattern_bindings: list<checked_pattern_binding> = list();
+    let mut checked_expressions: list<checked_expr> = list();
+    let mut checked_expr_children: list<checked_expr_child> = list();
+    let mut checked_struct_fields: list<checked_struct_field_init> = list();
+    let handoff_summary = build_checked_handoff(ref function_facts, ref function_param_facts, ref variant_facts, ref variant_payload_facts, ref const_facts, ref scopes, ref resolved_bindings, ref field_facts, ref match_arm_facts, ref pattern_bindings, ref stmt_facts, ref uses, ref items, ref sources, mutref checked_modules, mutref checked_functions, mutref checked_bindings, mutref checked_params, mutref checked_consts, mutref checked_type_shapes, mutref checked_type_decls, mutref checked_field_decls, mutref checked_enum_decls, mutref checked_variant_decls, mutref checked_variant_payload_decls, mutref checked_blocks, mutref checked_statements, mutref checked_match_arms, mutref checked_patterns, mutref checked_pattern_children, mutref checked_pattern_bindings, mutref checked_expressions, mutref checked_expr_children, mutref checked_struct_fields, mutref diags);
+    let mut properties: list<checked_type_property> = list();
+    let mut value_uses: list<checked_value_use> = list();
+    let property_summary = build_checked_type_properties(ref checked_type_shapes, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, mutref properties, mutref diags);
+    let plan_summary = plan_checked_value_uses(ref checked_functions, ref checked_params, ref properties, ref checked_statements, ref checked_match_arms, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref value_uses, mutref diags);
+    let borrow_result = check_checked_handoff_borrows_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref properties, ref value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, mutref diags);
+    let mut ir_programs: list<ir_program> = list();
+    let mut ir_function_sigs: list<ir_function_sig> = list();
+    let mut ir_functions: list<ir_function> = list();
+    let mut ir_locals: list<ir_local> = list();
+    let mut ir_consts: list<ir_const_decl> = list();
+    let mut ir_blocks: list<ir_block> = list();
+    let mut ir_statements: list<ir_stmt> = list();
+    let mut ir_match_arms: list<ir_match_arm> = list();
+    let mut ir_patterns: list<ir_pattern> = list();
+    let mut ir_pattern_children: list<ir_pattern_child> = list();
+    let mut ir_expressions: list<ir_expr> = list();
+    let mut ir_expr_children: list<ir_expr_child> = list();
+    let mut ir_field_values: list<ir_field_value> = list();
+    let mut ir_type_shapes: list<ir_type_shape> = list();
+    let mut ir_struct_decls: list<ir_struct_decl> = list();
+    let mut ir_field_decls: list<ir_field_decl> = list();
+    let mut ir_enum_decls: list<ir_enum_decl> = list();
+    let mut ir_variant_decls: list<ir_variant_decl> = list();
+    let mut ir_variant_payload_decls: list<ir_variant_payload_decl> = list();
+    let ir_summary = build_ir_program_for_entry_with_value_plan(ref checked_functions, ref checked_bindings, ref checked_params, ref checked_consts, ref checked_type_shapes, ref properties, ref value_uses, ref checked_type_decls, ref checked_field_decls, ref checked_enum_decls, ref checked_variant_decls, ref checked_variant_payload_decls, ref checked_blocks, ref checked_statements, ref checked_match_arms, ref checked_patterns, ref checked_pattern_children, ref checked_pattern_bindings, ref checked_expressions, ref checked_expr_children, ref checked_struct_fields, "main", true, mutref ir_programs, mutref ir_function_sigs, mutref ir_functions, mutref ir_locals, mutref ir_consts, mutref ir_blocks, mutref ir_statements, mutref ir_match_arms, mutref ir_patterns, mutref ir_pattern_children, mutref ir_expressions, mutref ir_expr_children, mutref ir_field_values, mutref ir_type_shapes, mutref ir_struct_decls, mutref ir_field_decls, mutref ir_enum_decls, mutref ir_variant_decls, mutref ir_variant_payload_decls, mutref diags);
+    let mut c_lines: list<str> = list();
+    let c_summary = emit_c_program(ref ir_programs, ref ir_function_sigs, ref ir_functions, ref ir_locals, ref ir_consts, ref ir_blocks, ref ir_statements, ref ir_match_arms, ref ir_patterns, ref ir_pattern_children, ref ir_expressions, ref ir_expr_children, ref ir_field_values, ref ir_type_shapes, ref ir_struct_decls, ref ir_field_decls, ref ir_enum_decls, ref ir_variant_decls, ref ir_variant_payload_decls, mutref c_lines, mutref diags);
+    if diagnostics_have_errors(ref diags) {
+        emit_probe_failure("M58.2 loop source back end reported diagnostics");
+        return false;
+    }
+    let x_at = m58_2_find(source, "x in items") ;
+    let i_at = m58_2_find(source, "i, item");
+    let item_at = i_at + 3;
+    let k_at = m58_2_find(source, "k in 0..3");
+    let list_items = m58_2_token_index(ref tokens, x_at + 5);
+    let indexed_items = m58_2_token_index(ref tokens, item_at + 8);
+    let range_start = m58_2_token_index(ref tokens, k_at + 5);
+    if list_items < 0 or indexed_items < 0 or range_start < 0 or m58_2_token_text(ref tokens, list_items) != "items" or m58_2_token_text(ref tokens, indexed_items) != "items" or m58_2_token_text(ref tokens, range_start) != "0" or m58_2_token_text(ref tokens, range_start + 1) != ".." or m58_2_token_text(ref tokens, range_start + 2) != "3" {
+        emit_probe_failure("M58.2 loop source token positions");
+        return false;
+    }
+    // The statement facts.
+    let mut fact_count = 0;
+    for fact in stmt_facts {
+        match fact.kind {
+            stmt_for => {
+                fact_count = fact_count + 1;
+                let key = m58_2_stmt_fact_kind_key(fact.for_kind);
+                let list_ok = key == 1 and fact.name == "x" and fact.at == x_at and fact.index_name == "" and fact.index_at == -1 and fact.expr_start == list_items and fact.expr_end == list_items + 1 and fact.bound_end_start == -1 and fact.bound_end_end == -1;
+                let indexed_ok = key == 2 and fact.name == "item" and fact.at == item_at and fact.index_name == "i" and fact.index_at == i_at and fact.expr_start == indexed_items and fact.expr_end == indexed_items + 1 and fact.bound_end_start == -1 and fact.bound_end_end == -1;
+                let range_ok = key == 3 and fact.name == "k" and fact.at == k_at and fact.index_name == "" and fact.index_at == -1 and fact.expr_start == range_start and fact.expr_end == range_start + 1 and fact.bound_end_start == range_start + 2 and fact.bound_end_end == range_start + 3;
+                if not list_ok and not indexed_ok and not range_ok {
+                    emit_probe_failure(str_concat("M58.2 stmt_fact mapping for ", fact.name));
+                    return false;
+                }
+            },
+            _ => {
+                if m58_2_stmt_fact_kind_key(fact.for_kind) != 1 or fact.index_name != "" or fact.index_at != -1 or fact.bound_end_start != -1 or fact.bound_end_end != -1 {
+                    emit_probe_failure("M58.2 stmt_fact absent fields on a non-for statement");
+                    return false;
+                }
+            },
+        }
+    }
+    if fact_count != 3 {
+        emit_probe_failure("M58.2 stmt_fact count");
+        return false;
+    }
+    // The checked statements and their lowered IR statements.
+    let mut checked_count = 0;
+    for value in checked_statements {
+        match value.kind {
+            checked_stmt_for => {
+                checked_count = checked_count + 1;
+                let key = m58_2_checked_kind_key(value.for_kind);
+                let mut ok = false;
+                if key == 1 {
+                    ok = m58_2_binding_is(ref checked_bindings, value.target_binding_id, "x", x_at) and value.index_binding_id == -1 and m58_2_expr_spans(ref checked_expressions, value.expr_id, list_items, list_items + 1) and value.end_expr_id == -1;
+                }
+                if key == 2 {
+                    ok = m58_2_binding_is(ref checked_bindings, value.target_binding_id, "item", item_at) and m58_2_binding_is(ref checked_bindings, value.index_binding_id, "i", i_at) and value.index_binding_id != value.target_binding_id and m58_2_expr_spans(ref checked_expressions, value.expr_id, indexed_items, indexed_items + 1) and value.end_expr_id == -1;
+                }
+                if key == 3 {
+                    ok = m58_2_binding_is(ref checked_bindings, value.target_binding_id, "k", k_at) and value.index_binding_id == -1 and m58_2_expr_spans(ref checked_expressions, value.expr_id, range_start, range_start + 1) and m58_2_expr_spans(ref checked_expressions, value.end_expr_id, range_start + 2, range_start + 3) and value.end_expr_id > value.expr_id and value.type_name == "i32";
+                }
+                if not ok {
+                    emit_probe_failure(str_concat("M58.2 checked for mapping for ", value.name));
+                    return false;
+                }
+                let mut lowered = false;
+                for ir_value in ir_statements {
+                    if ir_value.id == value.id {
+                        lowered = true;
+                        let same = m58_2_ir_kind_key(ir_value.for_kind) == key and ir_value.target_local_id == value.target_binding_id and ir_value.index_local_id == value.index_binding_id and ir_value.expr_id == value.expr_id and ir_value.end_expr_id == value.end_expr_id;
+                        if not same {
+                            emit_probe_failure(str_concat("M58.2 IR for mapping for ", value.name));
+                            return false;
+                        }
+                        let Some(target_local) = m58_2_ir_local(ref ir_locals, ir_value.target_local_id) else { emit_probe_failure("M58.2 IR target local"); return false; };
+                        if target_local.name != value.name or not m58_2_prelude_declares_once(ref c_lines, ref ir_locals, ir_value.target_local_id) {
+                            emit_probe_failure(str_concat("M58.2 C prelude for ", value.name));
+                            return false;
+                        }
+                        if key == 2 {
+                            let Some(index_local) = m58_2_ir_local(ref ir_locals, ir_value.index_local_id) else { emit_probe_failure("M58.2 IR index local"); return false; };
+                            if index_local.name != "i" or not m58_2_prelude_declares_once(ref c_lines, ref ir_locals, ir_value.index_local_id) {
+                                emit_probe_failure("M58.2 C prelude for the index binding");
+                                return false;
+                            }
+                        }
+                    }
+                }
+                if not lowered {
+                    emit_probe_failure("M58.2 missing lowered for statement");
+                    return false;
+                }
+            },
+            _ => {
+                if m58_2_checked_kind_key(value.for_kind) != 1 or value.index_binding_id != -1 or value.end_expr_id != -1 {
+                    emit_probe_failure("M58.2 checked absent fields on a non-for statement");
+                    return false;
+                }
+            },
+        }
+    }
+    if checked_count != 3 {
+        emit_probe_failure("M58.2 checked for statement count");
+        return false;
+    }
+    // The range loop lowers to hidden bounds and a guarded induction variable.
+    let mut range_header = 0;
+    for line in c_lines {
+        if text_contains(line, "for (int32_t nq_range_i_") and text_contains(line, " < nq_range_hi_") and str_ends_with(line, " += 1) {") { range_header = range_header + 1; }
+    }
+    if range_header != 1 {
+        emit_probe_failure("M58.2 range loop C shape");
+        return false;
+    }
+    return true;
+}
+
 pub fn c_emit_membership_index_cases() -> bool
 audit {
     intent("Compare actual C-emitter membership helpers with independent full ordered IR scans and literal cleanup lines");
@@ -676,7 +1021,9 @@ audit {
     let fall_off_ok = emit_probe_fall_off_cases();
     let tag_ok = emit_probe_tag_cases();
     let qualified_ok = emit_probe_qualified_list_call_cases();
-    return collections_ok and cleanup_ok and missing_ok and backstop_ok and fall_off_ok and tag_ok and qualified_ok;
+    let loops_ok = m58_2_loop_representation_cases();
+    let for_fields_ok = emit_probe_for_field_mutation_cases();
+    return collections_ok and cleanup_ok and missing_ok and backstop_ok and fall_off_ok and tag_ok and qualified_ok and loops_ok and for_fields_ok;
 }
 fn main() -> i32 {
     let membership_ok = c_emit_membership_index_cases();

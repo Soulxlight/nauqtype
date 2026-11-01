@@ -1,0 +1,42 @@
+// M58.2 audit repair: evidence names each loop binding by its own
+// declaration when loop bindings shadow outer locals, a range bound reads
+// the outer name its binding shadows, and nested loops reuse binder names.
+
+fn add(total: mutref i32, left: i32, right: i32) -> unit
+audit {
+    intent("Add two values to a running total");
+    mutates(total);
+    effects();
+}
+{
+    total = total + left + right;
+    return;
+}
+
+fn main() -> i32 {
+    let items = [3, 4];
+    let i = 100;
+    let item = 200;
+    let k = 7;
+    let mut total = 0;
+    add(mutref total, i, item);
+    for i, item in items {
+        add(mutref total, i, item);
+        for i, item in items {
+            add(mutref total, i, item);
+        }
+        add(mutref total, i, item);
+    }
+    for k in 0..k {
+        add(mutref total, k, k);
+        for k in k..3 {
+            add(mutref total, k, k);
+        }
+    }
+    add(mutref total, i, item);
+    add(mutref total, k, k);
+    if total != 704 {
+        return 1;
+    }
+    return 0;
+}

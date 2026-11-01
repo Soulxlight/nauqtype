@@ -873,3 +873,29 @@ Full user generics and broader mutable-string/library growth remain deferred.
   loop conditions) without breaking accepted programs; the rejections fix
   miscompiles and should stay. M58.2 replaces the D047 refined-pattern rule
   with a real coverage check and adds `bool` patterns.
+
+## D071: Remainder and counting loops
+
+- **Decision.** M58.2 ([docs/M58_2_CONTRACT.md](docs/M58_2_CONTRACT.md))
+  adds integer `%` and two `for` forms. `%` is the truncated remainder on
+  `i32`/`i64`; `x % 0` and `MIN % -1` terminate exactly as `/` does, with
+  remainder messages, and constant folding rejects them with `NQ-TYPE-045`.
+  `for i in a..b` counts a half-open ascending range of `i32` or `i64`, with
+  both bounds evaluated once; `for i, item in items` adds the element index
+  to a list loop. `..` is one token that is legal only in a `for` header.
+- **Alternatives rejected.** `MIN % -1 == 0` (breaks the symmetry with `/`
+  the owner chose); Euclidean remainder (differs from C, extra code per use);
+  floating `%` (belongs with the standard library's math, M67); inclusive,
+  stepped or descending ranges (a second spelling for overlapping intent,
+  R2); range values or an iteration protocol (hidden dispatch, R7, and D051);
+  parenthesized ranges (two spellings of one header).
+- **Reason.** Counting and index-carrying loops were written as `while` loops
+  with manual counters, where off-by-one and missing-increment mistakes live;
+  `%` was missing from the integer operators. Both are charter v1 additions.
+- **Consequences.** New codes `NQ-TYPE-062` (range bound types) and
+  `NQ-PARSE-006` (range syntax and position). Programs accepted before
+  M58.2 are unchanged, including their facts, review and emitted C. The
+  rest of the corrective sweep is split into M58.3 (patterns and coverage),
+  M58.4 (assignment, constants, position matrix) and M58.5 (rewrite tooling).
+- **Reversible later.** A future iteration design could generalize `for`,
+  but only with explicit dispatch and evidence (D051 still applies).

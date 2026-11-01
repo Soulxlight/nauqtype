@@ -61,6 +61,247 @@ fn consume_ident(tokens: ref list<token>, cursor: mutref i32, diags: mutref list
     }
 }
 
+// ---------------------------------------------------------------------------
+// M58.2 counting loops. `for_stmt = "for" IDENT [ "," IDENT ] "in"
+// for_iterable block ;` with `for_iterable = expr ".." expr | expr ;`.
+// ---------------------------------------------------------------------------
+
+type for_header {
+    first: token,
+    second: token,
+    has_comma: bool,
+    comma: token,
+    malformed: bool,
+}
+
+// Every statement walker consumes a `for` header through this one function,
+// so all of them report the same binding-syntax diagnostic (NQ-PARSE-003 at
+// a missing name around the `,` or at a missing `in`). A malformed header
+// reports exactly one: the first error is latched, and the rest of the
+// header is still consumed (so the walker recovers at the same token) with
+// any later header error discarded. `malformed` records that one was
+// reported.
+fn consume_for_header(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> for_header {
+    let before = list_len(ref diags);
+    let mut later: list<diag> = list();
+    let first = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+    let mut second = first;
+    let comma = token_at(ref tokens, cursor);
+    let mut has_comma = false;
+    if is_comma_token(comma) {
+        has_comma = true;
+        advance(mutref cursor);
+        if list_len(ref diags) > before {
+            second = consume_ident(ref tokens, mutref cursor, mutref later, file);
+        } else {
+            second = consume_ident(ref tokens, mutref cursor, mutref diags, file);
+        }
+    }
+    let in_token = token_at(ref tokens, cursor);
+    match in_token.kind {
+        tk_kw_in => {
+            advance(mutref cursor);
+        },
+        _ => {
+            if list_len(ref diags) == before {
+                push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
+            }
+        },
+    }
+    return for_header {
+        first: first,
+        second: second,
+        has_comma: has_comma,
+        comma: comma,
+        malformed: list_len(ref diags) > before,
+    };
+}
+
+fn is_dotdot_token(tok: token) -> bool {
+    match tok.kind {
+        tk_dotdot => { return true; },
+        _ => { return false; },
+    }
+}
+
+// The `..` of a range iterable: the first `..` at paren, bracket and brace
+// depth zero of the iterable span (a `..` inside `try { ... }` is a range
+// used as a value), or -1 (a list iterable).
+fn for_range_dotdot_index(tokens: ref list<token>, start: i32, end: i32) -> i32 {
+    let mut depth = 0;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => { depth = depth + 1; },
+            tk_lbracket => { depth = depth + 1; },
+            tk_lbrace => { depth = depth + 1; },
+            tk_rparen => { if depth > 0 { depth = depth - 1; } },
+            tk_rbracket => { if depth > 0 { depth = depth - 1; } },
+            tk_rbrace => { if depth > 0 { depth = depth - 1; } },
+            tk_dotdot => {
+                if depth == 0 {
+                    return index;
+                }
+            },
+            _ => {},
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+fn push_range_error(diags: mutref list<diag>, file: str, tok: token, message: str) -> unit {
+    push_error(mutref diags, file, tok, "NQ-PARSE-006", diag_parse, message);
+    return;
+}
+
+// The one NQ-PARSE-006 a well-formed `for` header can report for its
+// iterable span: the indexed-over-range rejection at the `,`, then the
+// malformed-range rows in the order (a) `...`/`..=`, (b) a second `..` at
+// depth zero, (c) a parenthesized range, (d) a missing start bound, (e) a
+// missing end bound; otherwise a `..` that is not the range separator is
+// a range used as a value.
+fn push_for_iterable_range_diag(tokens: ref list<token>, start: i32, end: i32, header: for_header, diags: mutref list<diag>, file: str) -> unit {
+    let mut depth = 0;
+    let mut first_any = -1;
+    let mut first_zero = -1;
+    let mut second_zero = -1;
+    let mut first_bad = -1;
+    let mut index = start;
+    while index < end {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_lparen => { depth = depth + 1; },
+            tk_lbracket => { depth = depth + 1; },
+            tk_lbrace => { depth = depth + 1; },
+            tk_rparen => { if depth > 0 { depth = depth - 1; } },
+            tk_rbracket => { if depth > 0 { depth = depth - 1; } },
+            tk_rbrace => { if depth > 0 { depth = depth - 1; } },
+            tk_dotdot => {
+                if first_any < 0 {
+                    first_any = index;
+                }
+                if depth == 0 {
+                    if first_zero < 0 {
+                        first_zero = index;
+                    } else {
+                        if second_zero < 0 {
+                            second_zero = index;
+                        }
+                    }
+                }
+                let next = token_at(ref tokens, index + 1);
+                let mut bad = false;
+                match next.kind {
+                    tk_dot => { bad = true; },
+                    tk_eq => { bad = true; },
+                    _ => {},
+                }
+                if bad and first_bad < 0 and index + 1 < end {
+                    first_bad = index;
+                }
+            },
+            _ => {},
+        }
+        index = index + 1;
+    }
+    if first_any < 0 {
+        return;
+    }
+    let mut inner_start = start;
+    let mut inner_end = end;
+    let mut parenthesized = false;
+    while expr_span_is_wrapped_in_parens(ref tokens, inner_start, inner_end) {
+        inner_start = inner_start + 1;
+        inner_end = inner_end - 1;
+        parenthesized = true;
+    }
+    let mut paren_dotdot = -1;
+    if parenthesized and first_zero < 0 {
+        paren_dotdot = for_range_dotdot_index(ref tokens, inner_start, inner_end);
+    }
+    let range_shaped = first_zero >= 0 or paren_dotdot >= 0;
+    if not range_shaped {
+        push_range_error(mutref diags, file, token_at(ref tokens, first_any), "a range `a..b` is only allowed as the iterable of a `for` loop");
+        return;
+    }
+    if header.has_comma {
+        push_range_error(mutref diags, file, header.comma, "an indexed `for` iterates a list; a range already provides its index");
+        return;
+    }
+    if first_bad >= 0 {
+        push_range_error(mutref diags, file, token_at(ref tokens, first_bad), "ranges are written `a..b`; there is no `...` or `..=` form");
+        return;
+    }
+    if second_zero >= 0 {
+        push_range_error(mutref diags, file, token_at(ref tokens, second_zero), "a range has exactly two bounds: `a..b`");
+        return;
+    }
+    if paren_dotdot >= 0 {
+        push_range_error(mutref diags, file, token_at(ref tokens, paren_dotdot), "write the range without parentheses: `for i in a..b`");
+        return;
+    }
+    if first_zero == start {
+        push_range_error(mutref diags, file, token_at(ref tokens, first_zero), "a range needs a start bound: `a..b`");
+        return;
+    }
+    if first_zero == end - 1 {
+        push_range_error(mutref diags, file, token_at(ref tokens, first_zero), "a range needs an end bound: `a..b`");
+        return;
+    }
+    if first_any != first_zero {
+        push_range_error(mutref diags, file, token_at(ref tokens, first_any), "a range `a..b` is only allowed as the iterable of a `for` loop");
+        return;
+    }
+    let mut later = first_zero + 1;
+    while later < end {
+        if is_dotdot_token(token_at(ref tokens, later)) {
+            push_range_error(mutref diags, file, token_at(ref tokens, later), "a range `a..b` is only allowed as the iterable of a `for` loop");
+            return;
+        }
+        later = later + 1;
+    }
+    return;
+}
+
+// M58.2: parse_file reports every NQ-PARSE-006 exactly once. A `for` header
+// whose binding syntax is well formed reports at most one range diagnostic
+// for its iterable (its binding-syntax diagnostic takes precedence and is
+// reported by parse_stmt); a `..` anywhere outside a `for` iterable is a
+// range used as a value.
+fn push_range_diags(tokens: ref list<token>, diags: mutref list<diag>, file: str) -> unit {
+    let count = list_len(ref tokens);
+    let mut span_start = -1;
+    let mut span_end = -1;
+    let mut index = 0;
+    while index < count {
+        let current = token_at(ref tokens, index);
+        match current.kind {
+            tk_kw_for => {
+                let mut cursor = index + 1;
+                let mut scratch: list<diag> = list();
+                let header = consume_for_header(ref tokens, mutref cursor, mutref scratch, file);
+                let iterable_start = cursor;
+                skip_until_block(ref tokens, mutref cursor);
+                span_start = iterable_start;
+                span_end = cursor;
+                if not header.malformed {
+                    push_for_iterable_range_diag(ref tokens, iterable_start, cursor, header, mutref diags, file);
+                }
+            },
+            tk_dotdot => {
+                if index < span_start or index >= span_end {
+                    push_range_error(mutref diags, file, current, "a range `a..b` is only allowed as the iterable of a `for` loop");
+                }
+            },
+            _ => {},
+        }
+        index = index + 1;
+    }
+    return;
+}
+
 fn consume_module_path(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<diag>, file: str) -> str {
     let first = consume_ident(ref tokens, mutref cursor, mutref diags, file);
     match first.kind {
@@ -245,7 +486,46 @@ fn is_semi_token(tok: token) -> bool {
     }
 }
 
+fn is_try_keyword_token(tok: token) -> bool {
+    match tok.kind {
+        tk_kw_try => { return true; },
+        _ => { return false; },
+    }
+}
+
+// Advances past the balanced `{ ... }` that starts at `cursor` (or to end of
+// file).
+fn skip_balanced_braces(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let mut depth = 0;
+    while true {
+        let current = token_at(ref tokens, cursor);
+        match current.kind {
+            tk_eof => {
+                return;
+            },
+            tk_lbrace => {
+                depth = depth + 1;
+            },
+            tk_rbrace => {
+                depth = depth - 1;
+                if depth <= 0 {
+                    advance(mutref cursor);
+                    return;
+                }
+            },
+            _ => {},
+        }
+        advance(mutref cursor);
+    }
+}
+
+// Advances to the `{` that opens a control-flow body (an `if`/`while`
+// condition, a `for` iterable, a `match` scrutinee). A `{` directly after
+// `try` opens that `try` expression's own block, which belongs to the head:
+// it is skipped as a whole (M58.2 audit repair). Any other `{` at paren and
+// bracket depth zero ends the head, as before.
 fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
+    let start = cursor;
     let mut paren_depth = 0;
     let mut bracket_depth = 0;
     while true {
@@ -275,10 +555,14 @@ fn skip_until_block(tokens: ref list<token>, cursor: mutref i32) -> unit {
                 advance(mutref cursor);
             },
             tk_lbrace => {
-                if paren_depth == 0 and bracket_depth == 0 {
-                    return;
+                if cursor > start and is_try_keyword_token(token_at(ref tokens, cursor - 1)) {
+                    skip_balanced_braces(ref tokens, mutref cursor);
+                } else {
+                    if paren_depth == 0 and bracket_depth == 0 {
+                        return;
+                    }
+                    advance(mutref cursor);
                 }
-                advance(mutref cursor);
             },
             _ => {
                 advance(mutref cursor);
@@ -760,7 +1044,11 @@ fn collect_try_propagation_facts(tokens: ref list<token>, start: i32, end: i32, 
         if is_question_token(current) {
             let operand_start = try_question_operand_start(ref tokens, inner_start, index);
             if operand_start < 0 {
-                push_error(mutref diags, file, current, "NQ-TRY-002", diag_try, "expression `?` inside `try` must apply to a direct function call in V1");
+                // M58.2: a statement holding a range used as a value reports
+                // only that NQ-PARSE-006.
+                if not span_has_dotdot(ref tokens, start, end) {
+                    push_error(mutref diags, file, current, "NQ-TRY-002", diag_try, "expression `?` inside `try` must apply to a direct function call in V1");
+                }
             } else {
                 let mut label = "";
                 let open_label = token_at(ref tokens, index + 1);
@@ -799,6 +1087,11 @@ fn push_try_question_operand_diags(tokens: ref list<token>, start: i32, end: i32
     if not expr_is_direct_try(ref tokens, start, end) {
         return;
     }
+    // M58.2: a `..` here is a range used as a value; its NQ-PARSE-006 is the
+    // statement's only diagnostic.
+    if span_has_dotdot(ref tokens, start, end) {
+        return;
+    }
     let expr_start = expr_first_token_index(ref tokens, start, end);
     let inner_start = expr_start + 2;
     let inner_end = end - 1;
@@ -813,20 +1106,58 @@ fn push_try_question_operand_diags(tokens: ref list<token>, start: i32, end: i32
     return;
 }
 
+fn span_has_dotdot(tokens: ref list<token>, start: i32, end: i32) -> bool {
+    let mut index = start;
+    while index < end {
+        if is_dotdot_token(token_at(ref tokens, index)) {
+            return true;
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+// M58.2: outside a `for` iterable, a span holding a `..` already reports the
+// "range used as a value" NQ-PARSE-006 (push_range_diags), and its statement
+// contributes no other diagnostic, so no placement diagnostic is added.
 fn push_unsupported_question_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
+    if span_has_dotdot(ref tokens, start, end) {
+        return;
+    }
+    push_question_placement_diag(ref tokens, start, end, mutref diags, file);
+    return;
+}
+
+fn push_unsupported_try_placement_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
+    if span_has_dotdot(ref tokens, start, end) {
+        return;
+    }
+    push_try_placement_diag(ref tokens, start, end, mutref diags, file);
+    return;
+}
+
+// A `?` inside a `try { ... }` block is inside `try`, so it is never a
+// misplaced `?`; a misplaced `try` itself reports NQ-TRY-006 instead.
+fn push_question_placement_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
+        if is_try_keyword_token(current) and is_lbrace_token(token_at(ref tokens, index + 1)) {
+            let mut skip = index + 1;
+            skip_balanced_braces(ref tokens, mutref skip);
+            index = skip - 1;
+        } else {
         if is_question_token(current) {
             list_push(mutref diags, make_diagnostic("NQ-PROPAGATE-007", diag_propagate, diag_error, file, current.start, current.end, "`?` is only allowed in a `let name = expr?;` statement or inside `try`", "", "bind the result first: `let value = f()?;`"));
             return;
+        }
         }
         index = index + 1;
     }
     return;
 }
 
-fn push_unsupported_try_placement_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
+fn push_try_placement_diag(tokens: ref list<token>, start: i32, end: i32, diags: mutref list<diag>, file: str) -> unit {
     let mut index = start;
     while index < end {
         let current = token_at(ref tokens, index);
@@ -867,6 +1198,11 @@ fn let_statement_end_at(tokens: ref list<token>, cursor: i32) -> i32 {
 
 fn push_let_binding(bindings: mutref list<body_binding>, module: str, function_name: str, scope_id: i32, name: str, at: i32, visible_from: i32) -> unit {
     list_push(mutref bindings, body_binding_visible_from(make_body_binding(module, function_name, scope_id, name, at, bind_let), visible_from));
+    return;
+}
+
+fn push_loop_binding(bindings: mutref list<body_binding>, module: str, function_name: str, scope_id: i32, name: token, visible_from: i32) -> unit {
+    list_push(mutref bindings, body_binding_visible_from(make_body_binding(module, function_name, scope_id, name.text, name.start, bind_let), visible_from));
     return;
 }
 
@@ -1317,14 +1653,20 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
             let expr_start = cursor;
             skip_stmt_until_semi(ref tokens, mutref cursor, mutref diags, file);
             let expr_end = propagation_expr_end(ref tokens, expr_start, cursor - 1);
-            if expr_contains_question_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
+            // M58.2: a `let` whose statement span holds a `..` reports only the
+            // range-used-as-a-value NQ-PARSE-006 (push_range_diags): no `?` or
+            // `try` placement or operand diagnostic.
+            let range_value = span_has_dotdot(ref tokens, expr_start, cursor);
+            if not range_value and expr_contains_question_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
                 push_unsupported_question_diag(ref tokens, expr_start, expr_end, mutref diags, file);
             }
-            if expr_contains_try_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
+            if not range_value and expr_contains_try_token(ref tokens, expr_start, expr_end) and not expr_is_direct_try(ref tokens, expr_start, expr_end) {
                 push_unsupported_try_placement_diag(ref tokens, expr_start, expr_end, mutref diags, file);
             }
             scan_value_expr_names(ref tokens, expr_start, expr_end, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
-            push_try_question_operand_diags(ref tokens, expr_start, expr_end, mutref diags, file);
+            if not range_value {
+                push_try_question_operand_diags(ref tokens, expr_start, expr_end, mutref diags, file);
+            }
         },
         tk_kw_if => {
             advance(mutref cursor);
@@ -1358,28 +1700,48 @@ fn parse_stmt(tokens: ref list<token>, cursor: mutref i32, diags: mutref list<di
         },
         tk_kw_for => {
             advance(mutref cursor);
-            let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
-            let in_token = token_at(ref tokens, cursor);
-            match in_token.kind {
-                tk_kw_in => {
-                    advance(mutref cursor);
-                },
-                _ => {
-                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
-                },
-            }
+            let header = consume_for_header(ref tokens, mutref cursor, mutref diags, file);
             let iterable_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
-            push_unsupported_question_diag(ref tokens, iterable_start, cursor, mutref diags, file);
-            push_unsupported_try_placement_diag(ref tokens, iterable_start, cursor, mutref diags, file);
-            scan_value_expr_names(ref tokens, iterable_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+            // M58.2: a header that already reports its one diagnostic (binding
+            // syntax here, or the NQ-PARSE-006 that push_range_diags reports
+            // for its iterable) reports no subordinate placement diagnostic.
+            let mut range_scratch: list<diag> = list();
+            if not header.malformed {
+                push_for_iterable_range_diag(ref tokens, iterable_start, cursor, header, mutref range_scratch, file);
+            }
+            if not header.malformed and list_len(ref range_scratch) == 0 {
+                push_question_placement_diag(ref tokens, iterable_start, cursor, mutref diags, file);
+                push_try_placement_diag(ref tokens, iterable_start, cursor, mutref diags, file);
+            }
+            // M58.2: a range's bounds are two expressions in the enclosing
+            // scope; neither sees the loop binding.
+            let dotdot = for_range_dotdot_index(ref tokens, iterable_start, cursor);
+            if dotdot >= 0 {
+                scan_value_expr_names(ref tokens, iterable_start, dotdot, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+                scan_value_expr_names(ref tokens, dotdot + 1, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+            } else {
+                scan_value_expr_names(ref tokens, iterable_start, cursor, file, function_name, scope_id, depth, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs, mutref diags);
+            }
             let body_scope_id = new_scope(mutref scopes, file, function_name, scope_id, depth + 1, mutref next_scope_id);
-            match name.kind {
-                tk_ident => {
-                    push_binding(mutref bindings, file, function_name, body_scope_id, name.text, name.start, bind_let);
-                },
-                _ => {
-                },
+            // M58.2: indexed and range bindings are visible from the start of
+            // the body; a list loop's binding keeps its M58.1 visibility.
+            let body_start = token_at(ref tokens, cursor).start;
+            if header.has_comma {
+                if is_ident_token(header.first) {
+                    push_loop_binding(mutref bindings, file, function_name, body_scope_id, header.first, body_start);
+                }
+                if is_ident_token(header.second) {
+                    push_loop_binding(mutref bindings, file, function_name, body_scope_id, header.second, body_start);
+                }
+            } else {
+                if is_ident_token(header.first) {
+                    if dotdot >= 0 {
+                        push_loop_binding(mutref bindings, file, function_name, body_scope_id, header.first, body_start);
+                    } else {
+                        push_binding(mutref bindings, file, function_name, body_scope_id, header.first.text, header.first.start, bind_let);
+                    }
+                }
             }
             parse_block(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, depth + 1, mutref next_scope_id, mutref scopes, mutref bindings, mutref refs, mutref type_refs);
         },
@@ -1840,6 +2202,7 @@ audit {
     let mut use_count = 0;
     let mut scanning_uses = true;
     push_malformed_float_diags(ref tokens, mutref diags, file);
+    push_range_diags(ref tokens, mutref diags, file);
 
     while scanning_uses {
         let current = token_at(ref tokens, cursor);
@@ -2420,16 +2783,7 @@ fn collect_typecheck_stmt_facts(tokens: ref list<token>, cursor: mutref i32, dia
         },
         tk_kw_for => {
             advance(mutref cursor);
-            consume_ident(ref tokens, mutref cursor, mutref diags, file);
-            let in_token = token_at(ref tokens, cursor);
-            match in_token.kind {
-                tk_kw_in => {
-                    advance(mutref cursor);
-                },
-                _ => {
-                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
-                },
-            }
+            let header = consume_for_header(ref tokens, mutref cursor, mutref diags, file);
             let iterable_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             scan_value_expr_calls(ref tokens, iterable_start, cursor, file, function_name, mutref calls, mutref patterns);
@@ -3182,6 +3536,11 @@ fn expr_has_root_arithmetic(tokens: ref list<token>, start: i32, end: i32) -> bo
                     return true;
                 }
             },
+            tk_percent => {
+                if paren_depth == 0 and brace_depth == 0 and bracket_depth == 0 {
+                    return true;
+                }
+            },
             _ => {
             },
         }
@@ -3588,16 +3947,7 @@ fn collect_value_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: 
         },
         tk_kw_for => {
             advance(mutref cursor);
-            consume_ident(ref tokens, mutref cursor, mutref diags, file);
-            let in_token = token_at(ref tokens, cursor);
-            match in_token.kind {
-                tk_kw_in => {
-                    advance(mutref cursor);
-                },
-                _ => {
-                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
-                },
-            }
+            let header = consume_for_header(ref tokens, mutref cursor, mutref diags, file);
             skip_until_block(ref tokens, mutref cursor);
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
             collect_value_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, mutref next_scope_id, mutref typed_bindings, mutref match_arms, mutref locals, mutref returns, mutref conditions, mutref assignments);
@@ -4122,21 +4472,22 @@ fn collect_stmt_stmt_facts(tokens: ref list<token>, cursor: mutref i32, diags: m
         },
         tk_kw_for => {
             advance(mutref cursor);
-            let name = consume_ident(ref tokens, mutref cursor, mutref diags, file);
-            let in_token = token_at(ref tokens, cursor);
-            match in_token.kind {
-                tk_kw_in => {
-                    advance(mutref cursor);
-                },
-                _ => {
-                    push_diag(mutref diags, file, in_token, "expected `in` after `for` binding");
-                },
-            }
+            let header = consume_for_header(ref tokens, mutref cursor, mutref diags, file);
             let iterable_start = cursor;
             skip_until_block(ref tokens, mutref cursor);
             let iterable_end = cursor;
             let body_scope_id = next_value_scope_id(mutref next_scope_id);
-            list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, name.start, stmt_for, name.text, iterable_start, iterable_end, classify_expr_kind(ref tokens, iterable_start, iterable_end), classify_expr_name(ref tokens, iterable_start, iterable_end), classify_expr_member_name(ref tokens, iterable_start, iterable_end), body_scope_id, -1));
+            // M58.2: the Representation table. A list loop's fact is unchanged.
+            let dotdot = for_range_dotdot_index(ref tokens, iterable_start, iterable_end);
+            if header.has_comma {
+                list_push(mutref statements, make_for_stmt_fact(file, function_name, scope_id, for_indexed, header.second.text, header.second.start, header.first.text, header.first.start, iterable_start, iterable_end, classify_expr_kind(ref tokens, iterable_start, iterable_end), classify_expr_name(ref tokens, iterable_start, iterable_end), classify_expr_member_name(ref tokens, iterable_start, iterable_end), -1, -1, body_scope_id));
+            } else {
+                if dotdot >= 0 {
+                    list_push(mutref statements, make_for_stmt_fact(file, function_name, scope_id, for_range, header.first.text, header.first.start, "", -1, iterable_start, dotdot, classify_expr_kind(ref tokens, iterable_start, dotdot), classify_expr_name(ref tokens, iterable_start, dotdot), classify_expr_member_name(ref tokens, iterable_start, dotdot), dotdot + 1, iterable_end, body_scope_id));
+                } else {
+                    list_push(mutref statements, make_stmt_fact(file, function_name, scope_id, header.first.start, stmt_for, header.first.text, iterable_start, iterable_end, classify_expr_kind(ref tokens, iterable_start, iterable_end), classify_expr_name(ref tokens, iterable_start, iterable_end), classify_expr_member_name(ref tokens, iterable_start, iterable_end), body_scope_id, -1));
+                }
+            }
             collect_stmt_block_facts(ref tokens, mutref cursor, mutref diags, file, function_name, body_scope_id, loop_depth + 1, mutref next_scope_id, mutref statements);
         },
         tk_kw_match => {

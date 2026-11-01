@@ -1,0 +1,100 @@
+// M58.2 slice B: indexed `for i, item in items`. The owned test runs this
+// program with exact output, emits its C and runs that C at -O2 under
+// ASan/UBSan.
+
+fn digit(d: i32) -> str {
+    let mut text = "9";
+    if d == 0 {
+        text = "0";
+    }
+    if d == 1 {
+        text = "1";
+    }
+    if d == 2 {
+        text = "2";
+    }
+    if d == 3 {
+        text = "3";
+    }
+    if d == 4 {
+        text = "4";
+    }
+    if d == 5 {
+        text = "5";
+    }
+    if d == 6 {
+        text = "6";
+    }
+    if d == 7 {
+        text = "7";
+    }
+    if d == 8 {
+        text = "8";
+    }
+    return text;
+}
+
+fn show(n: i32) -> str {
+    if n < 0 {
+        return str_concat("-", show(0 - n));
+    }
+    if n < 10 {
+        return digit(n);
+    }
+    return str_concat(show(n / 10), digit(n - n / 10 * 10));
+}
+
+fn make_items() -> list<i32> {
+    print_line("make items");
+    return [4, 5, 6];
+}
+
+fn weigh(index: i32, value: i32) -> i32 {
+    return index * 100 + value;
+}
+
+fn main() -> i32 {
+    let items = [10, 20, 30];
+    let mut line = "pairs:";
+    for i, item in items {
+        let position: i32 = i;
+        line = str_concat(line, str_concat(" ", str_concat(show(position), str_concat("=", show(item)))));
+    }
+    print_line(line);
+    let mut total = 0;
+    for i, item in make_items() {
+        total = total + weigh(i, item);
+    }
+    print_line(str_concat("weighed: ", show(total)));
+    let none: list<i32> = [];
+    let mut runs = 0;
+    for i, item in none {
+        runs = runs + 1;
+    }
+    print_line(str_concat("empty runs: ", show(runs)));
+    let i = 100;
+    let item = 200;
+    for i, item in [7, 8] {
+        print_line(str_concat("inner ", str_concat(show(i), str_concat(" ", show(item)))));
+    }
+    print_line(str_concat("outer ", str_concat(show(i), str_concat(" ", show(item)))));
+    let mut picked = "picked:";
+    for index, value in [1, 2, 3, 4, 5] {
+        if index == 1 {
+            continue;
+        }
+        if value == 4 {
+            break;
+        }
+        picked = str_concat(picked, str_concat(" ", show(value)));
+    }
+    print_line(picked);
+    let mut grid = "grid:";
+    for row, width in [2, 1] {
+        for column in 0..width {
+            grid = str_concat(grid, str_concat(" ", str_concat(show(row), show(column))));
+        }
+    }
+    print_line(grid);
+    return 0;
+}

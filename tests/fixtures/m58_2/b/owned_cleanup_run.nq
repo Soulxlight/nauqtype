@@ -1,0 +1,128 @@
+// M58.2 audit repair: ownership cleanup in counting loops. Indexed loops
+// iterate a function-produced owned `list<str>` and leave it by `return`,
+// `break` and `continue`; range loops whose end bound is a call producing
+// owned temporaries leave by the same exits. The owned test runs this
+// program with exact output, emits its C and runs that C at -O2 under ASan
+// (LeakSanitizer included) and UBSan.
+
+fn digit(d: i32) -> str {
+    let mut text = "9";
+    if d == 0 {
+        text = "0";
+    }
+    if d == 1 {
+        text = "1";
+    }
+    if d == 2 {
+        text = "2";
+    }
+    if d == 3 {
+        text = "3";
+    }
+    if d == 4 {
+        text = "4";
+    }
+    if d == 5 {
+        text = "5";
+    }
+    if d == 6 {
+        text = "6";
+    }
+    if d == 7 {
+        text = "7";
+    }
+    if d == 8 {
+        text = "8";
+    }
+    return text;
+}
+
+fn show(n: i32) -> str {
+    if n < 0 {
+        return str_concat("-", show(0 - n));
+    }
+    if n < 10 {
+        return digit(n);
+    }
+    return str_concat(show(n / 10), digit(n % 10));
+}
+
+fn names() -> list<str> {
+    print_line("names");
+    let mut out: list<str> = list();
+    list_push(mutref out, str_concat("al", "pha"));
+    list_push(mutref out, str_concat("be", "ta"));
+    list_push(mutref out, str_concat("gam", "ma"));
+    list_push(mutref out, str_concat("del", "ta"));
+    return out;
+}
+
+// `return` from inside an indexed loop over an owned list produced by a call.
+fn find_name(wanted: str) -> i32 {
+    for i, name in names() {
+        let label = str_concat(name, "!");
+        if name == wanted {
+            print_line(str_concat("found ", label));
+            return i;
+        }
+    }
+    return -1;
+}
+
+// `continue` and `break` in an indexed loop over an owned list.
+fn walk_names() -> unit {
+    let mut line = "walk:";
+    for i, name in names() {
+        let tagged = str_concat(name, "?");
+        if i == 1 {
+            continue;
+        }
+        if name == "delta" {
+            break;
+        }
+        line = str_concat(line, str_concat(" ", tagged));
+    }
+    print_line(line);
+    return;
+}
+
+// A range end bound that is a call producing owned temporaries, with
+// `continue` and `break` in the body.
+fn count_letters(a: str, b: str) -> i32 {
+    let mut seen = "seen:";
+    let mut count = 0;
+    for k in 0..str_len(str_concat(a, b)) {
+        let piece = str_concat(a, show(k));
+        if k == 1 {
+            continue;
+        }
+        if k == 5 {
+            break;
+        }
+        seen = str_concat(seen, str_concat(" ", piece));
+        count = count + 1;
+    }
+    print_line(seen);
+    return count;
+}
+
+// `return` from a range loop whose end bound produced owned temporaries.
+fn first_at(a: str, b: str, stop: i32) -> str {
+    for k in 0..str_len(str_concat(a, b)) {
+        let joined = str_concat(b, show(k));
+        if k == stop {
+            return joined;
+        }
+    }
+    return "none";
+}
+
+fn main() -> i32 {
+    print_line(str_concat("index ", show(find_name("gamma"))));
+    print_line(str_concat("index ", show(find_name("omega"))));
+    walk_names();
+    print_line(str_concat("count ", show(count_letters("ab", "cdef"))));
+    print_line(str_concat("first ", first_at("xy", "z", 2)));
+    print_line(str_concat("first ", first_at("xy", "z", 7)));
+    return 0;
+}

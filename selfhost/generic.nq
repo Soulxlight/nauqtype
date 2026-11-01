@@ -633,7 +633,7 @@ fn generic_binary_precedence(value: token) -> i32 {
         tk_eqeq => { return 3; }, tk_noteq => { return 3; },
         tk_lt => { return 4; }, tk_gt => { return 4; }, tk_lte => { return 4; }, tk_gte => { return 4; },
         tk_plus => { return 5; }, tk_minus => { return 5; },
-        tk_star => { return 6; }, tk_slash => { return 6; },
+        tk_star => { return 6; }, tk_slash => { return 6; }, tk_percent => { return 6; },
         _ => { return 0; },
     }
 }
@@ -823,6 +823,14 @@ fn generic_syntax_statements(tokens: ref list<token>, file: str, diags: mutref l
                     let current = generic_tok(ref tokens, cursor);
                     generic_error(mutref diags, "NQ-GENERIC-001", file, current.start, current.end, "malformed expression in a template or ordinary declaration");
                 }
+            }
+        }
+        // M58.2: a range loop's end bound is its own expression.
+        if for_kind_is_range(statement.for_kind) and statement.bound_end_start >= 0 {
+            let mut end_cursor = statement.bound_end_start;
+            if not generic_syntax_expr(ref tokens, mutref end_cursor, statement.bound_end_end, 1) or end_cursor != statement.bound_end_end {
+                let current = generic_tok(ref tokens, end_cursor);
+                generic_error(mutref diags, "NQ-GENERIC-001", file, current.start, current.end, "malformed expression in a template or ordinary declaration");
             }
         }
     }

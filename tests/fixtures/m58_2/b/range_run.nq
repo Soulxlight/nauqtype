@@ -1,0 +1,147 @@
+// M58.2 slice B: range `for i in a..b`. The owned test runs this program
+// with exact output, emits its C and runs that C at -O2 under ASan/UBSan.
+
+fn digit(d: i64) -> str {
+    let mut text = "9";
+    if d == 0 {
+        text = "0";
+    }
+    if d == 1 {
+        text = "1";
+    }
+    if d == 2 {
+        text = "2";
+    }
+    if d == 3 {
+        text = "3";
+    }
+    if d == 4 {
+        text = "4";
+    }
+    if d == 5 {
+        text = "5";
+    }
+    if d == 6 {
+        text = "6";
+    }
+    if d == 7 {
+        text = "7";
+    }
+    if d == 8 {
+        text = "8";
+    }
+    return text;
+}
+
+fn show(n: i64) -> str {
+    if n < 0 {
+        return str_concat("-", show(0 - n));
+    }
+    if n < 10 {
+        return digit(n);
+    }
+    return str_concat(show(n / 10), digit(n - n / 10 * 10));
+}
+
+fn show32(n: i32) -> str {
+    return show(i64_from_i32(n));
+}
+
+fn start_bound(value: i32) -> i32 {
+    print_line(str_concat("start ", show32(value)));
+    return value;
+}
+
+fn end_bound(value: i32) -> i32 {
+    print_line(str_concat("end ", show32(value)));
+    return value;
+}
+
+// A function may return from inside a range loop; it still ends with a
+// `return`, since a loop never terminates a function body.
+fn first_multiple(limit: i32, step: i32) -> i32 {
+    for k in 1..limit {
+        if k / step * step == k {
+            return k;
+        }
+    }
+    return -1;
+}
+
+fn main() -> i32 {
+    let mut line = "i32:";
+    for i in 0..5 {
+        line = str_concat(line, str_concat(" ", show32(i)));
+    }
+    print_line(line);
+    let low: i64 = 3000000000;
+    let mut wide = "i64:";
+    for w in low..low + 3 {
+        wide = str_concat(wide, str_concat(" ", show(w)));
+    }
+    print_line(wide);
+    let mut negative = "neg:";
+    for m in -2..1 {
+        negative = str_concat(negative, str_concat(" ", show32(m)));
+    }
+    print_line(negative);
+    let mut runs = 0;
+    for e in 4..4 {
+        runs = runs + 1;
+    }
+    for e in 5..2 {
+        runs = runs + 1;
+    }
+    let big: i64 = 7;
+    for e in big..big - 1 {
+        runs = runs + 1;
+    }
+    print_line(str_concat("empty runs: ", show32(runs)));
+    let mut count = 0;
+    for c in start_bound(1)..end_bound(4) {
+        count = count + 1;
+    }
+    print_line(str_concat("counted: ", show32(count)));
+    let top: i32 = 2147483647;
+    let mut top_runs = 0;
+    for t in top - 1..top {
+        top_runs = top_runs + 1;
+        print_line(str_concat("top i32 ", show32(t)));
+    }
+    let wide_top: i64 = 9223372036854775807;
+    for t in wide_top - 1..wide_top {
+        top_runs = top_runs + 1;
+        print_line(str_concat("top i64 ", show(t)));
+    }
+    print_line(str_concat("top runs: ", show32(top_runs)));
+    let bottom: i32 = -2147483647 - 1;
+    for t in bottom..bottom + 1 {
+        print_line(str_concat("bottom i32 ", show32(t)));
+    }
+    let mut picked = "picked:";
+    for b in 0..10 {
+        if b == 2 {
+            continue;
+        }
+        if b == 5 {
+            break;
+        }
+        picked = str_concat(picked, str_concat(" ", show32(b)));
+    }
+    print_line(picked);
+    let n = 3;
+    let mut shadow = "shadow:";
+    for n in 0..n {
+        shadow = str_concat(shadow, str_concat(" ", show32(n)));
+    }
+    print_line(str_concat(shadow, str_concat(" outer ", show32(n))));
+    let mut pairs = 0;
+    for row in 0..3 {
+        for column in row..3 {
+            pairs = pairs + 1;
+        }
+    }
+    print_line(str_concat("pairs: ", show32(pairs)));
+    print_line(str_concat("first multiple: ", show32(first_multiple(10, 4))));
+    return 0;
+}

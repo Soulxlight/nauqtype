@@ -687,6 +687,40 @@ pub enum stmt_fact_kind {
     stmt_continue,
 }
 
+// M58.2: the three `for` forms. Every other statement keeps `for_list` with
+// the absent index and end-bound fields (`""`, `-1`).
+pub enum for_loop_kind {
+    for_list,
+    for_indexed,
+    for_range,
+}
+
+pub fn for_kind_is_indexed(kind: for_loop_kind) -> bool
+audit {
+    intent("Report whether a for-loop form is the indexed list loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        for_indexed => { return true; },
+        _ => { return false; },
+    }
+}
+
+pub fn for_kind_is_range(kind: for_loop_kind) -> bool
+audit {
+    intent("Report whether a for-loop form is the half-open range loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        for_range => { return true; },
+        _ => { return false; },
+    }
+}
+
 pub type stmt_fact {
     module: str,
     function_name: str,
@@ -703,6 +737,31 @@ pub type stmt_fact {
     expr_member_name: str,
     child_scope_id: i32,
     alt_scope_id: i32,
+    for_kind: for_loop_kind,
+    index_name: str,
+    index_at: i32,
+    bound_end_start: i32,
+    bound_end_end: i32,
+}
+
+// M58.2: a `for` statement fact. `name`/`at` are the element (list and
+// indexed) or counter (range) binding; `index_name`/`index_at` the indexed
+// loop's index binding; `expr_*` the list or the start bound; the
+// `bound_end_*` token range the range loop's end bound.
+pub fn make_for_stmt_fact(module: str, function_name: str, scope_id: i32, for_kind: for_loop_kind, name: str, at: i32, index_name: str, index_at: i32, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, bound_end_start: i32, bound_end_end: i32, child_scope_id: i32) -> stmt_fact
+audit {
+    intent("Build a for-loop statement fact for one of the three loop forms");
+    mutates();
+    effects();
+}
+{
+    let mut value = make_stmt_fact(module, function_name, scope_id, at, stmt_for, name, expr_start, expr_end, expr_kind, expr_name, expr_member_name, child_scope_id, -1);
+    value.for_kind = for_kind;
+    value.index_name = index_name;
+    value.index_at = index_at;
+    value.bound_end_start = bound_end_start;
+    value.bound_end_end = bound_end_end;
+    return value;
 }
 
 pub fn make_stmt_fact(module: str, function_name: str, scope_id: i32, at: i32, kind: stmt_fact_kind, name: str, expr_start: i32, expr_end: i32, expr_kind: expr_fact_kind, expr_name: str, expr_member_name: str, child_scope_id: i32, alt_scope_id: i32) -> stmt_fact
@@ -728,6 +787,11 @@ audit {
         expr_member_name: expr_member_name,
         child_scope_id: child_scope_id,
         alt_scope_id: alt_scope_id,
+        for_kind: for_list,
+        index_name: "",
+        index_at: -1,
+        bound_end_start: -1,
+        bound_end_end: -1,
     };
 }
 
@@ -754,6 +818,11 @@ audit {
         expr_member_name: expr_member_name,
         child_scope_id: -1,
         alt_scope_id: -1,
+        for_kind: for_list,
+        index_name: "",
+        index_at: -1,
+        bound_end_start: -1,
+        bound_end_end: -1,
     };
 }
 
@@ -780,6 +849,11 @@ audit {
         expr_member_name: expr_member_name,
         child_scope_id: -1,
         alt_scope_id: -1,
+        for_kind: for_list,
+        index_name: "",
+        index_at: -1,
+        bound_end_start: -1,
+        bound_end_end: -1,
     };
 }
 

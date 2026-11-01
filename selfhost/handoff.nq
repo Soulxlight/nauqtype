@@ -38,6 +38,48 @@ pub enum checked_stmt_kind {
     checked_stmt_continue,
 }
 
+// M58.2: the checked `for` forms; every other statement is `checked_for_list`
+// with `index_binding_id` and `end_expr_id` absent (-1).
+pub enum checked_for_kind {
+    checked_for_list,
+    checked_for_indexed,
+    checked_for_range,
+}
+
+pub fn checked_for_is_indexed(kind: checked_for_kind) -> bool
+audit {
+    intent("Report whether a checked for statement is the indexed list loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        checked_for_indexed => { return true; },
+        _ => { return false; },
+    }
+}
+
+pub fn checked_for_is_range(kind: checked_for_kind) -> bool
+audit {
+    intent("Report whether a checked for statement is the half-open range loop");
+    mutates();
+    effects();
+}
+{
+    match kind {
+        checked_for_range => { return true; },
+        _ => { return false; },
+    }
+}
+
+fn checked_for_kind_from_fact(kind: for_loop_kind) -> checked_for_kind {
+    match kind {
+        for_indexed => { return checked_for_indexed; },
+        for_range => { return checked_for_range; },
+        _ => { return checked_for_list; },
+    }
+}
+
 pub enum checked_expr_kind {
     checked_expr_unit,
     checked_expr_bool,
@@ -60,6 +102,7 @@ pub enum checked_expr_kind {
     checked_expr_sub,
     checked_expr_mul,
     checked_expr_div,
+    checked_expr_rem,
     checked_expr_eq,
     checked_expr_ne,
     checked_expr_lt,
@@ -207,6 +250,9 @@ pub type checked_stmt {
     expr_id: i32,
     child_block_id: i32,
     alt_block_id: i32,
+    for_kind: checked_for_kind,
+    index_binding_id: i32,
+    end_expr_id: i32,
 }
 
 pub type checked_match_arm {
@@ -991,6 +1037,16 @@ fn checked_expr_kind_matches(left: checked_expr_kind, right: checked_expr_kind) 
                 },
             }
         },
+        checked_expr_rem => {
+            match right {
+                checked_expr_rem => {
+                    return true;
+                },
+                _ => {
+                    return false;
+                },
+            }
+        },
         checked_expr_eq => {
             match right {
                 checked_expr_eq => {
@@ -1510,6 +1566,11 @@ fn find_root_multiplicative_operator(tokens: ref list<token>, start: i32, end: i
                 }
             },
             tk_slash => {
+                if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
+                    found = index;
+                }
+            },
+            tk_percent => {
                 if depth == 0 and brace_depth == 0 and bracket_depth == 0 and is_binary_operator_position(ref tokens, start, index) {
                     found = index;
                 }
@@ -3723,6 +3784,9 @@ fn binary_expr_kind(op: token_kind) -> checked_expr_kind {
         tk_slash => {
             return checked_expr_div;
         },
+        tk_percent => {
+            return checked_expr_rem;
+        },
         tk_eqeq => {
             return checked_expr_eq;
         },
@@ -4906,6 +4970,42 @@ fn append_bindings(base_visibility: ref visibility_index, function_params: ref l
                             }
                             if source_count != 1 { push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing unique source for checked declaration identity"); return; }
                         }
+                        // M58.2: an indexed loop's index binding is its own
+                        // checked binding, declared (and numbered) before the
+                        // element binding, with the same origin statement.
+                        let mut index_binding_needed = false;
+                        match current.kind {
+                            stmt_for => { index_binding_needed = for_kind_is_indexed(current.for_kind); },
+                            _ => {},
+                        }
+                        if index_binding_needed {
+                            let index_snapshot = exact_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, stmt_cached_function_id, binding_scope_id, current.index_name, current.index_at);
+                            if not index_snapshot.found {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.index_at, str_concat("missing resolved local binding type for checked handoff: ", current.index_name));
+                                return;
+                            }
+                            let index_type_id = intern_checked_type_id(ref visibility, index_snapshot.type_name, index_snapshot.type_arg1_name, index_snapshot.type_arg2_name, index_snapshot.is_borrow, index_snapshot.borrow_mutable, current.module, ref uses, ref items, mutref type_shapes, mutref diags, current.index_at);
+                            list_push(mutref bindings, checked_binding {
+                                id: list_len(ref bindings) + 1,
+                                function_id: stmt_cached_function_id,
+                                module_name: current.module,
+                                function_name: current.function_name,
+                                scope_id: binding_scope_id,
+                                name: current.index_name,
+                                at: current.index_at,
+                                kind: checked_binding_local,
+                                type_name: index_snapshot.type_name,
+                                type_arg1_name: index_snapshot.type_arg1_name,
+                                type_arg2_name: index_snapshot.type_arg2_name,
+                                is_borrow: index_snapshot.is_borrow,
+                                borrow_mutable: index_snapshot.borrow_mutable,
+                                type_id: index_type_id,
+                                origin_stmt_id: lookup_predicted_stmt_id(ref predicted_stmt_ids, ref predicted_stmt_lookups, stmt_cached_function_id, current.scope_id, current.at, current.kind, current.name),
+                                origin_arm_id: -1,
+                                param_index: -1,
+                                visible_from: index_snapshot.visible_from,
+                            });
+                        }
                         let declaration_at = local_declaration_name_at(current, ref binding_tokens);
                         if declaration_at < 0 { push_handoff_limitation_detail(mutref diags, current.module, current.at, "missing exact local declaration name span"); return; }
                         let snapshot = exact_resolved_binding_snapshot(ref resolved_bindings, ref resolved_lookups, stmt_cached_function_id, binding_scope_id, current.name, declaration_at);
@@ -5693,6 +5793,7 @@ fn append_statements_for_source(base_visibility: ref visibility_index, functions
                     let mut stmt_is_borrow = false;
                     let mut stmt_borrow_mutable = false;
                     let mut target_binding_id = -1;
+                    let mut index_binding_id = -1;
                     let mut field_owner_module = "";
                     let mut field_owner_type = "";
                     match current.kind {
@@ -5719,6 +5820,13 @@ fn append_statements_for_source(base_visibility: ref visibility_index, functions
                             target_binding_id = exact_binding_id(ref function_bindings, current.module, current.function_name, current.child_scope_id, current.name, current.at);
                             stmt_is_borrow = lookup_binding_is_borrow(ref function_bindings, target_binding_id);
                             stmt_borrow_mutable = lookup_binding_borrow_mutable(ref function_bindings, target_binding_id);
+                            if for_kind_is_indexed(current.for_kind) {
+                                index_binding_id = exact_binding_id(ref function_bindings, current.module, current.function_name, current.child_scope_id, current.index_name, current.index_at);
+                            }
+                            if for_kind_is_range(current.for_kind) {
+                                // Both bounds are typed as the counter.
+                                expr_expected_ctx = stmt_type_ctx;
+                            }
                         },
                         stmt_propagate => {
                             expr_expected_ctx = empty_expected_type_ctx();
@@ -5789,6 +5897,25 @@ fn append_statements_for_source(base_visibility: ref visibility_index, functions
                         if final_expr_id < 0 {
                             final_expr_id = consume_handoff_limitation_detail(mutref diags, current.module, current.at, "missing exported statement expression in checked handoff");
                         }
+                    }
+                    // M58.2: a range loop's end bound is its own expression,
+                    // built after (and so numbered after) the start bound.
+                    let mut end_expr_id = -1;
+                    let mut stmt_for_kind = checked_for_list;
+                    match current.kind {
+                        stmt_for => {
+                            stmt_for_kind = checked_for_kind_from_fact(current.for_kind);
+                            if for_kind_is_range(current.for_kind) {
+                                end_expr_id = build_expr_tree(ref visibility, ref functions, ref function_params, ref variants, ref variant_payloads, ref consts, ref function_scopes, ref function_bindings, ref function_resolved_bindings, ref field_facts, ref uses, ref items, function_id, current.module, current.function_name, current.scope_id, ref tokens, current.bound_end_start, current.bound_end_end, current.at, expr_expected_ctx, mutref type_shapes, mutref expressions, mutref expr_children, mutref struct_fields, mutref diags);
+                                if end_expr_id < 0 {
+                                    end_expr_id = consume_handoff_limitation_detail(mutref diags, current.module, current.at, "missing exported range end bound in checked handoff");
+                                }
+                            }
+                            if for_kind_is_indexed(current.for_kind) and index_binding_id < 0 {
+                                push_handoff_limitation_detail(mutref diags, current.module, current.index_at, str_concat("missing for-loop index binding id in checked handoff: ", current.index_name));
+                            }
+                        },
+                        _ => {},
                     }
                     match current.kind {
                         stmt_local => {
@@ -5922,6 +6049,9 @@ fn append_statements_for_source(base_visibility: ref visibility_index, functions
                         expr_id: final_expr_id,
                         child_block_id: child_block_id,
                         alt_block_id: alt_block_id,
+                        for_kind: stmt_for_kind,
+                        index_binding_id: index_binding_id,
+                        end_expr_id: end_expr_id,
                     });
                 }
             },
@@ -6611,7 +6741,7 @@ fn p2_handoff_membership_cases(functions: ref list<checked_function>) -> bool {
         let mut stmt_kind = checked_stmt_if;
         if index == 2 { stmt_kind = checked_stmt_match; }
         if index == 4 { stmt_kind = checked_stmt_for; }
-        list_push(mutref statements, checked_stmt { id: 500 + index, function_id: owner, module_name: module_name, function_name: function_name, block_id: 400 + index, scope_id: 10 + index, at: 70 - index, kind: stmt_kind, name: "statement", field_owner_module: "origin", field_owner_type: "record", field_name: "field", type_name: "result", type_arg1_name: "str", type_arg2_name: "i32", is_borrow: index == 2, borrow_mutable: index == 4, type_id: 31 + index, target_binding_id: 300 + index, expr_id: 600 + index, child_block_id: 700 + index, alt_block_id: 800 + index });
+        list_push(mutref statements, checked_stmt { id: 500 + index, function_id: owner, module_name: module_name, function_name: function_name, block_id: 400 + index, scope_id: 10 + index, at: 70 - index, kind: stmt_kind, name: "statement", field_owner_module: "origin", field_owner_type: "record", field_name: "field", type_name: "result", type_arg1_name: "str", type_arg2_name: "i32", is_borrow: index == 2, borrow_mutable: index == 4, type_id: 31 + index, target_binding_id: 300 + index, expr_id: 600 + index, child_block_id: 700 + index, alt_block_id: 800 + index, for_kind: checked_for_list, index_binding_id: -1, end_expr_id: -1 });
         index = index + 1;
     }
     if not p2_handoff_membership_matrix(ref functions, ref scopes, ref resolved, ref bindings, ref blocks, ref statements, 41) { return false; }

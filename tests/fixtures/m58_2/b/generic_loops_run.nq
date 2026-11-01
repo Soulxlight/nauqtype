@@ -1,0 +1,24 @@
+// M58.2 slice B: indexed and range loops in a generic function body, which
+// reaches the checked handoff through the generic projection.
+
+fn weigh<T>(items: list<i32>, tag: T) -> i32 {
+    let mut total = 0;
+    for i, item in items {
+        total = total + i * item;
+    }
+    for k in 0..list_len(ref items) {
+        total = total + k;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    let items = [5, 6, 7];
+    let weighed = weigh::<bool>(items, true);
+    if weighed != 23 {
+        print_line("generic loops wrong");
+        return 1;
+    }
+    print_line("generic loops ok");
+    return 0;
+}

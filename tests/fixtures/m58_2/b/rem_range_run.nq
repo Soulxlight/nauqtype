@@ -1,0 +1,54 @@
+// M58.2 integration: `%` in range bounds and in range-loop bodies, for i32
+// and i64, in a plain and a generic function. The owned test runs this
+// program with exact output, emits its C and runs that C at -O2 under
+// ASan/UBSan.
+
+fn text(n: i32) -> str {
+    return str_from_f64(f64_from_i32(n));
+}
+
+fn residues(n: i32, m: i32) -> str {
+    let mut line = "residues:";
+    for i in 0..n % 7 {
+        line = str_concat(line, str_concat(" ", text(i * 5 % m)));
+    }
+    return line;
+}
+
+fn spread<T>(tag: T, n: i32) -> i32 {
+    let mut total = 0;
+    for i in n % 3..n % 10 + 1 {
+        total = total + i % 4;
+    }
+    return total;
+}
+
+fn main() -> i32 {
+    print_line(residues(25, 3));
+    let mut signed = "signed:";
+    for i in -7 % 3..7 % 3 {
+        signed = str_concat(signed, str_concat(" ", text(i)));
+    }
+    print_line(signed);
+    let wide: i64 = 3000000005;
+    let mut count = 0;
+    let mut sum: i64 = 0;
+    for w in wide % 1000..wide % 7 + 10 {
+        count = count + 1;
+        sum = sum + w % 3;
+    }
+    let Some(narrow) = i32_from_i64(sum) else {
+        return 1;
+    };
+    print_line(str_concat("wide: ", str_concat(text(count), str_concat(" ", text(narrow)))));
+    print_line(str_concat("generic: ", text(spread::<bool>(true, 23))));
+    let mut first = 0;
+    for i in 1..100 {
+        if i % 13 == 0 {
+            first = i;
+            break;
+        }
+    }
+    print_line(str_concat("first: ", text(first)));
+    return 0;
+}

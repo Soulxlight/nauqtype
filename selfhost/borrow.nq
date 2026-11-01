@@ -237,6 +237,9 @@ fn is_binary_expr(kind: checked_expr_kind) -> bool {
         checked_expr_div => {
             return true;
         },
+        checked_expr_rem => {
+            return true;
+        },
         checked_expr_eq => {
             return true;
         },
@@ -1684,6 +1687,8 @@ fn walk_expr(function: checked_function, bindings: ref list<checked_binding>, pa
                 },
                 checked_expr_div => {
                 },
+                checked_expr_rem => {
+                },
                 checked_expr_eq => {
                 },
                 checked_expr_ne => {
@@ -2089,6 +2094,23 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                     if stmt.child_block_id <= 0 {
                                         push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked loop block");
                                     } else {
+                                        // M58.2: an indexed loop's index binding is reset with
+                                        // the element binding; a range loop walks its end bound
+                                        // after its start bound.
+                                        let index_binding_id = stmt.index_binding_id;
+                                        let end_expr_id = stmt.end_expr_id;
+                                        // A `for` loop evaluates its list iterable, or its start
+                                        // and then end bound, exactly once before the first
+                                        // iteration (D051, M58.2). Walk them once, with
+                                        // diagnostics, into the loop entry state; only a `while`
+                                        // condition is part of the back edge.
+                                        let is_for = is_stmt_for(stmt.kind);
+                                        if is_for {
+                                            walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                                            if end_expr_id > 0 {
+                                                walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, end_expr_id, mutref current, false, false, emit_diagnostics, mutref diags);
+                                            }
+                                        }
                                         let mut condition_entry = project_state(ref current, ref current);
                                         if is_stmt_for(stmt.kind) {
                                             if stmt.target_binding_id > 0 {
@@ -2096,15 +2118,29 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                             } else {
                                                 push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked for-loop binding");
                                             }
+                                            if checked_for_is_indexed(stmt.for_kind) and index_binding_id <= 0 {
+                                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked for-loop index binding");
+                                            }
+                                            if checked_for_is_range(stmt.for_kind) and end_expr_id <= 0 {
+                                                push_borrow_limitation(mutref diags, stmt.module_name, stmt.at, "is missing a checked range end bound");
+                                            }
+                                            if index_binding_id > 0 {
+                                                set_moved_or_limit(mutref condition_entry, index_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                            }
                                         }
                                         let mut stable = false;
                                         while not stable {
                                             let mut after_condition = clone_move_state(ref condition_entry);
-                                            walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, false, mutref diags);
+                                            if not is_for {
+                                                walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, false, mutref diags);
+                                            }
                                             let body_end = check_block(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, false, mutref diags);
                                             let mut next_entry = merge_visible_states(ref current, ref body_end);
                                             if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
                                                 set_moved_or_limit(mutref next_entry, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                            }
+                                            if index_binding_id > 0 {
+                                                set_moved_or_limit(mutref next_entry, index_binding_id, false, stmt.module_name, stmt.at, mutref diags);
                                             }
                                             if state_equals(ref next_entry, ref condition_entry) {
                                                 stable = true;
@@ -2113,14 +2149,22 @@ fn check_block(function: checked_function, bindings: ref list<checked_binding>, 
                                             }
                                         }
                                         let mut after_condition = clone_move_state(ref condition_entry);
-                                        walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, emit_diagnostics, mutref diags);
+                                        if not is_for {
+                                            walk_expr(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.expr_id, mutref after_condition, false, false, emit_diagnostics, mutref diags);
+                                        }
                                         if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
                                             set_moved_or_limit(mutref after_condition, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                        }
+                                        if index_binding_id > 0 {
+                                            set_moved_or_limit(mutref after_condition, index_binding_id, false, stmt.module_name, stmt.at, mutref diags);
                                         }
                                         let ignored_loop_state = check_block(function, ref bindings, ref params, ref type_properties, ref value_uses, use_value_plan, ref type_decls, ref field_decls, ref enum_decls, ref variant_decls, ref variant_payload_decls, ref functions, ref blocks, ref statements, ref match_arms, ref pattern_bindings, ref expressions, ref expr_children, ref struct_fields, stmt.child_block_id, ref after_condition, emit_diagnostics, mutref diags);
                                         current = project_state(ref current, ref after_condition);
                                         if is_stmt_for(stmt.kind) and stmt.target_binding_id > 0 {
                                             set_moved_or_limit(mutref current, stmt.target_binding_id, false, stmt.module_name, stmt.at, mutref diags);
+                                        }
+                                        if index_binding_id > 0 {
+                                            set_moved_or_limit(mutref current, index_binding_id, false, stmt.module_name, stmt.at, mutref diags);
                                         }
                                     }
                                 } else {

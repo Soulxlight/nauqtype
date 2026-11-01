@@ -1,7 +1,9 @@
 # M58.2: Remainder And Counting Loops
 
 Status: Gate A passed, 2026-11-01 (revision 3, approved; two nits applied).
-Compiler lead. Not implemented. The independent Gate A reviewer
+Compiler lead. Implemented 2026-11-01 (two slices plus integration; see
+Implementation Notes); trailing audit and milestone gate pending. The
+independent Gate A reviewer
 (`gpt-5.6-sol` xhigh) required changes on revision 1 (six blocking, four
 should-fix; the split below) and revision 2 (two blocking, three should-fix,
 one nit). Base: `e038ed1` (M58.1 complete). Charter:
@@ -344,3 +346,52 @@ were already rejected:
 M58.2 is complete when all of the above pass in the single milestone gate,
 both trailing audits have no open findings, SPEC and GRAMMAR describe the
 shipped rules, and DECISIONS records D071.
+
+## Implementation Notes
+
+Recorded at integration (2026-11-01).
+
+1. **`f64 %` help.** The matrix left the help line open ("as for other
+   NQ-TYPE-050"). It is "`f64` supports `+`, `-`, `*` and `/`, not `%`",
+   matching the shape of the existing `bool` help ("`bool` supports only
+   `==` and `!=`").
+2. **`f64` constants.** `const X: f64 = 1.0 % 2.0;` reports the matrix's
+   `NQ-TYPE-050` at the `%` and nothing else for that constant (`1.0 / 2.0`
+   keeps `NQ-TYPE-048`, the `f64` constant shape rule). This case is excluded
+   from the `/`-equivalence tests and pinned separately. It applies when the
+   constant is exactly an `f64` literal `%` an `f64` literal (signs and
+   parentheses allowed); any longer `f64` constant expression, such as
+   `1.0 % 2.0 % 3.0`, breaks the `f64` constant shape rule first and reports
+   `NQ-TYPE-048`, as the same expression with `/` does.
+3. **Range bound literals.** An unsuffixed integer literal bound takes the
+   other bound's type, the contextual rule comparisons already use: `0..n`
+   with `n: i64` is an `i64` range. Two literals are `i32`.
+4. **`..` inside a `for` iterable that is not range-shaped** (`f(0..2)`,
+   `[0..n]`) reports the "only allowed as the iterable of a `for` loop"
+   row: the `..` is not at depth zero of the iterable.
+5. **Binding order.** In an indexed loop the index binding is numbered
+   before the element binding in the checked handoff. Both are their own
+   checked bindings and IR locals, as the Representation table maps them.
+6. **Remainder evaluation.** The left operand's value is captured before
+   the right operand runs (the same order `/` uses); a test observes it with
+   side-effecting calls.
+7. **Audit repairs.** A malformed `for` header keeps only its first
+   syntax diagnostic (lexical diagnostics such as a malformed float
+   `NQ-PARSE-004` inside the header stay independent: each is a separate
+   token-level error, reported once under M58.1's rule, so
+   `for , in [.5] {}` reports `NQ-PARSE-004` and the header's
+   `NQ-PARSE-003`), including placement diagnostics such as `NQ-PROPAGATE-007`
+   that would otherwise follow; a bound that reports its own diagnostic
+   suppresses `NQ-TYPE-062`; a `..` used as a value suppresses `?`/`try`
+   placement and operand diagnostics in the same statement (including
+   `NQ-TRY-002` for `try { (0..2)? }`). When the parser looks for the body
+   of an `if`, `while`, `for` or `match` head, a `{` directly after `try`
+   belongs to the `try` expression, so a misplaced `try { ... }` in a head
+   reports only `NQ-TRY-006` (or only the range's `NQ-PARSE-006`) instead of
+   cascading into the body; a `?` inside such a `try` block is not also
+   reported as misplaced (`NQ-PROPAGATE-007`). Ownership analysis checks a
+   `for` loop's iterable and end bound once, before the body's fixed point,
+   matching execution. That also repairs list loops: a list loop whose
+   iterable consumes an owned value (`for x in doubled(xs)`) was rejected with
+   `NQ-BORROW-001` before M58.2 and is now accepted, with the move persisting
+   after the loop (newly accepted programs only).

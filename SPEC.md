@@ -6,7 +6,7 @@ This document defines the locked Nauqtype v0.1 surface. It is intentionally smal
 
 The frozen stage0 reference includes statement-form `while`. The active stage1 compiler owns later live-in-the-language extensions.
 
-The live-in-the-language loop surface now includes statement-form `while`, list-only `for name in list_expr { ... }`, and minimal nearest-loop `break;` / `continue;`.
+The live-in-the-language loop surface now includes statement-form `while`, `for` over a list (`for item in items`, `for i, item in items`) or a half-open integer range (`for i in a..b`), and minimal nearest-loop `break;` / `continue;`.
 
 The M56 active-stage1 candidate extends this historical surface with explicit
 function/product/enum generics. Its exact contract is
@@ -153,11 +153,16 @@ operand width, interpreted as the corresponding signed two's-complement
 value. Division truncates toward zero. Division by zero or the minimum value
 divided by `-1` terminates with exit code 1 and, respectively,
 `nauqtype runtime: integer division by zero` or
-`nauqtype runtime: integer division overflow` on stderr. Fatal runtime failures
-do not promise unwinding or cleanup.
+`nauqtype runtime: integer division overflow` on stderr. The remainder `a % b`
+(M58.2) is the truncated remainder: it has the sign of `a`, and
+`a == (a / b) * b + a % b` whenever `a / b` is defined. `x % 0` and the minimum
+value `% -1` terminate exactly as `/` does, with
+`nauqtype runtime: integer remainder by zero` or
+`nauqtype runtime: integer remainder overflow`. `%` is not defined for `f64`
+(`NQ-TYPE-050`). Fatal runtime failures do not promise unwinding or cleanup.
 
-Top-level constants use the same arithmetic. Evaluated invalid divisions are
-rejected with `NQ-TYPE-045` at the slash token; boolean `and` and `or` still
+Top-level constants use the same arithmetic. Evaluated invalid divisions and
+remainders are rejected with `NQ-TYPE-045` at the `/` or `%` token; boolean `and` and `or` still
 short-circuit. Literal range checks remain independent of reachability. This
 does not add casts or permit constant initializers to call functions or refer
 to other names.
@@ -668,12 +673,25 @@ for item in items {
 }
 ```
 
-Rules (D051):
+```nauq
+for i, item in items {
+    print_line(item);
+}
 
-- the iterable must be a `list<T>` expression; it is evaluated once
-- the loop binding is immutable, scoped to the body, and cannot be assigned or escape the body
-- the iterable expression sees only bindings declared before the loop, not the loop binding
-- ranges, custom iterables, loop values and implicit element borrowing are not supported
+for i in 0..count {
+    total = total + i;
+}
+```
+
+Rules (D051, D071):
+
+- a list loop's iterable must be a `list<T>` expression of a copy element type; it is evaluated once
+- `for i, item in items` also binds the element's index `i: i32`, from `0` to `list_len(items) - 1`
+- `for i in a..b` counts from `a` up to `b - 1`; both bounds are `i32` or both `i64` (an integer literal takes the other bound's type), otherwise `NQ-TYPE-062`; `a` then `b` are evaluated once each before the first iteration; the loop does not run when `a >= b` and never overflows
+- ranges are half-open, ascending and step 1; there is no `..=`, step or descending form (count down with `while`), and a range is not a value: `..` anywhere other than a `for` iterable is `NQ-PARSE-006`, as are malformed headers (`1...2`, `..n`, `0..`, `0..1..2`, `(0..n)`, `for i, x in 0..n`), each reported once
+- loop bindings are immutable, scoped to the body, visible from the start of the body, and cannot be assigned or escape the body
+- the iterable and range bounds see only bindings declared before the loop, not the loop bindings
+- custom iterables, loop values and implicit element borrowing are not supported
 
 ### Loop Control
 
@@ -756,7 +774,7 @@ From lowest to highest:
 3. `==`, `!=`
 4. `<`, `<=`, `>`, `>=`
 5. `+`, `-`
-6. `*`, `/`
+6. `*`, `/`, `%`
 7. unary `-`, `not`
 8. call and field access
 
@@ -1025,7 +1043,7 @@ listed in DEFERRED.md. The charter makes `pub` contracts required from M62.
 
 - methods
 - traits
-- loop families beyond bootstrap `while` and list-only `for`
+- loop families beyond `while`, list and indexed `for`, and half-open range `for`
 - labeled or valued `break` / `continue`
 - inference, constraints and other generic facilities beyond explicit M56 reuse
 - broader constant expressions beyond the v1 pure literal/operator subset

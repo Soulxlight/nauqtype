@@ -1,0 +1,253 @@
+// M58.2 slice A: integer `%` (truncated remainder) at run time. Operands
+// come from `edge32`/`edge64` so the C compiler cannot fold them.
+fn edge32(seed: str, name: str) -> i32 {
+    if seed != "edge" { return 3; }
+    if name == "max" { return 2147483647; }
+    if name == "min" { return -2147483648; }
+    if name == "one" { return 1; }
+    if name == "two" { return 2; }
+    if name == "three" { return 3; }
+    if name == "four" { return 4; }
+    if name == "five" { return 5; }
+    if name == "seven" { return 7; }
+    return 0;
+}
+
+fn edge64(seed: str, name: str) -> i64 {
+    if seed != "edge" { return 3; }
+    if name == "max" { return 9223372036854775807; }
+    if name == "min" { return -9223372036854775808; }
+    if name == "one" { return 1; }
+    if name == "two" { return 2; }
+    if name == "three" { return 3; }
+    if name == "four" { return 4; }
+    if name == "five" { return 5; }
+    if name == "seven" { return 7; }
+    return 0;
+}
+
+fn identity32(a: i32, b: i32) -> bool {
+    return (a / b) * b + a % b == a;
+}
+
+fn identity64(a: i64, b: i64) -> bool {
+    return (a / b) * b + a % b == a;
+}
+
+fn signs32(seed: str) -> bool {
+    let seven = edge32(seed, "seven");
+    let two = edge32(seed, "two");
+    let five = edge32(seed, "five");
+    let zero = edge32(seed, "zero");
+    if seven % two != 1 or (-seven) % two != -1 { return false; }
+    if seven % (-two) != 1 or (-seven) % (-two) != -1 { return false; }
+    if zero % five != 0 or zero % (-five) != 0 { return false; }
+    if five % seven != 5 or (-five) % seven != -5 { return false; }
+    if seven % seven != 0 or (-seven) % seven != 0 { return false; }
+    return identity32(seven, two) and identity32(-seven, two) and identity32(seven, -two) and identity32(-seven, -two) and identity32(zero, five);
+}
+
+fn signs64(seed: str) -> bool {
+    let seven = edge64(seed, "seven");
+    let two = edge64(seed, "two");
+    let five = edge64(seed, "five");
+    let zero = edge64(seed, "zero");
+    if seven % two != 1 or (-seven) % two != -1 { return false; }
+    if seven % (-two) != 1 or (-seven) % (-two) != -1 { return false; }
+    if zero % five != 0 or zero % (-five) != 0 { return false; }
+    if five % seven != 5 or (-five) % seven != -5 { return false; }
+    if seven % seven != 0 or (-seven) % seven != 0 { return false; }
+    return identity64(seven, two) and identity64(-seven, two) and identity64(seven, -two) and identity64(-seven, -two) and identity64(zero, five);
+}
+
+fn boundaries32(seed: str) -> bool {
+    let hi = edge32(seed, "max");
+    let lo = edge32(seed, "min");
+    let one = edge32(seed, "one");
+    let two = edge32(seed, "two");
+    let three = edge32(seed, "three");
+    if hi % two != 1 or lo % two != 0 { return false; }
+    if hi % three != 1 or lo % three != -2 { return false; }
+    if hi % lo != hi or lo % hi != -1 { return false; }
+    if lo % one != 0 or hi % (-one) != 0 or lo % lo != 0 { return false; }
+    return identity32(hi, three) and identity32(lo, three) and identity32(lo, hi) and identity32(hi, lo) and identity32(lo, -three);
+}
+
+fn boundaries64(seed: str) -> bool {
+    let hi = edge64(seed, "max");
+    let lo = edge64(seed, "min");
+    let one = edge64(seed, "one");
+    let two = edge64(seed, "two");
+    let three = edge64(seed, "three");
+    if hi % two != 1 or lo % two != 0 { return false; }
+    if hi % three != 1 or lo % three != -2 { return false; }
+    if hi % lo != hi or lo % hi != -1 { return false; }
+    if lo % one != 0 or hi % (-one) != 0 or lo % lo != 0 { return false; }
+    return identity64(hi, three) and identity64(lo, three) and identity64(lo, hi) and identity64(hi, lo) and identity64(lo, -three);
+}
+
+fn generic_rem<T>(value: T, a: i32, b: i32) -> i32 {
+    let tag = a % b * 2 + a / b % 3;
+    return tag;
+}
+
+// `%` shares the precedence of `*` and `/` and is left associative with them.
+fn precedence32(seed: str) -> bool {
+    let seven = edge32(seed, "seven");
+    let four = edge32(seed, "four");
+    let two = edge32(seed, "two");
+    let one = edge32(seed, "one");
+    if seven / two % two != 1 or seven % four / two != 1 { return false; }
+    if one + seven % four != 4 or seven % four + one != 4 { return false; }
+    if two * seven % four != 2 or seven % four * two != 6 { return false; }
+    if seven - seven % four != 4 or -seven % four != -3 { return false; }
+    if 7 / 2 % 2 != 1 or 7 % 4 / 2 != 1 or 7 % 4 - 1 != 2 or 1 + 7 % 4 * 2 != 7 { return false; }
+    if (seven + one) % (two + one) != 2 { return false; }
+    return generic_rem::<str>("x", 17, 5) == 4;
+}
+
+fn precedence64(seed: str) -> bool {
+    let seven = edge64(seed, "seven");
+    let four = edge64(seed, "four");
+    let two = edge64(seed, "two");
+    let one = edge64(seed, "one");
+    if seven / two % two != 1 or seven % four / two != 1 { return false; }
+    if one + seven % four != 4 or seven % four + one != 4 { return false; }
+    if two * seven % four != 2 or seven % four * two != 6 { return false; }
+    if seven - seven % four != 4 or -seven % four != -3 { return false; }
+    let big: i64 = 9223372036854775807 % 1000;
+    if big != 807 { return false; }
+    return (seven + one) % (two + one) == 2;
+}
+
+type Trace {
+    order: i32,
+    calls: i32,
+}
+
+fn mark32(trace: mutref Trace, value: i32, digit: i32) -> i32 {
+    trace = Trace { order: trace.order * 10 + digit, calls: trace.calls + 1 };
+    return value;
+}
+
+fn mark64(trace: mutref Trace, value: i64, digit: i32) -> i64 {
+    trace = Trace { order: trace.order * 10 + digit, calls: trace.calls + 1 };
+    return value;
+}
+
+fn order32(seed: str) -> bool {
+    let hi = edge32(seed, "max");
+    let one = edge32(seed, "one");
+    let three = edge32(seed, "three");
+    let seven = edge32(seed, "seven");
+    let mut trace = Trace { order: 0, calls: 0 };
+    let remainder = mark32(mutref trace, seven, 1) % mark32(mutref trace, three, 2);
+    if remainder != 1 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let nested = (mark32(mutref trace, hi, 1) + mark32(mutref trace, one, 2)) % mark32(mutref trace, three, 3);
+    if nested != -2 or trace.order != 123 or trace.calls != 3 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let chained = mark32(mutref trace, seven, 1) % mark32(mutref trace, three, 2) * mark32(mutref trace, seven, 3);
+    return chained == 7 and trace.order == 123 and trace.calls == 3;
+}
+
+fn order64(seed: str) -> bool {
+    let hi = edge64(seed, "max");
+    let one = edge64(seed, "one");
+    let three = edge64(seed, "three");
+    let seven = edge64(seed, "seven");
+    let mut trace = Trace { order: 0, calls: 0 };
+    let remainder = mark64(mutref trace, seven, 1) % mark64(mutref trace, three, 2);
+    if remainder != 1 or trace.order != 12 or trace.calls != 2 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let nested = (mark64(mutref trace, hi, 1) + mark64(mutref trace, one, 2)) % mark64(mutref trace, three, 3);
+    if nested != -2 or trace.order != 123 or trace.calls != 3 { return false; }
+    trace = Trace { order: 0, calls: 0 };
+    let chained = mark64(mutref trace, seven, 1) % mark64(mutref trace, three, 2) * mark64(mutref trace, seven, 3);
+    return chained == 7 and trace.order == 123 and trace.calls == 3;
+}
+
+fn replace32(value: mutref i32, replacement: i32, right: i32, label: str) -> i32 {
+    value = replacement;
+    print_line(label);
+    return right;
+}
+
+fn replace64(value: mutref i64, replacement: i64, right: i64, label: str) -> i64 {
+    value = replacement;
+    print_line(label);
+    return right;
+}
+
+// The left operand is read before the right operand's call mutates it.
+fn snapshot32(seed: str) -> bool {
+    let mut value = edge32(seed, "seven");
+    let remainder = value % replace32(mutref value, 40, 3, "snapshot32:rem");
+    return remainder == 1 and value == 40;
+}
+
+fn snapshot64(seed: str) -> bool {
+    let mut value = edge64(seed, "seven");
+    let remainder = value % replace64(mutref value, 40, 3, "snapshot64:rem");
+    return remainder == 1 and value == 40;
+}
+
+fn short_circuit(seed: str) -> bool {
+    let zero32 = edge32(seed, "zero");
+    let zero64 = edge64(seed, "zero");
+    let lo32 = edge32(seed, "min");
+    let lo64 = edge64(seed, "min");
+    let mut trace = Trace { order: 0, calls: 0 };
+    if false and mark32(mutref trace, 1, 1) % zero32 == 0 { return false; }
+    if not (true or mark64(mutref trace, 1, 2) % zero64 == 0) { return false; }
+    if false and mark64(mutref trace, lo64, 3) % -1 == 0 { return false; }
+    if not (true or mark32(mutref trace, lo32, 4) % -1 == 0) { return false; }
+    return trace.order == 0 and trace.calls == 0;
+}
+
+fn trap32(value: i32, label: str) -> i32 {
+    print_line(label);
+    return value;
+}
+
+fn trap64(value: i64, label: str) -> i64 {
+    print_line(label);
+    return value;
+}
+
+fn main() -> i32 {
+    if arg_count() != 3 { return 90; }
+    let Some(mode) = arg_get(1) else { return 91; };
+    let Some(seed) = arg_get(2) else { return 92; };
+    let mut ok = false;
+    if mode == "signs32" { ok = signs32(seed); }
+    if mode == "signs64" { ok = signs64(seed); }
+    if mode == "boundaries32" { ok = boundaries32(seed); }
+    if mode == "boundaries64" { ok = boundaries64(seed); }
+    if mode == "precedence32" { ok = precedence32(seed); }
+    if mode == "precedence64" { ok = precedence64(seed); }
+    if mode == "order32" { ok = order32(seed); }
+    if mode == "order64" { ok = order64(seed); }
+    if mode == "snapshot32" { ok = snapshot32(seed); }
+    if mode == "snapshot64" { ok = snapshot64(seed); }
+    if mode == "short" { ok = short_circuit(seed); }
+    if mode == "zero32" {
+        let value = trap32(edge32(seed, "seven"), "left") % trap32(edge32(seed, "zero"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "zero64" {
+        let value = trap64(edge64(seed, "seven"), "left") % trap64(edge64(seed, "zero"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "overflow32" {
+        let value = trap32(edge32(seed, "min"), "left") % trap32(-edge32(seed, "one"), "right");
+        if value == 0 { return 93; }
+    }
+    if mode == "overflow64" {
+        let value = trap64(edge64(seed, "min"), "left") % trap64(-edge64(seed, "one"), "right");
+        if value == 0 { return 93; }
+    }
+    if not ok { return 94; }
+    print_line("remainder ok");
+    return 0;
+}

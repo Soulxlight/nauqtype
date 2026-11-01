@@ -3,17 +3,17 @@
 ## Current Position And Resumption
 
 Organizational Linux alpha (`0.3.0-alpha.1`), not stable or feature
-complete. Complete through M58.1 correctness and diagnostics, including
-M57.1 library-enabling core, M56.2 scalar `f64`, M56.1 generic-aware
+complete. Complete through M58.2 remainder and counting loops, including
+M58.1 correctness and diagnostics, M57.1 library-enabling core, M56.2 scalar `f64`, M56.1 generic-aware
 facts/review v5, M56 explicit generic reuse and the PRE-M56 P1-P4
-performance checkpoint (full milestone gate about 33 minutes at M58.1; the
+performance checkpoint (full milestone gate about 35 minutes at M58.2; the
 10-minute cold working target remains unmet and open).
 Evidence for each milestone is in [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md)
 and its contract documents.
 
 End goal (owner, 2026-10-31): NauqType v1.0 is the complete, coherent
 language defined by [LANGUAGE_CHARTER.md](LANGUAGE_CHARTER.md), not a
-stable Linux release. Next: the rest of the corrective sweep (M58.2-M58.5,
+stable Linux release. Next: the rest of the corrective sweep (M58.3-M58.5,
 below), then the charter's sequence M59-M69 below. Open actions are in [TODO](TODO.md#next-actions); roles and
 repository states are in [NAUQTYPE_COORDINATION.md](NAUQTYPE_COORDINATION.md).
 Earlier sections below retain milestone history; use the
@@ -1118,8 +1118,11 @@ exhaustiveness rule, no reachable stage1-limitation diagnostics, let-else
 exits, diagnostics pipeline and driver repairs. Evidence:
 [AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m581-correctness-and-diagnostics-close).
 The rest of M58 is split by size (2026-11-01, after Gate A judged one
-milestone too broad): M58.2 integer `%` and range/indexed `for`
-([contract](docs/M58_2_CONTRACT.md)); M58.3 `i64`/`bool`/`str` literal
+milestone too broad): M58.2 integer `%` and range/indexed `for`, complete
+2026-11-01 per the [M58.2 contract](docs/M58_2_CONTRACT.md) (Gate A revision
+3; D071; evidence:
+[AUDIT_REMEDIATION.md](AUDIT_REMEDIATION.md#m582-remainder-and-counting-loops-close));
+M58.3 `i64`/`bool`/`str` literal
 patterns, an exact coverage check replacing D047, unreachable-arm errors and
 `match` expression positions; M58.4 nested field assignment, constant
 comparisons and the R9 position matrix; M58.5 rewrite tooling for the
@@ -1127,7 +1130,7 @@ M60/M61 migrations.
 
 | Milestone | Scope |
 | --- | --- |
-| M58 | Corrective sweep (M58.1 complete; M58.2-M58.5 open): missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
+| M58 | Corrective sweep (M58.1, M58.2 complete; M58.3-M58.5 open): missing-return analysis; every reachable stage1-limitation path; match/pattern and constant asymmetries; `%`; indexed/range `for`; `i64` and `bool` patterns; spec/grammar drift; diagnostics (duplicate parse errors, help in text output); the R9 position matrix; formatter rewrite tooling for later migrations |
 | M59 | Design records with Gate A (paper only): ownership, capabilities and effects, function types and contracts, scoped element access, tasks/channels, FFI |
 | M60 | Naming: case rule, constructor patterns, struct-like variants, qualified type annotations; compiler-source migration |
 | M61 | Ownership: `move` and must-consume resources |
